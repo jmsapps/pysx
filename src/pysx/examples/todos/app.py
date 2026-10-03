@@ -278,7 +278,7 @@ def app():
                 " item"
                 if {plural}:
                     "s"
-                " left"
+                    " left"
 
             Filters:
                 FilterButton(type="button", class={filter_class("all")}, onClick={(lambda e: mode.set("all"))}):

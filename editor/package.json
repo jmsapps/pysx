@@ -31,6 +31,18 @@
             }
           },
           {
+            "scope": "entity.name.tag.pysx",
+            "settings": {
+              "foreground": "#569CD6"
+            }
+          },
+          {
+            "scope": "keyword.control.conditional.pysx",
+            "settings": {
+              "foreground": "#C586C0"
+            }
+          },
+          {
             "scope": "entity.other.attribute-name.pysx",
             "settings": {
               "foreground": "#9CDCFE"

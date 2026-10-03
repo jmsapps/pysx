@@ -39,7 +39,13 @@
           "include": "#hole"
         },
         {
+          "include": "#keyword"
+        },
+        {
           "include": "#element"
+        },
+        {
+          "include": "#element-html"
         },
         {
           "include": "#attributes"
@@ -145,6 +151,24 @@
           "name": "punctuation.terminator.pysx"
         }
       ]
+    },
+    "keyword": {
+      "comment": "if/else are the only control words in the DSL. elif and match are not grammar; highlighting them would paint tokens the parser rejects.",
+      "match": "^\\s*(if|else)\\b",
+      "captures": {
+        "1": {
+          "name": "keyword.control.conditional.pysx"
+        }
+      }
+    },
+    "element-html": {
+      "comment": "Lowercase tag at the head of an indented line. Deliberately generic: render.py passes any lowercase tag straight through without validation, so the grammar must not claim a fixed set.",
+      "match": "^\\s*(?!if\\b|else\\b)([a-z][A-Za-z0-9_-]*)\\b",
+      "captures": {
+        "1": {
+          "name": "entity.name.tag.pysx"
+        }
+      }
     }
   }
 }
