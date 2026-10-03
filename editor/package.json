@@ -1,0 +1,95 @@
+{
+  "name": "pysx-lang",
+  "displayName": "pysx",
+  "description": "pysx markup highlighting and diagnostics inside t-strings",
+  "publisher": "pysx-local",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "grammars": [
+      {
+        "scopeName": "source.pysx.injection",
+        "path": "./syntaxes/pysx.injection.tmLanguage.json",
+        "injectTo": [
+          "source.python"
+        ]
+      }
+    ],
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "scope": "support.class.component.pysx",
+            "settings": {
+              "foreground": "#4EC9B0",
+              "fontStyle": "bold"
+            }
+          },
+          {
+            "scope": "entity.other.attribute-name.pysx",
+            "settings": {
+              "foreground": "#9CDCFE"
+            }
+          },
+          {
+            "scope": "keyword.operator.assignment.pysx",
+            "settings": {
+              "foreground": "#D4D4D4"
+            }
+          },
+          {
+            "scope": "string.quoted.double.pysx",
+            "settings": {
+              "foreground": "#CE9178"
+            }
+          },
+          {
+            "scope": "punctuation.definition.string.begin.pysx,punctuation.definition.string.end.pysx",
+            "settings": {
+              "foreground": "#CE9178"
+            }
+          },
+          {
+            "scope": "punctuation.definition.tag.begin.pysx,punctuation.definition.tag.end.pysx",
+            "settings": {
+              "foreground": "#808080"
+            }
+          },
+          {
+            "scope": "punctuation.separator.pysx",
+            "settings": {
+              "foreground": "#808080"
+            }
+          },
+          {
+            "scope": "punctuation.section.block.pysx",
+            "settings": {
+              "foreground": "#C586C0"
+            }
+          },
+          {
+            "scope": "punctuation.terminator.pysx",
+            "settings": {
+              "foreground": "#C586C0"
+            }
+          },
+          {
+            "scope": "punctuation.section.embedded.begin.pysx,punctuation.section.embedded.end.pysx",
+            "settings": {
+              "foreground": "#D7BA7D"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:python"
+  ]
+}

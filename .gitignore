@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node (browser tests only)
+node_modules/
+
+# Editor extension build output
+editor/*.vsix
+editor/pysx-root.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+
+# Agents
+.skills/*
+AGENTS.md
+CLAUDE.md
+AUDIT.md
+PLAN.md

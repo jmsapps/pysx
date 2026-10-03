@@ -1,0 +1,10 @@
+[project]
+name = "pysx"
+version = "0.1.0"
+description = "Server-side reactive renderer for Python, templated with PEP 750 t-strings"
+requires-python = ">=3.14"
+dependencies = ["websockets>=15"]
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"

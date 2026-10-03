@@ -1,0 +1,4 @@
+{
+  "//": "written by pysx — pins Pylance to the 3.14 venv so t-strings parse",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+}

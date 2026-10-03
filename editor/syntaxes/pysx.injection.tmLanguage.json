@@ -1,0 +1,150 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "pysx markup in t-strings",
+  "scopeName": "source.pysx.injection",
+  "injectionSelector": "L:source.python -string -comment",
+  "patterns": [
+    {
+      "include": "#pysx-call"
+    }
+  ],
+  "repository": {
+    "pysx-call": {
+      "comment": "Anchors on the literal call site html(t\"\"\". html( and ( stay with Python's own grammar so meta.function-call.python survives.",
+      "begin": "(?<=\\bhtml\\()\\s*(t)(\"\"\")",
+      "end": "(\"\"\")",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.type.string.python"
+        },
+        "2": {
+          "name": "punctuation.definition.string.begin.python"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.string.end.python"
+        }
+      },
+      "contentName": "meta.embedded.block.pysx",
+      "patterns": [
+        {
+          "include": "#pysx-body"
+        }
+      ]
+    },
+    "pysx-body": {
+      "patterns": [
+        {
+          "include": "#hole"
+        },
+        {
+          "include": "#element"
+        },
+        {
+          "include": "#attributes"
+        },
+        {
+          "include": "#text-string"
+        },
+        {
+          "include": "#punctuation"
+        }
+      ]
+    },
+    "hole": {
+      "comment": "Python expression hole; body is handed back to source.python",
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.begin.pysx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.pysx"
+        }
+      },
+      "contentName": "meta.embedded.inline.python",
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "element": {
+      "comment": "Capitalised tag name at the head of an indented line",
+      "match": "^\\s*([A-Z][A-Za-z0-9_]*)\\b",
+      "captures": {
+        "1": {
+          "name": "support.class.component.pysx"
+        }
+      }
+    },
+    "attributes": {
+      "begin": "\\(",
+      "end": "\\)|(?=\"\"\")",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.tag.begin.pysx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.tag.end.pysx"
+        }
+      },
+      "patterns": [
+        {
+          "match": "\\b([A-Za-z_][A-Za-z0-9_-]*)\\s*(=)",
+          "captures": {
+            "1": {
+              "name": "entity.other.attribute-name.pysx"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.pysx"
+            }
+          }
+        },
+        {
+          "include": "#hole"
+        },
+        {
+          "include": "#text-string"
+        },
+        {
+          "match": ",",
+          "name": "punctuation.separator.pysx"
+        }
+      ]
+    },
+    "text-string": {
+      "name": "string.quoted.double.pysx",
+      "begin": "\"",
+      "end": "\"|(?=$)",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.pysx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.pysx"
+        }
+      }
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "match": ":\\s*$",
+          "name": "punctuation.section.block.pysx"
+        },
+        {
+          "match": ";",
+          "name": "punctuation.terminator.pysx"
+        }
+      ]
+    }
+  }
+}
