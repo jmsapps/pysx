@@ -3,7 +3,7 @@
 import sys
 from dataclasses import dataclass
 
-sys.path.insert(0, __file__.rsplit("/tests/", 1)[0] + "/src")
+sys.path.insert(0, __file__.rsplit("/tests/", 1)[0])
 
 from pysx import component, derived, div, each, html, signal, styled  # noqa: E402
 from pysx.render import render  # noqa: E402

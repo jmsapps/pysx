@@ -1,10 +1,10 @@
 import sys
 from html.parser import HTMLParser
 
-sys.path.insert(0, __file__.rsplit("/tests/", 1)[0] + "/src")
+sys.path.insert(0, __file__.rsplit("/tests/", 1)[0])
 
 from pysx import render, signal  # noqa: E402
-from pysx.examples.counter.app import app  # noqa: E402
+from examples.counter import app  # noqa: E402
 
 
 class _Attrs(HTMLParser):

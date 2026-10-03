@@ -12,9 +12,10 @@ sent and its DOM node is never touched.
 from __future__ import annotations
 
 import html as _htmlmod
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from string.templatelib import Template
-from typing import Any, Callable, Iterable
+from typing import Any
 
 from .elements import VOID
 from .parser import Conditional, Element, Hole, HoleKind, Skeleton, parse
@@ -45,7 +46,9 @@ class Each:
     key: Callable[[Any], Any]
 
 
-def each(source: Signal, item: Callable[[Any], Fragment], *, key: Callable[[Any], Any]) -> Each:
+def each(
+    source: Signal, item: Callable[[Any], Fragment], *, key: Callable[[Any], Any]
+) -> Each:
     return Each(source, item, key)
 
 
@@ -178,7 +181,9 @@ class Rendered:
 
 
 class _Emitter:
-    def __init__(self, ns: dict, values: tuple, out: Rendered, prefix: str = "") -> None:
+    def __init__(
+        self, ns: dict, values: tuple, out: Rendered, prefix: str = ""
+    ) -> None:
         self.ns = ns
         self.values = values
         self.out = out
@@ -271,7 +276,9 @@ class _Emitter:
     def item(self, spec: Each, item: Any, slot: str, key: str) -> str:
         fragment = spec.item(item)
         skeleton = parse(fragment.template.strings)
-        sub = _Emitter(self.ns, fragment.template.values, self.out, prefix=f"{slot}:{key}:")
+        sub = _Emitter(
+            self.ns, fragment.template.values, self.out, prefix=f"{slot}:{key}:"
+        )
         markup = sub.nodes(skeleton.root, static=True)
         # Tag the item root so the client can reorder by key.
         return markup.replace(">", f' data-pysx-key="{key}">', 1)
@@ -282,7 +289,6 @@ class _Emitter:
         element_id: str | None = None
         class_signal: Signal | None = None
         class_position = -1
-
 
         for name, value in el.attrs:
             if not isinstance(value, Hole):
@@ -338,8 +344,11 @@ class _Emitter:
         if class_signal is not None:
             element_id = element_id or self._next_element_id()
             watcher = ClassWatcher(
-                element_id, class_signal,
-                tuple(classes[:class_position]), tuple(classes[class_position:]), "",
+                element_id,
+                class_signal,
+                tuple(classes[:class_position]),
+                tuple(classes[class_position:]),
+                "",
             )
             # Render and baseline come from one function, so they cannot drift.
             watcher.last = watcher.merged()

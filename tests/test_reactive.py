@@ -2,7 +2,7 @@
 
 import sys
 
-sys.path.insert(0, __file__.rsplit("/tests/", 1)[0] + "/src")
+sys.path.insert(0, __file__.rsplit("/tests/", 1)[0])
 
 from pysx.reactive import effect, signal  # noqa: E402
 

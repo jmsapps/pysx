@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT))
 
 from websockets.asyncio.client import connect  # noqa: E402
 
@@ -138,8 +138,8 @@ async def run():
 def main():
     proc = subprocess.Popen(
         [sys.executable, "-m", "pysx.server",
-         "--app", "pysx.examples.todos:app", "--port", str(PORT)],
-        cwd=ROOT / "src", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+         "--app", "examples.todos:app", "--port", str(PORT)],
+        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     try:
         for line in proc.stdout:

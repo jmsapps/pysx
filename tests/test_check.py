@@ -2,7 +2,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, __file__.rsplit("/tests/", 1)[0] + "/src")
+sys.path.insert(0, __file__.rsplit("/tests/", 1)[0])
 
 from pysx.check import diagnostics  # noqa: E402
 
@@ -19,7 +19,7 @@ def check(body: str):
 def test_clean_examples_are_empty():
     here = Path(__file__).resolve().parents[1]
     for name in ("counter", "todos"):
-        path = here / f"src/pysx/examples/{name}/app.py"
+        path = here / f"examples/{name}.py"
         assert diagnostics(path) == [], (name, diagnostics(path))
 
 

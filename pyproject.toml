@@ -5,9 +5,15 @@ description = "Server-side reactive renderer for Python, templated with PEP 750 
 requires-python = ">=3.14"
 dependencies = ["websockets>=15"]
 
+[project.scripts]
+example = "run_example:app"
+
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
 
-# [project.src.example]
-# example = "run_example:app"
+[dependency-groups]
+dev = ["typer>=0.24"]
+
+[tool.uv.build-backend]
+module-root = ""
