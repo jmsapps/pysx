@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": { "browser": "node browser_runner.mjs", "grammar": "node grammar/runner.mjs" },
+  "devDependencies": { "playwright": "1.63.0", "vscode-textmate": "9.3.2", "vscode-oniguruma": "2.0.1" }
+}

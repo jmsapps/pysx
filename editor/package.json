@@ -4,6 +4,8 @@
   "description": "pysx markup highlighting and diagnostics inside t-strings",
   "publisher": "pysx-local",
   "version": "0.0.1",
+  "scripts": { "test": "node test/runner.mjs", "setup:host": "node test/setup_host.mjs" },
+  "devDependencies": { "@vscode/test-electron": "3.1.0" },
   "engines": {
     "vscode": "^1.91.0"
   },

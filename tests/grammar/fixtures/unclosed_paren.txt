@@ -1,0 +1,10 @@
+from pysx import component, html
+
+@component
+def bad():
+    return html(t"""
+        Page(id="container":
+            "oops"
+    """)
+
+AFTER_SENTINEL = "plain python again"

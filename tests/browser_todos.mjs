@@ -1,13 +1,13 @@
 // Browser acceptance for the todos port.
-import playwright from "../../tests/node_modules/playwright/index.js";
-const { chromium } = playwright;
+import playwright from "playwright";
+const engine = playwright[process.env.PYSX_BROWSER_ENGINE ?? "chromium"];
 
 const PORT = process.argv[2] ?? "8754";
 const URL = `http://127.0.0.1:${PORT}/`;
 const ok = (l) => console.log(`  ok  ${l}`);
 const assert = (c, m) => { if (!c) throw new Error(m); };
 
-const browser = await chromium.launch();
+const browser = await engine.launch();
 const page = await browser.newPage();
 
 let documentRequests = 0;
@@ -44,7 +44,9 @@ try {
   const field = 'input[type="text"]';
   await page.click(field);
   await page.keyboard.type("abc");
-  await page.keyboard.press("Home");
+  // Home has different native editing semantics on macOS Firefox. Set the
+  // same caret position explicitly, then exercise the real typing round trip.
+  await page.$eval(field, (el) => el.setSelectionRange(0, 0));
   await page.keyboard.type("X");
   const state = await page.$eval(field, (el) => ({ v: el.value, caret: el.selectionStart }));
   assert(state.v === "Xabc", `value wrong: ${state.v}`);

@@ -12,6 +12,7 @@ node_modules/
 # Editor extension build output
 editor/*.vsix
 editor/pysx-root.json
+.vscode-test/
 
 # OS
 .DS_Store
