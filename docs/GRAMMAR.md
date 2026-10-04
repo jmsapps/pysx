@@ -45,5 +45,3 @@ or both.
 - **`EVENT` iff the attribute name matches `on[A-Z]`**; any other hole in attribute name
   position raises `ATTR_VALUE not supported`.
 - **Templates must begin with a newline.**
-
-See `.skills/memory/runtime/constitution/` for the rules that make these bounds load-bearing.

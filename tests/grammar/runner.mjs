@@ -6,12 +6,12 @@ import oniguruma from "vscode-oniguruma";
 import { pylanceHost } from "../pylance_host.mjs";
 
 const args = process.argv.slice(2);
-let phase = "PYSX-3", stage = "ST-2";
+let suite = "injection";
 for (let i = 0; i < args.length; i += 2) {
-  if (!["--phase", "--stage"].includes(args[i]) || !args[i + 1]) throw new Error("invalid selectors");
-  if (args[i] === "--phase") phase = args[i + 1]; else stage = args[i + 1];
+  if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
+  suite = args[i + 1];
 }
-if (phase !== "PYSX-3" || stage !== "ST-2") throw new Error("empty grammar selection");
+if (suite !== "injection") throw new Error("empty grammar selection");
 const host = pylanceHost();
 const injectionPath = process.env.PYSX_INJECTION_GRAMMAR ??
   fileURLToPath(new URL("../../editor/syntaxes/pysx.injection.tmLanguage.json", import.meta.url));
@@ -63,5 +63,5 @@ try {
   }
   const injection = JSON.parse(readFileSync(injectionPath, "utf8"));
   console.log(`Pylance ${host.version}; host ${host.grammarPath}; sha256 ${host.sha256}; injection ${injection.scopeName}`);
-  console.log(`GRAMMAR VERIFICATION PASSED: ${phase}/${stage} (3 fixtures, ${assertions} assertions, ${tokens} tokens)`);
+  console.log(`GRAMMAR VERIFICATION PASSED: ${suite} (3 fixtures, ${assertions} assertions, ${tokens} tokens)`);
 } finally { registry.dispose(); }

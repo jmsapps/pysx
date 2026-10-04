@@ -34,15 +34,33 @@ path and SHA256. Retain that provenance with remote CI results. An unavailable M
 or required host input fails setup; it cannot become a skipped passing test.
 
 ```sh
-npm --prefix tests run browser -- --phase PYSX-3 --stage ST-1
-npm --prefix tests run grammar -- --phase PYSX-3 --stage ST-2
-npm --prefix editor test -- --phase PYSX-3 --stage ST-3
+npm --prefix tests run browser -- --suite examples
+npm --prefix tests run grammar -- --suite injection
+npm --prefix editor test -- --suite diagnostics
 uv run --project . pytest -q tests/test_verification_harness.py
 ```
 
-Each runner accepts `--phase` and `--stage`; unknown or empty selections fail.
-Unfiltered commands run all currently registered cases. Add cases and registration in
-their owning future tasks. Pass banners are emitted only after all required cases pass.
+Isolated feasibility cases are registered separately from the shipped runtime/client:
+
+```sh
+uv run --project . pytest -q tests/test_architecture_proofs.py tests/test_distribution.py
+uv run --project . pytest -q tests/test_typing_contracts.py -k operator_typing
+npm --prefix tests run browser -- --suite cascade
+npm --prefix tests run browser -- --suite adoption
+npm --prefix editor test -- --suite packaging
+```
+
+The browser proofs assert computed CSS lineage and HTTP-to-WebSocket adoption in
+all three engines. The editor proof builds a scratch wheel/VSIX and launches the
+installed isolated stdio module through a real host outside the checkout. Distribution
+proofs build both a wheel and an sdist-derived wheel and install them into fresh consumer
+environments. These gates need uv's pinned backend plus cached exact runtime/example
+dependencies; the fixture can use existing uv caches without modifying them. Artifacts,
+consumer environments and profiles live in temporary directories. No prototype module
+becomes a shipped production API or LSP feature.
+
+Each runner accepts `--suite`; unknown or empty selections fail. Unfiltered commands run
+all currently registered suites. Pass banners are emitted only after all required cases pass.
 
 Browser verification selects the interpreter through `uv run --project .`, reserves
 ephemeral ports, starts both example servers and runs the original assertion groups
@@ -57,14 +75,14 @@ the pinned version; `PYSX_VSCODE_EXECUTABLE` explicitly selects a managed execut
 Inherited VSCode/Node-host environment variables are removed. Activation, saved-file
 diagnostic contents/range and Python-document close cleanup are asserted in the actual
 host; the launcher has a 120-second deadline and removes its profile and process group.
-The checkout/interpreter requirement remains the existing baseline client contract;
-PYSX-20 owns the portable installed client. Windows currently requires the baseline
-client's compatible `.venv/bin/python` layout; native Scripts-path support remains
-unverified and must not be represented as a portable installed-client pass.
+The checkout/interpreter requirement remains the baseline client contract. Windows
+currently requires the baseline client's compatible `.venv/bin/python` layout; native
+Scripts-path support remains unverified and must not be represented as a portable
+installed-client pass.
 
-The quality workflow provisions these inputs before full pytest. PYSX-24 must collect
-actual remote platform output, selected versions, assertions, exit codes and artifacts.
-Neither the workflow nor this local harness constitutes remote execution evidence.
+The quality workflow provisions these inputs before full pytest. Release qualification must
+collect actual remote platform output, selected versions, assertions, exit codes and
+artifacts. Neither the workflow nor this local harness constitutes remote execution evidence.
 
 Fault injection variables (`PYSX_BROWSER_FORCE_FAILURE`, `PYSX_INJECTION_GRAMMAR`,
 `PYSX_EDITOR_PROBE`, `PYSX_EDITOR_FORCE_TIMEOUT`, `PYSX_EDITOR_STATE_FILE`) are harness

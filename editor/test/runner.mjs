@@ -6,13 +6,22 @@ import { fileURLToPath } from "node:url";
 import { pylanceHost } from "../../tests/pylance_host.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const SUITES = ["diagnostics", "packaging"];
 const args = process.argv.slice(2);
-let phase = "PYSX-3", stage = "ST-3";
-for (let i = 0; i < args.length; i += 2) {
-  if (!["--phase", "--stage"].includes(args[i]) || !args[i + 1]) throw new Error("invalid selectors");
-  if (args[i] === "--phase") phase = args[i + 1]; else stage = args[i + 1];
+if (!args.length && process.env.PYSX_EDITOR_PROBE !== "1") {
+  for (const registered of SUITES) {
+    const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url),
+      "--suite", registered], { cwd: root, stdio: "inherit" });
+    if (result.status !== 0) process.exit(result.status ?? 1);
+  }
+  process.exit(0);
 }
-if (phase !== "PYSX-3" || stage !== "ST-3") throw new Error("empty editor selection");
+let suite = "diagnostics";
+for (let i = 0; i < args.length; i += 2) {
+  if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
+  suite = args[i + 1];
+}
+if (!SUITES.includes(suite)) throw new Error("empty editor selection");
 const host = pylanceHost();
 const selected = spawnSync("uv", ["run", "--project", root, "python", "-c", "import sys; print(sys.executable)"], { cwd: root, encoding: "utf8", timeout: 30000 });
 if (selected.status !== 0 || !selected.stdout.trim()) throw new Error(`interpreter discovery failed: ${selected.stderr}`);
@@ -23,11 +32,15 @@ const locations = process.platform === "darwin" ? ["/Applications/Visual Studio 
 const executable = process.env.PYSX_VSCODE_EXECUTABLE ?? locations.find(existsSync);
 if (process.env.PYSX_VSCODE_EXECUTABLE && !existsSync(executable)) throw new Error("missing VSCode executable");
 const workspace = mkdtempSync(path.join(tmpdir(), "pysx-editor-"));
-const build = spawnSync("uv", ["run", "--project", root, "python", "editor/build_vsix.py"], { cwd: root, encoding: "utf8", timeout: 30000 });
 let child;
 try {
+  const proof = suite === "packaging";
+  const build = spawnSync("uv", ["run", "--project", root, "python", ...(proof ? ["-c",
+    "import json,sys; from pathlib import Path; from tests.prototypes.distribution import prepare_editor_fixture; print(json.dumps(prepare_editor_fixture(Path(sys.argv[1]))))", workspace] : ["editor/build_vsix.py"])],
+    { cwd: root, encoding: "utf8", timeout: proof ? 120000 : 30000 });
   if (build.status !== 0) throw new Error(`fresh VSIX build failed: ${build.stderr}`);
-  const artifact = build.stdout.trim();
+  const fixture = proof ? JSON.parse(build.stdout) : null;
+  const artifact = fixture ? fixture.vsix : build.stdout.trim();
   const unpack = spawnSync("uv", ["run", "--project", root, "python", "-c", "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])", artifact, workspace], { cwd: root, encoding: "utf8", timeout: 30000 });
   if (unpack.status !== 0) throw new Error(`fresh VSIX extraction failed: ${unpack.stderr}`);
   const extension = path.join(workspace, "extension");
@@ -39,7 +52,9 @@ try {
     // actual Electron host and extension workers, including failed startups.
     child = spawn(process.execPath, [fileURLToPath(new URL("launch.mjs", import.meta.url))], {
       cwd: root, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PYSX_EDITOR_INPUT: JSON.stringify({ executable, extension, workspace, root, host, phase, stage }) },
+      env: { ...process.env, PYSX_EDITOR_INPUT: JSON.stringify({ executable, extension, workspace,
+        root: fixture ? fixture.consumer : root, checkout: root, host, suite,
+        python: fixture?.python }) },
     });
     if (process.env.PYSX_EDITOR_STATE_FILE) {
       writeFileSync(process.env.PYSX_EDITOR_STATE_FILE, JSON.stringify({ workspace, pid: child.pid }));
@@ -57,13 +72,14 @@ try {
     });
     if (!output.includes("PYSX EDITOR CASES PASSED: 3")) throw new Error(`missing host assertions: ${output}`);
     console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES")).join("\n"));
-    console.log(`EDITOR VERIFICATION PASSED: ${phase}/${stage} (client ${manifest.version}, Pylance ${host.version}, 3 cases)`);
+    console.log(`EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, 3 cases)`);
   }
 } finally {
   if (child?.pid) {
     if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
     else {
-      try { process.kill(-child.pid, "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+      try { process.kill(-child.pid, "SIGKILL"); }
+      catch (error) { if (!["ESRCH", "EPERM"].includes(error.code)) throw error; }
     }
   }
   rmSync(workspace, { recursive: true, force: true });
