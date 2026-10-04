@@ -80,7 +80,7 @@ def test_nested_server_cleanup(tmp_path: Path, failure: str) -> None:
 
 
 @pytest.mark.acceptance
-@pytest.mark.parametrize("example", ["counter", "todos"])
+@pytest.mark.parametrize("example", ["counter", "todos", "reactive_state"])
 @pytest.mark.parametrize("entry", ["console", "root-script"])
 def test_example_commands(example: str, entry: str) -> None:
     command = (

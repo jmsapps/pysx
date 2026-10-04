@@ -37,6 +37,41 @@ patch: PatchMessage = {"t": "patch", "ops": ops}
     [
         pytest.param(POSITIVE, None, id="inference"),
         pytest.param(
+            'from typing import assert_type\n'
+            'from pysx import structured, list_index, dict_key, Projection, Structured\n'
+            'root = structured({"rows": [1, 2]})\n'
+            'assert_type(root, Structured[dict[str, list[int]]])\n'
+            'rows = dict_key(root, "rows")\n'
+            'assert_type(rows, Projection[list[int]])\n'
+            'item = list_index(rows, 0)\n'
+            'assert_type(item, Projection[int])\nitem.set(3)\n',
+            None,
+            id="structured_state_inference",
+        ),
+        pytest.param(
+            'from pysx import structured, list_index\nitem = list_index(structured([1]), 0)\n'
+            'item.set("bad")\n',
+            "set",
+            id="structured_state_payload",
+        ),
+        pytest.param(
+            'from typing import assert_type\n'
+            'from pysx import Signal, signal, derived\n'
+            'from collections.abc import Callable\n'
+            'n = signal(1)\ns = signal("a")\n'
+            'out = derived(lambda: s() * n())\n'
+            'assert_type(out, Signal[str])\n'
+            'assert_type(out.subscribe(lambda value: value.upper()), Callable[[], None])\n',
+            None,
+            id="identity_settled_inference",
+        ),
+        pytest.param(
+            'from pysx import signal\ncount = signal(1)\n'
+            'count.subscribe(lambda value: value.upper())\n',
+            "upper",
+            id="identity_settled_subscriber_payload",
+        ),
+        pytest.param(
             'from pysx import signal\ncount = signal(1)\ncount.set("wrong")\n',
             "set",
             id="payload",
@@ -80,14 +115,20 @@ def test_public_api_contracts(
         assert result.returncode == 1, output
         assert error in output, output
         assert str(fixture) in output, output
-        line = 3 if error == "set" else 2
+        line = 3 if error in ("set", "upper") else 2
         assert f"{fixture}:{line}:" in output, output
-        assert output.count(" - error:" if checker == "pyright" else ": error:") == 1, output
-        expected = "[arg-type]" if error == "set" else "[typeddict-item]"
+        expected_count = 3 if checker == "pyright" and error == "upper" else 1
+        diagnostic = " - error:" if checker == "pyright" else ": error:"
+        assert output.count(diagnostic) == expected_count, output
+        expected = "[attr-defined]" if error == "upper" else (
+            "[arg-type]" if error == "set" else "[typeddict-item]"
+        )
         if checker == "mypy":
             assert expected in output, output
         else:
-            expected = "reportArgumentType" if error == "set" else "reportAssignmentType"
+            expected = "reportAttributeAccessIssue" if error == "upper" else (
+                "reportArgumentType" if error == "set" else "reportAssignmentType"
+            )
             assert expected in output, output
 
 

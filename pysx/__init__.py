@@ -15,7 +15,7 @@ from .elements import (
     ul,
 )
 from .parser import PysxSyntaxError
-from .reactive import Signal, derived, effect, signal
+from .reactive import Signal, batch, derived, effect, signal
 from .render import (
     Each,
     Fragment,
@@ -25,12 +25,45 @@ from .render import (
     html,
     render,
 )
+from .structured import Projection, Structured, dict_key, list_index, project, structured
 from .styled import StyledTag, global_style, styled, stylesheet
 
 __all__ = [
-    "Each", "Fragment", "PysxSyntaxError", "Rendered", "Signal", "StyledTag",
-    "br", "button", "component", "derived", "div", "each", "effect",
-    "form", "global_style", "h1",
-    "html", "input", "label", "li", "nav", "p", "render", "section", "signal",
-    "span", "strong", "styled", "stylesheet", "ul",
+    "Each",
+    "Fragment",
+    "Projection",
+    "PysxSyntaxError",
+    "Rendered",
+    "Signal",
+    "Structured",
+    "StyledTag",
+    "batch",
+    "br",
+    "button",
+    "component",
+    "derived",
+    "dict_key",
+    "div",
+    "each",
+    "effect",
+    "form",
+    "global_style",
+    "h1",
+    "html",
+    "input",
+    "label",
+    "li",
+    "list_index",
+    "nav",
+    "p",
+    "project",
+    "render",
+    "section",
+    "signal",
+    "span",
+    "strong",
+    "structured",
+    "styled",
+    "stylesheet",
+    "ul",
 ]

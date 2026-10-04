@@ -67,6 +67,7 @@ Two rules the DSL enforces, both consequences of eager interpolation:
 ```bash
 uv run --project . example run counter    # http://127.0.0.1:8750
 uv run --project . example run todos
+uv run --project . example run reactive_state
 uv run --project . example run            # lists the available examples
 ```
 
@@ -78,6 +79,10 @@ PSX_PORT=9100 uv run --project . example run counter
 
 `uv run` needs no activated environment — it prepares one itself. The command is defined in
 `run_example.py` at the repository root.
+
+The `reactive_state` example demonstrates batched diamond computations, selective nested
+updates, snapshot ownership, and positional list projections. Use its buttons to compare
+committed changes with edits to a private snapshot.
 
 To drop the `uv run --project .` prefix, activate the environment first:
 
@@ -157,6 +162,11 @@ docs/          protocol and grammar reference
 
 Adding `examples/<name>.py` with an `app` attribute is enough to make
 `example run <name>` work — the registry globs the directory.
+
+Shared example layouts and controls live in `examples/components/`. Import `Page`,
+`Action`, and `Title`, or use `page(t"""...""")` to append page-specific style overrides.
+Forms, filters, and list rows use the same shared components. The palette, spacing, and
+responsive layout rules are documented in [the example theme](examples/components/THEME.md).
 
 ---
 
