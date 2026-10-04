@@ -1,5 +1,3 @@
-"""Port of ntml/examples/todos.nim."""
-
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 

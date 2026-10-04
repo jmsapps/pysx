@@ -168,14 +168,13 @@ Adding `examples/<name>.py` with an `app` attribute is enough to make
 
 ---
 
-## Relationship to NTML
+## Why server-side rendering
 
-pysx is a port of [NTML](https://github.com/jmsapps/ntml), a client-side reactive SPA renderer
-written in Nim. NTML is today the more capable project, and it is architecturally stronger for
-what SPAs do.
+pysx follows the design of a compiled client-side reactive renderer, adapted to Python.
 
-The single difference that shapes everything here: Nim macros give NTML a compile-time DSL,
-and Python has no macros. Client-side Python would require Pyodide or a Python-to-JavaScript
-compiler, both of which defeat the lightweight premise. **So pysx renders on the server** —
-and every additional concern in this repository, from the wire protocol to per-session signal
-graphs, follows from that one decision.
+The single difference that shapes everything here: a compile-time macro system can build the
+template DSL at build time, and Python has no macros. Client-side Python would require Pyodide
+or a Python-to-JavaScript compiler, both of which defeat the lightweight premise. PEP 750
+t-strings give the static/dynamic split instead. **So pysx renders on the server** — and every
+additional concern in this repository, from the wire protocol to per-session signal graphs,
+follows from that one decision.

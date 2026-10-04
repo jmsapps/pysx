@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_pysx_2_st_1_strict_scope() -> None:
+def test_strict_scope() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     tools = config["tool"]
     assert tools["mypy"]["strict"] is True
@@ -24,7 +24,7 @@ def test_pysx_2_st_1_strict_scope() -> None:
     assert settings["python.defaultInterpreterPath"] == "${workspaceFolder}/.venv/bin/python"
 
 
-def test_pysx_2_st_1_locked_tools() -> None:
+def test_locked_tools() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
     names = {package["name"] for package in lock["package"]}
@@ -46,7 +46,7 @@ def test_pysx_2_st_1_locked_tools() -> None:
         assert not any(char in version for char in "*<>=,~")
 
 
-def test_pysx_2_st_4_ci_configuration() -> None:
+def test_ci_configuration() -> None:
     workflow = (ROOT / ".github/workflows/quality.yml").read_text()
     assert "on:\n  push:\n  pull_request:\n" in workflow
     assert "uv sync --locked --python 3.14.4" in workflow
@@ -57,7 +57,7 @@ def test_pysx_2_st_4_ci_configuration() -> None:
     assert "contents: read" in workflow
 
 
-def test_pysx_2_st_4_maintained_scope() -> None:
+def test_maintained_scope() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]
     for name in ("pysx", "examples", "tests", "editor", "run_example.py"):
         assert name not in config["pyright"]["exclude"]

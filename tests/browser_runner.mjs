@@ -8,15 +8,27 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 // otherwise make Firefox load an incompatible Homebrew NSS library on macOS.
 if (process.platform === "darwin") delete process.env.DYLD_LIBRARY_PATH;
 const args = process.argv.slice(2);
-let phase = "PYSX-3", stage = "ST-1";
+let suite = null;
 for (let i = 0; i < args.length; i += 2) {
-  if (!["--phase", "--stage"].includes(args[i]) || !args[i + 1]) {
-    throw new Error("expected --phase PYSX-N --stage ST-S");
+  if (args[i] !== "--suite" || !args[i + 1]) {
+    throw new Error("expected --suite NAME");
   }
-  if (args[i] === "--phase") phase = args[i + 1];
-  else stage = args[i + 1];
+  suite = args[i + 1];
 }
-if (phase !== "PYSX-3" || stage !== "ST-1") throw new Error("empty browser selection");
+const registry = [
+  { suite: "examples", cases: [
+    [0, "counter", "browser.mjs", "BROWSER ACCEPTANCE PASSED"],
+    [1, "todos", "browser_todos.mjs", "TODOS BROWSER ACCEPTANCE PASSED"],
+  ] },
+  { suite: "cascade", cases: [
+    [0, null, "browser_architecture.mjs", "ARCHITECTURE CASCADE PASSED"],
+  ] },
+  { suite: "adoption", cases: [
+    [0, "adoption", "browser_adoption.mjs", "ARCHITECTURE ADOPTION PASSED"],
+  ] },
+];
+const selections = registry.filter((entry) => !suite || entry.suite === suite);
+if (!selections.length) throw new Error("empty browser selection");
 
 const children = new Set();
 async function stop(child) {
@@ -27,7 +39,7 @@ async function stop(child) {
       spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
     } else {
       try { process.kill(-child.pid, signal); } catch (error) {
-        if (error.code !== "ESRCH") throw error;
+        if (!["ESRCH", "EPERM"].includes(error.code)) throw error;
       }
     }
   };
@@ -89,13 +101,16 @@ try {
     const browser = await playwright[engine].launch(); await browser.close();
   }
   let total = 0;
-  for (const [index, name, script, banner] of [
-    [0, "counter", "browser.mjs", "BROWSER ACCEPTANCE PASSED"],
-    [1, "todos", "browser_todos.mjs", "TODOS BROWSER ACCEPTANCE PASSED"],
-  ]) {
-    const port = await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0);
-    const server = start(interpreter, ["run_example.py", "run", name, "--port", String(port)]);
-    await wait(server, "pysx ready", 15000);
+  let caseTotal = 0;
+  for (const selection of selections) {
+  const cases = selection.cases;
+  let selectedAssertions = 0;
+  for (const [index, name, script, banner] of cases) {
+    const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
+    const server = name ? start(interpreter, name === "adoption" ?
+      ["-m", "tests.prototypes.standalone_host", "--port", String(port)] :
+      ["run_example.py", "run", name, "--port", String(port)]) : null;
+    if (server) await wait(server, "pysx ready", 15000);
     for (const engine of ["chromium", "firefox", "webkit"]) {
       const suite = start(process.execPath, [`tests/${script}`, String(port)], { PYSX_BROWSER_ENGINE: engine });
       const output = await wait(suite, null, 60000);
@@ -104,12 +119,16 @@ try {
       const count = output.split("\n").filter((line) => line.startsWith("  ok  ")).length;
       if (!count) throw new Error("empty assertions");
       total += count;
-      console.log(`${engine}: ${name}, 1 case, ${count} assertions`);
+      selectedAssertions += count;
+      console.log(`${engine}: ${name ?? "cascade"}, 1 case, ${count} assertions`);
     }
-    await stop(server);
+    if (server) await stop(server);
   }
   await cleanup();
-  console.log(`BROWSER VERIFICATION PASSED: ${phase}/${stage} (6 cases, ${total} assertions)`);
+  caseTotal += cases.length * 3;
+  console.log(`BROWSER VERIFICATION PASSED: ${selection.suite} (${cases.length * 3} cases, ${selectedAssertions} assertions)`);
+  }
+  if (selections.length > 1) console.log(`BROWSER VERIFICATION PASSED: all selected (${caseTotal} cases, ${total} assertions)`);
 } catch (error) {
   console.error(error);
   await cleanup();

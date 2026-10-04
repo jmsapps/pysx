@@ -28,3 +28,6 @@ AGENTS.md
 CLAUDE.md
 AUDIT.md
 PLAN.md
+
+# Port-only verification material
+tests/migration/

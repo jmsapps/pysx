@@ -20,6 +20,29 @@ exports.run = async function () {
   assert(pylance, "actual Pylance registered");
   console.log(`VSCode ${vscode.version}; Pylance ${pylance.packageJSON.version}`);
 
+  if (process.env.PYSX_EDITOR_SUITE === "packaging") {
+    // Compare against this checkout's real root; a hardcoded path fragment would
+    // pass vacuously on any other machine or CI runner.
+    const checkout = (process.env.PYSX_EDITOR_CHECKOUT ?? "").replace(/[\\/]+$/, "");
+    assert(checkout && path.isAbsolute(checkout), "checkout root supplied to the host");
+    assert(!fs.existsSync(path.join(extension.extensionPath, "pysx-root.json")), "portable artifact excludes checkout metadata");
+    const source = fs.readFileSync(path.join(extension.extensionPath, "extension.js"), "utf8");
+    assert(!source.includes(checkout) && !source.includes("pysx-root.json"), "no baked checkout path");
+    await vscode.workspace.getConfiguration("pysxProof").update("python", process.env.PYSX_EDITOR_PYTHON, vscode.ConfigurationTarget.Workspace);
+    const result = await vscode.commands.executeCommand("pysxProof.launch");
+    assert(result, "actual child stdio response");
+    assert.equal(result.serverInfo.name, "pysx-architecture-proof");
+    assert.equal(result.proof.transport, "stdio");
+    assert.equal(result.proof.isolated, true);
+    assert.equal(result.proof.shutdown, true);
+    assert(result.proof.executable.startsWith(path.dirname(process.env.PYSX_EDITOR_PYTHON)), "selected installed interpreter used");
+    assert(!result.proof.sys_path.some(
+      (item) => item === checkout || item.startsWith(checkout + path.sep)),
+      "no checkout import path");
+    console.log("PYSX EDITOR CASES PASSED: 3 (portable activation, installed isolated stdio initialize, clean shutdown)");
+    return;
+  }
+
   const filename = path.join(process.env.PYSX_EDITOR_WORKSPACE, "diagnostics.py");
   fs.writeFileSync(filename, 'from pysx import html\nvalue = html(t"""\n    div: "valid"\n""")\n');
   const document = await vscode.workspace.openTextDocument(filename);

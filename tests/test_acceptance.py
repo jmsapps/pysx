@@ -19,22 +19,22 @@ def test_headless_acceptance(script: str, banner: str) -> None:
     run_suite([sys.executable, str(Path(__file__).with_name(script))], banner)
 
 
-def test_pysx_2_st_2_suite_failure() -> None:
+def test_suite_failure() -> None:
     with pytest.raises(AssertionError, match="acceptance exited 3"):
         run_suite([sys.executable, "-c", "raise SystemExit(3)"], "PASSED")
 
 
-def test_pysx_2_st_2_suite_timeout() -> None:
+def test_suite_timeout() -> None:
     with pytest.raises(subprocess.TimeoutExpired):
         run_suite([sys.executable, "-c", "import time; time.sleep(30)"], "PASSED", timeout=0.1)
 
 
-def test_pysx_2_st_2_missing_banner() -> None:
+def test_missing_banner() -> None:
     with pytest.raises(AssertionError, match="missing"):
         run_suite([sys.executable, "-c", "pass"], "PASSED")
 
 
-def test_pysx_2_st_2_ready_server_cleanup() -> None:
+def test_ready_server_cleanup() -> None:
     with ready_server([
         sys.executable, "-c", "import time; print('pysx ready', flush=True); time.sleep(30)",
     ]) as proc:
@@ -42,7 +42,7 @@ def test_pysx_2_st_2_ready_server_cleanup() -> None:
     assert proc.poll() is not None
 
 
-def test_pysx_2_st_2_ready_server_timeout() -> None:
+def test_ready_server_timeout() -> None:
     with pytest.raises(RuntimeError, match="within deadline"), ready_server([
         sys.executable, "-c", "import time; time.sleep(30)",
     ], timeout=0.1):
@@ -50,7 +50,7 @@ def test_pysx_2_st_2_ready_server_timeout() -> None:
 
 
 @pytest.mark.parametrize("failure", ["exit", "timeout"])
-def test_pysx_2_st_2_nested_server_cleanup(tmp_path: Path, failure: str) -> None:
+def test_nested_server_cleanup(tmp_path: Path, failure: str) -> None:
     pid_file = tmp_path / "server.pid"
     # Reproduce the real suite/server hierarchy, including the shared process group.
     source = (
@@ -82,7 +82,7 @@ def test_pysx_2_st_2_nested_server_cleanup(tmp_path: Path, failure: str) -> None
 @pytest.mark.acceptance
 @pytest.mark.parametrize("example", ["counter", "todos"])
 @pytest.mark.parametrize("entry", ["console", "root-script"])
-def test_pysx_2_st_4_example_commands(example: str, entry: str) -> None:
+def test_example_commands(example: str, entry: str) -> None:
     command = (
         [sys.executable, "run_example.py"] if entry == "root-script"
         else [str(Path(sys.executable).with_name("example.exe" if os.name == "nt" else "example"))]

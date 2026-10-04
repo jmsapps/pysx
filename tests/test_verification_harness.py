@@ -20,22 +20,22 @@ def browser_run(environment: dict[str, str], *arguments: str) -> subprocess.Comp
     )
 
 
-def test_pysx_3_st_1_local_dependencies() -> None:
+def test_browser_local_dependencies() -> None:
     for name in ("browser.mjs", "browser_todos.mjs"):
         source = (ROOT / "tests" / name).read_text()
         assert 'from "playwright"' in source
         assert "../../tests/node_modules" not in source
 
 
-@pytest.mark.parametrize("arguments", [("--phase", "PYSX-999"), ("--stage", "ST-999")])
-def test_pysx_3_st_1_empty_selection(arguments: tuple[str, ...]) -> None:
+@pytest.mark.parametrize("arguments", [("--suite", "absent"), ("--suite", "other")])
+def test_browser_empty_selection(arguments: tuple[str, ...]) -> None:
     result = browser_run({}, *arguments)
     assert result.returncode != 0
     assert "empty browser selection" in result.stderr
     assert "VERIFICATION PASSED" not in result.stdout
 
 
-def test_pysx_3_st_1_missing_engines(tmp_path: Path) -> None:
+def test_browser_missing_engines(tmp_path: Path) -> None:
     result = browser_run({"PLAYWRIGHT_BROWSERS_PATH": str(tmp_path)})
     assert result.returncode != 0
     assert "Executable doesn't exist" in result.stderr
@@ -43,7 +43,7 @@ def test_pysx_3_st_1_missing_engines(tmp_path: Path) -> None:
 
 
 @pytest.mark.acceptance
-def test_pysx_3_st_1_occupied_port() -> None:
+def test_browser_occupied_port() -> None:
     with socket.socket() as occupied:
         occupied.bind(("127.0.0.1", 0))
         occupied.listen()
@@ -57,7 +57,7 @@ def test_pysx_3_st_1_occupied_port() -> None:
 
 
 @pytest.mark.acceptance
-def test_pysx_3_st_1_assertion_cleanup() -> None:
+def test_browser_assertion_cleanup() -> None:
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
@@ -79,14 +79,14 @@ def grammar_run(environment: dict[str, str], *arguments: str) -> subprocess.Comp
     )
 
 
-def test_pysx_3_st_2_token_assertions() -> None:
-    result = grammar_run({}, "--phase", "PYSX-3", "--stage", "ST-2")
+def test_grammar_token_assertions() -> None:
+    result = grammar_run({}, "--suite", "injection")
     assert result.returncode == 0, result.stderr
     assert "3 fixtures, 6 assertions" in result.stdout
-    assert "GRAMMAR VERIFICATION PASSED: PYSX-3/ST-2" in result.stdout
+    assert "GRAMMAR VERIFICATION PASSED: injection" in result.stdout
 
 
-def test_pysx_3_st_2_mutated_injection(tmp_path: Path) -> None:
+def test_grammar_mutated_injection(tmp_path: Path) -> None:
     source = (ROOT / "editor/syntaxes/pysx.injection.tmLanguage.json").read_text()
     mutation = tmp_path / "mutation.json"
     mutation.write_text(source.replace("support.class.component.pysx", "support.class.broken"))
@@ -97,7 +97,7 @@ def test_pysx_3_st_2_mutated_injection(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("failure", ["missing", "incompatible"])
-def test_pysx_3_st_2_invalid_host(tmp_path: Path, failure: str) -> None:
+def test_grammar_invalid_host(tmp_path: Path, failure: str) -> None:
     if failure == "incompatible":
         (tmp_path / "package.json").write_text(json.dumps({"publisher": "other", "name": "host"}))
     result = grammar_run({"PYSX_PYLANCE_EXTENSION": str(tmp_path)})
@@ -106,8 +106,8 @@ def test_pysx_3_st_2_invalid_host(tmp_path: Path, failure: str) -> None:
     assert ("ENOENT" if failure == "missing" else "incompatible host") in result.stderr
 
 
-def test_pysx_3_st_2_empty_selection() -> None:
-    result = grammar_run({}, "--phase", "PYSX-999")
+def test_grammar_empty_selection() -> None:
+    result = grammar_run({}, "--suite", "absent")
     assert result.returncode != 0
     assert "empty grammar selection" in result.stderr
 
@@ -122,7 +122,7 @@ def editor_run(environment: dict[str, str], *arguments: str) -> subprocess.Compl
     )
 
 
-def test_pysx_3_st_3_discovery_and_fresh_build() -> None:
+def test_editor_discovery_and_fresh_build() -> None:
     result = editor_run({"PYSX_EDITOR_PROBE": "1"})
     assert result.returncode == 0, result.stderr
     decoded: object = json.loads(result.stdout)
@@ -137,14 +137,14 @@ def test_pysx_3_st_3_discovery_and_fresh_build() -> None:
 
 
 @pytest.mark.parametrize("missing", ["PYSX_PYLANCE_EXTENSION", "PYSX_VSCODE_EXECUTABLE"])
-def test_pysx_3_st_3_missing_input(tmp_path: Path, missing: str) -> None:
+def test_editor_missing_input(tmp_path: Path, missing: str) -> None:
     result = editor_run({missing: str(tmp_path / "absent")})
     assert result.returncode != 0
     assert "VERIFICATION PASSED" not in result.stdout
     assert ("ENOENT" if missing == "PYSX_PYLANCE_EXTENSION" else "missing VSCode") in result.stderr
 
 
-def test_pysx_3_st_3_timeout_cleanup(tmp_path: Path) -> None:
+def test_editor_timeout_cleanup(tmp_path: Path) -> None:
     state_file = tmp_path / "state.json"
     result = editor_run({
         "PYSX_EDITOR_FORCE_TIMEOUT": "1", "PYSX_EDITOR_STATE_FILE": str(state_file),
@@ -168,7 +168,7 @@ def test_pysx_3_st_3_timeout_cleanup(tmp_path: Path) -> None:
         assert pid not in process.stdout
 
 
-def test_pysx_3_st_3_empty_selection() -> None:
-    result = editor_run({}, "--stage", "ST-999")
+def test_editor_empty_selection() -> None:
+    result = editor_run({}, "--suite", "absent")
     assert result.returncode != 0
     assert "empty editor selection" in result.stderr
