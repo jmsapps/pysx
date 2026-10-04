@@ -6,46 +6,49 @@ both the patch-economy and session-isolation properties.
 
 import asyncio
 import json
-import subprocess
 import sys
 import urllib.request
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+from acceptance_support import ready_server, receive
+from websockets.asyncio.client import ClientConnection, connect
 
-from websockets.asyncio.client import connect  # noqa: E402
+if TYPE_CHECKING:
+    from pysx.wire import InitMessage, PatchMessage, ServerMessage
 
 PORT = 8751  # not 8750, so a dev server can stay up while this runs
 BASE = f"http://127.0.0.1:{PORT}"
 
 
-async def _init(ws):
-    message = json.loads(await asyncio.wait_for(ws.recv(), 5))
+async def _init(ws: ClientConnection) -> InitMessage:
+    message = await receive(ws)
     assert message["t"] == "init", message
     return message
 
 
-async def _click(ws, handler_id="h1"):
+async def _click(ws: ClientConnection, handler_id: str = "h1") -> PatchMessage:
     await ws.send(json.dumps({"t": "event", "h": handler_id}))
-    return json.loads(await asyncio.wait_for(ws.recv(), 5))
+    message = await receive(ws)
+    assert message["t"] == "patch"
+    return message
 
 
-async def _drain(ws, seconds=0.4):
+async def _drain(ws: ClientConnection, seconds: float = 0.4) -> list[ServerMessage]:
     """Collect whatever arrives in a window; used to prove nothing arrives."""
-    out = []
+    out: list[ServerMessage] = []
     try:
         while True:
-            out.append(json.loads(await asyncio.wait_for(ws.recv(), seconds)))
-    except (TimeoutError, asyncio.TimeoutError):
+            out.append(await receive(ws, seconds))
+    except TimeoutError:
         return out
 
 
-async def run():
+async def run() -> None:
     async with connect(f"ws://127.0.0.1:{PORT}/ws") as a, \
                connect(f"ws://127.0.0.1:{PORT}/ws") as b:
 
-        init_a, init_b = await _init(a), await _init(b)
+        init_a = await _init(a)
+        await _init(b)
         assert "<button" in init_a["html"], init_a["html"]
         assert 'data-pysx-click="h1"' in init_a["html"], init_a["html"]
         assert '<pysx-slot id="0">0</pysx-slot>' in init_a["html"], init_a["html"]
@@ -74,18 +77,11 @@ async def run():
         print("  ok  a fresh session initialises at 0")
 
 
-def main():
-    proc = subprocess.Popen(
+def main() -> None:
+    with ready_server(
         [sys.executable, "-m", "pysx.server",
          "--app", "examples.counter:app", "--port", str(PORT)],
-        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
-    try:
-        for line in proc.stdout:
-            if "pysx ready" in line:
-                break
-        else:
-            raise SystemExit("server did not start")
+            ):
 
         with urllib.request.urlopen(BASE + "/", timeout=5) as r:
             assert r.status == 200, r.status
@@ -97,15 +93,12 @@ def main():
 
         with urllib.request.urlopen(BASE + "/client.js", timeout=5) as r:
             assert r.status == 200
-            assert r.headers["Content-Type"].startswith("text/javascript"), \
+            assert (r.headers["Content-Type"] or "").startswith("text/javascript"), \
                 dict(r.headers)
         print("  ok  GET /client.js -> 200 text/javascript")
 
         asyncio.run(run())
         print("ACCEPTANCE PASSED")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
 
 
 if __name__ == "__main__":

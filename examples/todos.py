@@ -1,8 +1,11 @@
 """Port of ntml/examples/todos.nim."""
 
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Literal
 
 from pysx import (
+    Fragment,
+    Signal,
     component,
     derived,
     each,
@@ -11,6 +14,9 @@ from pysx import (
     signal,
     styled,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass(frozen=True)
@@ -204,7 +210,7 @@ Clear = styled(
 
 
 @component
-def app():
+def app() -> Fragment:
     todos = signal(
         [
             Todo(1, "Wire up signals", False),
@@ -213,14 +219,14 @@ def app():
         ]
     )
     draft = signal("")
-    mode = signal("all")
+    mode: Signal[Literal["all", "active", "completed"]] = signal("all")
     next_id = signal(4)
 
     remaining = derived(lambda: sum(1 for todo in todos() if not todo.done))
     plural = derived(lambda: remaining() != 1)
     has_completed = derived(lambda: any(todo.done for todo in todos()))
 
-    def visible():
+    def visible() -> list[Todo]:
         items = todos()
         if mode() == "active":
             return [todo for todo in items if not todo.done]
@@ -230,18 +236,18 @@ def app():
 
     filtered = derived(visible)
 
-    def filter_class(name):
+    def filter_class(name: Literal["all", "active", "completed"]) -> Signal[str]:
         return derived(lambda: "is-active" if mode() == name else "")
 
-    def add(_):
+    def add(_e: object) -> None:
         text = draft().strip()
         if not text:
             return
-        todos.set(todos() + [Todo(next_id(), text, False)])
+        todos.set([*todos(), Todo(next_id(), text, False)])
         draft.set("")
         next_id.set(next_id() + 1)
 
-    def toggle(todo_id):
+    def toggle(todo_id: int) -> None:
         todos.set(
             [
                 replace(todo, done=not todo.done) if todo.id == todo_id else todo
@@ -249,19 +255,30 @@ def app():
             ]
         )
 
-    def remove(todo_id):
+    def remove(todo_id: int) -> None:
         todos.set([todo for todo in todos() if todo.id != todo_id])
 
-    def clear_completed(_):
+    def clear_completed(_e: object) -> None:
         todos.set([todo for todo in todos() if not todo.done])
 
-    def TodoItem(todo):
+    def set_mode(name: Literal["all", "active", "completed"]) -> Callable[[object], None]:
+        def handler(_e: object) -> None:
+            mode.set(name)
+        return handler
+
+    def TodoItem(todo: Todo) -> Fragment:
+        def toggle_item(_e: object) -> None:
+            toggle(todo.id)
+
+        def remove_item(_e: object) -> None:
+            remove(todo.id)
+
         return html(t"""
             Item(class={"is-done" if todo.done else ""}, data-done={str(todo.done).lower()}):
                 Row:
-                    Checkbox(type="checkbox", checked={todo.done}, onChange={(lambda v, i=todo.id: toggle(i))})
+                    Checkbox(type="checkbox", checked={todo.done}, onChange={toggle_item})
                     Text(class="todo-text"): {todo.text}
-                Remove(type="button", onClick={(lambda e, i=todo.id: remove(i))}):
+                Remove(type="button", onClick={remove_item}):
                     "Remove"
         """)
 
@@ -281,11 +298,11 @@ def app():
                 " left"
 
             Filters:
-                FilterButton(type="button", class={filter_class("all")}, onClick={(lambda e: mode.set("all"))}):
+                FilterButton(type="button", class={filter_class("all")}, onClick={set_mode("all")}):
                     "All"
-                FilterButton(type="button", class={filter_class("active")}, onClick={(lambda e: mode.set("active"))}):
+                FilterButton(type="button", class={filter_class("active")}, onClick={set_mode("active")}):
                     "Active"
-                FilterButton(type="button", class={filter_class("completed")}, onClick={(lambda e: mode.set("completed"))}):
+                FilterButton(type="button", class={filter_class("completed")}, onClick={set_mode("completed")}):
                     "Completed"
 
             List(id="todo-list"):

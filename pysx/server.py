@@ -12,11 +12,19 @@ import importlib
 import json
 from http import HTTPStatus
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
-from websockets.asyncio.server import serve
+from websockets.asyncio.server import ServerConnection, serve
 
 from .reactive import Effect
-from .render import render
+from .render import Fragment, Watcher, render
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from websockets.http11 import Request, Response
+
+    from .wire import InitMessage, Op, PatchMessage
 
 STATIC = Path(__file__).parent / "static"
 
@@ -24,23 +32,24 @@ STATIC = Path(__file__).parent / "static"
 class Session:
     """Holds one client's signal graph and the ops it has produced."""
 
-    def __init__(self, app_fn) -> None:
-        self.pending: list[dict] = []
+    def __init__(self, app_fn: Callable[[], Fragment]) -> None:
+        self.pending: list[Op] = []
         self._live = False
         self.rendered = render(app_fn)
         # The first run of each effect registers its subscription; watchers were
         # seeded with the rendered value, so it produces no ops.
-        self.effects = [
-            Effect(lambda w=w: self._collect(w)) for w in self.rendered.watchers
-        ]
+        self.effects = [self._watch(w) for w in self.rendered.watchers]
         self._live = True
 
-    def _collect(self, watcher) -> None:
+    def _watch(self, watcher: Watcher) -> Effect:
+        return Effect(lambda: self._collect(watcher))
+
+    def _collect(self, watcher: Watcher) -> None:
         ops = watcher.refresh()
         if self._live and ops:
             self.pending.extend(ops)
 
-    def dispatch(self, handler_id: str, value: object) -> list[dict]:
+    def dispatch(self, handler_id: str, value: object) -> list[Op]:
         fn = self.rendered.handlers.get(handler_id)
         if fn is None:
             return []
@@ -59,7 +68,7 @@ class Session:
             eff.dispose()
 
 
-def _static(connection, name: str, content_type: str):
+def _static(connection: ServerConnection, name: str, content_type: str) -> Response:
     response = connection.respond(HTTPStatus.OK, (STATIC / name).read_text("utf-8"))
     # respond() hardcodes text/plain, and assigning a header appends rather
     # than replaces, so the original must be removed first.
@@ -68,9 +77,12 @@ def _static(connection, name: str, content_type: str):
     return response
 
 
-def _load_app(spec: str):
+def _load_app(spec: str) -> Callable[[], Fragment]:
     module_name, _, attr = spec.partition(":")
-    return getattr(importlib.import_module(module_name), attr or "app")
+    app: object = getattr(importlib.import_module(module_name), attr or "app")
+    if not callable(app):
+        raise TypeError("app must be callable")
+    return cast("Callable[[], Fragment]", app)
 
 
 def main() -> None:
@@ -81,7 +93,7 @@ def main() -> None:
     args = ap.parse_args()
     app_fn = _load_app(args.app)
 
-    async def process_request(connection, request):
+    async def process_request(connection: ServerConnection, request: Request) -> Response | None:
         if request.path in ("/", "/index.html"):
             return _static(connection, "index.html", "text/html; charset=utf-8")
         if request.path == "/client.js":
@@ -90,24 +102,32 @@ def main() -> None:
             return None
         return connection.respond(HTTPStatus.NOT_FOUND, "not found\n")
 
-    async def handler(connection):
+    async def handler(connection: ServerConnection) -> None:
         session = Session(app_fn)
         try:
-            await connection.send(json.dumps({
+            initial: InitMessage = {
                 "t": "init",
                 "html": session.rendered.body,
                 "css": session.rendered.css,
-            }))
+            }
+            await connection.send(json.dumps(initial))
             async for raw in connection:
                 try:
-                    message = json.loads(raw)
+                    decoded: object = json.loads(raw)
                 except (TypeError, ValueError):
                     continue
+                if not isinstance(decoded, dict):
+                    continue
+                message = cast("dict[str, object]", decoded)
                 if message.get("t") != "event":
                     continue
-                ops = session.dispatch(message.get("h", ""), message.get("v"))
+                handler_id = message.get("h", "")
+                if not isinstance(handler_id, str):
+                    continue
+                ops = session.dispatch(handler_id, message.get("v"))
                 if ops:
-                    await connection.send(json.dumps({"t": "patch", "ops": ops}))
+                    patch: PatchMessage = {"t": "patch", "ops": ops}
+                    await connection.send(json.dumps(patch))
         finally:
             session.dispose()
 

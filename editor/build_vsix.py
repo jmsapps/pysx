@@ -5,17 +5,27 @@ needed and the engines.vscode pin cannot fail the install.
 """
 
 import json
-import sys
 import zipfile
 from pathlib import Path
+from typing import cast
 
 HERE = Path(__file__).parent
-PKG = json.loads((HERE / "package.json").read_text())
+raw_package: object = json.loads((HERE / "package.json").read_text())
+if not isinstance(raw_package, dict):
+    raise TypeError("extension manifest must be an object")
+PKG: dict[str, str] = {}
+package = cast("dict[str, object]", raw_package)
+for key in ("name", "version", "publisher", "displayName", "description"):
+    value = package.get(key)
+    if not isinstance(value, str):
+        raise TypeError(f"extension manifest {key!r} must be a string")
+    PKG[key] = value
 
 MANIFEST = f"""<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
   <Metadata>
-    <Identity Language="en-US" Id="{PKG['name']}" Version="{PKG['version']}" Publisher="{PKG['publisher']}" />
+    <Identity Language="en-US" Id="{PKG['name']}" Version="{PKG['version']}"
+      Publisher="{PKG['publisher']}" />
     <DisplayName>{PKG['displayName']}</DisplayName>
     <Description xml:space="preserve">{PKG['description']}</Description>
   </Metadata>
@@ -24,7 +34,8 @@ MANIFEST = f"""<?xml version="1.0" encoding="utf-8"?>
   </Installation>
   <Dependencies />
   <Assets>
-    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" />
+    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json"
+      Addressable="true" />
   </Assets>
 </PackageManifest>
 """
@@ -63,4 +74,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

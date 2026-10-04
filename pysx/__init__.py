@@ -1,11 +1,29 @@
 from .elements import (
-    br, button, div, form, h1, input, label, li, nav, p, section, span,
-    strong, ul,
+    br,
+    button,
+    div,
+    form,
+    h1,
+    input,  # noqa: A004 - public HTML element
+    label,
+    li,
+    nav,
+    p,
+    section,
+    span,
+    strong,
+    ul,
 )
 from .parser import PysxSyntaxError
 from .reactive import Signal, derived, effect, signal
 from .render import (
-    Each, Fragment, Rendered, component, each, html, render,
+    Each,
+    Fragment,
+    Rendered,
+    component,
+    each,
+    html,
+    render,
 )
 from .styled import StyledTag, global_style, styled, stylesheet
 

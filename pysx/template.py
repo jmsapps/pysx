@@ -31,7 +31,7 @@ def _common_margin(lines: list[str]) -> str:
             margin = indent
         else:
             cut = 0
-            for a, b in zip(margin, indent):
+            for a, b in zip(margin, indent, strict=False):
                 if a != b:
                     break
                 cut += 1

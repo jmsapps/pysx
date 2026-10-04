@@ -42,20 +42,28 @@ class Text:
 @dataclass
 class Element:
     tag: str
-    attrs: list[tuple[str, str | Hole]] = field(default_factory=list)
-    children: list["Element | str | Hole"] = field(default_factory=list)
+    attrs: list[tuple[str, str | Hole]] = field(default_factory=list[tuple[str, str | Hole]])
+    children: list[Node] = field(default_factory=lambda: list[Node]())
 
 
 @dataclass
 class Conditional:
     hole: Hole
-    then: list = field(default_factory=list)
-    otherwise: list = field(default_factory=list)
+    then: list[Node] = field(default_factory=lambda: list[Node]())
+    otherwise: list[Node] = field(default_factory=lambda: list[Node]())
+
+
+type Node = Element | Conditional | str | Hole
+type HoleTable = dict[int, tuple[int, HoleKind, str | None]]
+
+
+class _Else(Enum):
+    BRANCH = "else"
 
 
 @dataclass
 class Skeleton:
-    root: list["Element | str | Hole"]
+    root: list[Node]
     holes: list[tuple[int, HoleKind, str | None]]
 
 
@@ -141,7 +149,8 @@ class _Scan:
 def _take_name(sc: _Scan) -> str:
     out: list[str] = []
     while (c := sc.peek()) is not None and isinstance(c, str) and (c.isalnum() or c in "_-"):
-        out.append(sc.advance())
+        sc.advance()
+        out.append(c)
     return "".join(out)
 
 
@@ -157,10 +166,11 @@ def _take_string(sc: _Scan) -> str:
         if c == '"':
             sc.advance()
             return "".join(out)
-        out.append(sc.advance())
+        sc.advance()
+        out.append(c)
 
 
-def _parse_attrs(sc: _Scan, holes: dict) -> list[tuple[str, str | Hole]]:
+def _parse_attrs(sc: _Scan, holes: HoleTable) -> list[tuple[str, str | Hole]]:
     attrs: list[tuple[str, str | Hole]] = []
     while True:
         sc.skip_ws()
@@ -192,7 +202,7 @@ def _parse_attrs(sc: _Scan, holes: dict) -> list[tuple[str, str | Hole]]:
             sc.advance()
 
 
-def _parse_content(sc: _Scan, holes: dict) -> list["str | Hole"]:
+def _parse_content(sc: _Scan, holes: HoleTable) -> list[str | Hole]:
     items: list[str | Hole] = []
     while True:
         sc.skip_ws()
@@ -213,7 +223,7 @@ def _parse_content(sc: _Scan, holes: dict) -> list["str | Hole"]:
         raise PysxSyntaxError(f"unexpected {c!r} in content")
 
 
-def _parse_line(sc: _Scan, holes: dict) -> "Element | Conditional | str | list":
+def _parse_line(sc: _Scan, holes: HoleTable) -> Element | Conditional | _Else | list[str | Hole]:
     sc.skip_ws()
     c = sc.peek()
     if isinstance(c, str) and (c.isalpha() or c == "_"):
@@ -237,7 +247,7 @@ def _parse_line(sc: _Scan, holes: dict) -> "Element | Conditional | str | list":
             if sc.peek() != ":":
                 raise PysxSyntaxError("expected ':' after else")
             sc.advance()
-            return "else"
+            return _Else.BRANCH
 
         sc.skip_ws()
         attrs: list[tuple[str, str | Hole]] = []
@@ -267,9 +277,9 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
             "has no recoverable indent"
         )
 
-    root: list = []
-    holes: dict = {}
-    stack: list[tuple[int, list]] = [(-1, root)]
+    root: list[Node] = []
+    holes: HoleTable = {}
+    stack: list[tuple[int, list[Node]]] = [(-1, root)]
     # `else:` binds to the most recent `if` opened at the same indent.
     open_conditionals: dict[int, Conditional] = {}
 
@@ -289,7 +299,7 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
             parent.append(node)
             open_conditionals[indent] = node
             stack.append((indent, node.then))
-        elif node == "else":
+        elif isinstance(node, _Else):
             cond = open_conditionals.get(indent)
             if cond is None:
                 raise PysxSyntaxError("'else' without a matching 'if' at the same indent")

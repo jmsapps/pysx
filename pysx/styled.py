@@ -9,9 +9,12 @@ from __future__ import annotations
 import hashlib
 import textwrap
 from dataclasses import dataclass
-from string.templatelib import Template
+from typing import TYPE_CHECKING
 
 from .template import dedent_fragments
+
+if TYPE_CHECKING:
+    from string.templatelib import Template
 
 _RULES: dict[str, str] = {}
 
@@ -42,7 +45,7 @@ def global_style(css: str) -> None:
     to be doubled, since `{` opens an interpolation. `styled()` avoids the
     problem by accepting flat property lists with no braces at all.
     """
-    if not isinstance(css, str):
+    if not isinstance(css, str):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise TypeError("global_style() takes a plain string, not a t-string")
     _GLOBAL.append(textwrap.dedent(css).strip())
 

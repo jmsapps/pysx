@@ -17,8 +17,12 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 from .parser import PysxSyntaxError, parse
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 TAG_RE = re.compile(r"^\s*([A-Z][A-Za-z0-9_]*)")
 BARE_CALL_RE = re.compile(r"^\s*(\w+)\s*\(\s*\)\s*$")
@@ -33,7 +37,18 @@ def _utf16_from_bytes(line: str, byte_col: int) -> int:
     return _utf16(line, len(prefix))
 
 
-def _d(line0, start, end, message, severity="error"):
+class Diagnostic(TypedDict):
+    line: int
+    startChar: int
+    endChar: int
+    message: str
+    severity: Literal["error", "warning"]
+
+
+def _d(
+    line0: int, start: int, end: int, message: str,
+    severity: Literal["error", "warning"] = "error",
+) -> Diagnostic:
     return {
         "line": line0,
         "startChar": start,
@@ -66,7 +81,7 @@ def _signal_names(tree: ast.AST) -> set[str]:
     return out
 
 
-def _templates(tree: ast.AST):
+def _templates(tree: ast.AST) -> Iterator[ast.TemplateStr | ast.JoinedStr]:
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
@@ -82,7 +97,7 @@ def _templates(tree: ast.AST):
                 yield arg
 
 
-def diagnostics(path: Path) -> list[dict]:
+def diagnostics(path: Path) -> list[Diagnostic]:
     source = path.read_text("utf-8")
     lines = source.split("\n")
 
@@ -103,7 +118,7 @@ def diagnostics(path: Path) -> list[dict]:
 
     bound = _bound_names(tree)
     signals = _signal_names(tree)
-    out: list[dict] = []
+    out: list[Diagnostic] = []
 
     for node in _templates(tree):
         if isinstance(node, ast.JoinedStr):
@@ -116,7 +131,7 @@ def diagnostics(path: Path) -> list[dict]:
             continue
 
         fragments = tuple(
-            v.value for v in node.values if isinstance(v, ast.Constant)
+            v.value for v in node.values if isinstance(v, ast.Constant) and isinstance(v.value, str)
         )
         try:
             parse(fragments)
@@ -151,7 +166,7 @@ def diagnostics(path: Path) -> list[dict]:
                 row = value.lineno - 1
                 line = lines[row]
                 start = _utf16_from_bytes(line, value.col_offset)
-                end = _utf16_from_bytes(line, value.end_col_offset)
+                end = _utf16_from_bytes(line, value.end_col_offset or value.col_offset)
                 out.append(_d(
                     row, start, end,
                     f"{{{value.str}}} is evaluated once and frozen; pass the signal "

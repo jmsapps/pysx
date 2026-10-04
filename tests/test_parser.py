@@ -1,13 +1,22 @@
-import sys
 
-sys.path.insert(0, __file__.rsplit("/tests/", 1)[0])
+from typing import TYPE_CHECKING
 
-from pysx.parser import (  # noqa: E402
-    Element, Hole, HoleKind, PysxSyntaxError, parse,
+import pytest
+
+from pysx.parser import (
+    Element,
+    Hole,
+    HoleKind,
+    Node,
+    PysxSyntaxError,
+    parse,
 )
 
+if TYPE_CHECKING:
+    from string.templatelib import Template
 
-def counter(count, handler):
+
+def counter(count: object, handler: object) -> Template:
     return t"""
         Page(id="container"):
             "Count: "; {count}
@@ -16,7 +25,7 @@ def counter(count, handler):
     """
 
 
-def test_hole_table_matches_contract():
+def test_hole_table_matches_contract() -> None:
     sk = parse(counter("C", "H").strings)
     assert sk.holes == [
         (0, HoleKind.TEXT, None),
@@ -24,11 +33,11 @@ def test_hole_table_matches_contract():
     ], sk.holes
 
 
-def test_no_onclick_remnant_in_statics():
+def test_no_onclick_remnant_in_statics() -> None:
     sk = parse(counter("C", "H").strings)
-    texts = []
+    texts: list[str] = []
 
-    def walk(nodes):
+    def walk(nodes: list[Node]) -> None:
         for n in nodes:
             if isinstance(n, Element):
                 texts.extend(v for _, v in n.attrs if isinstance(v, str))
@@ -42,40 +51,43 @@ def test_no_onclick_remnant_in_statics():
     assert "=" not in joined, joined
 
 
-def test_tree_shape():
+def test_tree_shape() -> None:
     sk = parse(counter("C", "H").strings)
     assert len(sk.root) == 1
     page = sk.root[0]
+    assert isinstance(page, Element)
     assert page.tag == "Page"
     assert page.attrs == [("id", "container")]
     assert page.children[0] == "Count: "
     assert page.children[1] == Hole(0)
     action = page.children[2]
+    assert isinstance(action, Element)
     assert action.tag == "Action"
     assert action.attrs == [("type", "button"), ("onClick", Hole(1))]
     assert action.children == ["Increment"]
 
 
-def test_inline_content_after_colon():
+def test_inline_content_after_colon() -> None:
     sk = parse(t"""
         Page:
             Action: "Go"
     """.strings)
-    assert sk.root[0].children[0].children == ["Go"]
+    page = sk.root[0]
+    assert isinstance(page, Element)
+    action = page.children[0]
+    assert isinstance(action, Element)
+    assert action.children == ["Go"]
 
 
-def test_rejects_quote_line_content():
-    try:
+def test_rejects_quote_line_content() -> None:
+    with pytest.raises(PysxSyntaxError, match="must begin with a newline"):
         parse(t"""Page:
             "x"
         """.strings)
-    except PysxSyntaxError as e:
-        assert "must begin with a newline" in str(e), e
-    else:
-        raise AssertionError("expected PysxSyntaxError")
 
 
-def test_attribute_hole_kinds():
+
+def test_attribute_hole_kinds() -> None:
     sk = parse(t"""
         Page(id={1}, onClick={2}, bindValue={3}):
             "x"
@@ -87,7 +99,7 @@ def test_attribute_hole_kinds():
     ], sk.holes
 
 
-def test_conditional_with_else():
+def test_conditional_with_else() -> None:
     from pysx.parser import Conditional
 
     sk = parse(t"""
@@ -98,13 +110,17 @@ def test_conditional_with_else():
                 Action: "no"
     """.strings)
     assert sk.holes == [(0, HoleKind.COND, None)], sk.holes
-    cond = sk.root[0].children[0]
-    assert isinstance(cond, Conditional), sk.root[0].children
+    page = sk.root[0]
+    assert isinstance(page, Element)
+    cond = page.children[0]
+    assert isinstance(cond, Conditional), page.children
+    assert isinstance(cond.then[0], Element)
     assert cond.then[0].children == ["yes"]
+    assert isinstance(cond.otherwise[0], Element)
     assert cond.otherwise[0].children == ["no"]
 
 
-def test_conditional_without_else():
+def test_conditional_without_else() -> None:
     from pysx.parser import Conditional
 
     sk = parse(t"""
@@ -114,74 +130,58 @@ def test_conditional_without_else():
             Action: "always"
     """.strings)
     page = sk.root[0]
+    assert isinstance(page, Element)
     cond = page.children[0]
     assert isinstance(cond, Conditional)
     assert cond.otherwise == []
+    assert isinstance(page.children[1], Element)
     assert page.children[1].children == ["always"], page.children
 
 
-def test_else_without_if_is_rejected():
-    try:
+def test_else_without_if_is_rejected() -> None:
+    with pytest.raises(PysxSyntaxError, match="without a matching"):
         parse(t"""
             Page:
                 else:
                     Action: "x"
         """.strings)
-    except PysxSyntaxError as e:
-        assert "without a matching" in str(e), e
-    else:
-        raise AssertionError("expected PysxSyntaxError")
 
 
-def test_rejects_multiline_attrs():
-    try:
+
+def test_rejects_multiline_attrs() -> None:
+    with pytest.raises(PysxSyntaxError, match="single-line"):
         parse(t"""
             Page(
                 id="x"):
                 "y"
         """.strings)
-    except PysxSyntaxError as e:
-        assert "single-line" in str(e), e
-    else:
-        raise AssertionError("expected PysxSyntaxError")
 
 
-def test_hole_in_attribute_name_position_is_rejected():
-    try:
+
+def test_hole_in_attribute_name_position_is_rejected() -> None:
+    with pytest.raises(PysxSyntaxError, match="attribute name"):
         parse(t"""
             Page({1}="x"):
                 "y"
         """.strings)
-    except PysxSyntaxError as e:
-        assert "attribute name" in str(e), e
-    else:
-        raise AssertionError("expected PysxSyntaxError")
 
 
-def test_hole_in_tag_position_is_rejected():
-    try:
+
+def test_hole_in_tag_position_is_rejected() -> None:
+    with pytest.raises(PysxSyntaxError, match="unexpected"):
         parse(t"""
             {1}:
                 "y"
         """.strings)
-    except PysxSyntaxError as e:
-        assert "unexpected" in str(e), e
-    else:
-        raise AssertionError("expected PysxSyntaxError")
 
 
-def test_text_containing_braces_and_nul_is_not_a_hole():
+
+def test_text_containing_braces_and_nul_is_not_a_hole() -> None:
     sk = parse(t"""
         Page:
             "a{{b}}c\x00\x00d"; {1}
     """.strings)
-    assert sk.root[0].children[0] == "a{b}c\x00\x00d", sk.root[0].children[0]
+    page = sk.root[0]
+    assert isinstance(page, Element)
+    assert page.children[0] == "a{b}c\x00\x00d", page.children[0]
     assert sk.holes == [(0, HoleKind.TEXT, None)]
-
-
-if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    print(f"{len(fns)} passed")

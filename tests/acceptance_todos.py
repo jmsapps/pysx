@@ -3,62 +3,81 @@
 import asyncio
 import json
 import re
-import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING, Literal, overload
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+from acceptance_support import ready_server, receive
+from websockets.asyncio.client import ClientConnection, connect
 
-from websockets.asyncio.client import connect  # noqa: E402
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from pysx.wire import AttrOp, ListOp, Op, PatchMessage, ServerMessage
 
 PORT = 8753
 
 
-async def recv(ws, seconds=5):
-    return json.loads(await asyncio.wait_for(ws.recv(), seconds))
+async def recv(ws: ClientConnection, seconds: float = 5) -> ServerMessage:
+    return await receive(ws, seconds)
 
 
-async def send(ws, handler, value=None):
+async def send(ws: ClientConnection, handler: str, value: str | bool | None = None) -> PatchMessage:
     await emit(ws, handler, value)
-    return await recv(ws)
+    message = await recv(ws)
+    assert message["t"] == "patch"
+    return message
 
 
-async def emit(ws, handler, value=None):
-    msg = {"t": "event", "h": handler}
+async def emit(ws: ClientConnection, handler: str, value: str | bool | None = None) -> None:
+    msg: dict[str, str | bool] = {"t": "event", "h": handler}
     if value is not None:
         msg["v"] = value
     await ws.send(json.dumps(msg))
 
 
-async def silent(ws, handler, value=None, seconds=0.35):
+async def silent(
+    ws: ClientConnection, handler: str, value: str | bool | None = None, seconds: float = 0.35,
+) -> None:
     """Send an event and assert the server sends nothing back."""
     await emit(ws, handler, value)
     try:
         frame = await asyncio.wait_for(ws.recv(), seconds)
-    except (TimeoutError, asyncio.TimeoutError):
+    except TimeoutError:
         return
-    raise AssertionError(f"expected no frame, got {frame}")
+    raise AssertionError(f"expected no frame, got {frame!r}")
 
 
-async def idle(ws, seconds=0.35):
-    out = []
+async def idle(ws: ClientConnection, seconds: float = 0.35) -> list[ServerMessage]:
+    out: list[ServerMessage] = []
     try:
         while True:
-            out.append(json.loads(await asyncio.wait_for(ws.recv(), seconds)))
-    except (TimeoutError, asyncio.TimeoutError):
+            out.append(await recv(ws, seconds))
+    except TimeoutError:
         return out
 
 
-def ops_of(patch, kind):
+@overload
+def ops_of(patch: PatchMessage, kind: Literal["list"]) -> list[ListOp]: ...
+
+
+@overload
+def ops_of(patch: PatchMessage, kind: Literal["attr"]) -> list[AttrOp]: ...
+
+
+@overload
+def ops_of(patch: PatchMessage, kind: str) -> Sequence[Op]: ...
+
+
+def ops_of(patch: PatchMessage, kind: str) -> Sequence[Op]:
     return [o for o in patch["ops"] if o["op"] == kind]
 
 
-async def run():
+async def run() -> None:
     async with connect(f"ws://127.0.0.1:{PORT}/ws") as a, \
                connect(f"ws://127.0.0.1:{PORT}/ws") as b:
         init = await recv(a)
         await recv(b)
+        assert init["t"] == "init"
         html = init["html"]
         assert html.count('data-pysx-key="') == 3, html
         assert '<pysx-slot id="2">2</pysx-slot>' in html, html
@@ -97,7 +116,8 @@ async def run():
         assert list(lists[0]["html"]) == ["4"], lists[0]["html"]
         assert "Write the port" in lists[0]["html"]["4"]
         cleared = [o for o in ops_of(patch, "attr") if o["name"] == "value"]
-        assert cleared and cleared[0]["v"] == "", patch
+        assert cleared, patch
+        assert cleared[0]["v"] == "", patch
         print("  ok  add: only the new item ships html, input cleared via attr op")
 
         # filters
@@ -111,9 +131,9 @@ async def run():
         assert len(attrs) == 2, attrs
         # Every class op must carry the scoped hash; sending only the modifier
         # would blank the attribute and strip the element's styling.
-        assert all(o["v"].startswith("pysx-") for o in attrs), attrs
-        assert any(o["v"].endswith(" is-active") for o in attrs), attrs
-        assert any("is-active" not in o["v"] for o in attrs), attrs
+        assert all((o["v"] or "").startswith("pysx-") for o in attrs), attrs
+        assert any((o["v"] or "").endswith(" is-active") for o in attrs), attrs
+        assert any("is-active" not in (o["v"] or "") for o in attrs), attrs
         print("  ok  filter narrows the list, moves is-active, keeps scoped classes")
 
         # Clear completed removes 1 and 3, but the Active filter was already
@@ -131,27 +151,18 @@ async def run():
 
     async with connect(f"ws://127.0.0.1:{PORT}/ws") as c:
         init = await recv(c)
+        assert init["t"] == "init"
         assert init["html"].count('data-pysx-key="') == 3, "fresh session not isolated"
         print("  ok  a fresh session starts from the original 3 todos")
 
 
-def main():
-    proc = subprocess.Popen(
+def main() -> None:
+    with ready_server(
         [sys.executable, "-m", "pysx.server",
          "--app", "examples.todos:app", "--port", str(PORT)],
-        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
-    try:
-        for line in proc.stdout:
-            if "pysx ready" in line:
-                break
-        else:
-            raise SystemExit("server did not start")
+            ):
         asyncio.run(run())
         print("TODOS ACCEPTANCE PASSED")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
 
 
 if __name__ == "__main__":

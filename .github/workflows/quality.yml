@@ -1,0 +1,27 @@
+name: Python quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.8'
+      - run: uv python install 3.14.4
+      - run: uv sync --locked --python 3.14.4
+      - run: uv run --project . ruff check .
+      - run: uv run --project . mypy
+      - run: uv run --project . pyright
+      - run: uv run --project . pytest -q
