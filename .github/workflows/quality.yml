@@ -10,7 +10,9 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    env:
+      PYSX_EXTENSIONS_DIR: ${{ github.workspace }}/.vscode-test/extensions
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,7 +23,14 @@ jobs:
           version: '0.11.8'
       - run: uv python install 3.14.4
       - run: uv sync --locked --python 3.14.4
+      - run: npm --prefix tests ci
+      - run: npm --prefix editor ci
+      - run: npm --prefix tests exec -- playwright install --with-deps chromium firefox webkit
+      - run: npm --prefix editor run setup:host
       - run: uv run --project . ruff check .
       - run: uv run --project . mypy
       - run: uv run --project . pyright
       - run: uv run --project . pytest -q
+      - run: npm --prefix tests run browser
+      - run: npm --prefix tests run grammar
+      - run: xvfb-run -a npm --prefix editor test

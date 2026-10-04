@@ -94,7 +94,8 @@ starts without it.
 
 ## Tests
 
-Install the locked development tools, then run units and headless acceptance with pytest:
+Install the locked development tools and the Node/browser/Pylance inputs described in
+[verification setup](tests/VERIFICATION.md), then run the full Python suite and quality checks:
 
 ```bash
 uv sync --locked
@@ -104,12 +105,22 @@ uv run --project . mypy
 uv run --project . pyright
 ```
 
-`pytest -q -m 'not acceptance'` runs tests without starting real socket servers.
+`uv run --project . pytest -q -m 'not acceptance'` excludes the socket acceptance cases;
+the harness checks still require the documented Node/browser/Pylance inputs.
 Headless acceptance requires permitted loopback access. Its direct entry points remain:
 
 ```bash
 uv run --project . python tests/acceptance.py
 uv run --project . python tests/acceptance_todos.py
+```
+
+Run DOM checks in Chromium, Firefox and WebKit, actual Pylance grammar assertions, and
+fresh VSCode-host tests with:
+
+```bash
+npm --prefix tests run browser
+npm --prefix tests run grammar
+npm --prefix editor test
 ```
 
 ---

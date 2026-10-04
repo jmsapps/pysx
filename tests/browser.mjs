@@ -1,7 +1,6 @@
 // Browser half of the acceptance test (PLAN.md §1).
-// Reuses the Playwright install from the repo's Nim test suite.
-import playwright from "../../tests/node_modules/playwright/index.js";
-const { chromium } = playwright;
+import playwright from "playwright";
+const engine = playwright[process.env.PYSX_BROWSER_ENGINE ?? "chromium"];
 
 const PORT = process.argv[2] ?? "8752";
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -9,7 +8,7 @@ const URL = `http://127.0.0.1:${PORT}/`;
 const ok = (label) => console.log(`  ok  ${label}`);
 const assert = (cond, msg) => { if (!cond) { throw new Error(msg); } };
 
-const browser = await chromium.launch();
+const browser = await engine.launch();
 const context = await browser.newContext();
 
 try {
