@@ -46,8 +46,14 @@ try {
       stack = current.ruleStack;
     }
     tokens += result.length;
+    // Anchoring on the sentinel line would leave the t-string terminator and the
+    // blank line after it unchecked, which is exactly where leakage surfaces.
     const sentinel = result.find((token) => token.text.includes("AFTER_SENTINEL"));
-    check(sentinel && !result.some((token) => token.line >= sentinel.line && token.scopes.some((scope) => scope.includes("pysx"))), `${fixture}: no scope leakage`);
+    const terminator = result.findIndex((token, index) => index > 0 &&
+      token.text === '"""' && result[index - 1].scopes.some((scope) => scope.includes("pysx")));
+    check(sentinel && terminator > 0 && sentinel.line > result[terminator].line &&
+      !result.slice(terminator).some((token) => token.scopes.some((scope) => scope.includes("pysx"))),
+      `${fixture}: no scope leakage`);
     if (fixture === "counter") {
       for (const [value, scope] of [["Page", "support.class.component.pysx"], ["onClick", "entity.other.attribute-name.pysx"]]) {
         check(result.some((token) => token.text === value && token.scopes.includes(scope)), `${value}: ${scope}`);

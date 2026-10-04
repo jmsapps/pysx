@@ -22,6 +22,12 @@ function activate(context) {
   const output = vscode.window.createOutputChannel("pysx");
   context.subscriptions.push(collection, output);
 
+  // Checks read the file from disk and race each other: an open-triggered run
+  // can outlive the save-triggered run that follows it and publish pre-edit
+  // results. Only the newest check per document may touch the collection.
+  let sequence = 0;
+  const pending = new Map();
+
   const run = (doc) => {
     if (!doc || doc.languageId !== "python" || doc.uri.scheme !== "file") return;
     const python = pythonPath();
@@ -29,8 +35,12 @@ function activate(context) {
       output.appendLine("no pysx .venv found; diagnostics disabled");
       return;
     }
+    const key = doc.uri.toString();
+    const token = ++sequence;
+    pending.set(key, token);
     execFile(python, ["-m", "pysx.check", doc.uri.fsPath], (err, stdout, stderr) => {
       if (stderr) output.appendLine(stderr.trim());
+      if (pending.get(key) !== token) return;
       if (!stdout) { collection.delete(doc.uri); return; }
       let items;
       try {
@@ -56,7 +66,10 @@ function activate(context) {
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument(run),
     vscode.workspace.onDidSaveTextDocument(run),
-    vscode.workspace.onDidCloseTextDocument((doc) => collection.delete(doc.uri)),
+    vscode.workspace.onDidCloseTextDocument((doc) => {
+      pending.delete(doc.uri.toString());
+      collection.delete(doc.uri);
+    }),
   );
   vscode.workspace.textDocuments.forEach(run);
 }

@@ -29,9 +29,12 @@ exports.run = async function () {
   edit.replace(document.uri, new vscode.Range(2, 4, 2, 7), "Pge");
   assert(await vscode.workspace.applyEdit(edit));
   assert(await document.save(), "saved-file trigger");
-  await until(() => vscode.languages.getDiagnostics(document.uri).some((item) =>
-    item.source === "pysx" && item.message.includes("unknown component 'Pge'")), "saved-file checker diagnostic");
-  const diagnostic = vscode.languages.getDiagnostics(document.uri).find((item) => item.source === "pysx");
+  let diagnostic;
+  await until(() => {
+    diagnostic = vscode.languages.getDiagnostics(document.uri).find((item) =>
+      item.source === "pysx" && item.message.includes("unknown component 'Pge'"));
+    return Boolean(diagnostic);
+  }, "saved-file checker diagnostic");
   assert.equal(diagnostic.range.start.line, 2);
   assert.equal(diagnostic.range.start.character, 4);
   // Closing a tab may retain its text model in VSCode's cache. Changing the

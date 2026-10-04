@@ -51,7 +51,9 @@ try {
       child.stdout.on("data", (data) => { output = (output + data).slice(-30000); });
       child.stderr.on("data", (data) => { output = (output + data).slice(-30000); });
       child.once("error", (error) => { clearTimeout(timer); reject(error); });
-      child.once("exit", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`editor host exited ${code}: ${output}`)); });
+      // "close" rather than "exit": the host's final assertion line is still
+      // buffered when "exit" fires.
+      child.once("close", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`editor host exited ${code}: ${output}`)); });
     });
     if (!output.includes("PYSX EDITOR CASES PASSED: 3")) throw new Error(`missing host assertions: ${output}`);
     console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES")).join("\n"));

@@ -116,7 +116,9 @@ def editor_run(environment: dict[str, str], *arguments: str) -> subprocess.Compl
     return subprocess.run(
         ["node", "editor/test/runner.mjs", *arguments], cwd=ROOT,
         env={**os.environ, **environment}, capture_output=True, text=True,
-        timeout=45, check=False,
+        # Above the runner's own budget: three sequential 30s `uv run` steps
+        # precede any deadline it enforces itself.
+        timeout=180, check=False,
     )
 
 

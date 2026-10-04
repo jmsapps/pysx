@@ -54,17 +54,19 @@ async function wait(child, ready = null, timeout = 30000) {
     const timer = setTimeout(() => finish(new Error(`child timeout: ${output}`)), timeout);
     function finish(error) {
       clearTimeout(timer);
-      child.off("error", failed); child.off("exit", exited);
+      child.off("error", failed); child.off("close", closed);
       child.stdout.off("data", read); child.stderr.off("data", read);
       if (error) reject(error); else resolve();
     }
     const failed = (error) => finish(error);
-    const exited = (code) => finish(code === 0 && !ready ? null : new Error(`child exited ${code}: ${output}`));
+    // "close" rather than "exit": the child's final stdout line is still
+    // buffered when "exit" fires, and finish() detaches the data handlers.
+    const closed = (code) => finish(code === 0 && !ready ? null : new Error(`child exited ${code}: ${output}`));
     const read = (data) => {
       output = (output + data.toString()).slice(-20000);
       if (ready && output.includes(ready)) finish();
     };
-    child.on("error", failed); child.on("exit", exited);
+    child.on("error", failed); child.on("close", closed);
     child.stdout.on("data", read); child.stderr.on("data", read);
   });
   return output;
