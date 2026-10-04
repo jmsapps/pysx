@@ -15,12 +15,15 @@ import html as _htmlmod
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from string.templatelib import Template
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 from .elements import VOID
-from .parser import Conditional, Element, Hole, HoleKind, Skeleton, parse
-from .reactive import Signal
+from .parser import Conditional, Element, Hole, HoleKind, Node, Skeleton, parse
+from .reactive import Readable, Signal
 from .styled import StyledTag, stylesheet
+
+if TYPE_CHECKING:
+    from .wire import Op
 
 
 @dataclass(frozen=True)
@@ -29,38 +32,34 @@ class Fragment:
 
 
 def html(template: Template) -> Fragment:
-    if not isinstance(template, Template):
+    if not isinstance(template, Template):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise TypeError('html() takes a t-string; did you write f""" instead of t"""?')
     return Fragment(template)
 
 
-def component(fn):
-    fn._pysx_component = True
+def component[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
+    setattr(fn, "_pysx_component", True)  # noqa: B010 - dynamic compatibility marker
     return fn
 
 
 @dataclass(frozen=True)
-class Each:
-    source: Signal
-    item: Callable[[Any], Fragment]
-    key: Callable[[Any], Any]
+class Each[T]:
+    source: Readable[Iterable[T]]
+    item: Callable[[T], Fragment]
+    key: Callable[[T], object]
 
 
-def each(
-    source: Signal, item: Callable[[Any], Fragment], *, key: Callable[[Any], Any]
-) -> Each:
+def each[T](
+    source: Readable[Iterable[T]], item: Callable[[T], Fragment], *, key: Callable[[T], object]
+) -> Each[T]:
     return Each(source, item, key)
 
 
-def _escape(value: Any) -> str:
-    return _htmlmod.escape(str(value))
+def _read(value: object) -> object:
+    return cast("Readable[object]", value)() if isinstance(value, Signal) else value
 
 
-def _read(value: Any) -> Any:
-    return value() if isinstance(value, Signal) else value
-
-
-def _attr_text(value: Any) -> str | None:
+def _attr_text(value: object) -> str | None:
     """None means the attribute is absent; True renders it bare."""
     value = _read(value)
     if value is None or value is False:
@@ -74,19 +73,17 @@ def _attr_text(value: Any) -> str | None:
 
 
 class Watcher:
-    signal: Signal
-
-    def refresh(self) -> list[dict]:
+    def refresh(self) -> list[Op]:
         raise NotImplementedError
 
 
 @dataclass
 class TextWatcher(Watcher):
     slot: str
-    signal: Signal
+    signal: Readable[object]
     last: str
 
-    def refresh(self) -> list[dict]:
+    def refresh(self) -> list[Op]:
         now = str(self.signal())
         if now == self.last:
             return []
@@ -97,11 +94,11 @@ class TextWatcher(Watcher):
 @dataclass
 class CondWatcher(Watcher):
     slot: str
-    signal: Signal
+    signal: Readable[object]
     render_branch: Callable[[bool], str]
     last: str
 
-    def refresh(self) -> list[dict]:
+    def refresh(self) -> list[Op]:
         now = self.render_branch(bool(self.signal()))
         if now == self.last:
             return []
@@ -113,10 +110,10 @@ class CondWatcher(Watcher):
 class AttrWatcher(Watcher):
     element: str
     name: str
-    signal: Signal
+    signal: Readable[object]
     last: str | None
 
-    def refresh(self) -> list[dict]:
+    def refresh(self) -> list[Op]:
         now = _attr_text(self.signal)
         if now == self.last:
             return []
@@ -131,7 +128,7 @@ class ClassWatcher(Watcher):
     attribute and strip the scoped class, killing the element's styling."""
 
     element: str
-    signal: Signal
+    signal: Readable[object]
     before: tuple[str, ...]
     after: tuple[str, ...]
     last: str
@@ -140,7 +137,7 @@ class ClassWatcher(Watcher):
         value = _attr_text(self.signal) or ""
         return " ".join(" ".join([*self.before, value, *self.after]).split())
 
-    def refresh(self) -> list[dict]:
+    def refresh(self) -> list[Op]:
         now = self.merged()
         if now == self.last:
             return []
@@ -151,13 +148,13 @@ class ClassWatcher(Watcher):
 @dataclass
 class ListWatcher(Watcher):
     slot: str
-    signal: Signal
-    spec: Each
-    render_items: Callable[[Iterable[Any]], tuple[list[str], dict[str, str]]]
+    signal: Readable[Iterable[object]]
+    spec: Each[object]
+    render_items: Callable[[Iterable[object]], tuple[list[str], dict[str, str]]]
     order: list[str]
     markup: dict[str, str]
 
-    def refresh(self) -> list[dict]:
+    def refresh(self) -> list[Op]:
         order, markup = self.render_items(self.signal())
         changed = {k: v for k, v in markup.items() if self.markup.get(k) != v}
         if order == self.order and not changed:
@@ -170,11 +167,13 @@ class ListWatcher(Watcher):
 class Rendered:
     body: str = ""
     css: str = ""
-    handlers: dict[str, Callable] = field(default_factory=dict)
-    watchers: list[Watcher] = field(default_factory=list)
+    handlers: dict[str, Callable[[object], object]] = field(
+        default_factory=dict[str, Callable[[object], object]]
+    )
+    watchers: list[Watcher] = field(default_factory=list[Watcher])
     # handler id -> element id, so an input's own event can be stopped from
     # echoing a value patch back and resetting the caret.
-    bind_elements: dict[str, str] = field(default_factory=dict)
+    bind_elements: dict[str, str] = field(default_factory=dict[str, str])
 
 
 # --------------------------------------------------------------------------- emit
@@ -182,7 +181,7 @@ class Rendered:
 
 class _Emitter:
     def __init__(
-        self, ns: dict, values: tuple, out: Rendered, prefix: str = ""
+        self, ns: dict[str, object], values: tuple[object, ...], out: Rendered, prefix: str = ""
     ) -> None:
         self.ns = ns
         self.values = values
@@ -219,7 +218,7 @@ class _Emitter:
 
     # -- nodes ------------------------------------------------------------
 
-    def nodes(self, nodes: list, *, static: bool = False) -> str:
+    def nodes(self, nodes: list[Node], *, static: bool = False) -> str:
         parts: list[str] = []
         for node in nodes:
             if isinstance(node, str):
@@ -235,11 +234,11 @@ class _Emitter:
     def hole(self, hole: Hole, *, static: bool) -> str:
         value = self.values[hole.index]
         if isinstance(value, Each):
-            return self.list_slot(hole, value)
+            return self.list_slot(hole, cast("Each[object]", value))
         slot = f"{self.prefix}{hole.index}"
         text = str(_read(value))
         if isinstance(value, Signal) and not static:
-            self.out.watchers.append(TextWatcher(slot, value, text))
+            self.out.watchers.append(TextWatcher(slot, cast("Readable[object]", value), text))
         return f'<pysx-slot id="{slot}">{_htmlmod.escape(text)}</pysx-slot>'
 
     def conditional(self, node: Conditional, *, static: bool) -> str:
@@ -251,13 +250,15 @@ class _Emitter:
 
         markup = branch(bool(_read(value)))
         if isinstance(value, Signal) and not static:
-            self.out.watchers.append(CondWatcher(slot, value, branch, markup))
+            self.out.watchers.append(
+                CondWatcher(slot, cast("Readable[object]", value), branch, markup)
+            )
         return f'<pysx-slot id="{slot}">{markup}</pysx-slot>'
 
-    def list_slot(self, hole: Hole, spec: Each) -> str:
+    def list_slot(self, hole: Hole, spec: Each[object]) -> str:
         slot = f"{self.prefix}{hole.index}"
 
-        def render_items(items) -> tuple[list[str], dict[str, str]]:
+        def render_items(items: Iterable[object]) -> tuple[list[str], dict[str, str]]:
             order: list[str] = []
             markup: dict[str, str] = {}
             for item in items:
@@ -273,7 +274,7 @@ class _Emitter:
         inner = "".join(markup[k] for k in order)
         return f'<pysx-list id="{slot}">{inner}</pysx-list>'
 
-    def item(self, spec: Each, item: Any, slot: str, key: str) -> str:
+    def item(self, spec: Each[object], item: object, slot: str, key: str) -> str:
         fragment = spec.item(item)
         skeleton = parse(fragment.template.strings)
         sub = _Emitter(
@@ -287,7 +288,7 @@ class _Emitter:
         tag, classes = self._resolve(el.tag)
         attrs: list[str] = []
         element_id: str | None = None
-        class_signal: Signal | None = None
+        class_signal: Readable[object] | None = None
         class_position = -1
 
         for name, value in el.attrs:
@@ -303,21 +304,26 @@ class _Emitter:
 
             if kind is HoleKind.EVENT:
                 hid = self._handler_id(value.index)
-                self.out.handlers[hid] = raw
+                if not callable(raw):
+                    raise TypeError("event hole requires a callable")
+                self.out.handlers[hid] = cast("Callable[[object], object]", raw)
                 attrs.append(f' data-pysx-{name[2:].lower()}="{hid}"')
 
             elif kind is HoleKind.BIND:
                 hid = self._handler_id(value.index)
-                signal = raw
-                self.out.handlers[hid] = lambda e, s=signal: s.set(e)
-                current = str(_read(signal))
+                if not isinstance(raw, Signal):
+                    raise TypeError("bindValue requires a signal")
+                # Template values erase payload types; the existing binding accepts event values.
+                bound = cast("Signal[object]", raw)
+                self.out.handlers[hid] = bound.set
+                current = str(_read(bound))
                 attrs.append(f' value="{_htmlmod.escape(current, quote=True)}"')
                 attrs.append(f' data-pysx-input="{hid}"')
-                if isinstance(signal, Signal) and not static:
+                if not static:
                     element_id = element_id or self._next_element_id()
                     self.out.bind_elements[hid] = element_id
                     self.out.watchers.append(
-                        AttrWatcher(element_id, "value", signal, current)
+                        AttrWatcher(element_id, "value", bound, current)
                     )
 
             else:  # ATTR
@@ -326,14 +332,16 @@ class _Emitter:
                     if isinstance(raw, Signal) and not static:
                         # Recorded as an insertion point, not appended: the
                         # watcher supplies this slot's value on every refresh.
-                        class_signal = raw
+                        class_signal = cast("Readable[object]", raw)
                         class_position = len(classes)
                     elif text:
                         classes.append(text)
                     continue
                 if isinstance(raw, Signal) and not static:
                     element_id = element_id or self._next_element_id()
-                    self.out.watchers.append(AttrWatcher(element_id, name, raw, text))
+                    self.out.watchers.append(
+                        AttrWatcher(element_id, name, cast("Readable[object]", raw), text)
+                    )
                 if text is None:
                     pass
                 elif text == "":
@@ -378,7 +386,9 @@ def render(component_fn: Callable[[], Fragment]) -> Rendered:
     fragment = component_fn()
     skeleton: Skeleton = parse(fragment.template.strings)
     out = Rendered()
-    emitter = _Emitter(component_fn.__globals__, fragment.template.values, out)
+    emitter = _Emitter(
+        cast("dict[str, object]", component_fn.__globals__), fragment.template.values, out
+    )
     out.body = emitter.nodes(skeleton.root)
     out.css = stylesheet()
     return out

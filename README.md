@@ -94,14 +94,18 @@ starts without it.
 
 ## Tests
 
-Unit tests are standalone scripts rather than a pytest suite — each file runs its own
-`test_*` functions:
+Install the locked development tools, then run units and headless acceptance with pytest:
 
 ```bash
-for f in tests/test_*.py; do uv run --project . python "$f"; done
+uv sync --locked
+uv run --project . pytest -q
+uv run --project . ruff check .
+uv run --project . mypy
+uv run --project . pyright
 ```
 
-The acceptance suites start a real server and drive it over websockets:
+`pytest -q -m 'not acceptance'` runs tests without starting real socket servers.
+Headless acceptance requires permitted loopback access. Its direct entry points remain:
 
 ```bash
 uv run --project . python tests/acceptance.py

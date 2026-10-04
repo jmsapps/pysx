@@ -1,25 +1,27 @@
-"""Plain-assert tests; the project has no test dependency."""
-
-import sys
-
-sys.path.insert(0, __file__.rsplit("/tests/", 1)[0])
-
-from pysx.reactive import effect, signal  # noqa: E402
+"""Reactive graph regression tests."""
 
 
-def test_basic_tracking():
+
+from pysx.reactive import effect, signal
+
+
+def test_basic_tracking() -> None:
     a = signal(1)
-    seen = []
+    seen: list[int] = []
     effect(lambda: seen.append(a()))
     assert seen == [1], seen
     a.set(2)
     assert seen == [1, 2], seen
 
 
-def test_set_equal_is_noop():
+def test_set_equal_is_noop() -> None:
     a = signal(1)
-    runs = []
-    effect(lambda: (a(), runs.append(1)))
+    runs: list[int] = []
+    def body() -> None:
+        a()
+        runs.append(1)
+
+    effect(body)
     assert len(runs) == 1
     a.set(1)
     assert len(runs) == 1, f"equal set re-ran the effect: {runs}"
@@ -27,12 +29,12 @@ def test_set_equal_is_noop():
     assert len(runs) == 2, runs
 
 
-def test_dynamic_dependency_retracking():
+def test_dynamic_dependency_retracking() -> None:
     flag = signal(True)
     b = signal(10)
-    runs = []
+    runs: list[int | None] = []
 
-    def body():
+    def body() -> None:
         runs.append(b() if flag() else None)
 
     effect(body)
@@ -50,18 +52,15 @@ def test_dynamic_dependency_retracking():
     assert runs == [10, None, 99, 100], runs
 
 
-def test_dispose():
+def test_dispose() -> None:
     a = signal(1)
-    runs = []
-    e = effect(lambda: (a(), runs.append(1)))
+    runs: list[int] = []
+
+    def body() -> None:
+        a()
+        runs.append(1)
+
+    e = effect(body)
     e.dispose()
     a.set(2)
     assert len(runs) == 1, runs
-
-
-if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    print(f"{len(fns)} passed")

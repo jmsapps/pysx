@@ -3,17 +3,55 @@ name = "pysx"
 version = "0.1.0"
 description = "Server-side reactive renderer for Python, templated with PEP 750 t-strings"
 requires-python = ">=3.14"
-dependencies = ["websockets>=15"]
+dependencies = ["websockets==17.1"]
 
 [project.scripts]
 example = "run_example:app"
 
 [build-system]
-requires = ["uv_build>=0.11.8,<0.12.0"]
+requires = ["uv_build==0.11.8"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["typer>=0.24"]
+dev = ["typer==0.27.2", "pytest==9.1.1", "ruff==0.16.10", "mypy==2.4.0", "pyright==1.1.414"]
 
 [tool.uv.build-backend]
 module-root = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["acceptance: real HTTP and WebSocket headless acceptance"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["."]
+exclude = ["^build/", "^dist/", "^\\.venv/", "^\\.skills/"]
+
+[tool.pyright]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+include = ["."]
+exclude = ["**/node_modules", "**/__pycache__", ".venv", ".skills", "build", "dist"]
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+extend-exclude = [".skills", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "RUF", "PT", "TC", "ANN", "N", "A", "ARG", "RET", "PTH", "TID", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+# These modules intentionally expose observable command-line output.
+"pysx/check.py" = ["T201"]
+"pysx/server.py" = ["T201"]
+"editor/build_vsix.py" = ["T201"]
+"tests/acceptance*.py" = ["T201"]
+# HTML input is an intentional public element name.
+"pysx/elements.py" = ["A001"]
+# Capitalized component functions are referenced verbatim by the DSL.
+"examples/todos.py" = ["N802", "E501"]

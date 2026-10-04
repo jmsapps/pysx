@@ -35,6 +35,12 @@ text by index.
 
 A patch carries only what changed. An empty op list is not sent.
 
+`pysx/wire.py` defines the Python `TypedDict` contracts for these messages and ops.
+Text and HTML values are strings; attribute values are strings or null; list keys and
+markup-map keys are strings. Incoming JSON must be an object with `t` equal to `event`
+and a string handler ID (an omitted ID resolves to no handler). Malformed JSON,
+non-object values, other message kinds, and non-string handler IDs are ignored.
+
 ## Markers in rendered HTML
 
 | hole kind | marker |

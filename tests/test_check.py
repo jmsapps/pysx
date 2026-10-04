@@ -1,29 +1,26 @@
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, __file__.rsplit("/tests/", 1)[0])
-
-from pysx.check import diagnostics  # noqa: E402
+from pysx.check import Diagnostic, diagnostics
 
 HEADER = "from pysx import component, div, html, signal, styled\n\n"
 
 
-def check(body: str):
+def check(body: str) -> tuple[list[Diagnostic], list[str]]:
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "case.py"
         p.write_text(HEADER + body, encoding="utf-8")
         return diagnostics(p), (HEADER + body).split("\n")
 
 
-def test_clean_examples_are_empty():
+def test_clean_examples_are_empty() -> None:
     here = Path(__file__).resolve().parents[1]
     for name in ("counter", "todos"):
         path = here / f"examples/{name}.py"
         assert diagnostics(path) == [], (name, diagnostics(path))
 
 
-def test_unknown_tag_after_non_ascii_line():
+def test_unknown_tag_after_non_ascii_line() -> None:
     body = (
         'Page = styled(div, t"""color: red;""")\n'
         'NOTE = "café ☕ — a non-ASCII line before the diagnostic"\n'
@@ -43,7 +40,7 @@ def test_unknown_tag_after_non_ascii_line():
     assert lines[d["line"]][d["startChar"]:d["endChar"]] == "Pge", d
 
 
-def test_called_signal_column_is_utf16_on_a_non_ascii_line():
+def test_called_signal_column_is_utf16_on_a_non_ascii_line() -> None:
     body = (
         'Page = styled(div, t"""color: red;""")\n'
         "\n"
@@ -59,7 +56,8 @@ def test_called_signal_column_is_utf16_on_a_non_ascii_line():
     warns = [d for d in diags if d["severity"] == "warning"]
     assert len(warns) == 1, diags
     d = warns[0]
-    assert "frozen" in d["message"] and "{count}" in d["message"], d
+    assert "frozen" in d["message"], d
+    assert "{count}" in d["message"], d
 
     line = lines[d["line"]]
     # Slice by UTF-16 units, the way an editor would.
@@ -71,14 +69,14 @@ def test_called_signal_column_is_utf16_on_a_non_ascii_line():
         "fixture is not exercising the byte/UTF-16 difference"
 
 
-def test_bare_lambda_reports_the_parenthesis_fix():
+def test_bare_lambda_reports_the_parenthesis_fix() -> None:
     body = (
         'Page = styled(div, t"""color: red;""")\n'
         "\n"
         "@component\n"
         "def app():\n"
         '    return html(t"""\n'
-        "        Page(onClick={lambda e: None}):\n"
+        "        Page(onClick={lambda _e: None}):\n"
         '            "hi"\n'
         '    """)\n'
     )
@@ -87,7 +85,7 @@ def test_bare_lambda_reports_the_parenthesis_fix():
     assert "wrap it in parentheses" in diags[0]["message"], diags
 
 
-def test_fstring_instead_of_tstring():
+def test_fstring_instead_of_tstring() -> None:
     body = (
         'Page = styled(div, t"""color: red;""")\n'
         "\n"
@@ -103,7 +101,7 @@ def test_fstring_instead_of_tstring():
     assert "needs a t-string" in diags[0]["message"], diags
 
 
-def test_parser_error_is_reported():
+def test_parser_error_is_reported() -> None:
     body = (
         'Page = styled(div, t"""color: red;""")\n'
         "\n"
@@ -117,11 +115,3 @@ def test_parser_error_is_reported():
     )
     diags, _ = check(body)
     assert any("without a matching" in d["message"] for d in diags), diags
-
-
-if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    print(f"{len(fns)} passed")
