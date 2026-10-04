@@ -5,10 +5,67 @@ from html.parser import HTMLParser
 from typing import TYPE_CHECKING, cast
 
 from examples.counter import app
-from pysx import Fragment, Signal, component, derived, div, each, html, render, signal, styled
+from pysx import (
+    Fragment,
+    Signal,
+    batch,
+    component,
+    derived,
+    dict_key,
+    div,
+    each,
+    html,
+    render,
+    signal,
+    structured,
+    styled,
+)
+from pysx.server import Session
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+def test_structured_state_selective_patches_and_event_batch() -> None:
+    root = structured({"left": 1, "right": 2})
+    left = dict_key(root, "left")
+
+    def app_fn() -> Fragment:
+        return html(t"""\n        p: {left}\n        """)
+
+    session = Session(app_fn)
+    dict_key(root, "right").set(3)
+    assert session.pending == []
+
+    with batch():
+        left.set(4)
+        left.set(5)
+
+    assert session.pending == [{"op": "text", "id": "0", "v": "5"}]
+    session.dispose()
+    assert not root.observers
+
+
+def test_batching_transactions_event_patches() -> None:
+    count = signal(0)
+
+    def click(_value: object) -> None:
+        count.set(1)
+        count.set(2)
+
+    def app_fn() -> Fragment:
+        return html(t"""
+        button(onClick={click}): "change"
+        p: {count}
+        """)
+
+    session = Session(app_fn)
+    handler = next(iter(session.rendered.handlers))
+    ops = session.dispatch(handler, None)
+    assert len(ops) == 1
+    assert ops[0]["op"] == "text"
+    assert ops[0]["v"] == "2"
+    session.dispose()
 
 
 class _Attrs(HTMLParser):
@@ -41,7 +98,7 @@ def test_styled_class_applied_and_each_rule_defined_once() -> None:
     r = render(app)
     tags = _Attrs.of(r.body)
     used = {a["class"] for _, a in tags if "class" in a}
-    assert len(used) == 2, used                      # Page and Action
+    assert len(used) >= 2, used
     for cls in used:
         assert cls is not None
         assert cls.startswith("pysx-"), cls

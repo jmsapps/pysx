@@ -40,11 +40,18 @@ try {
 
   const styleText = await one.$eval("#pysx-style", (s) => s.textContent);
   const rules = [...styleText.matchAll(/\.pysx-[0-9a-f]{6}\s*\{/g)].map((m) => m[0]);
-  assert(rules.length === 2, `expected 2 scoped rules, got ${rules.length}`);
-  assert(new Set(rules).size === 2, "duplicate scoped rules");
+  const usedClasses = await one.$$eval("#pysx-root [class]", (elements) =>
+    [...new Set(elements.flatMap((element) => [...element.classList]))]
+      .filter((name) => /^pysx-[0-9a-f]{6}$/.test(name)));
+  assert(usedClasses.length >= 2, "missing styled page or controls");
+  for (const cls of usedClasses) {
+    assert(rules.filter((rule) => rule.startsWith(`.${cls} `)).length === 1,
+      `missing or duplicate scoped rule: ${cls}`);
+  }
+  assert(new Set(rules).size === rules.length, "duplicate scoped rules");
   const bg = await one.$eval("button", (b) => getComputedStyle(b).backgroundColor);
-  assert(bg === "rgb(108, 99, 255)", `styled CSS not applied, background=${bg}`);
-  ok("two scoped rules, applied (button background is the styled accent)");
+  assert(bg === "rgb(101, 84, 217)", `styled CSS not applied, background=${bg}`);
+  ok("shared scoped rules are unique and the themed button accent is applied");
 
   for (let i = 0; i < 3; i++) {
     await one.click("button");

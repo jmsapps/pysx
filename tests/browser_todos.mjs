@@ -21,7 +21,7 @@ try {
     els.map((el) => ({ key: el.dataset.pysxKey, done: el.className.includes("is-done") })));
 
   assert((await items()).length === 3, "expected 3 todos");
-  assert((await page.textContent("p")).includes("2 items left"), "bad count text");
+  assert((await page.textContent("#todo-summary")).includes("2 items left"), "bad count text");
   ok("3 todos render, '2 items left'");
 
   // Stamp DOM identity on every item, then change exactly one.
@@ -37,7 +37,7 @@ try {
     `untouched items were rebuilt: ${JSON.stringify(probes)}`);
   ok("keyed reconcile: only the toggled node is replaced, siblings keep DOM identity");
 
-  assert((await page.textContent("p")).includes("1 item left"), "count did not update");
+  assert((await page.textContent("#todo-summary")).includes("1 item left"), "count did not update");
   ok("count and plural updated through their own slots");
 
   // Caret must survive a bound input round trip.

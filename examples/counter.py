@@ -1,24 +1,13 @@
-from pysx import Fragment, button, component, div, html, signal, styled
+from pysx import Fragment, component, html, signal
 
-Page = styled(div, t"""
-    font: 16px/1.5 system-ui, sans-serif;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    align-items: flex-start;
-    padding: 2rem;
-""")
-
-Action = styled(button, t"""
-    border: none;
-    border-radius: 999px;
-    padding: 0.6rem 1.4rem;
-    font: inherit;
-    font-weight: 600;
-    color: white;
-    background: #6c63ff;
-    cursor: pointer;
-""")
+from .components import Action as Action
+from .components import Actions as Actions
+from .components import Description as Description
+from .components import Eyebrow as Eyebrow
+from .components import Metric as Metric
+from .components import Page as Page
+from .components import Title as Title
+from .components import Value as Value
 
 
 @component
@@ -32,7 +21,13 @@ def app() -> Fragment:
 
     return html(t"""
         Page(id="container"):
-            "Count: " {count}
-            Action(type="button", onClick={increment}):
-                "Increment"
+            header:
+                Eyebrow: "pysx / examples"
+                Title: "Counter"
+                Description: "A simple counter. Each click adds one to the total."
+            Metric:
+                "Count: "
+                Value: {count}
+            Actions:
+                Action(type="button", onClick={increment}): "Increment"
     """)

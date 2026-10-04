@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, cast
 
 from websockets.asyncio.server import ServerConnection, serve
 
-from .reactive import Effect
+from .reactive import Effect, batch
 from .render import Fragment, Watcher, render
 
 if TYPE_CHECKING:
@@ -54,7 +54,8 @@ class Session:
         if fn is None:
             return []
         self.pending.clear()
-        fn(value)
+        with batch():
+            fn(value)
         ops = self.pending
         self.pending = []
         origin = self.rendered.bind_elements.get(handler_id)
