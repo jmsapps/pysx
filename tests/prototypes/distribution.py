@@ -163,6 +163,7 @@ def command(
     *,
     expected: int = 0,
     input_text: str | None = None,
+    timeout: int = 60,
 ) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         args,
@@ -171,7 +172,7 @@ def command(
         input=input_text,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=timeout,
         check=False,
     )
     if result.returncode != expected:
@@ -179,8 +180,25 @@ def command(
     return result
 
 
+EXAMPLES_EXTRA = "typer==0.27.2"
+
+
+def required_pins() -> list[str]:
+    """The candidate's own declared installs: runtime plus the examples extra."""
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    project = cast("dict[str, object]", metadata["project"])
+    return [*cast("list[str]", project["dependencies"]), EXAMPLES_EXTRA]
+
+
 def dependency_cache(destination: Path) -> Path:
-    """Copy only existing dependency caches, never mutate the source cache."""
+    """Isolated dependency cache, never mutating any source cache.
+
+    Copying an existing cache is only a fast path; its internal layout varies by uv
+    version and platform, and a clean machine has nothing to copy. Whenever the copy
+    cannot satisfy the declared pins the cache is warmed from the index once, here.
+    Every later step runs --offline, so an undeclared dependency still cannot be
+    fetched silently.
+    """
     names = (
         "websockets",
         "typer",
@@ -219,6 +237,29 @@ def dependency_cache(destination: Path) -> Path:
                     copied.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(index, copied)
                 break
+    return warmed(destination)
+
+
+def warmed(destination: Path) -> Path:
+    uv = shutil.which("uv")
+    if uv is None:
+        raise ProofError("uv is required")
+    pins = required_pins()
+    probe = destination.parent / "cache-probe"
+    install = [uv, "--cache-dir", str(destination), "pip", "install",
+               "--python", sys.executable, "--target", str(probe), *pins]
+    try:
+        command([install[0], "--offline", *install[1:]], destination.parent)
+    except ProofError:
+        try:
+            command(install, destination.parent, timeout=300)
+        except ProofError as error:
+            raise ProofError(
+                f"isolated cache cannot supply {pins}; no reusable cache and the index "
+                f"was unreachable: {error}"
+            ) from error
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
     return destination
 
 
@@ -256,8 +297,8 @@ pysx-lsp = "pysx.lsp:main"''',
     )
     metadata = metadata.replace(
         "[build-system]",
-        """[project.optional-dependencies]
-examples = ["typer==0.27.2"]
+        f"""[project.optional-dependencies]
+examples = ["{EXAMPLES_EXTRA}"]
 
 [build-system]""",
     )
@@ -616,7 +657,7 @@ print(json.dumps({"package": str(Path(pysx.__file__).resolve()),
                       for path in (wheel, sdist, derived_wheel, vsix)},
         "wheel_members": len(inspect_wheel(wheel)),
         "strict_consumer_cases": 8, "installed_hosts": 2, "stdio_handshakes": 2,
-        "example_extra": "typer==0.27.2", "status": "passed",
+        "example_extra": EXAMPLES_EXTRA, "status": "passed",
     }
     (workspace / "qualification-report.json").write_text(json.dumps(qualification, indent=2))
     return {
