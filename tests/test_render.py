@@ -46,6 +46,59 @@ def test_structured_state_selective_patches_and_event_batch() -> None:
     assert not root.observers
 
 
+def test_template_ergonomics_operator_text_branch_isolation_and_disposal() -> None:
+    state = signal({"scores": [1], "other": [9]})
+    score = state["scores"][0]
+    doubled = score * 2
+    visible = score > 0
+
+    def app_fn() -> Fragment:
+        return html(t"""
+            div: {doubled}
+            if {visible}:
+                p: "visible"
+        """)
+
+    session = Session(app_fn)
+    other_session = Session(app)
+    state["other"].set([8])
+    assert session.pending == []
+    score.set(2)
+    assert session.pending == [{"op": "text", "id": "0", "v": "4"}]
+    session.pending.clear()
+    score.set(0)
+    assert len(session.pending) == 2
+    assert other_session.pending == []
+    session.dispose()
+    other_session.dispose()
+    assert not state.observers
+
+
+def test_template_ergonomics_branch_removal_releases_operator_sources() -> None:
+    visible = signal(True)
+    count = signal(1)
+    doubled = count * 2
+
+    def app_fn() -> Fragment:
+        return html(t"""
+            if {visible}:
+                p: {doubled}
+        """)
+
+    session = Session(app_fn)
+    assert count.observers
+    visible.set(False)
+    assert not count.observers
+    session.pending.clear()
+    count.set(2)
+    assert session.pending == []
+    visible.set(True)
+    assert "4" in str(session.pending)
+    session.dispose()
+    assert not count.observers
+    assert not visible.observers
+
+
 def test_batching_transactions_event_patches() -> None:
     count = signal(0)
 

@@ -9,7 +9,8 @@ text, and a violet accent. `theme.py` owns the CSS tokens and document defaults;
 - Use `Page` for the main card and `Card` for related content inside it. Borders stay
   subtle; shadows belong to the main card. Use `page(...)` for width/layout overrides.
 - Group headings with `Eyebrow`, `Title`, and `Description`. Keep body copy muted,
-  short, and readable. Use `Metric` and `Value` for prominent numeric readouts.
+  short, and readable. Use `Metric` and `Value` for prominent numeric readouts, and
+  `Reading` with `Result` for dense reference rows where many values share a card.
 - Use `CompactPage` for focused forms. `Form`, `Field`, `Submit`, `Filters`, and
   `FilterButton` share control sizing and colors. `List`, `Item`, `Row`, `Checkbox`,
   and `Text` provide checkable rows; `Remove` and `Clear` provide destructive actions.

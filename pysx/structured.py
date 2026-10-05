@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import TYPE_CHECKING, cast
 
 from .reactive import Signal, derived
@@ -15,18 +14,18 @@ class Structured[T](Signal[T]):
     """A signal whose callers cannot mutate its owned value in place."""
 
     def __init__(self, value: T) -> None:
-        super().__init__(deepcopy(value))
+        super().__init__(value)
 
     def get(self) -> T:
-        return deepcopy(super().get())
+        return super().get()
 
     __call__ = get
 
     def set(self, value: T) -> None:
-        super().set(deepcopy(value))
+        super().set(value)
 
     def subscribe(self, fn: Callable[[T], object], *, fire: bool = True) -> Callable[[], None]:
-        return super().subscribe(lambda value: fn(deepcopy(value)), fire=fire)
+        return super().subscribe(fn, fire=fire)
 
     def update(self, fn: Callable[[T], T]) -> None:
         self.set(fn(self.get()))
@@ -41,15 +40,15 @@ class Projection[T](Signal[T]):
         self._write = write
 
     def get(self) -> T:
-        return deepcopy(self._read())
+        return self._read()
 
     __call__ = get
 
     def set(self, value: T) -> None:
-        self._write(deepcopy(value))
+        self._write(value)
 
     def subscribe(self, fn: Callable[[T], object], *, fire: bool = True) -> Callable[[], None]:
-        return self._read.subscribe(lambda value: fn(deepcopy(value)), fire=fire)
+        return self._read.subscribe(fn, fire=fire)
 
     def update(self, fn: Callable[[T], T]) -> None:
         self.set(fn(self.get()))
@@ -64,9 +63,11 @@ def project[P, T](
 ) -> Projection[T]:
     """The setter receives a private parent snapshot and returns its replacement."""
 
+    # parent() already yields a private snapshot, so the getter reads from and the
+    # setter mutates a copy nobody else holds.
     return Projection(
-        lambda: deepcopy(getter(parent())),
-        lambda value: parent.set(setter(deepcopy(parent()), value)),
+        lambda: getter(parent()),
+        lambda value: parent.set(setter(parent(), value)),
     )
 
 

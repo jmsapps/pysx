@@ -76,3 +76,21 @@ Value = styled(span, t"""
     letter-spacing: -0.06em;
     font-variant-numeric: tabular-nums;
 """)
+
+Reading = styled(p, t"""
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+""")
+
+Result = styled(span, t"""
+    color: var(--ink);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+""")

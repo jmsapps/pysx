@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from contextvars import ContextVar
+from copy import deepcopy
 from threading import get_ident
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Never, Protocol, cast, overload
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import Callable, Generator, Iterable
 
 _current: ContextVar[Effect | None] = ContextVar("pysx_current_effect", default=None)
 
@@ -124,9 +125,38 @@ def batch() -> Generator[None]:
             raise
 
 
+def _reject_nested_signals(value: object, seen: set[int] | None = None) -> None:
+    if isinstance(value, Signal):
+        raise TypeError("signal payloads cannot be Signals; use a projection or derived()")
+
+    seen = set() if seen is None else seen
+    marker = id(value)
+
+    if marker in seen:
+        return
+
+    if isinstance(value, dict):
+        seen.add(marker)
+
+        for key, item in cast("dict[object, object]", value).items():
+            _reject_nested_signals(key, seen)
+            _reject_nested_signals(item, seen)
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        seen.add(marker)
+
+        for item in cast("Iterable[object]", value):
+            _reject_nested_signals(item, seen)
+
+
 class Signal[T]:
     def __init__(self, value: T, *, equal: Callable[[T, T], bool] | None = None) -> None:
-        self._value = value
+        _reject_nested_signals(value)
+
+        self._value = deepcopy(value)
+        # Equality is answered against the value as published, not against the owned
+        # copy: a copy is never identity-equal, so an `is`-based comparator could
+        # never suppress. Callers must replace values rather than mutate in place.
+        self._published: T = value
         self.observers: dict[int, Effect] = {}
         self.computation: Effect | None = None
         self._equal: Callable[[T, T], bool] = equal or (lambda left, right: left == right)
@@ -157,20 +187,24 @@ class Signal[T]:
             finally:
                 self._reader = reader
 
-        return self._value
+        return deepcopy(self._value)
 
     __call__ = get
 
     def publish(self, value: T) -> None:
-        if self.initialized and self._equal(value, self._value):
+        _reject_nested_signals(value)
+
+        if self.initialized and self._equal(value, self._published):
             return
 
         self.initialized = True
-        self._value = value
+        self._published = value
+        self._value = deepcopy(value)
 
         for eff in tuple(self.observers.values()):
             # The reader this evaluation is serving returns the fresh value from
             # get(); every other observer must still be invalidated, even mid-run.
+
             if eff is not self._reader:
                 eff.invalidate()
 
@@ -185,6 +219,137 @@ class Signal[T]:
 
     def __repr__(self) -> str:
         return f"Signal({self._value!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    def __bool__(self) -> bool:
+        raise TypeError(
+            "Use all_of/any_of/not_ and eq/ne; read get() for a snapshot"
+        )
+
+    @overload
+    def __lt__(
+        self: Signal[int], other: int | float | Signal[int] | Signal[float]
+    ) -> Signal[bool]: ...
+    @overload
+    def __lt__(
+        self: Signal[float], other: int | float | Signal[int] | Signal[float]
+    ) -> Signal[bool]: ...
+    @overload
+    def __lt__(self: Signal[str], other: str | Signal[str]) -> Signal[bool]: ...
+    def __lt__(self, other: object) -> Signal[bool]:
+        from .operators import order_payload, read_operand
+
+        return derived(lambda: order_payload(self.get(), read_operand(other), "lt"))
+
+    @overload
+    def __le__(
+        self: Signal[int], other: int | float | Signal[int] | Signal[float]
+    ) -> Signal[bool]: ...
+    @overload
+    def __le__(
+        self: Signal[float], other: int | float | Signal[int] | Signal[float]
+    ) -> Signal[bool]: ...
+    @overload
+    def __le__(self: Signal[str], other: str | Signal[str]) -> Signal[bool]: ...
+    def __le__(self, other: object) -> Signal[bool]:
+        from .operators import order_payload, read_operand
+
+        return derived(lambda: order_payload(self.get(), read_operand(other), "le"))
+
+    @overload
+    def __gt__(
+        self: Signal[int], other: int | float | Signal[int] | Signal[float]
+    ) -> Signal[bool]: ...
+    @overload
+    def __gt__(
+        self: Signal[float], other: int | float | Signal[int] | Signal[float]
+    ) -> Signal[bool]: ...
+    @overload
+    def __gt__(self: Signal[str], other: str | Signal[str]) -> Signal[bool]: ...
+    def __gt__(self, other: object) -> Signal[bool]:
+        from .operators import order_payload, read_operand
+
+        return derived(lambda: order_payload(self.get(), read_operand(other), "gt"))
+
+    @overload
+    def __ge__(
+        self: Signal[int], other: int | float | Signal[int] | Signal[float]
+    ) -> Signal[bool]: ...
+    @overload
+    def __ge__(
+        self: Signal[float], other: int | float | Signal[int] | Signal[float]
+    ) -> Signal[bool]: ...
+    @overload
+    def __ge__(self: Signal[str], other: str | Signal[str]) -> Signal[bool]: ...
+    def __ge__(self, other: object) -> Signal[bool]:
+        from .operators import order_payload, read_operand
+
+        return derived(lambda: order_payload(self.get(), read_operand(other), "ge"))
+
+    @overload
+    def __getitem__[K, V](self: Signal[dict[K, V]], key: K) -> Signal[V]: ...
+    @overload
+    def __getitem__[V](self: Signal[list[V]], key: int) -> Signal[V]: ...
+    def __getitem__[K, V](self: Signal[dict[K, V]] | Signal[list[V]], key: K | int) -> Signal[V]:
+        def read(value: dict[K, V] | list[V]) -> V:
+            if isinstance(value, dict):
+                return value[cast("K", key)]
+
+            if isinstance(key, int):
+                return value[key]
+
+            raise TypeError("index projections require a dictionary key or list integer")
+
+        def write(value: dict[K, V] | list[V], selected: V) -> dict[K, V] | list[V]:
+            if isinstance(value, dict):
+                values = value
+                selected_key = cast("K", key)
+
+                if selected_key not in values:
+                    raise KeyError(key)
+
+                values[selected_key] = selected
+            elif isinstance(key, int):
+                value[key] = selected
+            else:
+                raise TypeError("index projections require a dictionary key or list integer")
+
+            return value
+
+        parent = cast("Signal[dict[K, V] | list[V]]", self)
+
+        return parent.project(read, write)
+
+    def project[V](self, getter: Callable[[T], V], setter: Callable[[T, V], T]) -> Signal[V]:
+        from .structured import project
+
+        return project(self, getter, setter)
+
+    @overload
+    def __mul__(self: Signal[int], other: int | Signal[int]) -> Signal[int]: ...
+    @overload
+    def __mul__(self: Signal[float], other: float | Signal[float]) -> Signal[float]: ...
+    def __mul__(self, other: object) -> Signal[int] | Signal[float]:
+        def compute() -> int | float:
+            left = self()
+            right = cast("Signal[object]", other)() if isinstance(other, Signal) else other
+
+            if not isinstance(left, (int, float)) or not isinstance(right, (int, float)):
+                raise TypeError("multiplication requires numeric payloads")
+
+            return left * right
+
+        return cast("Signal[int] | Signal[float]", derived(compute))
+
+    __rmul__ = __mul__
+
+    def update(self, fn: Callable[[T], T]) -> None:
+        self.set(fn(self.get()))
+
+    def __contains__(self, item: Never) -> bool:
+        raise TypeError("Use contains(signal, item); read signal() for a snapshot")
 
     def unsubscribe(self, effect: Effect) -> None:
         self.observers.pop(id(effect), None)
@@ -205,7 +370,7 @@ class Signal[T]:
 
             try:
                 if (first and fire) or (not first and not self._equal(value, previous)):
-                    fn(value)
+                    fn(deepcopy(value))
             finally:
                 previous = value
                 first = False
@@ -302,6 +467,7 @@ class Effect:
 
             # Outermost evaluation: drain whatever this body invalidated. A run
             # started by the drain loop leaves it to that loop.
+
             if not _scheduler.running and not _scheduler.depth:
                 _scheduler.flush()
 

@@ -1,9 +1,56 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from pysx.check import Diagnostic, diagnostics
 
 HEADER = "from pysx import component, div, html, signal, styled\n\n"
+
+
+@pytest.mark.parametrize(
+    ("expression", "message"),
+    [
+        ("a and b", "Python and/or coerces Signals; use all_of()/any_of()"),
+        ("not a", "Python not coerces a Signal; use not_()"),
+        ("0 < a < 3", "Chained comparisons coerce Signals; use all_of(a < b, b < c)"),
+        ("a == b", "Signal ==/!= compares identity; use eq()/ne() for reactive payload equality"),
+        ("1 in rows", "Python in cannot return a Signal; use contains(container, item)"),
+        ("len(rows)", "len(Signal) cannot return a Signal; use length()"),
+        ("bool(a)", "bool(Signal) coerces truthiness; use reactive boolean helpers"),
+    ],
+)
+def test_template_ergonomics_exact_coercion_diagnostics(expression: str, message: str) -> None:
+    results, lines = check(
+        "a = signal(1)\nb = signal(2)\nrows = signal([1])\n"
+        f'result = html(t"""\n    p: {{{expression}}}\n""")\n'
+    )
+    assert len(results) == 1
+    warning = results[0]
+    assert warning["message"] == message
+    assert warning["severity"] == "warning"
+    assert lines[warning["line"]][warning["startChar"]:warning["endChar"]] == "{" + expression + "}"
+
+
+def test_template_ergonomics_supported_and_deferred_forms_clean() -> None:
+    results, _ = check(
+        'from pysx import all_of, contains, length, eq\n'
+        'a = signal(1)\nrows = signal([1])\n'
+        'result = html(t"""\n'
+        '    p: {a * 2} {a < 3} {length(rows)} {contains(rows, a)}\n'
+        '    p: {all_of(a > 0, a < 3)} {eq(a, 1)} {(lambda: a())}\n'
+        '""")\n'
+    )
+    assert results == []
+
+
+def test_template_ergonomics_projection_alias_snapshot() -> None:
+    results, _ = check(
+        'state = signal({"a": [1]})\nitem = state["a"][0]\n'
+        'result = html(t"""\n    p: {item()}\n""")\n'
+    )
+    assert len(results) == 1
+    assert "frozen" in results[0]["message"]
 
 
 def check(body: str) -> tuple[list[Diagnostic], list[str]]:
