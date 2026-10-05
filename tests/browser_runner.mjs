@@ -16,6 +16,18 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "events_example", cases: [
+    [0, "events", "browser_keyboard.mjs", "KEYBOARD BROWSER PASSED"],
+  ] },
+  { suite: "accessible_keyboard", cases: [
+    [0, "keyboard_fixture", "browser_keyboard.mjs", "KEYBOARD BROWSER PASSED"],
+  ] },
+  { suite: "owned_dom", cases: [
+    [0, "dom_fixture", "browser_dom.mjs", "DOM BROWSER PASSED"],
+  ] },
+  { suite: "events_immediate", cases: [
+    [0, "events_fixture", "browser_events.mjs", "EVENTS BROWSER PASSED"],
+  ] },
   { suite: "forms_example", cases: [
     [0, "forms", "browser_forms.mjs", "FORMS BROWSER PASSED"],
   ] },
@@ -119,7 +131,13 @@ try {
   let selectedAssertions = 0;
   for (const [index, name, script, banner] of cases) {
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
-    const server = name ? start(interpreter, name === "forms_fixture" ?
+    const server = name ? start(interpreter, name === "keyboard_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_keyboard_fixture:app", "--port", String(port)] :
+      name === "dom_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_dom_fixture:app", "--port", String(port)] :
+      name === "events_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_events_fixture:app", "--port", String(port)] :
+      name === "forms_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_forms_fixture:app", "--port", String(port)] :
       name === "native_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_fixture:app", "--port", String(port)] :

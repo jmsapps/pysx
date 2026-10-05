@@ -4,6 +4,8 @@
 from collections.abc import Callable, Mapping
 from typing import TypedDict, Unpack
 
+from .dom import DomRef
+from .events import EventHandler
 from .native_support import custom_element as custom_element
 from .native_support import element
 from .reactive import Signal
@@ -40,102 +42,103 @@ class GlobalAttrs(TypedDict, total=False):
     tabindex: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     title: str | Signal[str] | None
     translate: str | Signal[str] | None
-    on_abort: Callable[[object], object]
-    on_animationend: Callable[[object], object]
-    on_animationiteration: Callable[[object], object]
-    on_animationstart: Callable[[object], object]
-    on_auxclick: Callable[[object], object]
-    on_beforeinput: Callable[[object], object]
-    on_blur: Callable[[object], object]
-    on_cancel: Callable[[object], object]
-    on_canplay: Callable[[object], object]
-    on_canplaythrough: Callable[[object], object]
-    on_change: Callable[[object], object]
-    on_click: Callable[[object], object]
-    on_close: Callable[[object], object]
-    on_compositionend: Callable[[object], object]
-    on_compositionstart: Callable[[object], object]
-    on_compositionupdate: Callable[[object], object]
-    on_contextmenu: Callable[[object], object]
-    on_copy: Callable[[object], object]
-    on_cuechange: Callable[[object], object]
-    on_cut: Callable[[object], object]
-    on_dblclick: Callable[[object], object]
-    on_drag: Callable[[object], object]
-    on_dragend: Callable[[object], object]
-    on_dragenter: Callable[[object], object]
-    on_dragleave: Callable[[object], object]
-    on_dragover: Callable[[object], object]
-    on_dragstart: Callable[[object], object]
-    on_drop: Callable[[object], object]
-    on_durationchange: Callable[[object], object]
-    on_emptied: Callable[[object], object]
-    on_ended: Callable[[object], object]
-    on_error: Callable[[object], object]
-    on_focus: Callable[[object], object]
-    on_focusin: Callable[[object], object]
-    on_focusout: Callable[[object], object]
-    on_formdata: Callable[[object], object]
-    on_fullscreenchange: Callable[[object], object]
-    on_gotpointercapture: Callable[[object], object]
-    on_input: Callable[[object], object]
-    on_invalid: Callable[[object], object]
-    on_keydown: Callable[[object], object]
-    on_keypress: Callable[[object], object]
-    on_keyup: Callable[[object], object]
-    on_load: Callable[[object], object]
-    on_loadeddata: Callable[[object], object]
-    on_loadedmetadata: Callable[[object], object]
-    on_loadstart: Callable[[object], object]
-    on_lostpointercapture: Callable[[object], object]
-    on_mousedown: Callable[[object], object]
-    on_mouseenter: Callable[[object], object]
-    on_mouseleave: Callable[[object], object]
-    on_mousemove: Callable[[object], object]
-    on_mouseout: Callable[[object], object]
-    on_mouseover: Callable[[object], object]
-    on_mouseup: Callable[[object], object]
-    on_mousewheel: Callable[[object], object]
-    on_paste: Callable[[object], object]
-    on_pause: Callable[[object], object]
-    on_play: Callable[[object], object]
-    on_playing: Callable[[object], object]
-    on_pointercancel: Callable[[object], object]
-    on_pointerdown: Callable[[object], object]
-    on_pointerenter: Callable[[object], object]
-    on_pointerleave: Callable[[object], object]
-    on_pointermove: Callable[[object], object]
-    on_pointerout: Callable[[object], object]
-    on_pointerover: Callable[[object], object]
-    on_pointerup: Callable[[object], object]
-    on_progress: Callable[[object], object]
-    on_ratechange: Callable[[object], object]
-    on_reset: Callable[[object], object]
-    on_resize: Callable[[object], object]
-    on_scroll: Callable[[object], object]
-    on_scrollend: Callable[[object], object]
-    on_securitypolicyviolation: Callable[[object], object]
-    on_seeked: Callable[[object], object]
-    on_seeking: Callable[[object], object]
-    on_select: Callable[[object], object]
-    on_selectionchange: Callable[[object], object]
-    on_selectstart: Callable[[object], object]
-    on_show: Callable[[object], object]
-    on_slotchange: Callable[[object], object]
-    on_stalled: Callable[[object], object]
-    on_submit: Callable[[object], object]
-    on_suspend: Callable[[object], object]
-    on_timeupdate: Callable[[object], object]
-    on_toggle: Callable[[object], object]
-    on_touchcancel: Callable[[object], object]
-    on_touchend: Callable[[object], object]
-    on_touchmove: Callable[[object], object]
-    on_touchstart: Callable[[object], object]
-    on_transitionend: Callable[[object], object]
-    on_volumechange: Callable[[object], object]
-    on_waiting: Callable[[object], object]
-    on_wheel: Callable[[object], object]
+    on_abort: Callable[[object], object] | EventHandler
+    on_animationend: Callable[[object], object] | EventHandler
+    on_animationiteration: Callable[[object], object] | EventHandler
+    on_animationstart: Callable[[object], object] | EventHandler
+    on_auxclick: Callable[[object], object] | EventHandler
+    on_beforeinput: Callable[[object], object] | EventHandler
+    on_blur: Callable[[object], object] | EventHandler
+    on_cancel: Callable[[object], object] | EventHandler
+    on_canplay: Callable[[object], object] | EventHandler
+    on_canplaythrough: Callable[[object], object] | EventHandler
+    on_change: Callable[[object], object] | EventHandler
+    on_click: Callable[[object], object] | EventHandler
+    on_close: Callable[[object], object] | EventHandler
+    on_compositionend: Callable[[object], object] | EventHandler
+    on_compositionstart: Callable[[object], object] | EventHandler
+    on_compositionupdate: Callable[[object], object] | EventHandler
+    on_contextmenu: Callable[[object], object] | EventHandler
+    on_copy: Callable[[object], object] | EventHandler
+    on_cuechange: Callable[[object], object] | EventHandler
+    on_cut: Callable[[object], object] | EventHandler
+    on_dblclick: Callable[[object], object] | EventHandler
+    on_drag: Callable[[object], object] | EventHandler
+    on_dragend: Callable[[object], object] | EventHandler
+    on_dragenter: Callable[[object], object] | EventHandler
+    on_dragleave: Callable[[object], object] | EventHandler
+    on_dragover: Callable[[object], object] | EventHandler
+    on_dragstart: Callable[[object], object] | EventHandler
+    on_drop: Callable[[object], object] | EventHandler
+    on_durationchange: Callable[[object], object] | EventHandler
+    on_emptied: Callable[[object], object] | EventHandler
+    on_ended: Callable[[object], object] | EventHandler
+    on_error: Callable[[object], object] | EventHandler
+    on_focus: Callable[[object], object] | EventHandler
+    on_focusin: Callable[[object], object] | EventHandler
+    on_focusout: Callable[[object], object] | EventHandler
+    on_formdata: Callable[[object], object] | EventHandler
+    on_fullscreenchange: Callable[[object], object] | EventHandler
+    on_gotpointercapture: Callable[[object], object] | EventHandler
+    on_input: Callable[[object], object] | EventHandler
+    on_invalid: Callable[[object], object] | EventHandler
+    on_keydown: Callable[[object], object] | EventHandler
+    on_keypress: Callable[[object], object] | EventHandler
+    on_keyup: Callable[[object], object] | EventHandler
+    on_load: Callable[[object], object] | EventHandler
+    on_loadeddata: Callable[[object], object] | EventHandler
+    on_loadedmetadata: Callable[[object], object] | EventHandler
+    on_loadstart: Callable[[object], object] | EventHandler
+    on_lostpointercapture: Callable[[object], object] | EventHandler
+    on_mousedown: Callable[[object], object] | EventHandler
+    on_mouseenter: Callable[[object], object] | EventHandler
+    on_mouseleave: Callable[[object], object] | EventHandler
+    on_mousemove: Callable[[object], object] | EventHandler
+    on_mouseout: Callable[[object], object] | EventHandler
+    on_mouseover: Callable[[object], object] | EventHandler
+    on_mouseup: Callable[[object], object] | EventHandler
+    on_mousewheel: Callable[[object], object] | EventHandler
+    on_paste: Callable[[object], object] | EventHandler
+    on_pause: Callable[[object], object] | EventHandler
+    on_play: Callable[[object], object] | EventHandler
+    on_playing: Callable[[object], object] | EventHandler
+    on_pointercancel: Callable[[object], object] | EventHandler
+    on_pointerdown: Callable[[object], object] | EventHandler
+    on_pointerenter: Callable[[object], object] | EventHandler
+    on_pointerleave: Callable[[object], object] | EventHandler
+    on_pointermove: Callable[[object], object] | EventHandler
+    on_pointerout: Callable[[object], object] | EventHandler
+    on_pointerover: Callable[[object], object] | EventHandler
+    on_pointerup: Callable[[object], object] | EventHandler
+    on_progress: Callable[[object], object] | EventHandler
+    on_ratechange: Callable[[object], object] | EventHandler
+    on_reset: Callable[[object], object] | EventHandler
+    on_resize: Callable[[object], object] | EventHandler
+    on_scroll: Callable[[object], object] | EventHandler
+    on_scrollend: Callable[[object], object] | EventHandler
+    on_securitypolicyviolation: Callable[[object], object] | EventHandler
+    on_seeked: Callable[[object], object] | EventHandler
+    on_seeking: Callable[[object], object] | EventHandler
+    on_select: Callable[[object], object] | EventHandler
+    on_selectionchange: Callable[[object], object] | EventHandler
+    on_selectstart: Callable[[object], object] | EventHandler
+    on_show: Callable[[object], object] | EventHandler
+    on_slotchange: Callable[[object], object] | EventHandler
+    on_stalled: Callable[[object], object] | EventHandler
+    on_submit: Callable[[object], object] | EventHandler
+    on_suspend: Callable[[object], object] | EventHandler
+    on_timeupdate: Callable[[object], object] | EventHandler
+    on_toggle: Callable[[object], object] | EventHandler
+    on_touchcancel: Callable[[object], object] | EventHandler
+    on_touchend: Callable[[object], object] | EventHandler
+    on_touchmove: Callable[[object], object] | EventHandler
+    on_touchstart: Callable[[object], object] | EventHandler
+    on_transitionend: Callable[[object], object] | EventHandler
+    on_volumechange: Callable[[object], object] | EventHandler
+    on_waiting: Callable[[object], object] | EventHandler
+    on_wheel: Callable[[object], object] | EventHandler
     custom_attrs: Mapping[str, object]
+    ref: DomRef
 
 
 class AAttrs(GlobalAttrs, total=False):
@@ -258,13 +261,13 @@ def Blockquote(*children: object, **attrs: Unpack[BlockquoteAttrs]) -> RenderFra
 
 
 class BodyAttrs(GlobalAttrs, total=False):
-    onafterprint: Callable[[object], object]
-    onbeforeprint: Callable[[object], object]
-    onbeforeunload: Callable[[object], object]
-    onhashchange: Callable[[object], object]
-    onload: Callable[[object], object]
-    onpopstate: Callable[[object], object]
-    onunload: Callable[[object], object]
+    onafterprint: Callable[[object], object] | EventHandler
+    onbeforeprint: Callable[[object], object] | EventHandler
+    onbeforeunload: Callable[[object], object] | EventHandler
+    onhashchange: Callable[[object], object] | EventHandler
+    onload: Callable[[object], object] | EventHandler
+    onpopstate: Callable[[object], object] | EventHandler
+    onunload: Callable[[object], object] | EventHandler
 
 
 def Body(*children: object, **attrs: Unpack[BodyAttrs]) -> RenderFragment:

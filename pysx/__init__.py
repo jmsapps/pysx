@@ -1,3 +1,4 @@
+from .dom import Dom, DomError, DomListener, DomNode, DomRef, Rect
 from .elements import (
     br,
     button,
@@ -14,6 +15,7 @@ from .elements import (
     strong,
     ul,
 )
+from .events import BrowserEvent, EventHandler, on_event
 from .operators import (
     all_of,
     any_of,
@@ -45,10 +47,18 @@ from .structured import Projection, Structured, dict_key, list_index, project, s
 from .styled import StyledTag, global_style, styled, stylesheet
 
 __all__ = [
+    "BrowserEvent",
+    "Dom",
+    "DomError",
+    "DomListener",
+    "DomNode",
+    "DomRef",
     "Each",
+    "EventHandler",
     "Fragment",
     "Projection",
     "PysxSyntaxError",
+    "Rect",
     "Rendered",
     "Signal",
     "Structured",
@@ -85,6 +95,7 @@ __all__ = [
     "nav",
     "ne",
     "not_",
+    "on_event",
     "p",
     "project",
     "render",

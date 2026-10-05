@@ -5,6 +5,76 @@ text by index.
 
 ## Messages
 
+### Owned browser commands
+
+`Dom()` is created inside an app render. `dom.ref()` is interpolated as `ref` or
+passed to a native constructor. `ref.handle()` captures an immutable `DomNode` for
+that mount. Remounts receive fresh tokens; old handles raise `DomError`. Each query
+and active-element read is limited to its owned root, including multiple app roots.
+Node-property reads never return nodes outside that root. Queries, reads and writes
+are asynchronous and must be awaited in an async callback.
+
+Commands use `{"t":"dom","version":1,"id":...,"target":...,"root":...,"op":...,"args":...}`.
+Replies use `{"t":"dom_reply","version":1,"id":...,"value":...}` or a bounded `error`.
+Optional `revoked` lists invalidate removed node/listener handles. Requests use opaque
+per-session tokens and IDs, a two-second deadline, at most 64 outstanding requests,
+8192-character argument encoding and 16384-character result encoding. Each root has
+at most 256 browser handles per session document; listeners are capped at 128.
+Unknown/late replies are ignored. Removal and disconnect cancel requests; listeners
+are removed when their target/root disappears or the socket closes. Browser reads
+cannot run from an unconnected static renderer.
+
+The serialized event worker awaits async callbacks while the receiver independently
+processes command replies. Commands flush pending patches first, so initial mounting
+and updated branches commit before their commands. Events queue in order (limit 64);
+overflow closes the connection. This is command ordering, not a transport resume contract.
+
+Supported operations are focus, blur, active-element, scoped query/get-by-id,
+attribute get/set/remove, bounded property get/set, node-property reads, style
+set/remove, selection get/set, scroll and measurement; element/text/fragment creation,
+append/insert/remove; and owned element/window listener registration/removal.
+Property names are value/checked/selected/disabled/tabIndex/textContent; node-property
+names are parentNode/firstChild/nextSibling. Measurement returns a typed `Rect`.
+Selection direction reflects browser normalization. Create supports HTML/SVG/MathML.
+
+Structural, attribute, property and style mutations require `dom.ref(imperative=True)`
+on an empty root. Its descendants belong to the imperative zone. Reactive content
+uses ordinary rendering; commands cannot move nodes across owners or modify reactive
+properties. Script-bearing elements/attributes, runtime metadata writes, executable
+URLs and CSS URL/expression values are rejected. No command executes JavaScript.
+DOM allocation and property results are bounded capabilities, not a blanket browser API.
+List-item rerenders currently remount ref tokens. Because the token is part of the item
+markup, every item of a list that holds refs differs on each render, so a single list
+change replaces all of its rows and loses their focus, selection, scroll and edit
+revisions. Finer retained ownership is a later rendering concern. Use fresh handles
+after a remount.
+
+Typed handlers created with `on_event` receive an immutable `BrowserEvent` snapshot.
+The event message adds `event`, containing `type`, `handler`, target ID/value/checked,
+key/code, alt/ctrl/meta/shift, repeat/composing, button/buttons, x/y, pointer_id/type,
+related_target and submitter IDs. Missing optional fields use documented dataclass
+defaults; unexpected fields, wrong types, nonfinite coordinates, mismatched handler/type
+and strings over 4096 characters are rejected before callback execution. `value` carries
+control contents rather than an identifier, so it is bounded at 1048576 characters.
+Plain callbacks retain their existing value payload. Binding updates precede typed callbacks.
+
+Rendered `data-pysx-policy-<type>` declarations carry prevent/stop, key filters, phase
+and eligible-link policy. Their owning element also carries `data-pysx-typed`, the
+space-separated list of the types it declares, so hydration registers delegation from
+one marker instead of scanning every attribute of the patched subtree. Delegated typed
+listeners exist only while the document still declares that type. Cancellation runs synchronously before network delivery.
+Capture handlers run outermost first; bubble handlers run innermost first. Nonbubbling
+events invoke bubble handlers only at their target. Stop applies to declared handlers
+and browser propagation at the delegation point; native listeners earlier in the path
+have already run. Custom event names are lowercase bounded markup tokens, registered
+once per connection document while an owner needs them (128 distinct custom types).
+Unused custom registrations and socket-owned listeners are removed on teardown.
+Custom `detail` is deliberately not serialized.
+Eligible links require an unmodified primary click, a relative same-origin URL,
+no hash-only destination, no download and a current-window target. Absolute and
+scheme-relative destinations retain native behavior. Keyboard filters do not cancel unmatched keys. Typed submit
+handlers prevent native submission immediately while respecting validation.
+
 **server -> client, once per connection**
 
 ```json
@@ -60,6 +130,7 @@ non-object values, other message kinds, and non-string handler IDs are ignored.
 | COND | `<pysx-slot id="N">branch html</pysx-slot>` |
 | ATTR | the owning element gets `data-pysx-el="eN"` |
 | EVENT | `data-pysx-{type}="hN"`, type from the attribute name (`onSubmit` -> `submit`) |
+| EVENT (typed) | additionally `data-pysx-policy-{type}` and `data-pysx-typed="{types}"` |
 | LIST | `<pysx-list id="N">` wrapping items, each item carrying `data-pysx-key` |
 
 ## Keyed reconciliation
@@ -104,7 +175,10 @@ Composition holds intermediate edits and commits one final value.
 An optional `after` handler ID runs after the binding in the same batch (for
 example an `onInput` normalizer). Reset sends `edits`: an array of
 `{"h":"handler","v":"initial","rev":3}` binding updates. All update payloads are
-validated before mutation; the reset handler runs after those updates in one batch.
+validated before mutation; the reset handler runs after those updates in one batch. A
+typed reset handler uses the same message and adds its `event` snapshot, so it too runs
+after the resynchronised bindings. A cancelled reset restores nothing and sends no
+`edits`.
 Native defaults remain unchanged by live patches.
 
 Submit and reset handler payloads contain `entries` (successful-control

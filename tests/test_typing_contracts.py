@@ -11,6 +11,37 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
+def test_events_immediate_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = "from pysx import BrowserEvent, native, on_event\n"
+
+    if valid:
+        source += "from typing import assert_type\n"
+        source += "def handle(event: BrowserEvent) -> None:\n"
+        source += "    assert_type(event.key, str)\n    assert_type(event.shift, bool)\n"
+        source += "native.Input(on_keydown=on_event(handle, keys=('Enter',)))\n"
+    else:
+        source = "from pysx import on_event\n"
+        source += "def handle(event: int) -> None:\n    pass\n"
+        source += "on_event(handle)\non_event(lambda event: None, phase='wrong')\n"
+    fixture = tmp_path / "event_contract.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        diagnostic = " - error:" if checker == "pyright" else ": error:"
+        assert output.count(diagnostic) == 2, output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
 def test_bindings_form_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = "from pysx import native as n, signal\n"
 

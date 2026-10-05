@@ -44,9 +44,9 @@ def element(tag: str, children: tuple[object, ...], attrs: Mapping[str, object])
 
         if is_event(name):
             name = "on" + normalized[2:].capitalize()
-        elif name not in {"bind_value", "bind_checked", "bind_selected"}:
+        elif name not in {"bind_value", "bind_checked", "bind_selected", "ref"}:
             name = normalized
-        else:
+        elif name != "ref":
             name = {
                 "bind_value": "bindValue",
                 "bind_checked": "bindChecked",
