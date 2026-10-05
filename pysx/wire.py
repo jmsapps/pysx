@@ -22,6 +22,15 @@ class AttrOp(TypedDict):
     id: str
     name: str
     v: str | None
+    rev: NotRequired[int]
+
+
+class PropertyOp(TypedDict):
+    op: Literal["prop"]
+    id: str
+    name: Literal["selectedValues"]
+    v: list[str]
+    rev: NotRequired[int]
 
 
 class ListOp(TypedDict):
@@ -31,7 +40,7 @@ class ListOp(TypedDict):
     html: dict[str, str]
 
 
-type Op = TextOp | HtmlOp | AttrOp | ListOp
+type Op = TextOp | HtmlOp | AttrOp | PropertyOp | ListOp
 
 
 class InitMessage(TypedDict):
@@ -49,6 +58,15 @@ class EventMessage(TypedDict):
     t: Literal["event"]
     h: str
     v: NotRequired[JSONValue]
+    rev: NotRequired[int]
+    after: NotRequired[str]
+    edits: NotRequired[list[BindingEdit]]
+
+
+class BindingEdit(TypedDict):
+    h: str
+    v: str | bool | list[str]
+    rev: int
 
 
 type ServerMessage = InitMessage | PatchMessage

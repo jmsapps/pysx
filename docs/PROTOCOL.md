@@ -31,9 +31,20 @@ text by index.
 | `text` | `{"op":"text","id":"0","v":"2"}` | `slot.textContent = v` |
 | `html` | `{"op":"html","id":"4","v":"<button …>"}` | `slot.innerHTML = v` (conditional branches) |
 | `attr` | `{"op":"attr","id":"e2","name":"class","v":"x"}` | set, or **remove when `v` is null** |
+| `prop` | `{"op":"prop","id":"e2","name":"selectedValues","v":["a","b"]}` | update the selected properties of a multiple select's options |
 | `list` | `{"op":"list","id":"6","keys":[…],"html":{…}}` | keyed reconcile (below) |
 
 A patch carries only what changed. An empty op list is not sent.
+
+Attribute names use canonical HTML spelling. Native boolean values are presence
+or null; ARIA and enumerated booleans are the strings `"true"` and `"false"`.
+For `value`, `checked`, `selected` and `muted`, the client updates the live DOM
+property (null clears the property), preserving attributes that hold reset defaults.
+Other attributes use set/removeAttribute.
+Textarea initial values become escaped text content; select initial values are
+applied after its options have been inserted. Class patches carry the complete,
+deduplicated class list. Marker IDs and list keys are HTML escaped and client
+selectors escape their values.
 
 `pysx/wire.py` defines the Python `TypedDict` contracts for these messages and ops.
 Text and HTML values are strings; attribute values are strings or null; list keys and
@@ -77,12 +88,33 @@ surviving items are regenerated identically.
 
 ## Echo suppression
 
-Patching an input's `value` in response to that same input's own event would
-reset the caret mid-typing. The server records which element originated the
-current event and drops `attr` ops targeting it from the resulting patch.
+Binding events carry an optional nonnegative `rev` edit revision. The server skips
+an equal echo only for that binding's property. It preserves other attributes and
+sends differing normalization results with the originating revision, even when the
+normalized result equals the previous server value. The client ignores a correction
+whose revision is older than its latest edit. Server changes without a revision
+apply authoritatively. Equal values cause no DOM write; text corrections preserve
+selection positions clamped to the corrected value's length.
 
-Server-initiated changes to that input still apply — clearing the field after a
-submit comes from the form's handler, not the input's, so it is not suppressed.
+Bindings use `data-pysx-binding`, `data-pysx-bind` and `data-pysx-bind-event`
+markers. Modes are `value` (string), `checked` (bool), `radio` (shared string
+value) and `selected` (array of strings). Multiple selections use property ops.
+Composition holds intermediate edits and commits one final value.
+
+An optional `after` handler ID runs after the binding in the same batch (for
+example an `onInput` normalizer). Reset sends `edits`: an array of
+`{"h":"handler","v":"initial","rev":3}` binding updates. All update payloads are
+validated before mutation; the reset handler runs after those updates in one batch.
+Native defaults remain unchanged by live patches.
+
+Submit and reset handler payloads contain `entries` (successful-control
+name/value pairs with duplicates retained), `valid`, and `submitter` (name/value
+or null). Disabled controls are omitted. File entries carry name/size/type metadata,
+not file contents. Native validation prevents invalid submission unless explicitly
+disabled by the form or submitter. An `onInvalid` payload has `value` and `valid`.
+Reset synchronizes enabled bound controls after the browser restores their defaults.
+Delegated listeners are installed once; edit/composition state uses WeakMaps, and
+hidden conditional bindings remove their server handlers and subscriptions.
 
 ## Deliberate limits
 

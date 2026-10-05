@@ -2,16 +2,74 @@ const root = document.getElementById("pysx-root");
 const style = document.getElementById("pysx-style");
 const socket = new WebSocket(`ws://${location.host}/ws`);
 
-const EVENTS = ["click", "submit", "change", "input"];
+const EVENTS = [
+  "abort", "afterprint", "animationend", "animationiteration", "animationstart", "auxclick",
+  "beforeinput", "beforeprint", "beforeunload", "blur", "cancel", "canplay", "canplaythrough",
+  "change", "click", "close", "compositionend", "compositionstart", "compositionupdate",
+  "contextmenu", "copy", "cuechange", "cut", "dblclick", "drag", "dragend", "dragenter",
+  "dragleave", "dragover", "dragstart", "drop", "durationchange", "emptied", "ended", "error",
+  "focus", "focusin", "focusout", "formdata", "fullscreenchange", "gotpointercapture",
+  "hashchange", "input", "invalid", "keydown", "keypress", "keyup", "load", "loadeddata",
+  "loadedmetadata", "loadstart", "lostpointercapture", "mousedown", "mouseenter", "mouseleave",
+  "mousemove", "mouseout", "mouseover", "mouseup", "mousewheel", "paste", "pause", "play",
+  "playing", "pointercancel", "pointerdown", "pointerenter", "pointerleave", "pointermove",
+  "pointerout", "pointerover", "pointerup", "popstate", "progress", "ratechange", "reset",
+  "resize", "scroll", "scrollend", "securitypolicyviolation", "seeked", "seeking", "select",
+  "selectionchange", "selectstart", "show", "slotchange", "stalled", "submit", "suspend",
+  "timeupdate", "toggle", "touchcancel", "touchend", "touchmove", "touchstart", "transitionend",
+  "unload", "volumechange", "waiting", "wheel",
+];
 // value and checked must be set as properties; setAttribute does not move an
 // input the user has already interacted with.
-const PROPERTIES = new Set(["value", "checked"]);
+const PROPERTIES = new Set(["value", "checked", "selected", "muted"]);
+const edits = new WeakMap();
+
+function editState(el) {
+  if (!edits.has(el)) edits.set(el, { rev: 0, composing: false, pending: null, lastSent: null });
+  return edits.get(el);
+}
+
+function setValue(el, value) {
+  if (el.value === value) return;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  const direction = el.selectionDirection;
+  el.value = value;
+  if (start !== null && end !== null && typeof el.setSelectionRange === "function") {
+    el.setSelectionRange(Math.min(start, value.length), Math.min(end, value.length), direction);
+  }
+}
+
+function setSelected(el, values, defaults = false) {
+  const selected = new Set(values);
+  for (const option of el.options) {
+    option.selected = selected.has(option.value);
+    if (defaults) option.defaultSelected = option.selected;
+  }
+}
+
+function within(scope, selector) {
+  const found = [...scope.querySelectorAll(selector)];
+  if (scope.matches?.(selector)) found.unshift(scope);
+  return found;
+}
+
+function hydrate(scope) {
+  for (const el of within(scope, "select[value], textarea[value]")) {
+    el.value = el.getAttribute("value");
+    if (el.tagName === "SELECT") setSelected(el, [el.value], true);
+  }
+  for (const el of within(scope, "select[data-pysx-selected]")) {
+    setSelected(el, JSON.parse(el.dataset.pysxSelected), true);
+  }
+}
 
 socket.onmessage = (event) => {
   const message = JSON.parse(event.data);
   if (message.t === "init") {
     style.textContent = message.css;
     root.innerHTML = message.html;
+    hydrate(root);
   } else if (message.t === "patch") {
     for (const op of message.ops) apply(op);
   }
@@ -19,30 +77,32 @@ socket.onmessage = (event) => {
 
 function apply(op) {
   if (op.op === "text" || op.op === "html") {
-    const slot = root.querySelector(`pysx-slot[id="${op.id}"]`);
+    const slot = root.querySelector(`pysx-slot[id="${CSS.escape(op.id)}"]`);
     if (!slot) return;
     if (op.op === "text") slot.textContent = op.v;
-    else slot.innerHTML = op.v;
+    else { slot.innerHTML = op.v; hydrate(slot); }
     return;
   }
-  if (op.op === "attr") {
-    const el = root.querySelector(`[data-pysx-el="${op.id}"]`);
+  if (op.op === "attr" || op.op === "prop") {
+    const el = root.querySelector(`[data-pysx-el="${CSS.escape(op.id)}"]`);
     if (!el) return;
-    if (op.v === null) {
-      el.removeAttribute(op.name);
-      if (PROPERTIES.has(op.name)) el[op.name] = op.name === "checked" ? false : "";
-    } else if (PROPERTIES.has(op.name)) {
-      el[op.name] = op.name === "checked" ? true : op.v;
-    } else {
-      el.setAttribute(op.name, op.v);
-    }
+    const state = editState(el);
+    if (op.rev !== undefined && op.rev !== state.rev) return;
+    if (state.composing && op.name === "value") { state.pending = op; return; }
+    state.lastSent = null;
+    if (op.op === "prop") { setSelected(el, op.v); return; }
+    if (PROPERTIES.has(op.name)) {
+      if (op.name === "value") setValue(el, op.v ?? "");
+      else el[op.name] = op.v !== null;
+    } else if (op.v === null) el.removeAttribute(op.name);
+    else el.setAttribute(op.name, op.v);
     return;
   }
   if (op.op === "list") reconcile(op);
 }
 
 function reconcile(op) {
-  const list = root.querySelector(`pysx-list[id="${op.id}"]`);
+  const list = root.querySelector(`pysx-list[id="${CSS.escape(op.id)}"]`);
   if (!list) return;
 
   const nodes = new Map();
@@ -57,6 +117,7 @@ function reconcile(op) {
     const existing = nodes.get(key);
     if (existing) existing.replaceWith(fresh);
     nodes.set(key, fresh);
+    hydrate(fresh);
   }
 
   const keep = new Set(op.keys);
@@ -79,16 +140,92 @@ function reconcile(op) {
   }
 }
 
+function bindingValue(el) {
+  if (el.dataset.pysxBind === "checked") return el.checked;
+  if (el.dataset.pysxBind === "selected") return [...el.selectedOptions].map(option => option.value);
+  return el.value;
+}
+
+function edit(el) {
+  const state = editState(el);
+  state.rev += 1;
+  const value = bindingValue(el);
+  state.lastSent = JSON.stringify(value);
+  return { h: el.dataset.pysxBinding, v: value, rev: state.rev };
+}
+
+function send(payload) {
+  if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
+}
+
+function submitPayload(form, submitter = null) {
+  const data = new FormData(form, submitter);
+  return {
+    entries: [...data.entries()].map(([name, value]) => [name, typeof value === "string" ? value :
+      { name: value.name, size: value.size, type: value.type }]),
+    valid: form.checkValidity(),
+    submitter: submitter ? { name: submitter.name, value: submitter.value } : null,
+  };
+}
+
+document.addEventListener("compositionstart", event => {
+  if (event.target.dataset?.pysxBinding) editState(event.target).composing = true;
+});
+
+document.addEventListener("compositionend", event => {
+  const el = event.target;
+  if (!el.dataset?.pysxBinding) return;
+  const state = editState(el);
+  state.composing = false;
+  const payload = { t: "event", ...edit(el) };
+  const handler = el.getAttribute("data-pysx-input");
+  if (handler && handler !== payload.h) payload.after = handler;
+  send(payload);
+  if (state.pending) { const pending = state.pending; state.pending = null; apply(pending); }
+});
+
 for (const type of EVENTS) {
-  document.addEventListener(type, (event) => {
+  window.addEventListener(type, (event) => {
+    const bound = event.target.closest?.("[data-pysx-binding]");
+    if ((type === "input" || type === "change") && bound?.dataset.pysxBindEvent === type) {
+      if (bound.disabled || editState(bound).composing || event.isComposing) return;
+      if (bound.dataset.pysxBind === "radio" && !bound.checked) return;
+      if (JSON.stringify(bindingValue(bound)) === editState(bound).lastSent) return;
+      const payload = { t: "event", ...edit(bound) };
+      const handler = bound.getAttribute(`data-pysx-${type}`);
+      if (handler && handler !== payload.h) payload.after = handler;
+      send(payload);
+      return;
+    }
     const attribute = `data-pysx-${type}`;
-    const target = event.target.closest?.(`[${attribute}]`);
+    const target = event.target instanceof Element
+      ? event.target.closest(`[${attribute}]`)
+      : root.querySelector(`[${attribute}]`);
+    if (type === "reset") {
+      const form = event.target;
+      if (form.tagName !== "FORM" || event.defaultPrevented) return;
+      setTimeout(() => {
+        if (event.defaultPrevented || !root.contains(form)) return;
+        const updates = [...form.elements].filter(el =>
+          el.dataset?.pysxBinding && !el.disabled &&
+          (el.dataset.pysxBind !== "radio" || el.checked)).map(edit);
+        send({ t: "event", h: target?.getAttribute(attribute) ?? "", edits: updates,
+          v: submitPayload(form) });
+      }, 0);
+      return;
+    }
     if (!target) return;
+    if (target.matches(":disabled")) return;
     if (type === "submit") event.preventDefault();
     const payload = { t: "event", h: target.getAttribute(attribute) };
+    if (type === "submit") {
+      if (!target.checkValidity() && !target.noValidate && !event.submitter?.formNoValidate) return;
+      payload.v = submitPayload(target, event.submitter);
+    }
     if (type === "input" || type === "change") {
       payload.v = target.type === "checkbox" ? target.checked : target.value;
     }
-    socket.send(JSON.stringify(payload));
-  });
+    if (type === "invalid") payload.v = { value: target.value, valid: target.validity.valid };
+    send(payload);
+  }, true);
 }

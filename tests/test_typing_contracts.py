@@ -8,6 +8,106 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_bindings_form_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = "from pysx import native as n, signal\n"
+
+    if valid:
+        source += 'n.Input(bind_value=signal("text"))\n'
+        source += 'n.Input(type="checkbox", bind_checked=signal(True))\n'
+        source += 'n.Select(multiple=True, bind_selected=signal(["a"]))\n'
+        source += 'n.Textarea(bind_value=signal({"text": ["a"]})["text"][0])\n'
+    else:
+        source += 'number = signal(1)\ntext = signal("bad")\n'
+        source += "n.Input(bind_value=number)\n"
+        source += "n.Input(bind_checked=text)\n"
+        source += "n.Select(bind_selected=text)\n"
+        source += "n.Textarea(bind_checked=signal(True))\n"
+    fixture = tmp_path / "bindings_contract.py"
+    fixture.write_text(source)
+    command = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        command += ["--strict", "--show-error-codes"]
+    result = subprocess.run(
+        [*command, str(fixture)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        diagnostic = " - error:" if checker == "pyright" else ": error:"
+        assert output.count(diagnostic) == 4, output
+
+        for name in ("bind_value", "bind_checked", "bind_selected"):
+            assert name in output, output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_schema_native_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    from pysx.schema import BASELINE_TAGS, BOOLEAN_ATTRS, TAG_ATTRS, resolve_tag
+    from scripts.generate_native import spelling
+
+    source = "from pysx import native as n" + (", signal\n" if valid else "\n")
+
+    if valid:
+        for tag in dict.fromkeys(resolve_tag(tag) for tag in BASELINE_TAGS):
+            attrs = TAG_ATTRS.get(tag, frozenset())
+            kwargs = [
+                f"{spelling(attr)}="
+                + (
+                    "(lambda event: None)"
+                    if attr.startswith("on")
+                    else "signal(True)"
+                    if attr in BOOLEAN_ATTRS
+                    else 'signal("2")'
+                )
+                for attr in sorted(attrs)
+            ]
+            source += f"n.{tag.capitalize()}(" + ", ".join(kwargs) + ")\n"
+        source += 'n.Div(n.Span("hello"), custom_attrs={"aria-hidden": False})\n'
+    else:
+        source += 'n.Div(href="/bad")\nn.Input(checked="bad")\nn.A(href=1)\n'
+        source += 'n.Input(on_click="bad")\n'
+
+        for tag in BASELINE_TAGS:
+            canonical = resolve_tag(tag)
+            forbidden = "cols" if "href" in TAG_ATTRS.get(canonical, frozenset()) else "href"
+            source += f'n.{canonical.capitalize()}({forbidden}="invalid")\n'
+        source += 'n.Fragment(id="invalid")\n'
+    fixture = tmp_path / "native_contract.py"
+    fixture.write_text(source)
+    command = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        command += ["--strict", "--show-error-codes"]
+    result = subprocess.run(
+        [*command, str(fixture)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        diagnostic = " - error:" if checker == "pyright" else ": error:"
+        assert output.count(diagnostic) == 5 + len(BASELINE_TAGS), output
+
+        for name in ("href", "checked", "on_click"):
+            assert name in output, output
+
+
 POSITIVE = '''from typing import assert_type
 from pysx import Each, Fragment, Signal, component, derived, each, html, signal
 from pysx.wire import Op, PatchMessage

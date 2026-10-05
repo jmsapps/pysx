@@ -35,10 +35,19 @@ or required host input fails setup; it cannot become a skipped passing test.
 
 ```sh
 npm --prefix tests run browser -- --suite examples
+npm --prefix tests run browser -- --suite serialization_live
+npm --prefix tests run browser -- --suite bindings_form
+npm --prefix tests run browser -- --suite forms_example
 npm --prefix tests run grammar -- --suite injection
 npm --prefix editor test -- --suite diagnostics
 uv run --project . pytest -q tests/test_verification_harness.py
 ```
+
+The native/form suites verify schema serialization and live DOM properties, typed
+control bindings, server normalization with caret preservation, edit revisions,
+composition event sequences, reset/submit validation, successful-control
+serialization, session isolation and bounded delegated listeners. The forms example
+uses the real launcher and shared example components.
 
 Isolated feasibility cases are registered separately from the shipped runtime/client:
 

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, cast
 
 from websockets.asyncio.server import ServerConnection, serve
 
+from .forms import PayloadError, form_edits
 from .reactive import Effect, batch
 from .render import Fragment, Watcher, render
 
@@ -46,27 +47,87 @@ class Session:
 
     def _collect(self, watcher: Watcher) -> None:
         ops = watcher.refresh()
+
         if self._live and ops:
             self.pending.extend(ops)
 
-    def dispatch(self, handler_id: str, value: object) -> list[Op]:
+    def dispatch(
+        self,
+        handler_id: str,
+        value: object,
+        revision: int | None = None,
+        *,
+        after: str | None = None,
+        edits: list[tuple[str, object, int | None]] | None = None,
+    ) -> list[Op]:
         fn = self.rendered.handlers.get(handler_id)
-        if fn is None:
+
+        if fn is None and not edits:
             return []
+        updates = list(edits or [])
+        binding = self.rendered.bindings.get(handler_id)
+
+        if binding is not None:
+            updates.append((handler_id, value, revision))
+
+        for hid, payload, _rev in updates:
+            target = self.rendered.bindings.get(hid)
+
+            if target is not None:
+                target.validate(payload)
         self.pending.clear()
         with batch():
-            fn(value)
+            for hid, payload, _rev in edits or []:
+                target = self.rendered.bindings.get(hid)
+
+                if target is not None:
+                    target.set(payload)
+
+            if fn is not None:
+                fn(value)
+
+            if after is not None and after != handler_id:
+                callback = self.rendered.handlers.get(after)
+
+                if callback is not None:
+                    callback(value)
         ops = self.pending
         self.pending = []
-        origin = self.rendered.bind_elements.get(handler_id)
-        if origin is not None:
-            # Do not echo a value back to the element that just produced it.
-            ops = [o for o in ops if not (o["op"] == "attr" and o["id"] == origin)]
+
+        for hid, payload, rev in updates:
+            target = self.rendered.bindings.get(hid)
+
+            if target is None:
+                continue
+            equal = target.signal() == payload
+            own = [
+                op
+                for op in ops
+                if (op["op"] == "attr" or op["op"] == "prop")
+                and op["id"] == target.element
+                and op["name"] == target.name
+            ]
+
+            if equal:
+                ops = [op for op in ops if op not in own]
+            else:
+                correction = target.op()
+
+                if rev is not None and (correction["op"] == "attr" or correction["op"] == "prop"):
+                    correction["rev"] = rev
+                ops = [op for op in ops if op not in own]
+                ops.append(correction)
+
         return ops
 
     def dispose(self) -> None:
         for eff in self.effects:
             eff.dispose()
+        self.rendered.handlers.clear()
+        self.rendered.bindings.clear()
+        self.rendered.bind_elements.clear()
+        self.rendered.handler_owners.clear()
+        self.pending.clear()
 
 
 def _static(connection: ServerConnection, name: str, content_type: str) -> Response:
@@ -75,14 +136,17 @@ def _static(connection: ServerConnection, name: str, content_type: str) -> Respo
     # than replaces, so the original must be removed first.
     del response.headers["Content-Type"]
     response.headers["Content-Type"] = content_type
+
     return response
 
 
 def _load_app(spec: str) -> Callable[[], Fragment]:
     module_name, _, attr = spec.partition(":")
     app: object = getattr(importlib.import_module(module_name), attr or "app")
+
     if not callable(app):
         raise TypeError("app must be callable")
+
     return cast("Callable[[], Fragment]", app)
 
 
@@ -97,14 +161,18 @@ def main() -> None:
     async def process_request(connection: ServerConnection, request: Request) -> Response | None:
         if request.path in ("/", "/index.html"):
             return _static(connection, "index.html", "text/html; charset=utf-8")
+
         if request.path == "/client.js":
             return _static(connection, "client.js", "text/javascript; charset=utf-8")
+
         if request.path == "/ws":
             return None
+
         return connection.respond(HTTPStatus.NOT_FOUND, "not found\n")
 
     async def handler(connection: ServerConnection) -> None:
         session = Session(app_fn)
+
         try:
             initial: InitMessage = {
                 "t": "init",
@@ -112,20 +180,44 @@ def main() -> None:
                 "css": session.rendered.css,
             }
             await connection.send(json.dumps(initial))
+
             async for raw in connection:
                 try:
                     decoded: object = json.loads(raw)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     continue
+
                 if not isinstance(decoded, dict):
                     continue
                 message = cast("dict[str, object]", decoded)
+
                 if message.get("t") != "event":
                     continue
                 handler_id = message.get("h", "")
+
                 if not isinstance(handler_id, str):
                     continue
-                ops = session.dispatch(handler_id, message.get("v"))
+                revision = message.get("rev")
+                after = message.get("after")
+
+                if revision is not None and (type(revision) is not int or revision < 0):
+                    continue
+
+                if after is not None and not isinstance(after, str):
+                    continue
+
+                try:
+                    edits = form_edits(message.get("edits"))
+                    ops = session.dispatch(
+                        handler_id,
+                        message.get("v"),
+                        revision,
+                        after=after,
+                        edits=edits,
+                    )
+                except PayloadError:
+                    continue
+
                 if ops:
                     patch: PatchMessage = {"t": "patch", "ops": ops}
                     await connection.send(json.dumps(patch))

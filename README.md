@@ -1,37 +1,25 @@
 # pysx
 
-## Server-side reactive UI for Python, templated with PEP 750 t-strings.
+**Reactive interfaces, written in Python.**
 
-pysx renders reactive user interfaces from Python, in the spirit of Phoenix LiveView. State
-lives on the server as signals — one graph per websocket connection — events travel up, and
-minimal patch operations travel down. The browser runs about ninety lines of JavaScript.
+pysx brings the feel of a reactive web app to Python. Write your interface with
+readable, indentation-based templates, keep state in signals, and let the page
+update as that state changes.
 
-Templates are **t-strings** ([PEP 750](https://peps.python.org/pep-0750/), Python 3.14),
-which give the static/dynamic split a compiled template needs. f-strings cannot work: they
-interpolate eagerly and destroy the holes before any library sees them.
+Python runs on the server. A small JavaScript client connects the browser to your
+application, sends user events, and applies the updates it receives.
 
----
+## How it works
 
-## Features
+Each browser connection gets its own reactive state. Signals hold values, derived
+signals compute from them, and effects track dependencies automatically. When a
+user clicks a button or edits a field, Python handles the event and sends changes
+back to the page.
 
-- **Signals, derived signals, and effects** with automatic dependency tracking.
-- **An indentation-based markup DSL** carried inside a t-string, not built at runtime.
-- **Keyed list reconciliation** that leaves untouched rows' DOM nodes alone, preserving
-  focus, selection, and scroll.
-- **Styled components** with import-time scoped-class hashing.
-- **Two-way input binding** with echo suppression, so the caret survives typing.
-- **Per-connection isolation** — one client's state never leaks into another's.
-- **Editor tooling**: a TextMate injection grammar and advisory diagnostics for VSCode.
-
----
-
-## Code Sample
+Templates use Python 3.14+ t-strings to keep markup and live values together:
 
 ```python
-from pysx import component, div, html, signal, styled
-
-Page = styled(div, t"""font-family: system-ui; padding: 2rem;""")
-Action = styled("button", t"""cursor: pointer;""")
+from pysx import component, html, signal
 
 
 @component
@@ -39,167 +27,29 @@ def app():
     count = signal(0)
 
     return html(t"""
-        Page(id="container"):
-            "Count: " {count}
-            Action(type="button", onClick={(lambda e: count.set(count() + 1))}):
-                "Increment"
+        div:
+            p: "Count: " {count}
+            button(onClick={(lambda event: count.set(count() + 1))}): "Increment"
     """)
 ```
 
-Two rules the DSL enforces, both consequences of eager interpolation:
+Changing `count` updates the displayed value. The browser applies targeted patches,
+and keyed lists preserve unchanged rows so focus, selection, and scroll survive
+updates.
 
-- **Only a bare signal in a hole is reactive.** `{count()}` freezes at its first value.
-- **Lambdas must be parenthesised.** A bare `lambda` is a `SyntaxError`, because `:` starts
-  a format spec.
+## Build with pysx
 
----
+- **Reactive state:** signals, derived values, batched updates, and writable views into structured data.
+- **Readable interfaces:** t-string templates and composable, typed native elements.
+- **Live forms:** two-way bindings, native validation, reset and submit handling, and caret-preserving server corrections.
+- **Scoped styling:** reusable styled elements with scoped CSS classes.
+- **Editor support:** VSCode syntax highlighting and advisory template diagnostics.
 
-## Requirements
+## Explore
 
-- **Python 3.14 or newer** — t-strings do not exist before it. [uv](https://docs.astral.sh/uv/)
-  fetches a suitable interpreter automatically.
-- One runtime dependency: `websockets`.
+- [Examples](examples/README.md) — run the demos and explore reactive state and live forms.
+- [Tests](tests/README.md) — run the test suite and quality checks.
+- [Editor support](editor/README.md) — install the VSCode extension.
 
----
-
-## Running an example
-
-```bash
-uv run --project . example run counter    # http://127.0.0.1:8750
-uv run --project . example run todos
-uv run --project . example run reactive_state
-uv run --project . example run            # lists the available examples
-```
-
-To choose a port, set `PSX_PORT` or pass `--port`:
-
-```bash
-PSX_PORT=9100 uv run --project . example run counter
-```
-
-`uv run` needs no activated environment — it prepares one itself. The command is defined in
-`run_example.py` at the repository root.
-
-The `reactive_state` example demonstrates unified `signal()` state, nested writable
-projections, multiplication and batched computations. Click **Advance twice** to show the
-branch controlled by mixed numeric ordering and boolean membership; **Increment first**
-updates the concatenated status and hides that branch. **Edit a private snapshot** leaves
-the display unchanged, and **Rotate list** moves the first positional projection.
-Collection length stays live. State belongs to each browser session.
-The **Boolean helper** card displays `all_of`, `any_of` and `not_`. Follow its three
-steps: advance twice, increment the first score, then **Reset count** — at that last
-step `any_of` flips from true to false while `all_of` stays false and `not_` stays
-true, so you can see each helper tracks its own operands.
-
-The `operators` example (`uv run --project . example run operators`) renders every
-supported operator spelling, grouped by what Python permits an operator to return:
-real overloads for arithmetic, indexing and ordering; named functions where the
-protocol forces a primitive (`all_of`, `any_of`, `not_`, `eq`, `ne`, `contains`,
-`length`, `concat`); and `derived(lambda: ...)` as the default for anything else,
-with genuine `and`/`or`/`not` short-circuiting. Signals deliberately have no `&`, `|`
-or `~` — those read as bitwise in Python.
-
-To drop the `uv run --project .` prefix, activate the environment first:
-
-```bash
-source .venv/bin/activate     # prompt becomes (pysx)
-example run counter
-```
-
-`example` is installed into `.venv/bin`, so it is only on `PATH` while that environment is
-active. A shell reporting `command not found: example` has not activated it — a new terminal
-starts without it.
-
----
-
-## Tests
-
-Install the locked development tools and the Node/browser/Pylance inputs described in
-[verification setup](tests/VERIFICATION.md), then run the full Python suite and quality checks:
-
-```bash
-uv sync --locked
-uv run --project . pytest -q
-uv run --project . ruff check .
-uv run --project . mypy
-uv run --project . pyright
-```
-
-`uv run --project . pytest -q -m 'not acceptance'` excludes the socket acceptance cases;
-the harness checks still require the documented Node/browser/Pylance inputs.
-Headless acceptance requires permitted loopback access. Its direct entry points remain:
-
-```bash
-uv run --project . python tests/acceptance.py
-uv run --project . python tests/acceptance_todos.py
-```
-
-Run DOM checks in Chromium, Firefox and WebKit, actual Pylance grammar assertions, and
-fresh VSCode-host tests with:
-
-```bash
-npm --prefix tests run browser
-npm --prefix tests run grammar
-npm --prefix editor test
-```
-
----
-
-## Editor support
-
-```bash
-./scripts/install-extension.sh     # build and install the VSCode extension
-./scripts/uninstall-extension.sh
-```
-
-This provides syntax highlighting for the markup inside `html(t"""...""")` and diagnostics
-for unknown component tags, unparenthesised lambdas, and signals that were called when a bare
-signal was meant.
-
-Diagnostics are **advisory by design**. A template with a bad attribute still runs until
-first render, the way TypeScript and JSX are advisory rather than build-blocking. Highlighting
-applies at literal call sites only: `html(` and `t"""` must sit on the same line, because
-TextMate grammars have no dataflow.
-
-Diagnostics refresh when a file is opened or saved, not as you type.
-
----
-
-## Layout
-
-```
-pysx/          the library: reactive core, parser, renderer, server, checker
-examples/      runnable examples, one module each, discovered automatically
-run_example.py the `example` command
-editor/        VSCode extension
-docs/          protocol and grammar reference
-```
-
-Adding `examples/<name>.py` with an `app` attribute is enough to make
-`example run <name>` work — the registry globs the directory.
-
-Shared example layouts and controls live in `examples/components/`. Import `Page`,
-`Action`, and `Title`, or use `page(t"""...""")` to append page-specific style overrides.
-Forms, filters, and list rows use the same shared components. The palette, spacing, and
-responsive layout rules are documented in [the example theme](examples/components/THEME.md).
-
----
-
-## Documentation
-
-- [docs/PROTOCOL.md](docs/PROTOCOL.md) — the wire protocol: messages, ops, keyed
-  reconciliation, and echo suppression.
-- [docs/GRAMMAR.md](docs/GRAMMAR.md) — the DSL grammar of record and the hole-kind table.
-
----
-
-## Why server-side rendering
-
-pysx follows the design of a compiled client-side reactive renderer, adapted to Python.
-
-The single difference that shapes everything here: a compile-time macro system can build the
-template DSL at build time, and Python has no macros. Client-side Python would require Pyodide
-or a Python-to-JavaScript compiler, both of which defeat the lightweight premise. PEP 750
-t-strings give the static/dynamic split instead. **So pysx renders on the server** — and every
-additional concern in this repository, from the wire protocol to per-session signal graphs,
-follows from that one decision.
+For the technical details, see the [template grammar](docs/GRAMMAR.md),
+[native elements and bindings](docs/ELEMENTS.md), and [wire protocol](docs/PROTOCOL.md).

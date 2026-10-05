@@ -16,6 +16,15 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "forms_example", cases: [
+    [0, "forms", "browser_forms.mjs", "FORMS BROWSER PASSED"],
+  ] },
+  { suite: "bindings_form", cases: [
+    [0, "forms_fixture", "browser_forms.mjs", "FORMS BROWSER PASSED"],
+  ] },
+  { suite: "serialization_live", cases: [
+    [0, "native_fixture", "browser_serialization.mjs", "SERIALIZATION BROWSER PASSED"],
+  ] },
   { suite: "examples", cases: [
     [0, "counter", "browser.mjs", "BROWSER ACCEPTANCE PASSED"],
     [1, "todos", "browser_todos.mjs", "TODOS BROWSER ACCEPTANCE PASSED"],
@@ -110,7 +119,11 @@ try {
   let selectedAssertions = 0;
   for (const [index, name, script, banner] of cases) {
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
-    const server = name ? start(interpreter, name === "adoption" ?
+    const server = name ? start(interpreter, name === "forms_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_forms_fixture:app", "--port", String(port)] :
+      name === "native_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_fixture:app", "--port", String(port)] :
+      name === "adoption" ?
       ["-m", "tests.prototypes.standalone_host", "--port", String(port)] :
       ["run_example.py", "run", name, "--port", String(port)]) : null;
     if (server) await wait(server, "pysx ready", 15000);

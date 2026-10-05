@@ -1,0 +1,184 @@
+"""Typed controls, structured writes, normalization and native form transactions."""
+
+import json
+from typing import cast
+
+from pysx import Fragment, component, html, native, signal
+
+from .components import Card as Card
+from .components import Description as Description
+from .components import Eyebrow as Eyebrow
+from .components import Field, Form, SecondaryAction, Submit
+from .components import Page as Page
+from .components import Title as Title
+
+
+@component
+def app() -> Fragment:
+    profile = signal({"text": ["initial"]})
+    text = profile["text"][0]
+    note = signal("note")
+    checked = signal(False)
+    single = signal("a")
+    selected = signal(["a"])
+    radio = signal("a")
+    corrected = signal("ABC")
+    status = signal("ready")
+    resets = signal(0)
+    invalids = signal(0)
+    visible = signal(True)
+    owned = signal("owned")
+
+    def normalize(_value: object) -> None:
+        corrected.set(corrected().upper())
+
+    def submitted(value: object) -> None:
+        status.set(json.dumps(cast("dict[str, object]", value), indent=2, sort_keys=True))
+
+    def reset(_value: object) -> None:
+        resets.update(lambda count: count + 1)
+
+    def invalid(_value: object) -> None:
+        invalids.update(lambda count: count + 1)
+
+    def programmatic(_value: object) -> None:
+        text.set("server")
+        note.set("server note")
+        checked.set(True)
+        single.set("b")
+        selected.set(["b"])
+        radio.set("b")
+
+    def toggle(_value: object) -> None:
+        visible.set(not visible())
+
+    controls = native.Form(
+        native.Label("Required text", html_for="text"),
+        native.Input(
+            id="text",
+            name="text",
+            required=True,
+            bind_value=text,
+            on_invalid=invalid,
+            class_name=Field.css_class,
+        ),
+        native.Label("Notes", html_for="note"),
+        native.Textarea(id="note", name="note", bind_value=note, class_name=Field.css_class),
+        native.Label("Enable updates", html_for="check"),
+        native.Input(id="check", name="check", type="checkbox", value="yes", bind_checked=checked),
+        native.Label("Single choice", html_for="single"),
+        native.Select(
+            native.Option("A", value="a"),
+            native.Option("B", value="b"),
+            id="single",
+            name="single",
+            bind_value=single,
+            class_name=Field.css_class,
+        ),
+        native.Label("Multiple choices", html_for="multi"),
+        native.Select(
+            native.Option("A", value="a"),
+            native.Option("B", value="b"),
+            id="multi",
+            name="color",
+            multiple=True,
+            size=2,
+            bind_selected=selected,
+            class_name=Field.css_class,
+        ),
+        native.Label("Radio A", html_for="radio-a"),
+        native.Input(id="radio-a", type="radio", name="radio", value="a", bind_value=radio),
+        native.Label("Radio B", html_for="radio-b"),
+        native.Input(id="radio-b", type="radio", name="radio", value="b", bind_value=radio),
+        native.Label("Disabled field", html_for="disabled"),
+        native.Input(
+            id="disabled",
+            name="disabled",
+            disabled=True,
+            value="omitted",
+            class_name=Field.css_class,
+        ),
+        native.Button(
+            "Submit",
+            id="submit",
+            type="submit",
+            name="action",
+            value="save",
+            class_name=Submit.css_class,
+        ),
+        native.Button(
+            "Reset to initial values",
+            id="reset",
+            type="reset",
+            class_name=SecondaryAction.css_class,
+        ),
+        id="form",
+        on_submit=submitted,
+        on_reset=reset,
+        class_name=Form.css_class,
+    )
+    correction = native.Div(
+        native.Label("Uppercase correction", html_for="corrected"),
+        native.Input(
+            id="corrected", bind_value=corrected, on_input=normalize, class_name=Field.css_class
+        ),
+    )
+    actions = native.Div(
+        native.Button(
+            "Apply server values", id="program", on_click=programmatic, class_name=Submit.css_class
+        ),
+        native.Button(
+            "Show or hide optional field",
+            id="toggle",
+            on_click=toggle,
+            class_name=SecondaryAction.css_class,
+        ),
+    )
+    conditional = html(t"""
+        if {visible}:
+            label(htmlFor="owned"): "Optional field"
+            input(id="owned" bindValue={owned} class={Field.css_class})
+    """)
+    readings = native.Dl(
+        native.Dt("Text"),
+        native.Dd(text, id="text-state"),
+        native.Dt("Notes"),
+        native.Dd(note, id="note-state"),
+        native.Dt("Checked"),
+        native.Dd(checked, id="check-state"),
+        native.Dt("Single choice"),
+        native.Dd(single, id="single-state"),
+        native.Dt("Multiple choices"),
+        native.Dd(selected, id="multi-state"),
+        native.Dt("Radio choice"),
+        native.Dd(radio, id="radio-state"),
+        native.Dt("Corrected text"),
+        native.Dd(corrected, id="corrected-state"),
+        native.Dt("Resets"),
+        native.Dd(resets, id="reset-state"),
+        native.Dt("Invalid submissions"),
+        native.Dd(invalids, id="invalid-state"),
+    )
+
+    return html(t"""
+        Page(id="live-forms"):
+            header:
+                Eyebrow: "pysx / examples"
+                Title: "Live forms"
+                Description: "Edit controls to see their state update below."
+            Card:
+                h2: "Native controls"
+                Description: "Submit collects enabled fields. Reset restores the initial values."
+                {controls}
+            Card:
+                h2: "Server corrections"
+                Description: "This field converts edits to uppercase while keeping your caret."
+                {correction}
+                {actions}
+                {conditional}
+            Card:
+                h2: "Live values"
+                {readings}
+                h3: "Last submission"
+                pre(id="status"): {status}
+    """)
