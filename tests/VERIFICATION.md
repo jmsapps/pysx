@@ -33,6 +33,10 @@ a copied grammar alone or MagicPython is rejected. Output reports the selected v
 path and SHA256. Retain that provenance with remote CI results. An unavailable Marketplace
 or required host input fails setup; it cannot become a skipped passing test.
 
+`scripts/verify.py` owns the gate list that CI runs; `uv run --project . python
+scripts/verify.py gates` executes every check below on a provisioned machine, and
+`--list` prints them. Run the individual commands when iterating on one suite.
+
 ```sh
 npm --prefix tests run browser -- --suite examples
 npm --prefix tests run browser -- --suite serialization_live

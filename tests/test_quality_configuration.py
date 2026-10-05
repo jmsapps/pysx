@@ -1,10 +1,15 @@
-"""Check the repository's strict quality configuration."""
+"""Check the repository's strict quality configuration and its verification manifest."""
 
 import json
+import re
+import subprocess
 import tomllib
 from pathlib import Path
 
+from scripts.verify import BOOTSTRAP, ENTRYPOINT, GATES, SELECTORS, TIERS
+
 ROOT = Path(__file__).resolve().parents[1]
+RUN_STEP = re.compile(r"^\s*- run: (.+)$", re.MULTILINE)
 
 
 def test_strict_scope() -> None:
@@ -49,12 +54,37 @@ def test_locked_tools() -> None:
 def test_ci_configuration() -> None:
     workflow = (ROOT / ".github/workflows/quality.yml").read_text()
     assert "on:\n  push:\n  pull_request:\n" in workflow
-    assert "uv sync --locked --python 3.14.4" in workflow
-    assert "uv python install 3.14.4" in workflow
-    for command in ("ruff check .", "mypy", "pyright", "pytest -q"):
-        assert f"uv run --project . {command}" in workflow
     assert "publish" not in workflow
     assert "contents: read" in workflow
+    steps = [match.group(1).strip() for match in RUN_STEP.finditer(workflow)]
+    assert steps, "parsed no run: steps; the workflow or this parser changed"
+    assert steps == [" ".join(command) for command in (*BOOTSTRAP, ENTRYPOINT)], (
+        "quality.yml and scripts/verify.py disagree; declare the gate in the manifest "
+        "instead of adding a workflow step"
+    )
+
+
+def test_verification_manifest_covers_the_required_checks() -> None:
+    manifest = {" ".join(gate.command) for gate in GATES}
+    for command in ("ruff check .", "mypy", "pyright", "pytest -q"):
+        assert f"uv run --project . {command}" in manifest
+    assert "uv lock --check" in manifest
+    assert {gate.tier for gate in GATES} == set(TIERS)
+    assert len({gate.name for gate in GATES}) == len(GATES)
+    assert SELECTORS["gates"] == tuple(tier for tier in TIERS if tier != "setup")
+    assert all(gate.command for gate in GATES)
+
+
+def test_verification_manifest_entrypoint_lists_its_gates() -> None:
+    listed = subprocess.run(
+        [*ENTRYPOINT[:-1], "all", "--list"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert len(listed) == len(GATES)
+    assert all(gate.name in "\n".join(listed) for gate in GATES)
 
 
 def test_maintained_scope() -> None:
