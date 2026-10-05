@@ -38,6 +38,10 @@ npm --prefix tests run browser -- --suite examples
 npm --prefix tests run browser -- --suite serialization_live
 npm --prefix tests run browser -- --suite bindings_form
 npm --prefix tests run browser -- --suite forms_example
+npm --prefix tests run browser -- --suite events_immediate
+npm --prefix tests run browser -- --suite owned_dom
+npm --prefix tests run browser -- --suite accessible_keyboard
+npm --prefix tests run browser -- --suite events_example
 npm --prefix tests run grammar -- --suite injection
 npm --prefix editor test -- --suite diagnostics
 uv run --project . pytest -q tests/test_verification_harness.py
@@ -48,6 +52,12 @@ control bindings, server normalization with caret preservation, edit revisions,
 composition event sequences, reset/submit validation, successful-control
 serialization, session isolation and bounded delegated listeners. The forms example
 uses the real launcher and shared example components.
+
+The event suites verify immediate key/default/propagation policies, typed snapshots,
+custom events and native link eligibility. DOM suites exercise scoped asynchronous
+reads, imperative ownership, namespace creation, listeners, stale handles and
+mount-before-command ordering. Keyboard suites verify combobox ARIA, native Tab,
+roving focus and delayed replies. The events example runs through the actual launcher.
 
 Isolated feasibility cases are registered separately from the shipped runtime/client:
 

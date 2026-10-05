@@ -2,12 +2,15 @@
 
 import re
 import urllib.request
+from dataclasses import asdict
 
 import pytest
 from acceptance_support import ready_server
 
+from examples.events import app as events_app
 from examples.forms import app as forms_app
 from examples.reactive_state import app
+from pysx import BrowserEvent
 from pysx.check import diagnostics
 from pysx.server import Session
 
@@ -52,6 +55,60 @@ def test_forms_example_checker_clean() -> None:
     from pathlib import Path
 
     assert diagnostics(Path("examples/forms.py")) == []
+
+
+def test_events_example_interactions_isolation_and_cleanup() -> None:
+    session = Session(events_app)
+    other = Session(events_app)
+    match = re.search(
+        r'<input[^>]*id="combo"[^>]*data-pysx-keydown="([^"]+)"', session.rendered.body
+    )
+    assert match is not None
+    hid = match[1]
+
+    try:
+        down = session.dispatch(
+            hid, None, event=asdict(BrowserEvent("keydown", hid, key="ArrowDown"))
+        )
+        assert any(
+            op["op"] == "attr" and op["name"] == "aria-activedescendant" and op["v"] == "option-1"
+            for op in down
+        )
+        selected = session.dispatch(
+            hid, None, event=asdict(BrowserEvent("keydown", hid, key="Enter"))
+        )
+        assert any(op["op"] == "text" and op["v"] == "Blue" for op in selected)
+        assert other.pending == []
+        assert 'aria-expanded="false"' in other.rendered.body
+        assert len(session.rendered.dom.mounts) == 4
+    finally:
+        session.dispose()
+        other.dispose()
+    assert not session.rendered.dom.nodes
+    assert not session.rendered.event_handlers
+    assert not session.rendered.dom.listeners
+    assert session.dispatch(hid, None) == []
+
+
+def test_events_example_checker_clean() -> None:
+    from pathlib import Path
+
+    assert diagnostics(Path("examples/events.py")) == []
+
+
+@pytest.mark.acceptance
+def test_events_example_cli_startup_cleanup() -> None:
+    command = ["uv", "run", "--project", ".", "example", "run", "events", "--port", "8758"]
+
+    with (
+        ready_server(command) as server,
+        urllib.request.urlopen("http://127.0.0.1:8758/", timeout=5) as response,
+    ):
+        assert server.poll() is None
+        assert response.status == 200
+        assert b"client.js" in response.read()
+
+    assert server.poll() is not None
 
 
 @pytest.mark.acceptance

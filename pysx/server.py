@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import inspect
 import json
 from http import HTTPStatus
 from pathlib import Path
@@ -16,16 +17,18 @@ from typing import TYPE_CHECKING, cast
 
 from websockets.asyncio.server import ServerConnection, serve
 
+from .dom import DomError
+from .events import decode_event
 from .forms import PayloadError, form_edits
 from .reactive import Effect, batch
 from .render import Fragment, Watcher, render
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
     from websockets.http11 import Request, Response
 
-    from .wire import InitMessage, Op, PatchMessage
+    from .wire import InitMessage, JSONValue, Op, PatchMessage
 
 STATIC = Path(__file__).parent / "static"
 
@@ -35,6 +38,7 @@ class Session:
 
     def __init__(self, app_fn: Callable[[], Fragment]) -> None:
         self.pending: list[Op] = []
+        self._awaitables: list[Awaitable[object]] = []
         self._live = False
         self.rendered = render(app_fn)
         # The first run of each effect registers its subscription; watchers were
@@ -51,6 +55,37 @@ class Session:
         if self._live and ops:
             self.pending.extend(ops)
 
+    def _invoke(self, callback: Callable[[object], object], value: object) -> None:
+        result = callback(value)
+
+        if inspect.isawaitable(result):
+            self._awaitables.append(result)
+
+    async def dispatch_async(
+        self,
+        handler_id: str,
+        value: object,
+        revision: int | None = None,
+        *,
+        after: str | None = None,
+        edits: list[tuple[str, object, int | None]] | None = None,
+        event: object = None,
+    ) -> list[Op]:
+        ops = self.dispatch(handler_id, value, revision, after=after, edits=edits, event=event)
+        self.pending.extend(ops)
+
+        try:
+            while self._awaitables:
+                await self._awaitables.pop(0)
+        except BaseException:
+            self.cancel_callbacks()
+
+            raise
+        ops = self.pending
+        self.pending = []
+
+        return ops
+
     def dispatch(
         self,
         handler_id: str,
@@ -59,11 +94,23 @@ class Session:
         *,
         after: str | None = None,
         edits: list[tuple[str, object, int | None]] | None = None,
+        event: object = None,
     ) -> list[Op]:
         fn = self.rendered.handlers.get(handler_id)
+        listener = self.rendered.dom.listeners.get(handler_id)
+
+        if listener is not None:
+            fn = cast("Callable[[object], object]", listener[0].callback)
 
         if fn is None and not edits:
             return []
+        typed = self.rendered.event_handlers.get(handler_id)
+
+        if listener is not None:
+            typed = (listener[0], listener[1])
+        following = self.rendered.event_handlers.get(after or "")
+        snapshot = decode_event(event, handler_id, typed[1]) if typed else None
+        after_snapshot = decode_event(event, after or "", following[1]) if following else None
         updates = list(edits or [])
         binding = self.rendered.bindings.get(handler_id)
 
@@ -84,13 +131,22 @@ class Session:
                     target.set(payload)
 
             if fn is not None:
-                fn(value)
+                if typed is not None and snapshot is not None:
+                    self._invoke(cast("Callable[[object], object]", typed[0].callback), snapshot)
+                else:
+                    self._invoke(fn, value)
 
             if after is not None and after != handler_id:
                 callback = self.rendered.handlers.get(after)
 
                 if callback is not None:
-                    callback(value)
+                    if following is not None and after_snapshot is not None:
+                        self._invoke(
+                            cast("Callable[[object], object]", following[0].callback),
+                            after_snapshot,
+                        )
+                    else:
+                        self._invoke(callback, value)
         ops = self.pending
         self.pending = []
 
@@ -120,13 +176,22 @@ class Session:
 
         return ops
 
+    def cancel_callbacks(self) -> None:
+        for awaitable in self._awaitables:
+            if inspect.iscoroutine(awaitable):
+                awaitable.close()
+        self._awaitables.clear()
+
     def dispose(self) -> None:
+        self.rendered.dom.close()
+        self.cancel_callbacks()
         for eff in self.effects:
             eff.dispose()
         self.rendered.handlers.clear()
         self.rendered.bindings.clear()
         self.rendered.bind_elements.clear()
         self.rendered.handler_owners.clear()
+        self.rendered.event_handlers.clear()
         self.pending.clear()
 
 
@@ -172,27 +237,19 @@ def main() -> None:
 
     async def handler(connection: ServerConnection) -> None:
         session = Session(app_fn)
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=64)
 
-        try:
-            initial: InitMessage = {
-                "t": "init",
-                "html": session.rendered.body,
-                "css": session.rendered.css,
-            }
-            await connection.send(json.dumps(initial))
+        async def send_command(message: dict[str, JSONValue]) -> None:
+            if session.pending:
+                await connection.send(json.dumps({"t": "patch", "ops": session.pending}))
+                session.pending = []
+            await connection.send(json.dumps(message))
 
-            async for raw in connection:
-                try:
-                    decoded: object = json.loads(raw)
-                except TypeError, ValueError:
-                    continue
+        session.rendered.dom.sender = send_command
 
-                if not isinstance(decoded, dict):
-                    continue
-                message = cast("dict[str, object]", decoded)
-
-                if message.get("t") != "event":
-                    continue
+        async def event_worker() -> None:
+            while True:
+                message = await queue.get()
                 handler_id = message.get("h", "")
 
                 if not isinstance(handler_id, str):
@@ -208,20 +265,60 @@ def main() -> None:
 
                 try:
                     edits = form_edits(message.get("edits"))
-                    ops = session.dispatch(
+                    ops = await session.dispatch_async(
                         handler_id,
                         message.get("v"),
                         revision,
                         after=after,
                         edits=edits,
+                        event=message.get("event"),
                     )
-                except PayloadError:
+                except PayloadError, DomError:
+                    if session.pending:
+                        await connection.send(json.dumps({"t": "patch", "ops": session.pending}))
+                        session.pending = []
                     continue
+                except Exception:
+                    await connection.close(code=1011, reason="event handler failed")
+
+                    return
 
                 if ops:
                     patch: PatchMessage = {"t": "patch", "ops": ops}
                     await connection.send(json.dumps(patch))
+
+        worker: asyncio.Task[None] | None = None
+
+        try:
+            initial: InitMessage = {
+                "t": "init",
+                "html": session.rendered.body,
+                "css": session.rendered.css,
+            }
+            await connection.send(json.dumps(initial))
+            worker = asyncio.create_task(event_worker())
+
+            async for raw in connection:
+                try:
+                    decoded: object = json.loads(raw)
+                except TypeError, ValueError:
+                    continue
+
+                if not isinstance(decoded, dict):
+                    continue
+                message = cast("dict[str, object]", decoded)
+
+                if message.get("t") == "dom_reply":
+                    session.rendered.dom.reply(message)
+                elif message.get("t") == "event":
+                    try:
+                        queue.put_nowait(message)
+                    except asyncio.QueueFull:
+                        await connection.close(code=1008, reason="event queue limit")
         finally:
+            if worker is not None:
+                worker.cancel()
+                await asyncio.gather(worker, return_exceptions=True)
             session.dispose()
 
     async def run() -> None:

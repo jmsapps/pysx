@@ -160,6 +160,7 @@ GLOBAL_ATTRS = frozenset(
     ]
 )
 PSEUDO_ATTRS = frozenset(["key", "css", "stylevars", "cssvars", "customattrs"])
+RUNTIME_ATTRS = frozenset(["ref"])
 EVENT_NAMES = frozenset(
     [
         "abort",
@@ -654,5 +655,6 @@ def allowed_attr(tag: str, name: str) -> bool:
         name.startswith(("data-", "aria-"))
         or is_event(name)
         or name in PSEUDO_ATTRS
+        or name in RUNTIME_ATTRS
         or (info is not None and name in info.attributes)
     )

@@ -18,7 +18,9 @@ from dataclasses import dataclass, field
 from string.templatelib import Template
 from typing import TYPE_CHECKING, cast
 
+from .dom import DomController, DomError, DomRef, dom_context
 from .elements import VOID, ElementTag
+from .events import EventHandler
 from .forms import Binding, make_binding
 from .parser import Conditional, Element, Hole, HoleKind, Node, Skeleton, attr_kind, parse
 from .reactive import Readable, Signal
@@ -225,6 +227,7 @@ class ListWatcher(Watcher):
 
 @dataclass
 class Rendered:
+    dom: DomController = field(default_factory=DomController)
     body: str = ""
     css: str = ""
     handlers: dict[str, Callable[[object], object]] = field(
@@ -236,6 +239,9 @@ class Rendered:
     bind_elements: dict[str, str] = field(default_factory=dict[str, str])
     bindings: dict[str, Binding] = field(default_factory=dict[str, Binding])
     handler_owners: dict[str, str] = field(default_factory=dict[str, str])
+    event_handlers: dict[str, tuple[EventHandler, str]] = field(
+        default_factory=dict[str, tuple[EventHandler, str]]
+    )
 
 
 # --------------------------------------------------------------------------- emit
@@ -337,12 +343,14 @@ class _Emitter:
         prefix = f"{slot}:branch:"
 
         def branch(flag: bool) -> tuple[str, list[Watcher]]:
+            self.out.dom.revoke(prefix)
             for hid in tuple(self.out.handlers):
                 if self.out.handler_owners.get(hid, "").startswith(prefix):
                     self.out.handlers.pop(hid, None)
                     self.out.bindings.pop(hid, None)
                     self.out.bind_elements.pop(hid, None)
                     self.out.handler_owners.pop(hid, None)
+                    self.out.event_handlers.pop(hid, None)
             start = len(self.out.watchers)
             sub = _Emitter(
                 self.ns,
@@ -373,12 +381,14 @@ class _Emitter:
         slot = f"{self.prefix}{hole.index}"
 
         def render_items(items: Iterable[object]) -> tuple[list[str], dict[str, str]]:
+            self.out.dom.revoke(f"{slot}:")
             for hid in tuple(self.out.handlers):
                 if hid.startswith(f"h{slot}:"):
                     self.out.handlers.pop(hid, None)
                     self.out.bindings.pop(hid, None)
                     self.out.bind_elements.pop(hid, None)
                     self.out.handler_owners.pop(hid, None)
+                    self.out.event_handlers.pop(hid, None)
             order: list[str] = []
             markup: dict[str, str] = {}
 
@@ -399,7 +409,12 @@ class _Emitter:
         return f'<pysx-list id="{_htmlmod.escape(slot, quote=True)}">{inner}</pysx-list>'
 
     def item(self, spec: Each[object], item: object, slot: str, key: str) -> str:
-        fragment = spec.item(item)
+        token = dom_context.set(self.out.dom)
+
+        try:
+            fragment = spec.item(item)
+        finally:
+            dom_context.reset(token)
         skeleton = parse(fragment.template.strings)
         sub = _Emitter(self.ns, fragment.template.values, self.out, prefix=f"{slot}:{key}:")
         markup = sub.nodes(skeleton.root, static=True)
@@ -416,6 +431,7 @@ class _Emitter:
 
             return self.nodes(el.children, static=static)
         attrs: list[str] = []
+        typed_types: list[str] = []
         element_id: str | None = None
         class_signal: Readable[object] | None = None
         class_position = -1
@@ -452,8 +468,35 @@ class _Emitter:
 
             raw = self.values[value.index]
 
+            if name == "ref":
+                if not isinstance(raw, DomRef):
+                    raise TypeError("ref requires a DomRef")
+                token = self.out.dom.mount(raw, self.prefix)
+                attrs.append(f' data-pysx-ref="{token}"')
+
+                if raw.imperative:
+                    if el.children:
+                        raise DomError("imperative zones must have no reactive children")
+                    attrs.append(' data-pysx-imperative="true"')
+
+                continue
+
             if kind is HoleKind.EVENT:
                 hid = self._handler_id(value.index)
+                event_type = name[2:].lower()
+
+                if isinstance(raw, EventHandler):
+                    policy = raw.policy(event_type)
+                    event_type = raw.event_type or event_type
+                    self.out.event_handlers[hid] = (raw, event_type)
+                    self.out.handlers[hid] = lambda _value: None
+                    self.out.handler_owners[hid] = self.prefix
+                    encoded = _htmlmod.escape(json.dumps(policy), quote=True)
+                    attrs.append(f' data-pysx-policy-{event_type}="{encoded}"')
+                    typed_types.append(event_type)
+                    attrs.append(f' data-pysx-{event_type}="{_htmlmod.escape(hid, quote=True)}"')
+
+                    continue
 
                 if not callable(raw):
                     raise TypeError("event hole requires a callable")
@@ -554,6 +597,10 @@ class _Emitter:
         if element_id:
             attrs.append(f' data-pysx-el="{_htmlmod.escape(element_id, quote=True)}"')
 
+        if typed_types:
+            joined = _htmlmod.escape(" ".join(dict.fromkeys(typed_types)), quote=True)
+            attrs.append(f' data-pysx-typed="{joined}"')
+
         open_tag = f"<{tag}{''.join(attrs)}>"
 
         if tag in VOID:
@@ -571,13 +618,18 @@ class _Emitter:
 
 
 def render(component_fn: Callable[[], Fragment]) -> Rendered:
-    fragment = component_fn()
-    skeleton: Skeleton = parse(fragment.template.strings)
     out = Rendered()
-    emitter = _Emitter(
-        cast("dict[str, object]", component_fn.__globals__), fragment.template.values, out
-    )
-    out.body = emitter.nodes(skeleton.root)
+    token = dom_context.set(out.dom)
+
+    try:
+        fragment = component_fn()
+        skeleton: Skeleton = parse(fragment.template.strings)
+        emitter = _Emitter(
+            cast("dict[str, object]", component_fn.__globals__), fragment.template.values, out
+        )
+        out.body = emitter.nodes(skeleton.root)
+    finally:
+        dom_context.reset(token)
     out.css = stylesheet()
 
     return out

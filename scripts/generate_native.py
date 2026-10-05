@@ -34,7 +34,7 @@ def spelling(attr: str) -> str:
 
 def annotation(attr: str, tag: str = "") -> str:
     if attr.startswith("on"):
-        return "Callable[[object], object]"
+        return "Callable[[object], object] | EventHandler"
 
     if attr in BOOLEAN_ATTRS:
         return "bool | Signal[bool] | None"
@@ -55,6 +55,8 @@ def generate() -> str:
         "from collections.abc import Callable, Mapping",
         "from typing import TypedDict, Unpack",
         "",
+        "from .dom import DomRef",
+        "from .events import EventHandler",
         "from .native_support import custom_element as custom_element",
         "from .native_support import element",
         "from .reactive import Signal",
@@ -68,8 +70,9 @@ def generate() -> str:
         lines.append(f"    {spelling(attr)}: {annotation(attr)}")
 
     for event in sorted(EVENT_NAMES):
-        lines.append(f"    on_{event}: Callable[[object], object]")
+        lines.append(f"    on_{event}: Callable[[object], object] | EventHandler")
     lines.append("    custom_attrs: Mapping[str, object]")
+    lines.append("    ref: DomRef")
     tags = dict.fromkeys([resolve_tag(tag) for tag in BASELINE_TAGS] + ["math"])
 
     for tag in tags:

@@ -12,6 +12,16 @@ Schema diagnostics remain advisory. SVG/MathML entry elements record foreign
 namespace inheritance; SVG `foreignObject` children reenter HTML. Foreign attribute
 case is preserved, including `viewBox`.
 
+Event holes accept a plain callable or `on_event(callback, ...)`. The latter receives
+a typed snapshot and declares synchronous browser policies. `onCustom={on_event(...,
+event_type="custom-ready")}` registers a bounded custom event name; arbitrary JavaScript
+and custom event detail are outside this interface.
+
+`ref={dom.ref()}` attaches an owned DOM ref marker. Capture a mounted node with
+`ref.handle()` and await its methods from an async callback. The marker may remount;
+previously captured handles remain tied to their original node. An imperative ref
+root must be empty in markup and owns its explicitly created descendants.
+
 ```
 template   := NEWLINE line*
 line       := INDENT (element | conditional | alternative | content)

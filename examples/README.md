@@ -10,6 +10,7 @@ uv run --project . example run todos
 uv run --project . example run reactive_state
 uv run --project . example run operators
 uv run --project . example run forms
+uv run --project . example run events
 uv run --project . example run
 ```
 
@@ -30,6 +31,21 @@ example run counter
 
 The command is installed into the environment's bin directory. A new terminal
 needs activation again, or you can keep using the `uv run --project .` prefix.
+
+## Keyboard and focus
+
+Run `uv run --project . example run events`. In the color chooser, Up/Down opens
+the list and changes its active option; Enter selects it and Escape closes it.
+Click an option to select it while keeping input focus. The event status shows
+the key and modifier snapshot received by the server. Tab reaches the shortcut
+row; Left/Right moves its single tab stop and browser focus. **Focus color chooser**
+uses an owned asynchronous focus command. The chooser exposes expanded,
+active-descendant and selected ARIA state. Each session has independent state.
+
+Default cancellation happens immediately in the browser. Python callbacks receive
+typed `BrowserEvent` snapshots through `on_event`; async callbacks await owned
+`DomRef.handle()` commands. See [the protocol](../docs/PROTOCOL.md) for ownership,
+imperative zones, supported operations and limits.
 
 ## Reactive state
 

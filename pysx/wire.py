@@ -61,6 +61,7 @@ class EventMessage(TypedDict):
     rev: NotRequired[int]
     after: NotRequired[str]
     edits: NotRequired[list[BindingEdit]]
+    event: NotRequired[dict[str, JSONValue]]
 
 
 class BindingEdit(TypedDict):
@@ -69,4 +70,23 @@ class BindingEdit(TypedDict):
     rev: int
 
 
-type ServerMessage = InitMessage | PatchMessage
+class DomCommandMessage(TypedDict):
+    t: Literal["dom"]
+    version: Literal[1]
+    id: str
+    target: str
+    root: str
+    op: str
+    args: dict[str, JSONValue]
+
+
+class DomReplyMessage(TypedDict):
+    t: Literal["dom_reply"]
+    version: Literal[1]
+    id: str
+    value: NotRequired[JSONValue]
+    error: NotRequired[str]
+    revoked: NotRequired[list[str]]
+
+
+type ServerMessage = InitMessage | PatchMessage | DomCommandMessage

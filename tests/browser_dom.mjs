@@ -1,0 +1,41 @@
+import assert from "node:assert/strict";
+import playwright from "playwright";
+
+const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
+try {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(`http://127.0.0.1:${Number(process.argv[2])}/`);
+  await page.waitForSelector("#field");
+  const wait = text => page.waitForFunction(text => document.getElementById("dom-status").textContent === text, text);
+  await page.locator("#read").click(); await wait("read-passed");
+  console.log("  ok  async queries, properties, focus, selection and measurement stay within owned roots");
+  await page.locator("#create").click(); await wait("created-passed");
+  assert.equal(await page.locator("#zone svg").evaluate(el => el.namespaceURI), "http://www.w3.org/2000/svg");
+  assert.equal(await page.locator("#created").textContent(), "Created");
+  await page.locator("#created").click();
+  await page.waitForFunction(() => document.getElementById("dom-clicks").textContent === "1");
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("custom-window")));
+  await page.waitForFunction(() => document.getElementById("dom-clicks").textContent === "2");
+  console.log("  ok  imperative fragments, text, namespaced creation, insertion and listeners work in order");
+  await page.locator("#remove").click(); await wait("removed-passed");
+  assert.equal(await page.locator("#created").count(), 0);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("custom-window")));
+  assert.equal(await page.locator("#dom-clicks").textContent(), "2");
+  await page.locator("#forbidden").click(); await wait("boundary-passed");
+  assert.equal(await page.locator("#field").inputValue(), "abcdef");
+  console.log("  ok  removal disposes listeners and reactive properties reject imperative writes");
+  await page.locator("#replace").click(); await wait("stale-passed");
+  assert.equal(await page.locator("#field").count(), 0);
+  await page.locator("#replace").click();
+  await page.waitForSelector("#field");
+  assert.equal(await page.locator("#field").inputValue(), "abcdef");
+  assert.equal(await page.locator("#field").evaluate(el => el === document.activeElement), false);
+  console.log("  ok  old handles cannot focus replacement nodes with reused HTML IDs");
+  await page.locator("#mount").click(); await wait("mount-passed");
+  assert.equal(await page.locator("#field").evaluate(el => el === document.activeElement), true);
+  console.log("  ok  commands observe branch patches committed in the same async handler");
+  assert.deepEqual(errors, []);
+  console.log("DOM BROWSER PASSED");
+} finally { await browser.close(); }
