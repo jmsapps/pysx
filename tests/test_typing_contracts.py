@@ -37,37 +37,37 @@ patch: PatchMessage = {"t": "patch", "ops": ops}
     [
         pytest.param(POSITIVE, None, id="inference"),
         pytest.param(
-            'from typing import assert_type\n'
-            'from pysx import structured, list_index, dict_key, Projection, Structured\n'
+            "from typing import assert_type\n"
+            "from pysx import structured, list_index, dict_key, Projection, Structured\n"
             'root = structured({"rows": [1, 2]})\n'
-            'assert_type(root, Structured[dict[str, list[int]]])\n'
+            "assert_type(root, Structured[dict[str, list[int]]])\n"
             'rows = dict_key(root, "rows")\n'
-            'assert_type(rows, Projection[list[int]])\n'
-            'item = list_index(rows, 0)\n'
-            'assert_type(item, Projection[int])\nitem.set(3)\n',
+            "assert_type(rows, Projection[list[int]])\n"
+            "item = list_index(rows, 0)\n"
+            "assert_type(item, Projection[int])\nitem.set(3)\n",
             None,
             id="structured_state_inference",
         ),
         pytest.param(
-            'from pysx import structured, list_index\nitem = list_index(structured([1]), 0)\n'
+            "from pysx import structured, list_index\nitem = list_index(structured([1]), 0)\n"
             'item.set("bad")\n',
             "set",
             id="structured_state_payload",
         ),
         pytest.param(
-            'from typing import assert_type\n'
-            'from pysx import Signal, signal, derived\n'
-            'from collections.abc import Callable\n'
+            "from typing import assert_type\n"
+            "from pysx import Signal, signal, derived\n"
+            "from collections.abc import Callable\n"
             'n = signal(1)\ns = signal("a")\n'
-            'out = derived(lambda: s() * n())\n'
-            'assert_type(out, Signal[str])\n'
-            'assert_type(out.subscribe(lambda value: value.upper()), Callable[[], None])\n',
+            "out = derived(lambda: s() * n())\n"
+            "assert_type(out, Signal[str])\n"
+            "assert_type(out.subscribe(lambda value: value.upper()), Callable[[], None])\n",
             None,
             id="identity_settled_inference",
         ),
         pytest.param(
-            'from pysx import signal\ncount = signal(1)\n'
-            'count.subscribe(lambda value: value.upper())\n',
+            "from pysx import signal\ncount = signal(1)\n"
+            "count.subscribe(lambda value: value.upper())\n",
             "upper",
             id="identity_settled_subscriber_payload",
         ),
@@ -97,6 +97,7 @@ def test_public_api_contracts(
     fixture = tmp_path / "contract.py"
     fixture.write_text(source)
     command = [sys.executable, "-m", checker]
+
     if checker == "mypy":
         command += ["--strict", "--show-error-codes"]
     command.append(str(fixture))
@@ -109,6 +110,7 @@ def test_public_api_contracts(
         check=False,
     )
     output = result.stdout + result.stderr
+
     if error is None:
         assert result.returncode == 0, output
     else:
@@ -120,16 +122,93 @@ def test_public_api_contracts(
         expected_count = 3 if checker == "pyright" and error == "upper" else 1
         diagnostic = " - error:" if checker == "pyright" else ": error:"
         assert output.count(diagnostic) == expected_count, output
-        expected = "[attr-defined]" if error == "upper" else (
-            "[arg-type]" if error == "set" else "[typeddict-item]"
+        expected = (
+            "[attr-defined]"
+            if error == "upper"
+            else ("[arg-type]" if error == "set" else "[typeddict-item]")
         )
+
         if checker == "mypy":
             assert expected in output, output
         else:
-            expected = "reportAttributeAccessIssue" if error == "upper" else (
-                "reportArgumentType" if error == "set" else "reportAssignmentType"
+            expected = (
+                "reportAttributeAccessIssue"
+                if error == "upper"
+                else ("reportArgumentType" if error == "set" else "reportAssignmentType")
             )
             assert expected in output, output
+
+
+UNIFIED_POSITIVE = """from typing import assert_type
+from dataclasses import dataclass, replace
+from pysx import Signal, derived
+from tests.prototypes.unified import Unified, signal
+root = signal({"rows": {"scores": [1, 2]}})
+assert_type(root, Unified[dict[str, dict[str, list[int]]]])
+item = root["rows"]["scores"][0]
+assert_type(item, Unified[int])
+item.set(3)
+assert_type(signal(2) * 3, Signal[int])
+assert_type(3 * signal(2), Signal[int])
+assert_type(signal(2.0) * 3.0, Signal[float])
+assert_type(3.0 * signal(2.0), Signal[float])
+assert_type(derived(lambda: signal(2)() * 1.5), Signal[float])
+@dataclass
+class Person:
+    name: str
+person = signal(Person("Ada"))
+name = person.project(lambda p: p.name, lambda p, name: replace(p, name=name))
+assert_type(name, Unified[str])
+name.set("Grace")
+"""
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize(
+    ("source", "valid"),
+    [
+        (UNIFIED_POSITIVE, True),
+        ('from tests.prototypes.unified import signal\nsignal([1])[0].set("bad")\n', False),
+        ('from tests.prototypes.unified import signal\nsignal({"a": 1})[2]\n', False),
+        ('from tests.prototypes.unified import signal\nsignal([1])["a"]\n', False),
+        ('from tests.prototypes.unified import signal\nsignal(1) * "bad"\n', False),
+    ],
+)
+def test_unified_authoring_types(tmp_path: Path, checker: str, source: str, valid: bool) -> None:
+    source = source.replace(
+        "from tests.prototypes.unified import Unified, signal", "from pysx import Signal, signal"
+    )
+    source = source.replace(
+        "from tests.prototypes.unified import signal", "from pysx import signal"
+    )
+    source = source.replace("Unified[", "Signal[")
+    source = source.replace("from pysx import Signal, derived", "from pysx import derived")
+    assert "tests.prototypes" not in source, (
+        "prototype import survived the rewrite; this gate would type-check the "
+        "prototype instead of the shipped package"
+    )
+    fixture = tmp_path / "unified_contract.py"
+    fixture.write_text(source)
+    command = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        command += ["--strict", "--show-error-codes"]
+
+    result = subprocess.run(
+        [*command, str(fixture)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert str(fixture) in output, output
+        assert "reportMissingImports" not in output, output
+        assert "[import-not-found]" not in output, output
 
 
 operator_positive = """from typing import assert_type
@@ -143,9 +222,11 @@ f = Signal(1.5)
 s = Signal("a")
 b = Signal(True)
 """
+
 for name in ("eq", "ne", "lt", "le", "gt", "ge"):
     for arguments in ("n, 2", "2, n", "n, m", 's, "b"', '"b", s'):
         operator_positive += f"assert_type({name}({arguments}), Signal[bool])\n"
+
 for expression in (
     "n < 2",
     "n <= 2",
@@ -159,13 +240,10 @@ for expression in (
     '"b" > s',
     "n < 2.5",
     "2 < f",
-    "b & False",
-    "False & b",
-    "b | True",
-    "True | b",
-    "~b",
     "all_of(b, True)",
+    "all_of(False, b)",
     "any_of(False, b)",
+    "any_of(b, True)",
     "not_(b)",
 ):
     operator_positive += f"assert_type({expression}, Signal[bool])\n"
@@ -253,16 +331,18 @@ assert_type(contains(Signal(inclusive_enum_range(Ordinal.FIRST, Ordinal.LAST)),
         ),
     ],
 )
-def test_operator_typing_contracts(
+def test_python_operator_operators_reactive_typing_contracts(
     tmp_path: Path,
     checker: str,
     source: str,
     mypy_code: str | None,
     pyright_code: str | None,
 ) -> None:
+    source = source.replace("from tests.prototypes.operators import", "from pysx import")
     fixture = tmp_path / "operators_contract.py"
     fixture.write_text(source)
     command = [sys.executable, "-m", checker]
+
     if checker == "mypy":
         command += ["--strict", "--show-error-codes"]
     command.append(str(fixture))
@@ -276,6 +356,7 @@ def test_operator_typing_contracts(
     )
     output = result.stdout + result.stderr
     expected_code = mypy_code if checker == "mypy" else pyright_code
+
     if expected_code is None:
         assert result.returncode == 0, output
     else:

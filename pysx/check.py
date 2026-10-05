@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 TAG_RE = re.compile(r"^\s*([A-Z][A-Za-z0-9_]*)")
-BARE_CALL_RE = re.compile(r"^\s*(\w+)\s*\(\s*\)\s*$")
 
 
 def _utf16(line: str, index: int) -> int:
@@ -72,13 +71,105 @@ def _bound_names(tree: ast.AST) -> set[str]:
 
 def _signal_names(tree: ast.AST) -> set[str]:
     out: set[str] = set()
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
             continue
+
         fn = node.value.func
-        if isinstance(fn, ast.Name) and fn.id in ("signal", "derived"):
+
+        if isinstance(fn, ast.Name) and fn.id in (
+            "signal", "structured", "derived", "eq", "ne", "lt", "le", "gt", "ge",
+            "all_of", "any_of", "not_", "length", "contains", "concat",
+        ):
             out.update(t.id for t in node.targets if isinstance(t, ast.Name))
+
+    for _ in range(len(out) + 1):
+        previous = out.copy()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and _reactive_expression(node.value, out):
+                out.update(t.id for t in node.targets if isinstance(t, ast.Name))
+
+        if out == previous:
+            break
+
     return out
+
+
+def _reactive_expression(node: ast.AST, signals: set[str]) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in signals
+
+    if isinstance(node, ast.Subscript):
+        return _reactive_expression(node.value, signals)
+
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+        return _reactive_expression(node.left, signals) or _reactive_expression(node.right, signals)
+
+    if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(
+        node.ops[0], (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+    ):
+        return any(_reactive_expression(value, signals) for value in [node.left, *node.comparators])
+
+    return False
+
+
+def _operator_warnings(
+    node: ast.AST, signals: set[str], *, root: ast.AST | None = None
+) -> Iterator[tuple[ast.expr, str]]:
+    # Deferred callbacks read signals deliberately; do not diagnose their bodies.
+    if isinstance(node, ast.Lambda):
+        return
+
+    root = node if root is None else root
+
+    message: str | None = None
+
+    if isinstance(node, ast.BoolOp) and any(
+        _reactive_expression(value, signals) for value in node.values
+    ):
+        message = "Python and/or coerces Signals; use all_of()/any_of()"
+    elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not) and _reactive_expression(
+        node.operand, signals
+    ):
+        message = "Python not coerces a Signal; use not_()"
+    elif isinstance(node, ast.Compare):
+        operands = [node.left, *node.comparators]
+
+        if len(node.ops) > 1 and any(_reactive_expression(value, signals) for value in operands):
+            message = "Chained comparisons coerce Signals; use all_of(a < b, b < c)"
+        elif any(isinstance(op, (ast.Eq, ast.NotEq)) for op in node.ops) and any(
+            _reactive_expression(value, signals) for value in operands
+        ):
+            message = "Signal ==/!= compares identity; use eq()/ne() for reactive payload equality"
+        elif any(isinstance(op, (ast.In, ast.NotIn)) for op in node.ops) and any(
+            _reactive_expression(value, signals) for value in node.comparators
+        ):
+            message = "Python in cannot return a Signal; use contains(container, item)"
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        name = node.func.id
+
+        if name in signals and not node.args and not node.keywords and node is root:
+            message = (
+                f"{{{name}()}} is evaluated once and frozen; pass the signal "
+                f"uncalled as {{{name}}} to make this slot reactive"
+            )
+        elif name in ("len", "bool") and node.args and _reactive_expression(node.args[0], signals):
+            message = (
+                "len(Signal) cannot return a Signal; use length()"
+                if name == "len"
+                else "bool(Signal) coerces truthiness; use reactive boolean helpers"
+            )
+
+    if message is not None:
+        assert isinstance(node, ast.expr)
+        yield node, message
+
+        return
+
+    for child in ast.iter_child_nodes(node):
+        yield from _operator_warnings(child, signals, root=root)
 
 
 def _templates(tree: ast.AST) -> Iterator[ast.TemplateStr | ast.JoinedStr]:
@@ -161,16 +252,20 @@ def diagnostics(path: Path) -> list[Diagnostic]:
         for value in node.values:
             if not isinstance(value, ast.Interpolation):
                 continue
-            call = BARE_CALL_RE.match(value.str or "")
-            if call and call.group(1) in signals:
-                row = value.lineno - 1
+            for expression, message in _operator_warnings(value.value, signals):
+                # Direct interpolation ranges retain braces for the existing editor fix.
+                location = value if expression is value.value else expression
+                row = location.lineno - 1
                 line = lines[row]
-                start = _utf16_from_bytes(line, value.col_offset)
-                end = _utf16_from_bytes(line, value.end_col_offset or value.col_offset)
+                col = location.col_offset
+                end_col = location.end_col_offset or col
+
+                if (location.end_lineno or location.lineno) != location.lineno:
+                    end_col = len(line)
+                start = _utf16_from_bytes(line, col)
+                end = _utf16_from_bytes(line, end_col)
                 out.append(_d(
-                    row, start, end,
-                    f"{{{value.str}}} is evaluated once and frozen; pass the signal "
-                    f"uncalled as {{{call.group(1)}}} to make this slot reactive",
+                    row, start, end, message,
                     severity="warning",
                 ))
 

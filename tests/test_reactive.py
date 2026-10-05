@@ -3,7 +3,7 @@
 
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -170,6 +170,22 @@ def test_batching_transactions_cleanup_failure() -> None:
     observer.dispose()
     assert not source.observers
     source.set(2)
+
+
+def test_operators_reactive_subscription_owns_mutable_snapshots() -> None:
+    source = signal([1])
+    seen: list[list[int]] = []
+
+    def mutate(value: list[int]) -> None:
+        seen.append(value.copy())
+        value.append(9)
+
+    stop = source.subscribe(mutate)
+    source.set([1])
+    source.set([2])
+    assert source() == [2]
+    assert seen == [[1], [2]]
+    stop()
 
 
 def test_identity_settled_long_chain_fanout() -> None:
@@ -398,3 +414,47 @@ def test_batching_transactions_wide_fanout_is_not_feedback() -> None:
     finally:
         for stop in stops:
             stop()
+
+
+def test_identity_settled_unchanged_identity_payload_suppresses() -> None:
+    class Opaque:
+        __hash__ = None  # type: ignore[assignment]
+
+        def __eq__(self, other: object) -> bool:
+            return self is other
+
+    constant = Opaque()
+    source = signal(0)
+    output = derived(lambda: (source(), constant)[1])
+    runs: list[int] = []
+    stop = output.subscribe(lambda _value: runs.append(1), fire=False)
+
+    try:
+        for value in (1, 2, 3):
+            source.set(value)
+
+        # The payload never changes, so no downstream notification is owed.
+        assert runs == []
+    finally:
+        stop()
+
+
+def test_identity_settled_nested_signal_payloads_are_rejected() -> None:
+    inner = signal(1)
+
+    for payload in ({"a": inner}, [inner], (inner,), {"a": {"b": [inner]}}):
+        with pytest.raises(TypeError, match="cannot be Signals"):
+            signal(payload)
+
+    holder = signal({"a": 1})
+
+    # Both checkers already reject this statically; the guard defends the dynamic path.
+    with pytest.raises(TypeError, match="cannot be Signals"):
+        holder.set(cast("dict[str, int]", {"a": inner}))
+
+
+def test_identity_settled_self_referencing_payload_terminates() -> None:
+    cycle: list[object] = [1]
+    cycle.append(cycle)
+
+    assert signal(cycle)() is not None

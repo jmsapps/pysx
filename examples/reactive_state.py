@@ -2,14 +2,17 @@
 
 from pysx import (
     Fragment,
+    all_of,
+    any_of,
     batch,
     component,
+    concat,
+    contains,
     derived,
-    dict_key,
     html,
-    list_index,
+    length,
+    not_,
     signal,
-    structured,
 )
 
 from .components import Action as Action
@@ -25,16 +28,22 @@ from .components import Title as Title
 @component
 def app() -> Fragment:
     count = signal(1)
-    doubled = derived(lambda: count() * 2)
-    tripled = derived(lambda: count() * 3)
+    doubled = count * 2
+    tripled = 3 * count
     total = derived(lambda: doubled() + tripled())
-    profile = structured({"scores": {"first": 10, "second": 20}})
-    scores = dict_key(profile, "scores")
-    first = dict_key(scores, "first")
-    second = dict_key(scores, "second")
-    rows = structured([10, 20, 30])
-    head = list_index(rows, 0)
+    profile = signal({"scores": {"first": 10, "second": 20}})
+    first = profile["scores"]["first"]
+    second = profile["scores"]["second"]
+    rows = signal([10, 20, 30])
+    head = rows[0]
     order = derived(lambda: ", ".join(str(value) for value in rows()))
+    above_threshold = count > 2.5
+    score_in_rows = contains(rows, first)
+    eligible = all_of(above_threshold, score_in_rows)
+    either = any_of(above_threshold, score_in_rows)
+    blocked = not_(eligible)
+    status = concat("First score: ", first)
+    size = length(rows)
 
     def advance(_event: object) -> None:
         with batch():
@@ -53,6 +62,9 @@ def app() -> Fragment:
     def edit_snapshot(_event: object) -> None:
         snapshot = profile()
         snapshot["scores"]["first"] = 999
+
+    def reset_count(_event: object) -> None:
+        count.set(1)
 
     return html(t"""
         Page:
@@ -82,4 +94,22 @@ def app() -> Fragment:
                 Description: "Rotate the list to see the first position follow its new value."
                 Actions:
                     Action(type="button", onClick={rotate}): "Rotate list"
+            Card:
+                h2: "Reactive operators"
+                p(id="operator-status"): {status}
+                p(id="operator-size"): "Rows: " {size}
+            Card:
+                h2: "Derived boolean helpers"
+                Description:
+                    "Two conditions: the count is above 2.5 and the first score is in the list."
+                p(id="derived-all"): "all_of — both conditions: " {eligible}
+                p(id="derived-any"): "any_of — either condition: " {either}
+                p(id="derived-not"): "not_ — not both conditions: " {blocked}
+                Description:
+                    "Advance twice, increment the first score, then reset the count."
+                Actions:
+                    SecondaryAction(type="button", onClick={reset_count}): "Reset count"
+                if {eligible}:
+                    p(id="operator-branch"):
+                        "The first score is in the list and the count is above 2.5."
     """)

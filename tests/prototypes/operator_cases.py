@@ -161,13 +161,10 @@ def boolean_and_protocols(_scratch: Path) -> None:
         all_of(left, right),
         any_of(left, right),
         not_(left),
-        left & right,
-        False & right,
-        left | right,
-        True | left,
-        ~left,
+        all_of(False, right),
+        any_of(True, left),
     ]
-    assert [item.get() for item in outputs] == [False, True, True, False, False, True, True, True]
+    assert [item.get() for item in outputs] == [False, True, True, False, True]
     for item in outputs:
         assert item.keeper is not None
     # All operands are tracked even when the first value settles the boolean result.
@@ -175,7 +172,7 @@ def boolean_and_protocols(_scratch: Path) -> None:
     assert set(outputs[0].keeper.dependencies) == {id(left), id(right)}
     left.set(True)
     right.set(False)
-    assert [item.get() for item in outputs] == [False, True, False, False, False, True, True, False]
+    assert [item.get() for item in outputs] == [False, True, False, False, True]
     with pytest.raises(TypeError, match="all_of"):
         bool(left)
     with pytest.raises(TypeError, match="all_of"):

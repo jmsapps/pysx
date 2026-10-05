@@ -80,9 +80,24 @@ PSX_PORT=9100 uv run --project . example run counter
 `uv run` needs no activated environment — it prepares one itself. The command is defined in
 `run_example.py` at the repository root.
 
-The `reactive_state` example demonstrates batched diamond computations, selective nested
-updates, snapshot ownership, and positional list projections. Use its buttons to compare
-committed changes with edits to a private snapshot.
+The `reactive_state` example demonstrates unified `signal()` state, nested writable
+projections, multiplication and batched computations. Click **Advance twice** to show the
+branch controlled by mixed numeric ordering and boolean membership; **Increment first**
+updates the concatenated status and hides that branch. **Edit a private snapshot** leaves
+the display unchanged, and **Rotate list** moves the first positional projection.
+Collection length stays live. State belongs to each browser session.
+The **Boolean helper** card displays `all_of`, `any_of` and `not_`. Follow its three
+steps: advance twice, increment the first score, then **Reset count** — at that last
+step `any_of` flips from true to false while `all_of` stays false and `not_` stays
+true, so you can see each helper tracks its own operands.
+
+The `operators` example (`uv run --project . example run operators`) renders every
+supported operator spelling, grouped by what Python permits an operator to return:
+real overloads for arithmetic, indexing and ordering; named functions where the
+protocol forces a primitive (`all_of`, `any_of`, `not_`, `eq`, `ne`, `contains`,
+`length`, `concat`); and `derived(lambda: ...)` as the default for anything else,
+with genuine `and`/`or`/`not` short-circuiting. Signals deliberately have no `&`, `|`
+or `~` — those read as bitwise in Python.
 
 To drop the `uv run --project .` prefix, activate the environment first:
 

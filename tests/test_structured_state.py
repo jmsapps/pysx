@@ -7,6 +7,88 @@ import pytest
 from pysx import derived, dict_key, effect, list_index, project, structured
 
 
+def test_unified_authoring_ownership_selection_batch_disposal() -> None:
+    from pysx import batch, signal
+
+    original = {"a": [1, 2], "b": [3]}
+    root = signal(original)
+    original["a"].append(9)
+    item = root["a"][0]
+    seen: list[int] = []
+    stop = item.subscribe(seen.append)
+    root()["a"].append(8)
+    root["b"].set([4])
+    assert seen == [1]
+
+    with batch():
+        item.set(5)
+        item.set(6)
+
+    assert seen == [1, 6]
+    assert root() == {"a": [6, 2], "b": [4]}
+    root.set({"a": [6, 8], "b": [9]})
+    assert seen == [1, 6]
+    stop()
+    assert not root.observers
+    root.set({"a": [7], "b": []})
+    assert item() == 7
+    assert not root.observers
+
+
+def test_unified_authoring_positions_missing_recovery() -> None:
+    from pysx import signal
+
+    rows = signal([1, 2, 3])
+    selected = rows[1]
+    seen: list[int] = []
+    stop = selected.subscribe(seen.append)
+    rows.set([3, 1, 2])
+    rows.update(lambda values: [9, *values])
+    assert seen == [2, 1, 3]
+
+    with pytest.raises(ExceptionGroup):
+        rows.set([])
+
+    with pytest.raises(IndexError):
+        selected.set(8)
+
+    rows.set([4, 5])
+    assert seen[-1] == 5
+    stop()
+    missing = signal({"a": 1})["b"]
+
+    with pytest.raises(KeyError):
+        missing()
+
+    with pytest.raises(KeyError):
+        missing.set(2)
+
+
+def test_unified_authoring_custom_snapshot_arithmetic_nested_signal() -> None:
+    from pysx import signal
+
+    @dataclass
+    class Person:
+        name: str
+
+    original = Person("Ada")
+    person = signal(original)
+    original.name = "Changed"
+    name = person.project(lambda p: p.name, lambda p, value: replace(p, name=value))
+    name.set("Grace")
+    assert person().name == "Grace"
+    count = signal(2)
+    result = 3 * count
+    seen: list[int] = []
+    stop = result.subscribe(seen.append)
+    count.set(4)
+    assert seen == [6, 12]
+    stop()
+
+    with pytest.raises(TypeError, match="payloads"):
+        signal(count)
+
+
 def test_structured_state_selective_nested_write() -> None:
     root = structured({"left": {"value": 1}, "right": {"value": 2}})
     left = dict_key(root, "left")

@@ -26,6 +26,9 @@ const registry = [
   { suite: "adoption", cases: [
     [0, "adoption", "browser_adoption.mjs", "ARCHITECTURE ADOPTION PASSED"],
   ] },
+  { suite: "template_ergonomics", cases: [
+    [0, "reactive_state", "browser_operators.mjs", "OPERATORS BROWSER PASSED"],
+  ] },
 ];
 const selections = registry.filter((entry) => !suite || entry.suite === suite);
 if (!selections.length) throw new Error("empty browser selection");
