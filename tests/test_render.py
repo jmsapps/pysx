@@ -26,6 +26,46 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
+def test_serialization_live_boolean_classes_and_properties() -> None:
+    hidden = signal(False)
+    value = signal("initial")
+    classes = signal({"active": True, "inactive": False})
+
+    def view() -> Fragment:
+        return html(t"""
+            input(checked={hidden} ariaChecked={hidden} value={value})
+            div(className="base active" class={classes})
+        """)
+
+    session = Session(view)
+    assert 'aria-checked="false"' in session.rendered.body
+    assert " checked" not in session.rendered.body
+    assert 'class="base active"' in session.rendered.body
+    hidden.set(True)
+    value.set("corrected")
+    classes.set({"new": True})
+    assert {"op": "attr", "id": "e1", "name": "checked", "v": ""} in session.pending
+    assert {"op": "attr", "id": "e1", "name": "aria-checked", "v": "true"} in session.pending
+    assert {"op": "attr", "id": "e1", "name": "value", "v": "corrected"} in session.pending
+    assert {"op": "attr", "id": "e2", "name": "class", "v": "base active new"} in session.pending
+    session.dispose()
+
+
+def test_serialization_live_key_and_class_escaping() -> None:
+    rows = signal(['key":<&'])
+
+    def row(value: str) -> Fragment:
+        return html(t"""\n        div(class={value}): {value}\n        """)
+
+    def view() -> Fragment:
+        return html(t"""\n        div: {each(rows, row, key=lambda value: value)}\n        """)
+
+    markup = render(view).body
+    assert 'data-pysx-key="key&quot;:&lt;&amp;"' in markup
+    assert 'class="key&quot;:&lt;&amp;"' in markup
+    assert 'id="0:key&quot;:&lt;&amp;:1"' in markup
+
+
 def test_structured_state_selective_patches_and_event_batch() -> None:
     root = structured({"left": 1, "right": 2})
     left = dict_key(root, "left")
@@ -133,6 +173,7 @@ class _Attrs(HTMLParser):
     def of(cls, markup: str) -> list[tuple[str, dict[str, str | None]]]:
         p = cls()
         p.feed(markup)
+
         return p.tags
 
 
@@ -152,10 +193,11 @@ def test_styled_class_applied_and_each_rule_defined_once() -> None:
     tags = _Attrs.of(r.body)
     used = {a["class"] for _, a in tags if "class" in a}
     assert len(used) >= 2, used
+
     for cls in used:
         assert cls is not None
         assert cls.startswith("pysx-"), cls
-        assert r.css.count(f".{cls} {{") == 1, cls   # defined exactly once
+        assert r.css.count(f".{cls} {{") == 1, cls  # defined exactly once
 
 
 def test_identical_css_collapses_to_one_class() -> None:
@@ -215,6 +257,7 @@ Box = styled(div, t"""color: red;""")
 def mk(fn: Callable[[], Fragment]) -> Callable[[], Fragment]:
     """Give a component a namespace the renderer can resolve tags from."""
     cast("dict[str, object]", fn.__globals__).setdefault("Box", Box)
+
     return component(fn)
 
 
@@ -283,9 +326,9 @@ def test_boolean_attribute_present_then_removed() -> None:
     assert " hidden" in r.body, r.body
     assert 'hidden="' not in r.body, r.body
     on.set(False)
-    assert r.watchers[0].refresh() == [
-        {"op": "attr", "id": "e1", "name": "hidden", "v": None}
-    ], "falsey boolean attribute must send null, not the string 'false'"
+    assert r.watchers[0].refresh() == [{"op": "attr", "id": "e1", "name": "hidden", "v": None}], (
+        "falsey boolean attribute must send null, not the string 'false'"
+    )
 
 
 def test_conditional_swaps_branch_html() -> None:
@@ -342,7 +385,7 @@ def test_keyed_list_renders_with_keys() -> None:
 def test_unchanged_items_send_no_html() -> None:
     items = signal([Row(1, "a"), Row(2, "b")])
     r = render(_list_view(items))
-    items.set([Row(2, "b"), Row(1, "a")])          # reorder only
+    items.set([Row(2, "b"), Row(1, "a")])  # reorder only
     ops = r.watchers[0].refresh()
     assert len(ops) == 1, ops
     assert ops[0]["op"] == "list", ops

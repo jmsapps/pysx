@@ -1,21 +1,140 @@
-"""HTML element markers.
+"""Frozen native element markers. Typed constructors live in pysx.native."""
 
-Plain strings, so `styled(div, ...)` and `styled("div", ...)` are equivalent.
-"""
+from dataclasses import dataclass
 
-div = "div"
-span = "span"
-section = "section"
-nav = "nav"
-form = "form"
-label = "label"
-strong = "strong"
-button = "button"
-input = "input"
-ul = "ul"
-li = "li"
-p = "p"
-h1 = "h1"
-br = "br"
+from .schema import VOID as VOID
+from .schema import resolve_tag, tag_info
 
-VOID = frozenset({"br", "hr", "img", "input", "meta", "link"})
+
+@dataclass(frozen=True)
+class ElementTag:
+    name: str
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def void(self) -> bool:
+        info = tag_info(self.name)
+
+        return info is not None and info.void
+
+
+a = ElementTag(resolve_tag("a"))
+abbr = ElementTag(resolve_tag("abbr"))
+address = ElementTag(resolve_tag("address"))
+area = ElementTag(resolve_tag("area"))
+article = ElementTag(resolve_tag("article"))
+aside = ElementTag(resolve_tag("aside"))
+audio = ElementTag(resolve_tag("audio"))
+b = ElementTag(resolve_tag("b"))
+base = ElementTag(resolve_tag("base"))
+bdi = ElementTag(resolve_tag("bdi"))
+bdo = ElementTag(resolve_tag("bdo"))
+blockquote = ElementTag(resolve_tag("blockquote"))
+body = ElementTag(resolve_tag("body"))
+br = ElementTag(resolve_tag("br"))
+button = ElementTag(resolve_tag("button"))
+canvas = ElementTag(resolve_tag("canvas"))
+caption = ElementTag(resolve_tag("caption"))
+cite = ElementTag(resolve_tag("cite"))
+code = ElementTag(resolve_tag("code"))
+col = ElementTag(resolve_tag("col"))
+colgroup = ElementTag(resolve_tag("colgroup"))
+data = ElementTag(resolve_tag("data"))
+datalist = ElementTag(resolve_tag("datalist"))
+dd = ElementTag(resolve_tag("dd"))
+del_ = ElementTag(resolve_tag("del"))
+details = ElementTag(resolve_tag("details"))
+dfn = ElementTag(resolve_tag("dfn"))
+dialog = ElementTag(resolve_tag("dialog"))
+d = ElementTag(resolve_tag("d"))
+dl = ElementTag(resolve_tag("dl"))
+dt = ElementTag(resolve_tag("dt"))
+em = ElementTag(resolve_tag("em"))
+embed = ElementTag(resolve_tag("embed"))
+fieldset = ElementTag(resolve_tag("fieldset"))
+figcaption = ElementTag(resolve_tag("figcaption"))
+figure = ElementTag(resolve_tag("figure"))
+footer = ElementTag(resolve_tag("footer"))
+form = ElementTag(resolve_tag("form"))
+fragment = ElementTag(resolve_tag("fragment"))
+h1 = ElementTag(resolve_tag("h1"))
+h2 = ElementTag(resolve_tag("h2"))
+h3 = ElementTag(resolve_tag("h3"))
+h4 = ElementTag(resolve_tag("h4"))
+h5 = ElementTag(resolve_tag("h5"))
+h6 = ElementTag(resolve_tag("h6"))
+head = ElementTag(resolve_tag("head"))
+header = ElementTag(resolve_tag("header"))
+hr = ElementTag(resolve_tag("hr"))
+html = ElementTag(resolve_tag("html"))
+i = ElementTag(resolve_tag("i"))
+iframe = ElementTag(resolve_tag("iframe"))
+img = ElementTag(resolve_tag("img"))
+input = ElementTag(resolve_tag("input"))
+ins = ElementTag(resolve_tag("ins"))
+kbd = ElementTag(resolve_tag("kbd"))
+label = ElementTag(resolve_tag("label"))
+legend = ElementTag(resolve_tag("legend"))
+li = ElementTag(resolve_tag("li"))
+link = ElementTag(resolve_tag("link"))
+main = ElementTag(resolve_tag("main"))
+map = ElementTag(resolve_tag("map"))
+mark = ElementTag(resolve_tag("mark"))
+menu = ElementTag(resolve_tag("menu"))
+meta = ElementTag(resolve_tag("meta"))
+meter = ElementTag(resolve_tag("meter"))
+nav = ElementTag(resolve_tag("nav"))
+noscript = ElementTag(resolve_tag("noscript"))
+obj = ElementTag(resolve_tag("obj"))
+ol = ElementTag(resolve_tag("ol"))
+optgroup = ElementTag(resolve_tag("optgroup"))
+option = ElementTag(resolve_tag("option"))
+output = ElementTag(resolve_tag("output"))
+p = ElementTag(resolve_tag("p"))
+param = ElementTag(resolve_tag("param"))
+picture = ElementTag(resolve_tag("picture"))
+pre = ElementTag(resolve_tag("pre"))
+progress = ElementTag(resolve_tag("progress"))
+q = ElementTag(resolve_tag("q"))
+rp = ElementTag(resolve_tag("rp"))
+rt = ElementTag(resolve_tag("rt"))
+ruby = ElementTag(resolve_tag("ruby"))
+s = ElementTag(resolve_tag("s"))
+samp = ElementTag(resolve_tag("samp"))
+script = ElementTag(resolve_tag("script"))
+section = ElementTag(resolve_tag("section"))
+select = ElementTag(resolve_tag("select"))
+slot = ElementTag(resolve_tag("slot"))
+small = ElementTag(resolve_tag("small"))
+source = ElementTag(resolve_tag("source"))
+span = ElementTag(resolve_tag("span"))
+strong = ElementTag(resolve_tag("strong"))
+style = ElementTag(resolve_tag("style"))
+sub = ElementTag(resolve_tag("sub"))
+summary = ElementTag(resolve_tag("summary"))
+sup = ElementTag(resolve_tag("sup"))
+svg = ElementTag(resolve_tag("svg"))
+table = ElementTag(resolve_tag("table"))
+tbody = ElementTag(resolve_tag("tbody"))
+td = ElementTag(resolve_tag("td"))
+tmpl = ElementTag(resolve_tag("tmpl"))
+textarea = ElementTag(resolve_tag("textarea"))
+tfoot = ElementTag(resolve_tag("tfoot"))
+th = ElementTag(resolve_tag("th"))
+thead = ElementTag(resolve_tag("thead"))
+time = ElementTag(resolve_tag("time"))
+title = ElementTag(resolve_tag("title"))
+tr = ElementTag(resolve_tag("tr"))
+track = ElementTag(resolve_tag("track"))
+u = ElementTag(resolve_tag("u"))
+ul = ElementTag(resolve_tag("ul"))
+v = ElementTag(resolve_tag("v"))
+video = ElementTag(resolve_tag("video"))
+wbr = ElementTag(resolve_tag("wbr"))
+div = ElementTag(resolve_tag("div"))
+object = ElementTag(resolve_tag("object"))
+template = ElementTag(resolve_tag("template"))
+var = ElementTag(resolve_tag("var"))
+math = ElementTag(resolve_tag("math"))
