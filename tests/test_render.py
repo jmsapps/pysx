@@ -351,6 +351,25 @@ def test_conditional_swaps_branch_html() -> None:
     assert ops == [{"op": "html", "id": "0", "v": "<span>no</span>"}], ops
 
 
+def test_conditional_with_plain_flag_keeps_nested_watchers() -> None:
+    shown = True
+    count = signal(0)
+
+    @mk
+    def view() -> Fragment:
+        return html(t"""
+            Box:
+                if {shown}:
+                    span: {count}
+        """)
+
+    r = render(view)
+    assert r.watchers, "a statically chosen branch must still expose its nested watchers"
+    count.set(5)
+    ops = [op for watcher in r.watchers for op in watcher.refresh()]
+    assert ops == [{"op": "text", "id": "0:branch:1", "v": "5"}], ops
+
+
 @dataclass
 class Row:
     id: int

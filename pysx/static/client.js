@@ -2,7 +2,23 @@ const root = document.getElementById("pysx-root");
 const style = document.getElementById("pysx-style");
 const socket = new WebSocket(`ws://${location.host}/ws`);
 
-const EVENTS = ["click", "submit", "reset", "change", "input", "invalid"];
+const EVENTS = [
+  "abort", "afterprint", "animationend", "animationiteration", "animationstart", "auxclick",
+  "beforeinput", "beforeprint", "beforeunload", "blur", "cancel", "canplay", "canplaythrough",
+  "change", "click", "close", "compositionend", "compositionstart", "compositionupdate",
+  "contextmenu", "copy", "cuechange", "cut", "dblclick", "drag", "dragend", "dragenter",
+  "dragleave", "dragover", "dragstart", "drop", "durationchange", "emptied", "ended", "error",
+  "focus", "focusin", "focusout", "formdata", "fullscreenchange", "gotpointercapture",
+  "hashchange", "input", "invalid", "keydown", "keypress", "keyup", "load", "loadeddata",
+  "loadedmetadata", "loadstart", "lostpointercapture", "mousedown", "mouseenter", "mouseleave",
+  "mousemove", "mouseout", "mouseover", "mouseup", "mousewheel", "paste", "pause", "play",
+  "playing", "pointercancel", "pointerdown", "pointerenter", "pointerleave", "pointermove",
+  "pointerout", "pointerover", "pointerup", "popstate", "progress", "ratechange", "reset",
+  "resize", "scroll", "scrollend", "securitypolicyviolation", "seeked", "seeking", "select",
+  "selectionchange", "selectstart", "show", "slotchange", "stalled", "submit", "suspend",
+  "timeupdate", "toggle", "touchcancel", "touchend", "touchmove", "touchstart", "transitionend",
+  "unload", "volumechange", "waiting", "wheel",
+];
 // value and checked must be set as properties; setAttribute does not move an
 // input the user has already interacted with.
 const PROPERTIES = new Set(["value", "checked", "selected", "muted"]);
@@ -32,12 +48,18 @@ function setSelected(el, values, defaults = false) {
   }
 }
 
+function within(scope, selector) {
+  const found = [...scope.querySelectorAll(selector)];
+  if (scope.matches?.(selector)) found.unshift(scope);
+  return found;
+}
+
 function hydrate(scope) {
-  for (const el of scope.querySelectorAll("select[value], textarea[value]")) {
+  for (const el of within(scope, "select[value], textarea[value]")) {
     el.value = el.getAttribute("value");
     if (el.tagName === "SELECT") setSelected(el, [el.value], true);
   }
-  for (const el of scope.querySelectorAll("select[data-pysx-selected]")) {
+  for (const el of within(scope, "select[data-pysx-selected]")) {
     setSelected(el, JSON.parse(el.dataset.pysxSelected), true);
   }
 }
@@ -163,7 +185,7 @@ document.addEventListener("compositionend", event => {
 });
 
 for (const type of EVENTS) {
-  document.addEventListener(type, (event) => {
+  window.addEventListener(type, (event) => {
     const bound = event.target.closest?.("[data-pysx-binding]");
     if ((type === "input" || type === "change") && bound?.dataset.pysxBindEvent === type) {
       if (bound.disabled || editState(bound).composing || event.isComposing) return;
@@ -176,7 +198,9 @@ for (const type of EVENTS) {
       return;
     }
     const attribute = `data-pysx-${type}`;
-    const target = event.target.closest?.(`[${attribute}]`);
+    const target = event.target instanceof Element
+      ? event.target.closest(`[${attribute}]`)
+      : root.querySelector(`[${attribute}]`);
     if (type === "reset") {
       const form = event.target;
       if (form.tagName !== "FORM" || event.defaultPrevented) return;
@@ -203,5 +227,5 @@ for (const type of EVENTS) {
     }
     if (type === "invalid") payload.v = { value: target.value, valid: target.validity.valid };
     send(payload);
-  }, type === "invalid");
+  }, true);
 }

@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import ast
 import keyword
+import re
+import textwrap
 from pathlib import Path
 
 from pysx.schema import (
@@ -17,7 +19,10 @@ from pysx.schema import (
     resolve_tag,
 )
 
-TARGET = Path(__file__).resolve().parents[1] / "pysx" / "native.py"
+ROOT = Path(__file__).resolve().parents[1]
+TARGET = ROOT / "pysx" / "native.py"
+CLIENT = ROOT / "pysx" / "static" / "client.js"
+EVENTS_DECLARATION = re.compile(r"const EVENTS = \[[^\]]*\];")
 ALIASES = {"class": "class_name", "for": "html_for", "async": "async_", "default": "default_"}
 
 
@@ -95,17 +100,39 @@ def generate() -> str:
     return "\n".join(lines) + "\n"
 
 
+def delegated_events() -> list[str]:
+    body = {attr[2:] for attr in TAG_ATTRS["body"] if attr.startswith("on")}
+
+    return sorted(EVENT_NAMES | body)
+
+
+def generate_client(current: str) -> str:
+    joined = ", ".join(f'"{event}"' for event in delegated_events())
+    body = textwrap.fill(joined, width=96, initial_indent="  ", subsequent_indent="  ")
+    declaration = f"const EVENTS = [\n{body},\n];"
+
+    if not EVENTS_DECLARATION.search(current):
+        raise SystemExit("client.js has no EVENTS declaration to generate")
+
+    return EVENTS_DECLARATION.sub(lambda _: declaration, current, count=1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     source = generate()
+    client = generate_client(CLIENT.read_text())
 
     if args.check:
         if ast.dump(ast.parse(TARGET.read_text())) != ast.dump(ast.parse(source)):
             raise SystemExit("native signatures are stale; run the generator")
+
+        if CLIENT.read_text() != client:
+            raise SystemExit("client event delegation is stale; run the generator")
     else:
         TARGET.write_text(source)
+        CLIENT.write_text(client)
 
 
 if __name__ == "__main__":

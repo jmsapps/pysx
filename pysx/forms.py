@@ -11,6 +11,10 @@ if TYPE_CHECKING:
     from .wire import Op
 
 
+class PayloadError(TypeError):
+    pass
+
+
 @dataclass
 class Binding:
     signal: Signal[object]
@@ -43,7 +47,7 @@ class Binding:
         )
 
         if not valid:
-            raise TypeError(f"{self.mode} binding received an incompatible payload")
+            raise PayloadError(f"{self.mode} binding received an incompatible payload")
 
     def set(self, value: object) -> None:
         self.validate(value)
@@ -75,7 +79,7 @@ def make_binding(
     multiple: bool,
     value: object,
     element: str,
-    radio_value: str | None,
+    value_attr: str | None,
 ) -> Binding:
     if not isinstance(value, Signal):
         raise TypeError(f"{name} requires a writable signal")
@@ -100,9 +104,11 @@ def make_binding(
     if mode == "value" and control_type == "radio":
         mode = "radio"
 
-        if radio_value is None:
+        if value_attr is None:
             raise TypeError("radio bindValue requires a value attribute")
-    binding = Binding(bound, element, mode, radio_value)
+    elif mode == "value" and value_attr is not None:
+        raise TypeError(f"{name} conflicts with a value attribute")
+    binding = Binding(bound, element, mode, value_attr)
     binding.validate(bound())
 
     return binding
@@ -113,21 +119,21 @@ def form_edits(value: object) -> list[tuple[str, object, int | None]]:
         return []
 
     if not isinstance(value, list):
-        raise TypeError("form edits must be an array")
+        raise PayloadError("form edits must be an array")
     edits: list[tuple[str, object, int | None]] = []
 
     for entry in cast("list[object]", value):
         if not isinstance(entry, dict):
-            raise TypeError("form edits must contain objects")
+            raise PayloadError("form edits must contain objects")
         edit = cast("dict[str, object]", entry)
         handler = edit.get("h")
         revision = edit.get("rev")
 
         if not isinstance(handler, str):
-            raise TypeError("form edit handler must be a string")
+            raise PayloadError("form edit handler must be a string")
 
         if revision is not None and (type(revision) is not int or revision < 0):
-            raise TypeError("edit revisions must be nonnegative integers")
+            raise PayloadError("edit revisions must be nonnegative integers")
         edits.append((handler, edit.get("v"), revision))
 
     return edits

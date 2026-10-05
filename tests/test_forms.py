@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 import pytest
 
 from pysx import Fragment, derived, html, native, signal
-from pysx.forms import form_edits
+from pysx.forms import PayloadError, form_edits
 from pysx.server import Session
 
 
@@ -149,6 +149,39 @@ def test_bindings_form_wrong_runtime_types_and_edits() -> None:
 
     with pytest.raises(TypeError, match="one binding"):
         Session(multiple_bindings)
+
+
+def test_bindings_form_value_attribute_conflicts_with_binding() -> None:
+    def view() -> Fragment:
+        return native.Input(type="text", value="preset", bind_value=signal("ann"))
+
+    with pytest.raises(TypeError, match="conflicts with a value attribute"):
+        Session(view)
+
+
+def test_bindings_form_payload_errors_stay_distinct_from_handler_errors() -> None:
+    def explode(_event: object) -> None:
+        raise TypeError("handler exploded")
+
+    def view() -> Fragment:
+        return native.Div(
+            native.Input(bind_value=signal("initial")),
+            native.Button("go", on_click=explode),
+        )
+
+    session = Session(view)
+    binding = next(iter(session.rendered.bindings))
+    click = next(hid for hid in session.rendered.handlers if hid not in session.rendered.bindings)
+
+    with pytest.raises(PayloadError):
+        session.dispatch(binding, 5)
+
+    with pytest.raises(TypeError, match="handler exploded") as caught:
+        session.dispatch(click, None)
+    assert not isinstance(caught.value, PayloadError), (
+        "a handler's own TypeError must not look like a rejected client payload"
+    )
+    session.dispose()
 
 
 def test_bindings_form_conditional_cleanup_and_control_identity() -> None:

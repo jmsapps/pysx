@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, cast
 
 from websockets.asyncio.server import ServerConnection, serve
 
-from .forms import form_edits
+from .forms import PayloadError, form_edits
 from .reactive import Effect, batch
 from .render import Fragment, Watcher, render
 
@@ -215,7 +215,7 @@ def main() -> None:
                         after=after,
                         edits=edits,
                     )
-                except TypeError:
+                except PayloadError:
                     continue
 
                 if ops:

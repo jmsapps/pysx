@@ -364,6 +364,8 @@ class _Emitter:
             self.out.watchers.append(
                 CondWatcher(slot, cast("Readable[object]", value), branch, flag, watchers)
             )
+        else:
+            self.out.watchers.extend(watchers)
 
         return f'<pysx-slot id="{_htmlmod.escape(slot, quote=True)}">{markup}</pysx-slot>'
 

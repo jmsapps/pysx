@@ -22,7 +22,7 @@ from pysx.schema import (
     resolve_tag,
     tag_info,
 )
-from scripts.generate_native import spelling
+from scripts.generate_native import CLIENT, generate_client, spelling
 
 BASELINE = json.loads((Path(__file__).parent / "fixtures" / "html_schema.json").read_text())
 
@@ -163,3 +163,10 @@ def test_serialization_live_namespace_metadata() -> None:
     div_node = foreign.children[0]
     assert isinstance(div_node, Element)
     assert div_node.namespace == "html"
+
+
+def test_client_delegates_every_event_the_renderer_can_emit() -> None:
+    source = CLIENT.read_text()
+    assert generate_client(source) == source, (
+        "client.js event delegation is stale; run scripts/generate_native.py"
+    )
