@@ -16,7 +16,6 @@ from pysx.schema import (
     GLOBAL_ATTRS,
     NUMBER_ATTRS,
     TAG_ATTRS,
-    resolve_tag,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,7 +76,7 @@ def generate() -> str:
     lines.append("    css: str | StringTemplate | Signal[str]")
     lines.append("    style_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]")
     lines.append("    css_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]")
-    tags = dict.fromkeys([resolve_tag(tag) for tag in BASELINE_TAGS] + ["math"])
+    tags = dict.fromkeys([*BASELINE_TAGS, "math"])
 
     for tag in tags:
         title = tag.capitalize()

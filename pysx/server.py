@@ -44,8 +44,20 @@ class Session:
         self._live = False
         self.rendered = render(app_fn)
         # The first run of each effect registers its subscription; watchers were
-        # seeded with the rendered value, so it produces no ops.
-        self.effects = [self._watch(w) for w in self.rendered.watchers]
+        # seeded with the rendered value, so it produces ops only where setup
+        # wrote a signal after its hole had already been emitted.
+        self.effects: list[Effect] = []
+
+        try:
+            for watcher in self.rendered.watchers:
+                self.effects.append(self._watch(watcher))
+        except BaseException as error:
+            try:
+                self.dispose()
+            except Exception as cleanup_error:
+                error.add_note(f"session cleanup also failed: {cleanup_error}")
+
+            raise
         self._live = True
 
     def _watch(self, watcher: Watcher) -> Effect:
@@ -60,7 +72,7 @@ class Session:
             style_context.reset(token)
         self._sync_styles()
 
-        if self._live and ops:
+        if ops:
             self.pending.extend(ops)
 
     def _sync_styles(self) -> None:
@@ -212,17 +224,40 @@ class Session:
         self._awaitables.clear()
 
     def dispose(self) -> None:
-        self.rendered.styles.close()
-        self.rendered.dom.close()
         self.cancel_callbacks()
+        errors: list[Exception] = []
+
         for eff in self.effects:
-            eff.dispose()
-        self.rendered.handlers.clear()
-        self.rendered.bindings.clear()
-        self.rendered.bind_elements.clear()
-        self.rendered.handler_owners.clear()
-        self.rendered.event_handlers.clear()
+            try:
+                eff.dispose()
+            except Exception as error:
+                errors.append(error)
+        self.effects.clear()
         self.pending.clear()
+
+        try:
+            self.rendered.dispose()
+        except Exception as error:
+            errors.append(error)
+
+        if errors:
+            raise ExceptionGroup("session cleanup failed", errors)
+
+
+async def close_session(
+    session: Session, worker: asyncio.Task[None] | None, error: BaseException | None
+) -> None:
+    """Dispose a connection's session without masking the error that ended it."""
+    if worker is not None:
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+
+    try:
+        session.dispose()
+    except Exception as cleanup_error:
+        if error is None:
+            raise
+        error.add_note(f"session cleanup also failed: {cleanup_error}")
 
 
 def _static(connection: ServerConnection, name: str, content_type: str) -> Response:
@@ -269,10 +304,21 @@ def main() -> None:
         session = Session(app_fn)
         queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=64)
 
-        async def send_command(message: dict[str, JSONValue]) -> None:
+        async def send_mounts() -> None:
+            tokens = session.rendered.scopes.pending_mounts()
+
+            for start in range(0, len(tokens), 1024):
+                await connection.send(
+                    json.dumps({"t": "mount", "ids": tokens[start : start + 1024]})
+                )
+
+        async def send_patch() -> None:
             if session.pending:
                 await connection.send(json.dumps({"t": "patch", "ops": session.pending}))
                 session.pending = []
+
+        async def send_command(message: dict[str, JSONValue]) -> None:
+            await send_patch()
             await connection.send(json.dumps(message))
 
         session.rendered.dom.sender = send_command
@@ -294,19 +340,31 @@ def main() -> None:
                     continue
 
                 try:
-                    edits = form_edits(message.get("edits"))
-                    ops = await session.dispatch_async(
-                        handler_id,
-                        message.get("v"),
-                        revision,
-                        after=after,
-                        edits=edits,
-                        event=message.get("event"),
-                    )
-                except PayloadError, DomError:
-                    if session.pending:
-                        await connection.send(json.dumps({"t": "patch", "ops": session.pending}))
+                    if message.get("t") == "mounted":
+                        tokens = message.get("ids")
+
+                        if isinstance(tokens, list):
+                            supplied = cast("list[object]", tokens)
+
+                            if len(supplied) <= 1024 and all(
+                                isinstance(token, str) for token in supplied
+                            ):
+                                session.rendered.scopes.acknowledge(cast("list[str]", supplied))
+                        ops = session.pending
                         session.pending = []
+                    else:
+                        ops = await session.dispatch_async(
+                            handler_id,
+                            message.get("v"),
+                            revision,
+                            after=after,
+                            edits=form_edits(message.get("edits")),
+                            event=message.get("event"),
+                        )
+                except PayloadError, DomError:
+                    await send_patch()
+                    await send_mounts()
+
                     continue
                 except Exception:
                     await connection.close(code=1011, reason="event handler failed")
@@ -316,6 +374,7 @@ def main() -> None:
                 if ops:
                     patch: PatchMessage = {"t": "patch", "ops": ops}
                     await connection.send(json.dumps(patch))
+                await send_mounts()
 
         worker: asyncio.Task[None] | None = None
 
@@ -326,6 +385,8 @@ def main() -> None:
                 "css": session.rendered.css,
             }
             await connection.send(json.dumps(initial))
+            await send_patch()
+            await send_mounts()
             worker = asyncio.create_task(event_worker())
 
             async for raw in connection:
@@ -340,16 +401,16 @@ def main() -> None:
 
                 if message.get("t") == "dom_reply":
                     session.rendered.dom.reply(message)
-                elif message.get("t") == "event":
+                elif message.get("t") in ("event", "mounted"):
                     try:
                         queue.put_nowait(message)
                     except asyncio.QueueFull:
                         await connection.close(code=1008, reason="event queue limit")
-        finally:
-            if worker is not None:
-                worker.cancel()
-                await asyncio.gather(worker, return_exceptions=True)
-            session.dispose()
+        except BaseException as error:
+            await close_session(session, worker, error)
+
+            raise
+        await close_session(session, worker, None)
 
     async def run() -> None:
         async with serve(handler, args.host, args.port, process_request=process_request):

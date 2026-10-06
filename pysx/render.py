@@ -13,20 +13,22 @@ from __future__ import annotations
 
 import html as _htmlmod
 import json
+from annotationlib import Format
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from inspect import Parameter, signature
 from string.templatelib import Template
 from typing import TYPE_CHECKING, cast
 
-from .composition import Children, Component, namespace_for
+from .composition import Children, Component, identity_for, namespace_for
 from .dom import DomController, DomError, DomRef, dom_context
 from .elements import VOID, ElementTag
 from .events import EventHandler
 from .forms import Binding, make_binding
+from .lifecycle import Scopes
 from .parser import Conditional, Element, Hole, HoleKind, Node, Skeleton, attr_kind, parse
 from .reactive import Readable, Signal
-from .schema import BOOLEAN_ATTRS, normalize_attr, resolve_tag
+from .schema import BOOLEAN_ATTRS, NATIVE_TAGS, normalize_attr
 from .styled import StyledCallable, StyledTag, flatten, global_rules
 from .styles import (
     CssClass,
@@ -306,6 +308,7 @@ class ListWatcher(Watcher):
 
 @dataclass
 class Rendered:
+    scopes: Scopes = field(default_factory=Scopes)
     styles: StyleRegistry = field(default_factory=StyleRegistry)
     dom: DomController = field(default_factory=DomController)
     body: str = ""
@@ -323,6 +326,24 @@ class Rendered:
         default_factory=dict[str, tuple[EventHandler, str]]
     )
 
+    def dispose(self) -> None:
+        """Release standalone render resources; sessions call this on disconnect."""
+        errors: list[Exception] = []
+
+        for close in (self.styles.close, self.dom.close, self.scopes.close):
+            try:
+                close()
+            except Exception as error:
+                errors.append(error)
+        self.handlers.clear()
+        self.bindings.clear()
+        self.bind_elements.clear()
+        self.handler_owners.clear()
+        self.event_handlers.clear()
+
+        if errors:
+            raise ExceptionGroup("render cleanup failed", errors)
+
 
 # --------------------------------------------------------------------------- emit
 
@@ -335,6 +356,7 @@ class _Emitter:
         out: Rendered,
         prefix: str = "",
         handler_prefix: str | None = None,
+        scope_prefix: str | None = None,
     ) -> None:
         self.ns = ns
         self.values = values
@@ -343,6 +365,7 @@ class _Emitter:
         # Scoped to this emitter, so one list item numbers its handlers across
         # all of its elements rather than restarting at each one.
         self.prefix = prefix
+        self.scope_prefix = prefix if scope_prefix is None else scope_prefix
         self.handler_prefix = prefix if handler_prefix is None else handler_prefix
         self.handler_n = 0
         self.component_n = 0
@@ -377,7 +400,7 @@ class _Emitter:
             return found.tag, [found.css_class]
 
         if not tag[:1].isupper():
-            return resolve_tag(tag), []
+            return tag, []
 
         raise NameError(f"unknown component {tag!r}")
 
@@ -405,7 +428,11 @@ class _Emitter:
 
         if isinstance(value, Children):
             sub = _Emitter(
-                dict(value.namespace), value.values, self.out, prefix=f"{self.prefix}f{hole.index}:"
+                dict(value.namespace),
+                value.values,
+                self.out,
+                prefix=f"{self.prefix}f{hole.index}:",
+                scope_prefix=f"{self.scope_prefix}f{hole.index}:",
             )
 
             return sub.nodes(list(value.nodes), static=static, root_classes=root_classes)
@@ -418,7 +445,11 @@ class _Emitter:
             for name, body in fragment.rules:
                 self.out.styles.add(owner, name, body)
             sub = _Emitter(
-                namespace, fragment.template.values, self.out, prefix=f"{self.prefix}f{hole.index}:"
+                namespace,
+                fragment.template.values,
+                self.out,
+                prefix=f"{self.prefix}f{hole.index}:",
+                scope_prefix=f"{self.scope_prefix}f{hole.index}:",
             )
 
             return sub.nodes(
@@ -428,7 +459,9 @@ class _Emitter:
             )
 
         if isinstance(value, Each):
-            return self.list_slot(hole, cast("Each[object]", value), root_classes=root_classes)
+            return self.list_slot(
+                hole, cast("Each[object]", value), static=static, root_classes=root_classes
+            )
         slot = f"{self.prefix}{hole.index}"
         text = str(_read(value))
 
@@ -445,8 +478,11 @@ class _Emitter:
         slot = f"{self.prefix}{node.hole.index}"
 
         prefix = f"{slot}:branch:"
+        scope_base = f"{self.scope_prefix}{node.hole.index}:branch:"
 
         def branch(flag: bool) -> tuple[str, list[Watcher]]:
+            scope_prefix = f"{scope_base}{int(flag)}:"
+            self.out.scopes.release(f"{scope_base}{int(not flag)}:")
             self.out.dom.revoke(prefix)
             self.out.styles.release(prefix)
             for hid in tuple(self.out.handlers):
@@ -463,10 +499,12 @@ class _Emitter:
                 self.out,
                 prefix=prefix,
                 handler_prefix="" if not self.handler_prefix else prefix,
+                scope_prefix=scope_prefix,
             )
-            markup = sub.nodes(
-                node.then if flag else node.otherwise, static=static, root_classes=root_classes
-            )
+            with self.out.scopes.reconcile(scope_prefix):
+                markup = sub.nodes(
+                    node.then if flag else node.otherwise, static=static, root_classes=root_classes
+                )
             watchers = self.out.watchers[start:]
             del self.out.watchers[start:]
 
@@ -485,9 +523,15 @@ class _Emitter:
         return f'<pysx-slot id="{_htmlmod.escape(slot, quote=True)}">{markup}</pysx-slot>'
 
     def list_slot(
-        self, hole: Hole, spec: Each[object], *, root_classes: tuple[str, ...] = ()
+        self,
+        hole: Hole,
+        spec: Each[object],
+        *,
+        static: bool = False,
+        root_classes: tuple[str, ...] = (),
     ) -> str:
         slot = f"{self.prefix}{hole.index}"
+        scope_slot = f"{self.scope_prefix}{hole.index}"
 
         def render_items(items: Iterable[object]) -> tuple[list[str], dict[str, str]]:
             self.out.dom.revoke(f"{slot}:")
@@ -502,18 +546,24 @@ class _Emitter:
             order: list[str] = []
             markup: dict[str, str] = {}
 
-            for item in items:
-                key = str(spec.key(item))
+            with self.out.scopes.reconcile(f"{scope_slot}:"):
+                for item in items:
+                    key = str(spec.key(item))
 
-                if key in markup:
-                    raise ValueError(f"duplicate list key {key!r}")
-                order.append(key)
-                markup[key] = self.item(spec, item, slot, key, root_classes=root_classes)
+                    if key in markup:
+                        raise ValueError(f"duplicate list key {key!r}")
+                    order.append(key)
+                    markup[key] = self.item(
+                        spec, item, slot, key, scope_slot=scope_slot, root_classes=root_classes
+                    )
 
             return order, markup
 
         order, markup = render_items(spec.source())
-        self.out.watchers.append(ListWatcher(slot, spec.source, spec, render_items, order, markup))
+        if not static:
+            self.out.watchers.append(
+                ListWatcher(slot, spec.source, spec, render_items, order, markup)
+            )
         inner = "".join(markup[k] for k in order)
 
         return f'<pysx-list id="{_htmlmod.escape(slot, quote=True)}">{inner}</pysx-list>'
@@ -525,13 +575,15 @@ class _Emitter:
         slot: str,
         key: str,
         *,
+        scope_slot: str,
         root_classes: tuple[str, ...] = (),
     ) -> str:
         token = dom_context.set(self.out.dom)
         owner_token = style_owner.set(f"{slot}:{key}:")
 
         try:
-            fragment = spec.item(item)
+            with self.out.scopes.enter(f"{scope_slot}:k{len(key)}:{key}:", identity_for(spec.item)):
+                fragment = spec.item(item)
         finally:
             dom_context.reset(token)
             style_owner.reset(owner_token)
@@ -545,6 +597,7 @@ class _Emitter:
             fragment.template.values,
             self.out,
             prefix=prefix,
+            scope_prefix=f"{scope_slot}:k{len(key)}:{key}:",
         )
         markup = sub.nodes(
             skeleton.root, static=True, root_classes=(*fragment.root_classes, *root_classes)
@@ -565,22 +618,41 @@ class _Emitter:
             props["children"] = Children(tuple(el.children), self.values, dict(self.ns))
         self.component_n += 1
         prefix = f"{self.prefix}c{self.component_n}:"
+        scope_prefix = f"{self.scope_prefix}c{self.component_n}:"
         owner_token = style_owner.set(prefix)
 
         try:
             target = fn.base if isinstance(fn, StyledCallable) else fn
-            children_parameter = signature(target).parameters.get("children")
-
-            if (
-                el.children
-                and children_parameter is not None
-                and children_parameter.kind is Parameter.VAR_POSITIONAL
-            ):
-                result = fn(props.pop("children"), **props)
-            else:
-                result = fn(**props)
+            with self.out.scopes.enter(scope_prefix, identity_for(target)):
+                return self._component_body(
+                    fn, target, el, props, prefix, scope_prefix, static, root_classes
+                )
         finally:
             style_owner.reset(owner_token)
+
+    def _component_body(
+        self,
+        fn: Component,
+        target: Component,
+        el: Element,
+        props: dict[str, object],
+        prefix: str,
+        scope_prefix: str,
+        static: bool,
+        root_classes: tuple[str, ...],
+    ) -> str:
+        children_parameter = signature(target, annotation_format=Format.STRING).parameters.get(
+            "children"
+        )
+
+        if (
+            el.children
+            and children_parameter is not None
+            and children_parameter.kind is Parameter.VAR_POSITIONAL
+        ):
+            result = fn(props.pop("children"), **props)
+        else:
+            result = fn(**props)
 
         if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise TypeError("components must return Template or Fragment")
@@ -594,6 +666,7 @@ class _Emitter:
             fragment.template.values,
             self.out,
             prefix=prefix,
+            scope_prefix=scope_prefix,
         )
 
         return sub.nodes(
@@ -605,7 +678,7 @@ class _Emitter:
     def element(self, el: Element, *, static: bool, root_classes: tuple[str, ...] = ()) -> str:
         found = self.ns.get(el.tag)
 
-        if el.tag[:1].isupper() and callable(found):
+        if callable(found) and el.tag not in NATIVE_TAGS:
             return self.call_component(
                 cast("Component", found), el, static=static, root_classes=root_classes
             )
@@ -838,7 +911,8 @@ def render(
     style_token = style_context.set(out.styles)
 
     try:
-        result = component_fn()
+        with out.scopes.enter("", identity_for(component_fn)):
+            result = component_fn()
 
         if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise TypeError("components must return Template or Fragment")
@@ -858,6 +932,13 @@ def render(
             out,
         )
         out.body = emitter.nodes(skeleton.root, root_classes=fragment.root_classes)
+    except BaseException as error:
+        try:
+            out.dispose()
+        except Exception as cleanup_error:
+            error.add_note(f"render cleanup also failed: {cleanup_error}")
+
+        raise
     finally:
         dom_context.reset(token)
         style_context.reset(style_token)

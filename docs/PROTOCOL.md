@@ -11,6 +11,20 @@ text by index.
 
 ## Messages
 
+### Component mount acknowledgement
+
+After `init` or a `patch` commits an owner's markup, the server may send
+`{"t":"mount","ids":["opaque-generation-token"]}`. The client processes DOM messages
+in order, then replies `{"t":"mounted","ids":["opaque-generation-token"]}`. Each batch
+contains at most 1024 tokens. The session accepts only its currently live generations;
+duplicate, unknown and removed-owner tokens have no effect. A fresh owner receives a new
+token even if it reuses a path or key. A surviving owner is acknowledged only once.
+Server setup does not imply browser mount; these acknowledgements run synchronous
+`on_mount` callbacks after commit. Resulting reactive patches follow the acknowledgement.
+Acknowledgements enter the same bounded session work queue as events. An event rejected
+for an invalid payload or a failed browser command still reports the markup it committed
+and the mounts that markup owns.
+
 ### Owned browser commands
 
 `Dom()` is created inside an app render. `dom.ref()` is interpolated as `ref` or
@@ -86,6 +100,9 @@ handlers prevent native submission immediately while respecting validation.
 ```json
 {"t":"init","html":"<div ...>","css":".pysx-ab12cd { ... }"}
 ```
+
+A `patch` follows `init` immediately when component setup wrote a signal whose hole
+had already been rendered, so the first frames always agree with the session's state.
 
 **client -> server**
 

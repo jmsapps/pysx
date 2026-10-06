@@ -1,0 +1,13 @@
+from pysx import html
+
+def branch(node, children):
+    return html(
+        t"""
+        Panel:
+            Branch(node={node}):
+                span: {children}
+        """,
+        namespace={"Panel": Panel, "Branch": branch},
+    )
+
+AFTER_SENTINEL = "plain Python after recursive composition"

@@ -11,7 +11,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
   suite = args[i + 1];
 }
-if (suite && !["injection", "styling_diagnostics"].includes(suite)) throw new Error("empty grammar selection");
+if (suite && !["injection", "styling_diagnostics", "composition_recursive"].includes(suite)) throw new Error("empty grammar selection");
 const host = pylanceHost();
 const injectionPath = process.env.PYSX_INJECTION_GRAMMAR ??
   fileURLToPath(new URL("../../editor/syntaxes/pysx.injection.tmLanguage.json", import.meta.url));
@@ -36,9 +36,10 @@ try {
     if (!condition) throw new Error(`scope assertion failed: ${label}`);
     assertions++;
   };
-  const fixtures = suite === "styling_diagnostics" ? ["styling"] :
+  const fixtures = suite === "composition_recursive" ? ["composition"] :
+    suite === "styling_diagnostics" ? ["styling"] :
     suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
-    ["counter", "unclosed_paren", "odd_quote", "styling"];
+    ["counter", "unclosed_paren", "odd_quote", "styling", "composition"];
   for (const fixture of fixtures) {
     const lines = readFileSync(new URL(`fixtures/${fixture}.txt`, import.meta.url), "utf8").split("\n");
     let stack = textmate.INITIAL;
@@ -84,6 +85,14 @@ try {
         check(result.some((token) => token.text === value && token.scopes.includes(scope)), `${value}: ${scope}`);
       }
       check(result.some((token) => token.text.trim() === "count" && token.scopes.some((scope) => scope.includes("meta.embedded.inline.python"))), "hole body returns to Python");
+    }
+    if (fixture === "composition") {
+      for (const name of ["Panel", "Branch"]) {
+        check(result.some(token => token.text === name && token.scopes.includes("support.class.component.pysx")), `${name}: callable component scope`);
+      }
+      check(result.some(token => token.text === "node" && token.scopes.includes("entity.other.attribute-name.pysx")), "component prop scope");
+      check(result.some(token => token.text.trim() === "children" && token.scopes.includes("meta.embedded.inline.python")), "caller children hole uses Python scope");
+      check(result.filter(token => token.line === 10).every(token => !token.scopes.some(scope => scope.includes("pysx"))), "explicit namespace retains Python scope");
     }
   }
   const injection = JSON.parse(readFileSync(injectionPath, "utf8"));

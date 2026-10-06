@@ -64,6 +64,7 @@ def _d(
 
 def _bound_names(tree: ast.AST) -> set[str]:
     names: set[str] = set()
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
             names.add(node.id)
@@ -71,6 +72,22 @@ def _bound_names(tree: ast.AST) -> set[str]:
             names.update(a.asname or a.name.split(".")[0] for a in node.names)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)
+
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in {"html", "render"}
+        ):
+            for keyword in node.keywords:
+                if keyword.arg == "namespace" and isinstance(keyword.value, ast.Dict):
+                    names.update(
+                        key.value
+                        for key in keyword.value.keys
+                        if isinstance(key, ast.Constant)
+                        and isinstance(key.value, str)
+                        and key.value.isidentifier()
+                    )
+
     return names
 
 
@@ -85,6 +102,7 @@ def _signal_names(tree: ast.AST) -> set[str]:
 
         if isinstance(fn, ast.Name) and fn.id in (
             "signal",
+            "local_state",
             "structured",
             "derived",
             "eq",
@@ -328,9 +346,13 @@ def diagnostics(path: Path) -> list[Diagnostic]:
             css_interpolation = interpolations[index]
 
             if css_interpolation.conversion != -1 or css_interpolation.format_spec is not None:
-                out.append(_span_diagnostic(
-                    css_interpolation, lines, "CSS attribute interpolation metadata is unsupported"
-                ))
+                out.append(
+                    _span_diagnostic(
+                        css_interpolation,
+                        lines,
+                        "CSS attribute interpolation metadata is unsupported",
+                    )
+                )
 
         # Unknown tags, located in raw source lines so ranges cannot desync.
         for row in range(node.lineno, node.end_lineno or node.lineno):

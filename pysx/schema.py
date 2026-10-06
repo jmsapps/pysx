@@ -37,7 +37,7 @@ BASELINE_TAGS = (
     "details",
     "dfn",
     "dialog",
-    "d",
+    "div",
     "dl",
     "dt",
     "em",
@@ -76,7 +76,7 @@ BASELINE_TAGS = (
     "meter",
     "nav",
     "noscript",
-    "obj",
+    "object",
     "ol",
     "optgroup",
     "option",
@@ -108,7 +108,7 @@ BASELINE_TAGS = (
     "table",
     "tbody",
     "td",
-    "tmpl",
+    "template",
     "textarea",
     "tfoot",
     "th",
@@ -119,13 +119,11 @@ BASELINE_TAGS = (
     "track",
     "u",
     "ul",
-    "v",
+    "var",
     "video",
     "wbr",
 )
-ALIASES: Mapping[str, str] = MappingProxyType(
-    {"d": "div", "obj": "object", "tmpl": "template", "v": "var"}
-)
+NATIVE_TAGS = frozenset(BASELINE_TAGS) | {"math"}
 GLOBAL_ATTRS = frozenset(
     [
         "accesskey",
@@ -580,10 +578,6 @@ class TagInfo:
     fragment: bool = False
 
 
-def resolve_tag(name: str) -> str:
-    return ALIASES.get(name, name)
-
-
 def normalize_attr(name: str) -> str:
     aliases = {
         "class_name": "class", "className": "class", "html_for": "for", "htmlFor": "for",
@@ -636,9 +630,7 @@ def family_of(name: str, tag: str | None = None) -> AttrFamily:
 
 
 def tag_info(name: str) -> TagInfo | None:
-    name = resolve_tag(name)
-
-    if name not in {resolve_tag(tag) for tag in BASELINE_TAGS} | {"math"}:
+    if name not in NATIVE_TAGS:
         return None
 
     return TagInfo(

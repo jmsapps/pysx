@@ -19,6 +19,21 @@ if TYPE_CHECKING:
 type Component = Callable[..., Template | Fragment]
 
 
+def identity_for(fn: Component) -> object:
+    target: object = fn
+
+    while isinstance(target, partial):
+        target = target.func
+
+    if isfunction(target):
+        return target.__code__
+
+    if ismethod(target):
+        return target.__func__.__code__
+
+    return type(target)
+
+
 @dataclass(frozen=True)
 class Children:
     """A child block keeps the caller's values and namespace, without a frame."""

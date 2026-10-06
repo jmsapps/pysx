@@ -3,9 +3,9 @@
 The indentation-based markup grammar carried inside a PEP 750 t-string. `parser.py`
 implements this; `check.py` validates against it.
 
-Native aliases `d`, `obj`, `tmpl` and `v` resolve to canonical tags. All fourteen
-HTML void elements emit no closing tag. `fragment` emits its children without a
-wrapper and accepts no DOM attributes. HTML attributes normalize camelCase and
+Native tags use their HTML spelling, including `div`, `object`, `template` and `var`.
+All fourteen HTML void elements emit no closing tag. `fragment` emits its children
+without a wrapper and accepts no DOM attributes. HTML attributes normalize camelCase and
 Python keyword spelling through the shared schema; `className`/`htmlFor` map to
 `class`/`for`, and data/ARIA camel prefixes map to hyphenated names.
 Schema diagnostics remain advisory. SVG/MathML entry elements record foreign
@@ -61,8 +61,10 @@ or both.
 
 ## Callable composition
 
-Names bound to ordinary callables are component tags. Attribute values are forwarded as
-keyword props, preserving live objects. Nonempty child blocks are forwarded as `children`,
+Names bound to ordinary callables are component tags, including uppercase and lowercase
+aliases; reserved native tag names retain their native meaning. The compatibility
+`@component` decorator is optional. Attribute values are forwarded as keyword props,
+preserving live objects. Nonempty child blocks are forwarded as `children`,
 a `Children` object retaining the caller's parsed nodes, hole values and namespace.
 For callable bases declaring `*children`, that object is passed positionally, matching
 typed native constructors. Otherwise it is forwarded as the `children` keyword.
@@ -75,6 +77,49 @@ function-local aliases; `render(app, namespace={...})` provides explicit root bi
 These mappings are copied; execution frames are never retained. Partials and callable
 instances use their underlying defining callable's module. A fragment's explicit bindings
 override module bindings. Caller children retain their own namespace when inserted.
+
+Use explicit namespace entries for ordinary imports used only as literal tags. For example,
+`from shared import Card` together with `html(t'\nCard:', namespace={"Card": Card})`
+provides a real Python reference that Ruff and Pyright recognize. Their unused-import
+checks and import cleanup continue to apply to unrelated imports. Required, default and
+keyword-only props follow the callable's Python signature; missing or unexpected props
+raise `TypeError`. Python annotations are checked on ordinary component calls by static
+type checkers, rather than enforced as runtime coercions. Signals are passed intact;
+reading a Signal before passing it produces a snapshot. Strings inserted as content,
+including string-valued component props, are HTML-escaped.
+
+### Component ownership
+
+Each render owns a root scope. Callable tags and keyed `each` item factories have child
+scopes. Direct Python function calls share the active scope. Use a callable tag, keyed
+`each` factory or root `render` call when the function should own a separate scope.
+`local_state("name", initial)` returns the same Signal for a surviving scope; the initial
+value is copied once. Use a stable name and payload type for each state entry.
+Keyed reorder preserves scopes. Removing a key, changing a conditional branch or changing
+the component callable identity disposes its subtree; a subsequent remount starts fresh.
+Identity is the callable's definition — a function or method body, or a callable
+instance's class — so rebuilding that callable for each render keeps its scope.
+Local state rejects writes after disposal. Component functions may run again to produce
+markup, so put one-time external setup in `on_setup(callback)`. Setup writes reach holes
+rendered before the owner through the session's first patch, not through its initial HTML.
+
+`on_cleanup(callback)` registers teardown during first setup or an `on_mount` callback.
+It runs once, in reverse registration order; descendants close before parents. Cleanup
+continues after exceptions and reports an `ExceptionGroup` after releasing resources.
+Failed setup cleans the failed subtree; failed initial rendering cleans the render.
+Sessions dispose their render on disconnect; standalone callers use `Rendered.dispose()`.
+`on_mount(callback)` runs once after the browser acknowledges the owner's initial DOM
+commit, separately from server setup. Repeated or late acknowledgements do nothing.
+These hooks accept synchronous callbacks; use managed tasks for asynchronous work.
+
+`own_effect(name, callback)` reuses an owned reactive effect. `own_subscription(name,
+subscribe)` calls `subscribe()` once and owns its returned unsubscribe callback.
+`own_timer(name, delay, callback)` owns a one-shot asyncio timer; `own_task(name, factory)`
+owns an asyncio task produced once by the coroutine factory. Timer/task registration needs
+a running event loop. Teardown cancels both, and timers guard disposed owners. Tasks must
+cooperate with cancellation; local state also guards late writes. Resource names stay
+stable across renders; each scope bounds state, resources and hook registrations to 1024
+entries per category. Timer/task ownership does not add a server-push transport.
 
 Root exposure is transparent: a single element exposes that element; multiple elements
 expose every top-level element; `fragment:` and fragment content holes expose their

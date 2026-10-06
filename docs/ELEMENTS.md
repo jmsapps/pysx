@@ -2,8 +2,8 @@
 
 Lowercase markers in `pysx.elements` are frozen `ElementTag` objects. Their string
 form is the canonical HTML name, and they work with `styled()`.
-The aliases `d`, `obj`, `tmpl` and `v` resolve to `div`, `object`, `template`
-and `var`; Python uses `del_` for the delete element.
+Every marker is named for its HTML tag; Python uses `del_` for the delete
+element, whose HTML name is a keyword.
 
 `pysx.native` provides typed constructors such as `Div`, `Input`, `A` and
 `Select`. They return composable fragments, accept positional children and
@@ -26,8 +26,8 @@ native attribute typing. `custom_element("my-widget", custom_attrs={...})`
 constructs an open custom element. Attribute names are validated; inline event
 strings and reserved runtime markers cannot use this escape.
 
-`pysx.schema` exposes immutable baseline rows, aliases, families, events,
-`tag_info()`, `allowed_attr()`, `normalize_attr()` and `resolve_tag()`.
+`pysx.schema` exposes immutable baseline rows, native tag names, families,
+events, `tag_info()`, `allowed_attr()` and `normalize_attr()`.
 Template schema validation is advisory; typed Python constructors let static
 checkers reject wrong native combinations. `fragment` emits children without a
 DOM wrapper and accepts no DOM attributes. Void elements reject constructor

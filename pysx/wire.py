@@ -59,6 +59,16 @@ class PatchMessage(TypedDict):
     ops: list[Op]
 
 
+class MountMessage(TypedDict):
+    t: Literal["mount"]
+    ids: list[str]
+
+
+class MountedMessage(TypedDict):
+    t: Literal["mounted"]
+    ids: list[str]
+
+
 class EventMessage(TypedDict):
     t: Literal["event"]
     h: str
@@ -94,4 +104,4 @@ class DomReplyMessage(TypedDict):
     revoked: NotRequired[list[str]]
 
 
-type ServerMessage = InitMessage | PatchMessage | DomCommandMessage
+type ServerMessage = InitMessage | PatchMessage | DomCommandMessage | MountMessage
