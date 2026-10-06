@@ -73,7 +73,7 @@ try {
   ok("Active filter shows only undone todos");
 
   const afterClick = await styleOf(1);
-  assert(/pysx-[0-9a-f]{6}/.test(afterClick.cls),
+  assert(/pysx-[0-9a-f]{16}\b/.test(afterClick.cls),
     `scoped class lost after click: ${afterClick.cls}`);
   assert(afterClick.radius === beforeClick.radius && afterClick.radius !== "0px",
     `styling died after click: ${JSON.stringify(afterClick)}`);

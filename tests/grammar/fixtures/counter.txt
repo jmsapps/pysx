@@ -2,11 +2,15 @@ from pysx import component, html
 
 @component
 def app():
-    return html(t"""
+    return html(
+        t"""
         Page(id="container"):
             "Count: "; {count}
             Action(type="button", onClick={(lambda e: count.set(1))}):
                 "Increment"
-    """)
+    """,
+        themes=themes,
+        namespace={"Page": factory(option=True), "Action": Action},
+    )
 
 AFTER_SENTINEL = "plain python again"

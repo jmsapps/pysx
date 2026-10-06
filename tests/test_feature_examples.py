@@ -1,6 +1,7 @@
 """Runnable feature example acceptance using public handlers and the real launcher."""
 
 import re
+import signal
 import urllib.request
 from dataclasses import asdict
 
@@ -10,9 +11,69 @@ from acceptance_support import ready_server
 from examples.events import app as events_app
 from examples.forms import app as forms_app
 from examples.reactive_state import app
+from examples.themes import app as themes_app
 from pysx import BrowserEvent
 from pysx.check import diagnostics
 from pysx.server import Session
+
+
+def test_themes_example_interactions_isolation_and_cleanup() -> None:
+    session, other = Session(themes_app), Session(themes_app)
+
+    def handler(identifier: str) -> str:
+        match = re.search(
+            rf'id="{identifier}"[^>]*data-pysx-click="([^"]+)"', session.rendered.body
+        )
+        assert match is not None
+
+        return match[1]
+
+    try:
+        before = other.rendered.css
+        dark = session.dispatch(handler("dark"), None)
+        assert any(op["op"] == "text" and op["v"] == "dark" for op in dark)
+        assert "--ink:#f9fafb" in session.rendered.css
+        assert other.rendered.css == before
+        assert other.pending == []
+        compact = session.dispatch(handler("compact"), None)
+        assert any(op["op"] == "attr" and "12px" in (op["v"] or "") for op in compact)
+        local = session.dispatch(handler("local-accent"), None)
+        assert any(op["op"] == "attr" and "is-local" in (op["v"] or "") for op in local)
+        reset = session.dispatch(handler("reset-vars"), None)
+        assert any(op["op"] == "attr" and op["name"] == "style" and op["v"] is None for op in reset)
+        clear = session.dispatch(handler("clear-theme"), None)
+        assert any(op["op"] == "text" and op["v"] == "cleared" for op in clear)
+        light = session.dispatch(handler("light"), None)
+        assert any(op["op"] == "text" and op["v"] == "light" for op in light)
+    finally:
+        session.dispose()
+        other.dispose()
+    assert not session.rendered.handlers
+    assert not session.rendered.styles.rules
+
+
+def test_themes_example_checker_clean() -> None:
+    from pathlib import Path
+
+    assert diagnostics(Path("examples/themes.py")) == []
+    assert diagnostics(Path("examples/components/themes.py")) == []
+
+
+@pytest.mark.acceptance
+def test_themes_example_cli_startup_cleanup() -> None:
+    command = ["uv", "run", "--project", ".", "example", "run", "themes", "--port", "8760"]
+
+    with (
+        ready_server(command) as server,
+        urllib.request.urlopen("http://127.0.0.1:8760/", timeout=5) as response,
+    ):
+        assert server.poll() is None
+        assert response.status == 200
+        assert b"client.js" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
+
+    assert server.returncode == 0
 
 
 def test_forms_example_interactions_isolation_and_cleanup() -> None:

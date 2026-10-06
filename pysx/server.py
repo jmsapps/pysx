@@ -22,9 +22,11 @@ from .events import decode_event
 from .forms import PayloadError, form_edits
 from .reactive import Effect, batch
 from .render import Fragment, Watcher, render
+from .styles import style_context
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+    from string.templatelib import Template
 
     from websockets.http11 import Request, Response
 
@@ -36,7 +38,7 @@ STATIC = Path(__file__).parent / "static"
 class Session:
     """Holds one client's signal graph and the ops it has produced."""
 
-    def __init__(self, app_fn: Callable[[], Fragment]) -> None:
+    def __init__(self, app_fn: Callable[[], Template | Fragment]) -> None:
         self.pending: list[Op] = []
         self._awaitables: list[Awaitable[object]] = []
         self._live = False
@@ -50,13 +52,35 @@ class Session:
         return Effect(lambda: self._collect(watcher))
 
     def _collect(self, watcher: Watcher) -> None:
-        ops = watcher.refresh()
+        token = style_context.set(self.rendered.styles)
+
+        try:
+            ops = watcher.refresh()
+        finally:
+            style_context.reset(token)
+        self._sync_styles()
 
         if self._live and ops:
             self.pending.extend(ops)
 
+    def _sync_styles(self) -> None:
+        css = self.rendered.styles.snapshot()
+
+        if css != self.rendered.css:
+            self.rendered.css = css
+
+            if self._live:
+                self.pending[:] = [op for op in self.pending if op["op"] != "css"]
+                self.pending.insert(0, {"op": "css", "v": css})
+
     def _invoke(self, callback: Callable[[object], object], value: object) -> None:
-        result = callback(value)
+        token = style_context.set(self.rendered.styles)
+
+        try:
+            result = callback(value)
+        finally:
+            style_context.reset(token)
+        self._sync_styles()
 
         if inspect.isawaitable(result):
             self._awaitables.append(result)
@@ -74,13 +98,18 @@ class Session:
         ops = self.dispatch(handler_id, value, revision, after=after, edits=edits, event=event)
         self.pending.extend(ops)
 
+        style_token = style_context.set(self.rendered.styles)
+
         try:
             while self._awaitables:
                 await self._awaitables.pop(0)
+                self._sync_styles()
         except BaseException:
             self.cancel_callbacks()
 
             raise
+        finally:
+            style_context.reset(style_token)
         ops = self.pending
         self.pending = []
 
@@ -183,6 +212,7 @@ class Session:
         self._awaitables.clear()
 
     def dispose(self) -> None:
+        self.rendered.styles.close()
         self.rendered.dom.close()
         self.cancel_callbacks()
         for eff in self.effects:
@@ -205,14 +235,14 @@ def _static(connection: ServerConnection, name: str, content_type: str) -> Respo
     return response
 
 
-def _load_app(spec: str) -> Callable[[], Fragment]:
+def _load_app(spec: str) -> Callable[[], Template | Fragment]:
     module_name, _, attr = spec.partition(":")
     app: object = getattr(importlib.import_module(module_name), attr or "app")
 
     if not callable(app):
         raise TypeError("app must be callable")
 
-    return cast("Callable[[], Fragment]", app)
+    return cast("Callable[[], Template | Fragment]", app)
 
 
 def main() -> None:

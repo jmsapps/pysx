@@ -16,6 +16,19 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "themes_example", cases: [
+    [0, "themes", "browser_themes.mjs", "THEMES BROWSER PASSED"],
+  ] },
+  { suite: "styling_diagnostics", cases: [
+    [0, "styled_fixture", "browser_styled.mjs", "STYLED BROWSER PASSED"],
+    [1, "styles_fixture", "browser_styles.mjs", "STYLES BROWSER PASSED"],
+  ] },
+  { suite: "reactive_css", cases: [
+    [0, "styles_fixture", "browser_styles.mjs", "STYLES BROWSER PASSED"],
+  ] },
+  { suite: "styled_bases", cases: [
+    [0, "styled_fixture", "browser_styled.mjs", "STYLED BROWSER PASSED"],
+  ] },
   { suite: "events_example", cases: [
     [0, "events", "browser_keyboard.mjs", "KEYBOARD BROWSER PASSED"],
   ] },
@@ -133,6 +146,10 @@ try {
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
     const server = name ? start(interpreter, name === "keyboard_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_keyboard_fixture:app", "--port", String(port)] :
+      name === "styled_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_styled_fixture:app", "--port", String(port)] :
+      name === "styles_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_styles_fixture:app", "--port", String(port)] :
       name === "dom_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_dom_fixture:app", "--port", String(port)] :
       name === "events_fixture" ?

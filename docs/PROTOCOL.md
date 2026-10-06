@@ -1,5 +1,11 @@
 # pysx wire protocol (v2)
 
+Stylesheet patches use `{"op":"css","v":"..."}` and replace the session's style
+element via `textContent`. They precede the DOM operations that require those rules.
+Dynamic rules and active themes belong to one session; removal releases owned rules,
+while identical surviving rules remain deduplicated. CSS variables use ordinary `style`
+attribute patches with empty variables removed from the serialized declarations.
+
 Supersedes the counter-era `{"slots": {...}}` format, which could only replace
 text by index.
 

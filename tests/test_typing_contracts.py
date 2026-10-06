@@ -11,6 +11,66 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
+def test_styled_bases_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = "from pysx import styled, div, Fragment, html\n"
+
+    if valid:
+        source += "from typing import assert_type\n"
+        source += "def base(label: str) -> Fragment:\n    return html(t'\\nspan: {label}')\n"
+        source += "tag = styled(styled(div, t'color: red'), t'color: blue')\n"
+        source += "fn = styled(styled(base, t'color: red'), t'color: blue')\n"
+        source += "assert_type(fn('hello'), Fragment)\nassert_type(tag.tag, str)\n"
+    else:
+        source = "from pysx import styled, Fragment, html\n"
+        source += "def base(label: str) -> Fragment:\n    return html(t'\\nspan: {label}')\n"
+        source += "styled('div', t'color: red')\nfn = styled(base, t'color: red')\nfn(42)\n"
+    fixture = tmp_path / "styled_contract.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "styled" in output
+        assert "42" in output or "int" in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_callable_dispatch_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = "from string.templatelib import Template\nfrom pysx import Component, html, render\n"
+
+    if valid:
+        source += "def app() -> Template:\n    return t'\\nspan: \\\"ok\\\"'\n"
+        source += "fn: Component = app\nrender(app)\nhtml(t'\\nspan:', namespace={'Alias': fn})\n"
+    else:
+        source = "from pysx import Component, render\n"
+        source += "def bad() -> str:\n    return 'bad'\nfn: Component = bad\nrender(bad)\n"
+    fixture = tmp_path / "callable_contract.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        diagnostic = " - error:" if checker == "pyright" else ": error:"
+        assert output.count(diagnostic) == 2, output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
 def test_events_immediate_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = "from pysx import BrowserEvent, native, on_event\n"
 
