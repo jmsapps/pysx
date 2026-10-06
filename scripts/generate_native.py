@@ -53,6 +53,7 @@ def generate() -> str:
         "# ruff: noqa: N802, E743, TC001, TC003",
         "",
         "from collections.abc import Callable, Mapping",
+        "from string.templatelib import Template as StringTemplate",
         "from typing import TypedDict, Unpack",
         "",
         "from .dom import DomRef",
@@ -73,6 +74,9 @@ def generate() -> str:
         lines.append(f"    on_{event}: Callable[[object], object] | EventHandler")
     lines.append("    custom_attrs: Mapping[str, object]")
     lines.append("    ref: DomRef")
+    lines.append("    css: str | StringTemplate | Signal[str]")
+    lines.append("    style_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]")
+    lines.append("    css_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]")
     tags = dict.fromkeys([resolve_tag(tag) for tag in BASELINE_TAGS] + ["math"])
 
     for tag in tags:

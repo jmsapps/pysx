@@ -335,6 +335,7 @@ socket.addEventListener("close", () => {
 });
 
 function apply(op) {
+  if (op.op === "css") { style.textContent = op.v; return; }
   if (op.op === "text" || op.op === "html") {
     const slot = root.querySelector(`pysx-slot[id="${CSS.escape(op.id)}"]`);
     if (!slot) return;

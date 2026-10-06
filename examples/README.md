@@ -89,6 +89,19 @@ final value. Press Ctrl+C in the terminal to stop the server.
 The [native element API](../docs/ELEMENTS.md) documents typed construction and bindings.
 The [verification guide](../tests/VERIFICATION.md) lists reproducible browser setup.
 
+## Themes and CSS variables
+
+```sh
+uv run --project . example run themes
+```
+
+Open http://127.0.0.1:8750. Light/Dark switch this connection's named theme; Clear theme
+resets its overrides. The preview inherits layout and borders through three styled levels.
+Compact/Roomy change its padding, Local accent changes its border and user class, and
+Reset variables removes both overrides to reveal inherited fallbacks. Open a second tab
+to verify it stays independent. Controls support keyboard activation and narrow screens.
+Press Ctrl+C to stop the server. See [styling](../docs/STYLING.md) for the public API.
+
 ## Adding an example
 
 Add `examples/<name>.py` with an `app` attribute; the registry discovers it

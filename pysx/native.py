@@ -2,6 +2,7 @@
 # ruff: noqa: N802, E743, TC001, TC003
 
 from collections.abc import Callable, Mapping
+from string.templatelib import Template as StringTemplate
 from typing import TypedDict, Unpack
 
 from .dom import DomRef
@@ -139,6 +140,9 @@ class GlobalAttrs(TypedDict, total=False):
     on_wheel: Callable[[object], object] | EventHandler
     custom_attrs: Mapping[str, object]
     ref: DomRef
+    css: str | StringTemplate | Signal[str]
+    style_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]
+    css_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]
 
 
 class AAttrs(GlobalAttrs, total=False):

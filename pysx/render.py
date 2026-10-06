@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import html as _htmlmod
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from inspect import Parameter, signature
 from string.templatelib import Template
 from typing import TYPE_CHECKING, cast
 
+from .composition import Children, Component, namespace_for
 from .dom import DomController, DomError, DomRef, dom_context
 from .elements import VOID, ElementTag
 from .events import EventHandler
@@ -25,7 +27,16 @@ from .forms import Binding, make_binding
 from .parser import Conditional, Element, Hole, HoleKind, Node, Skeleton, attr_kind, parse
 from .reactive import Readable, Signal
 from .schema import BOOLEAN_ATTRS, normalize_attr, resolve_tag
-from .styled import StyledTag, stylesheet
+from .styled import StyledCallable, StyledTag, flatten, global_rules
+from .styles import (
+    CssClass,
+    StyleRegistry,
+    Themes,
+    css_text,
+    style_context,
+    style_owner,
+    variable_values,
+)
 
 if TYPE_CHECKING:
     from .wire import Op
@@ -34,13 +45,36 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class Fragment:
     template: Template
+    namespace: Mapping[str, object] | None = None
+    root_classes: tuple[str, ...] = ()
+    themes: Themes | None = None
+    rules: tuple[tuple[str, str], ...] = ()
 
 
-def html(template: Template) -> Fragment:
+def html(
+    template: Template,
+    *,
+    namespace: Mapping[str, object] | None = None,
+    themes: Themes | None = None,
+) -> Fragment:
     if not isinstance(template, Template):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise TypeError('html() takes a t-string; did you write f""" instead of t"""?')
 
-    return Fragment(template)
+    return Fragment(template, dict(namespace) if namespace is not None else None, themes=themes)
+
+
+def _template_skeleton(template: Template) -> Skeleton:
+    skeleton = parse(template.strings)
+
+    for index, _kind, name in skeleton.holes:
+        if name is None or normalize_attr(name) not in {"css", "stylevars", "cssvars"}:
+            continue
+        interpolation = template.interpolations[index]
+
+        if interpolation.conversion is not None or interpolation.format_spec:
+            raise ValueError("CSS attribute interpolation metadata is unsupported")
+
+    return skeleton
 
 
 def component[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
@@ -83,6 +117,8 @@ def _attr_text(value: object, name: str = "") -> str | None:
 
 
 def _class_text(value: object) -> str:
+    if isinstance(value, CssClass):
+        return value()
     value = _read(value)
 
     if value is None or value is False:
@@ -185,15 +221,11 @@ class ClassWatcher(Watcher):
     attribute and strip the scoped class, killing the element's styling."""
 
     element: str
-    signal: Readable[object]
-    before: tuple[str, ...]
-    after: tuple[str, ...]
+    sources: tuple[object, ...]
     last: str
 
     def merged(self) -> str:
-        value = _class_text(self.signal)
-
-        return _merge_classes([*self.before, value, *self.after])
+        return _merge_classes(_class_text(value) for value in self.sources)
 
     def refresh(self) -> list[Op]:
         now = self.merged()
@@ -203,6 +235,53 @@ class ClassWatcher(Watcher):
         self.last = now
 
         return [{"op": "attr", "id": self.element, "name": "class", "v": now}]
+
+
+@dataclass
+class CssWatcher(Watcher):
+    registry: StyleRegistry
+    owner: str
+    source: object
+
+    def refresh(self) -> list[Op]:
+        self.registry.replace(self.owner, css_text(self.source))
+
+        return []
+
+
+@dataclass
+class InlineStyleWatcher(Watcher):
+    element: str
+    source: object
+    variables: object
+    last: str = ""
+
+    def value(self) -> str:
+        base = _attr_text(self.source) or ""
+        variables = variable_values(self.variables)
+        custom = ";".join(f"{name}:{value}" for name, value in sorted(variables.items()))
+
+        return ";".join(part.strip().rstrip(";") for part in (base, custom) if part)
+
+    def refresh(self) -> list[Op]:
+        value = self.value()
+
+        if value == self.last:
+            return []
+        self.last = value
+
+        return [{"op": "attr", "id": self.element, "name": "style", "v": value or None}]
+
+
+@dataclass
+class ThemeWatcher(Watcher):
+    registry: StyleRegistry
+    themes: Themes
+
+    def refresh(self) -> list[Op]:
+        self.registry.theme = self.themes.css()
+
+        return []
 
 
 @dataclass
@@ -227,6 +306,7 @@ class ListWatcher(Watcher):
 
 @dataclass
 class Rendered:
+    styles: StyleRegistry = field(default_factory=StyleRegistry)
     dom: DomController = field(default_factory=DomController)
     body: str = ""
     css: str = ""
@@ -265,6 +345,7 @@ class _Emitter:
         self.prefix = prefix
         self.handler_prefix = prefix if handler_prefix is None else handler_prefix
         self.handler_n = 0
+        self.component_n = 0
 
     # -- helpers ----------------------------------------------------------
 
@@ -286,47 +367,68 @@ class _Emitter:
         return f"{self.prefix}e{self.element_ids}"
 
     def _resolve(self, tag: str) -> tuple[str, list[str]]:
-        if not tag[:1].isupper():
-            return resolve_tag(tag), []
         found = self.ns.get(tag)
 
         if isinstance(found, ElementTag):
             return found.name, []
 
         if isinstance(found, StyledTag):
+            self.out.styles.add(self.prefix, found.css_class, flatten(found.declarations))
             return found.tag, [found.css_class]
+
+        if not tag[:1].isupper():
+            return resolve_tag(tag), []
 
         raise NameError(f"unknown component {tag!r}")
 
     # -- nodes ------------------------------------------------------------
 
-    def nodes(self, nodes: list[Node], *, static: bool = False) -> str:
+    def nodes(
+        self, nodes: list[Node], *, static: bool = False, root_classes: tuple[str, ...] = ()
+    ) -> str:
         parts: list[str] = []
 
         for node in nodes:
             if isinstance(node, str):
                 parts.append(_htmlmod.escape(node))
             elif isinstance(node, Hole):
-                parts.append(self.hole(node, static=static))
+                parts.append(self.hole(node, static=static, root_classes=root_classes))
             elif isinstance(node, Conditional):
-                parts.append(self.conditional(node, static=static))
+                parts.append(self.conditional(node, static=static, root_classes=root_classes))
             else:
-                parts.append(self.element(node, static=static))
+                parts.append(self.element(node, static=static, root_classes=root_classes))
 
         return "".join(parts)
 
-    def hole(self, hole: Hole, *, static: bool) -> str:
+    def hole(self, hole: Hole, *, static: bool, root_classes: tuple[str, ...] = ()) -> str:
         value = self.values[hole.index]
 
-        if isinstance(value, Fragment):
+        if isinstance(value, Children):
             sub = _Emitter(
-                self.ns, value.template.values, self.out, prefix=f"{self.prefix}f{hole.index}:"
+                dict(value.namespace), value.values, self.out, prefix=f"{self.prefix}f{hole.index}:"
             )
 
-            return sub.nodes(parse(value.template.strings).root, static=static)
+            return sub.nodes(list(value.nodes), static=static, root_classes=root_classes)
+
+        if isinstance(value, (Fragment, Template)):
+            fragment = value if isinstance(value, Fragment) else Fragment(value)
+            namespace = self.ns | dict(fragment.namespace or {})
+            owner = f"{self.prefix}f{hole.index}:"
+
+            for name, body in fragment.rules:
+                self.out.styles.add(owner, name, body)
+            sub = _Emitter(
+                namespace, fragment.template.values, self.out, prefix=f"{self.prefix}f{hole.index}:"
+            )
+
+            return sub.nodes(
+                _template_skeleton(fragment.template).root,
+                static=static,
+                root_classes=(*fragment.root_classes, *root_classes),
+            )
 
         if isinstance(value, Each):
-            return self.list_slot(hole, cast("Each[object]", value))
+            return self.list_slot(hole, cast("Each[object]", value), root_classes=root_classes)
         slot = f"{self.prefix}{hole.index}"
         text = str(_read(value))
 
@@ -336,7 +438,9 @@ class _Emitter:
 
         return f'<pysx-slot id="{escaped_slot}">{_htmlmod.escape(text)}</pysx-slot>'
 
-    def conditional(self, node: Conditional, *, static: bool) -> str:
+    def conditional(
+        self, node: Conditional, *, static: bool, root_classes: tuple[str, ...] = ()
+    ) -> str:
         value = self.values[node.hole.index]
         slot = f"{self.prefix}{node.hole.index}"
 
@@ -344,6 +448,7 @@ class _Emitter:
 
         def branch(flag: bool) -> tuple[str, list[Watcher]]:
             self.out.dom.revoke(prefix)
+            self.out.styles.release(prefix)
             for hid in tuple(self.out.handlers):
                 if self.out.handler_owners.get(hid, "").startswith(prefix):
                     self.out.handlers.pop(hid, None)
@@ -359,7 +464,9 @@ class _Emitter:
                 prefix=prefix,
                 handler_prefix="" if not self.handler_prefix else prefix,
             )
-            markup = sub.nodes(node.then if flag else node.otherwise, static=static)
+            markup = sub.nodes(
+                node.then if flag else node.otherwise, static=static, root_classes=root_classes
+            )
             watchers = self.out.watchers[start:]
             del self.out.watchers[start:]
 
@@ -377,11 +484,14 @@ class _Emitter:
 
         return f'<pysx-slot id="{_htmlmod.escape(slot, quote=True)}">{markup}</pysx-slot>'
 
-    def list_slot(self, hole: Hole, spec: Each[object]) -> str:
+    def list_slot(
+        self, hole: Hole, spec: Each[object], *, root_classes: tuple[str, ...] = ()
+    ) -> str:
         slot = f"{self.prefix}{hole.index}"
 
         def render_items(items: Iterable[object]) -> tuple[list[str], dict[str, str]]:
             self.out.dom.revoke(f"{slot}:")
+            self.out.styles.release(f"{slot}:")
             for hid in tuple(self.out.handlers):
                 if hid.startswith(f"h{slot}:"):
                     self.out.handlers.pop(hid, None)
@@ -398,7 +508,7 @@ class _Emitter:
                 if key in markup:
                     raise ValueError(f"duplicate list key {key!r}")
                 order.append(key)
-                markup[key] = self.item(spec, item, slot, key)
+                markup[key] = self.item(spec, item, slot, key, root_classes=root_classes)
 
             return order, markup
 
@@ -408,33 +518,110 @@ class _Emitter:
 
         return f'<pysx-list id="{_htmlmod.escape(slot, quote=True)}">{inner}</pysx-list>'
 
-    def item(self, spec: Each[object], item: object, slot: str, key: str) -> str:
+    def item(
+        self,
+        spec: Each[object],
+        item: object,
+        slot: str,
+        key: str,
+        *,
+        root_classes: tuple[str, ...] = (),
+    ) -> str:
         token = dom_context.set(self.out.dom)
+        owner_token = style_owner.set(f"{slot}:{key}:")
 
         try:
             fragment = spec.item(item)
         finally:
             dom_context.reset(token)
-        skeleton = parse(fragment.template.strings)
-        sub = _Emitter(self.ns, fragment.template.values, self.out, prefix=f"{slot}:{key}:")
-        markup = sub.nodes(skeleton.root, static=True)
+            style_owner.reset(owner_token)
+        skeleton = _template_skeleton(fragment.template)
+        prefix = f"{slot}:{key}:"
+
+        for name, body in fragment.rules:
+            self.out.styles.add(prefix, name, body)
+        sub = _Emitter(
+            self.ns | dict(fragment.namespace or {}),
+            fragment.template.values,
+            self.out,
+            prefix=prefix,
+        )
+        markup = sub.nodes(
+            skeleton.root, static=True, root_classes=(*fragment.root_classes, *root_classes)
+        )
 
         # Tag the item root so the client can reorder by key.
         return markup.replace(">", f' data-pysx-key="{_htmlmod.escape(key, quote=True)}">', 1)
 
-    def element(self, el: Element, *, static: bool) -> str:
-        tag, classes = self._resolve(el.tag)
+    def call_component(
+        self, fn: Component, el: Element, *, static: bool, root_classes: tuple[str, ...]
+    ) -> str:
+        props = {
+            name: self.values[value.index] if isinstance(value, Hole) else value
+            for name, value in el.attrs
+        }
+
+        if el.children:
+            props["children"] = Children(tuple(el.children), self.values, dict(self.ns))
+        self.component_n += 1
+        prefix = f"{self.prefix}c{self.component_n}:"
+        owner_token = style_owner.set(prefix)
+
+        try:
+            target = fn.base if isinstance(fn, StyledCallable) else fn
+            children_parameter = signature(target).parameters.get("children")
+
+            if (
+                el.children
+                and children_parameter is not None
+                and children_parameter.kind is Parameter.VAR_POSITIONAL
+            ):
+                result = fn(props.pop("children"), **props)
+            else:
+                result = fn(**props)
+        finally:
+            style_owner.reset(owner_token)
+
+        if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise TypeError("components must return Template or Fragment")
+        fragment = result if isinstance(result, Fragment) else Fragment(result)
+        namespace = namespace_for(fn) | dict(fragment.namespace or {})
+
+        for name, body in fragment.rules:
+            self.out.styles.add(prefix, name, body)
+        sub = _Emitter(
+            namespace,
+            fragment.template.values,
+            self.out,
+            prefix=prefix,
+        )
+
+        return sub.nodes(
+            _template_skeleton(fragment.template).root,
+            static=static,
+            root_classes=(*fragment.root_classes, *root_classes),
+        )
+
+    def element(self, el: Element, *, static: bool, root_classes: tuple[str, ...] = ()) -> str:
+        found = self.ns.get(el.tag)
+
+        if el.tag[:1].isupper() and callable(found):
+            return self.call_component(
+                cast("Component", found), el, static=static, root_classes=root_classes
+            )
+        tag, scoped = self._resolve(el.tag)
+        classes: list[object] = list(scoped)
+        classes.extend(root_classes)
 
         if tag == "fragment":
             if el.attrs:
                 raise ValueError("fragment does not accept DOM attributes")
 
-            return self.nodes(el.children, static=static)
+            return self.nodes(el.children, static=static, root_classes=(*scoped, *root_classes))
+        self.out.styles.apply((*scoped, *root_classes))
         attrs: list[str] = []
         typed_types: list[str] = []
         element_id: str | None = None
-        class_signal: Readable[object] | None = None
-        class_position = -1
         initial_value: str | None = None
         raw_attributes = {
             name: self.values[value.index] if isinstance(value, Hole) else value
@@ -445,11 +632,42 @@ class _Emitter:
             raise TypeError("a form control accepts exactly one binding")
         control_type = str(_read(raw_attributes.get("type", "text")))
         multiple = _attr_text(raw_attributes.get("multiple"), "multiple") is not None
+        normalized = {normalize_attr(name): value for name, value in raw_attributes.items()}
+        variables = normalized.get("stylevars", normalized.get("cssvars"))
+
+        if "css" in normalized:
+            source = normalized["css"]
+            element_id = self._next_element_id()
+            owner = f"{self.prefix}css:{element_id}"
+            self.out.styles.replace(owner, css_text(source))
+            classes.append(CssClass(source))
+
+            if isinstance(source, Signal) and not static:
+                self.out.watchers.append(
+                    CssWatcher(self.out.styles, owner, cast("Signal[object]", source))
+                )
+
+        if variables is not None:
+            element_id = element_id or self._next_element_id()
+            style_watcher = InlineStyleWatcher(element_id, normalized.get("style"), variables)
+            style_watcher.last = style_watcher.value()
+
+            if style_watcher.last:
+                attrs.append(f' style="{_htmlmod.escape(style_watcher.last, quote=True)}"')
+
+            if not static:
+                self.out.watchers.append(style_watcher)
 
         for name, value in el.attrs:
             kind = self._kind(name)
             raw_name = name
             name = normalize_attr(name) if el.namespace == "html" else name
+
+            if normalize_attr(name) in {"css", "stylevars", "cssvars"}:
+                continue
+
+            if name == "style" and variables is not None:
+                continue
 
             if not isinstance(value, Hole):
                 if kind is HoleKind.EVENT:
@@ -552,13 +770,7 @@ class _Emitter:
                     initial_value = text
 
                 if name == "class":
-                    if isinstance(raw, Signal) and not static:
-                        # Recorded as an insertion point, not appended: the
-                        # watcher supplies this slot's value on every refresh.
-                        class_signal = cast("Readable[object]", raw)
-                        class_position = len(classes)
-                    elif text:
-                        classes.append(text)
+                    classes.append(raw)
 
                     continue
 
@@ -575,13 +787,11 @@ class _Emitter:
                 else:
                     attrs.append(f' {name}="{_htmlmod.escape(text, quote=True)}"')
 
-        if class_signal is not None:
+        if not static and any(isinstance(value, (Signal, CssClass)) for value in classes):
             element_id = element_id or self._next_element_id()
             watcher = ClassWatcher(
                 element_id,
-                class_signal,
-                tuple(classes[:class_position]),
-                tuple(classes[class_position:]),
+                tuple(classes),
                 "",
             )
             # Render and baseline come from one function, so they cannot drift.
@@ -589,7 +799,7 @@ class _Emitter:
             self.out.watchers.append(watcher)
             class_attr = watcher.last
         else:
-            class_attr = _merge_classes(classes)
+            class_attr = _merge_classes(_class_text(value) for value in classes)
 
         if class_attr:
             attrs.insert(0, f' class="{_htmlmod.escape(class_attr, quote=True)}"')
@@ -617,19 +827,40 @@ class _Emitter:
         return attr_kind(name)
 
 
-def render(component_fn: Callable[[], Fragment]) -> Rendered:
+def render(
+    component_fn: Callable[[], Template | Fragment],
+    *,
+    namespace: Mapping[str, object] | None = None,
+) -> Rendered:
     out = Rendered()
+    out.styles.shared = global_rules()
     token = dom_context.set(out.dom)
+    style_token = style_context.set(out.styles)
 
     try:
-        fragment = component_fn()
-        skeleton: Skeleton = parse(fragment.template.strings)
+        result = component_fn()
+
+        if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise TypeError("components must return Template or Fragment")
+        fragment = result if isinstance(result, Fragment) else Fragment(result)
+
+        if fragment.themes is not None:
+            theme_watcher = ThemeWatcher(out.styles, fragment.themes)
+            theme_watcher.refresh()
+            out.watchers.append(theme_watcher)
+
+        for name, body in fragment.rules:
+            out.styles.add("", name, body)
+        skeleton = _template_skeleton(fragment.template)
         emitter = _Emitter(
-            cast("dict[str, object]", component_fn.__globals__), fragment.template.values, out
+            namespace_for(component_fn) | dict(namespace or {}) | dict(fragment.namespace or {}),
+            fragment.template.values,
+            out,
         )
-        out.body = emitter.nodes(skeleton.root)
+        out.body = emitter.nodes(skeleton.root, root_classes=fragment.root_classes)
     finally:
         dom_context.reset(token)
-    out.css = stylesheet()
+        style_context.reset(style_token)
+    out.css = out.styles.snapshot()
 
     return out

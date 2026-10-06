@@ -1,0 +1,27 @@
+from pysx import css, div, global_style, html, styled
+
+Panel = styled(div, t"""
+    /* CSS_COMMENT */
+    color: #ff00aa;
+    --accent: red;
+    padding: 8px;
+""")
+snapshot = css(t"""
+    margin: 3px;
+""")
+global_style("""
+    body { background: var(--accent); }
+""")
+Parent = styled(
+    Panel,
+    t"""
+        border-radius: 2px;
+        border-left: 6px solid var(--preview-accent, var(--accent, #6554d9));
+        width: calc(100% - 8px);
+    """
+)
+fragment = html(t"""
+    Panel(css="border-width: 1px"):
+        {snapshot}
+""")
+AFTER_SENTINEL = "python"

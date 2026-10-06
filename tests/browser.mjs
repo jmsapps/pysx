@@ -35,14 +35,14 @@ try {
   }));
   assert(attrs.click === "h1", `data-pysx-click missing: ${JSON.stringify(attrs)}`);
   assert(attrs.onclick === null, `onclick present: ${JSON.stringify(attrs)}`);
-  assert(/^pysx-[0-9a-f]{6}$/.test(attrs.cls), `bad styled class: ${attrs.cls}`);
+  assert(/^pysx-[0-9a-f]{16}$/.test(attrs.cls), `bad styled class: ${attrs.cls}`);
   ok("button carries a real data-pysx-click attribute, no onclick");
 
   const styleText = await one.$eval("#pysx-style", (s) => s.textContent);
-  const rules = [...styleText.matchAll(/\.pysx-[0-9a-f]{6}\s*\{/g)].map((m) => m[0]);
+  const rules = [...styleText.matchAll(/\.pysx-[0-9a-f]{16}\s*\{/g)].map((m) => m[0]);
   const usedClasses = await one.$$eval("#pysx-root [class]", (elements) =>
     [...new Set(elements.flatMap((element) => [...element.classList]))]
-      .filter((name) => /^pysx-[0-9a-f]{6}$/.test(name)));
+      .filter((name) => /^pysx-[0-9a-f]{16}$/.test(name)));
   assert(usedClasses.length >= 2, "missing styled page or controls");
   for (const cls of usedClasses) {
     assert(rules.filter((rule) => rule.startsWith(`.${cls} `)).length === 1,

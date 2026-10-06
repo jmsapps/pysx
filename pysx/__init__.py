@@ -1,3 +1,4 @@
+from .composition import Children, Component
 from .dom import Dom, DomError, DomListener, DomNode, DomRef, Rect
 from .elements import (
     br,
@@ -44,10 +45,13 @@ from .render import (
     render,
 )
 from .structured import Projection, Structured, dict_key, list_index, project, structured
-from .styled import StyledTag, global_style, styled, stylesheet
+from .styled import StyledCallable, StyledTag, global_style, styled, stylesheet
+from .styles import Theme, Themes, css
 
 __all__ = [
     "BrowserEvent",
+    "Children",
+    "Component",
     "Dom",
     "DomError",
     "DomListener",
@@ -62,7 +66,10 @@ __all__ = [
     "Rendered",
     "Signal",
     "Structured",
+    "StyledCallable",
     "StyledTag",
+    "Theme",
+    "Themes",
     "all_of",
     "any_of",
     "batch",
@@ -71,6 +78,7 @@ __all__ = [
     "component",
     "concat",
     "contains",
+    "css",
     "derived",
     "dict_key",
     "div",

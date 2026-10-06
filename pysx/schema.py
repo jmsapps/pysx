@@ -585,7 +585,10 @@ def resolve_tag(name: str) -> str:
 
 
 def normalize_attr(name: str) -> str:
-    aliases = {"class_name": "class", "className": "class", "html_for": "for", "htmlFor": "for"}
+    aliases = {
+        "class_name": "class", "className": "class", "html_for": "for", "htmlFor": "for",
+        "style_vars": "stylevars", "css_vars": "cssvars",
+    }
 
     if name in aliases:
         return aliases[name]

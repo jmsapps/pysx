@@ -1,0 +1,51 @@
+import assert from "node:assert/strict";
+import playwright from "playwright";
+
+const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
+try {
+  const page = await browser.newPage();
+  const other = await browser.newPage();
+  const address = `http://127.0.0.1:${process.argv[2]}`;
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await Promise.all([page.goto(address), other.goto(address)]);
+  await Promise.all([page.waitForSelector("#preview"), other.waitForSelector("#preview")]);
+  const sample = (target) => target.locator("#preview").evaluate(node => {
+    const style = getComputedStyle(node);
+    return [style.color, style.paddingLeft, style.borderLeftColor, style.borderLeftWidth];
+  });
+  assert.deepEqual(await sample(page), ["rgb(25, 35, 56)", "24px", "rgb(101, 84, 217)", "6px"]);
+  const original = await page.locator("#preview").elementHandle();
+  console.log("  ok  inherited layout and variable/theme snapshot");
+  await page.locator("#dark").click();
+  await page.waitForFunction(() => document.querySelector("#theme-name").textContent === "dark");
+  assert.equal((await sample(page))[0], "rgb(249, 250, 251)");
+  assert.equal(await other.locator("#theme-name").textContent(), "light");
+  assert.equal((await sample(other))[0], "rgb(25, 35, 56)");
+  console.log("  ok  two tabs switch themes without cross-talk");
+  await page.locator("#compact").click();
+  await page.waitForFunction(() => getComputedStyle(document.querySelector("#preview")).paddingLeft === "12px");
+  await page.locator("#roomy").click();
+  await page.waitForFunction(() => getComputedStyle(document.querySelector("#preview")).paddingLeft === "36px");
+  await page.locator("#local-accent").click();
+  await page.waitForFunction(() => document.querySelector("#preview").classList.contains("is-local"));
+  assert.equal((await sample(page))[2], "rgb(13, 148, 136)");
+  assert.equal(await original.evaluate(node => node === document.querySelector("#preview")), true);
+  console.log("  ok  reactive variables and user class preserve the styled DOM node");
+  await page.locator("#reset-vars").click();
+  await page.waitForFunction(() => getComputedStyle(document.querySelector("#preview")).paddingLeft === "28px");
+  assert.equal(await page.locator("#preview").evaluate(node => node.style.getPropertyValue("--preview-accent")), "");
+  assert.equal((await sample(page))[2], "rgb(139, 92, 246)");
+  await page.locator("#clear-theme").click();
+  await page.waitForFunction(() => document.querySelector("#theme-name").textContent === "cleared");
+  assert.equal((await sample(page))[0], "rgb(25, 35, 56)");
+  console.log("  ok  reset removes variables and clear restores declared fallbacks");
+  await page.setViewportSize({width: 375, height: 812});
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.locator("#light").focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector("#theme-name").textContent === "light");
+  assert.equal(errors.length, 0);
+  console.log("  ok  narrow layout and keyboard controls work without browser errors");
+  console.log("THEMES BROWSER PASSED");
+} finally { await browser.close(); }

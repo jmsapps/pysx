@@ -48,8 +48,9 @@ Decided by **position and attribute name**, never by the value's Python type.
 | `if` header | — | `COND` | `<pysx-slot id="N">branch</pysx-slot>` |
 | content | — | `TEXT` | `<pysx-slot id="N">value</pysx-slot>` |
 
-A `TEXT` hole holding an `Each` renders as a keyed list. A `Fragment` hole
+A `TEXT` hole holding an `Each` renders as a keyed list. A `Template` or `Fragment` hole
 inserts its node tree, so typed native constructors compose inside templates.
+`Children` holes insert caller-owned parsed child blocks as described below.
 These distinctions are confined to content position; event and binding attribute
 names are consumed by the DSL before values are evaluated.
 
@@ -57,6 +58,27 @@ names are consumed by the DSL before values are evaluated.
 
 Children come from an indented block under an element, from inline `content` after the `:`,
 or both.
+
+## Callable composition
+
+Names bound to ordinary callables are component tags. Attribute values are forwarded as
+keyword props, preserving live objects. Nonempty child blocks are forwarded as `children`,
+a `Children` object retaining the caller's parsed nodes, hole values and namespace.
+For callable bases declaring `*children`, that object is passed positionally, matching
+typed native constructors. Otherwise it is forwarded as the `children` keyword.
+Insert that object in a content hole to render it in its caller environment.
+Components return a `Template` or `Fragment`; other return types raise `TypeError`.
+
+Defining-module bindings and actual Python closure cells provide a component's namespace.
+Use `html(template, namespace={...})` for bindings used only in template text, including
+function-local aliases; `render(app, namespace={...})` provides explicit root bindings.
+These mappings are copied; execution frames are never retained. Partials and callable
+instances use their underlying defining callable's module. A fragment's explicit bindings
+override module bindings. Caller children retain their own namespace when inserted.
+
+Root exposure is transparent: a single element exposes that element; multiple elements
+expose every top-level element; `fragment:` and fragment content holes expose their
+contained roots recursively. Text roots remain text. No wrapper element is introduced.
 
 ## Deliberate bounds
 

@@ -26,6 +26,14 @@
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {
+            "scope": "support.function.css.pysx",
+            "settings": { "foreground": "#DCDCAA" }
+          },
+          {
+            "scope": "support.constant.property-value.css.pysx",
+            "settings": { "foreground": "#569CD6" }
+          },
+          {
             "scope": "support.class.component.pysx",
             "settings": {
               "foreground": "#4EC9B0",

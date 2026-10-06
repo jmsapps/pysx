@@ -51,7 +51,7 @@ function activate(context) {
       }
       collection.set(doc.uri, items.map((d) => {
         const diag = new vscode.Diagnostic(
-          new vscode.Range(d.line, d.startChar, d.line, d.endChar),
+          new vscode.Range(d.line, d.startChar, d.endLine ?? d.line, d.endChar),
           d.message,
           d.severity === "warning"
             ? vscode.DiagnosticSeverity.Warning

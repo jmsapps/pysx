@@ -42,7 +42,8 @@ updates.
 - **Reactive state:** signals, derived values, batched updates, and writable views into structured data.
 - **Readable interfaces:** t-string templates and composable, typed native elements.
 - **Live forms:** two-way bindings, native validation, reset and submit handling, and caret-preserving server corrections.
-- **Scoped styling:** reusable styled elements with scoped CSS classes.
+- **Scoped styling:** typed styled bases, inherited rules, live CSS variables and isolated
+  themes. See the [styling guide](docs/STYLING.md).
 - **Editor support:** VSCode syntax highlighting and advisory template diagnostics.
 
 ## Explore

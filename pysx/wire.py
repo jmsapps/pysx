@@ -40,7 +40,12 @@ class ListOp(TypedDict):
     html: dict[str, str]
 
 
-type Op = TextOp | HtmlOp | AttrOp | PropertyOp | ListOp
+class CssOp(TypedDict):
+    op: Literal["css"]
+    v: str
+
+
+type Op = TextOp | HtmlOp | AttrOp | PropertyOp | ListOp | CssOp
 
 
 class InitMessage(TypedDict):
