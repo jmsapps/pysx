@@ -8,6 +8,7 @@ from dataclasses import asdict
 import pytest
 from acceptance_support import ready_server
 
+from examples.composition import app as composition_app
 from examples.events import app as events_app
 from examples.forms import app as forms_app
 from examples.reactive_state import app
@@ -15,6 +16,54 @@ from examples.themes import app as themes_app
 from pysx import BrowserEvent
 from pysx.check import diagnostics
 from pysx.server import Session
+
+
+def test_components_example_interactions_isolation_and_cleanup() -> None:
+    session, other = Session(composition_app), Session(composition_app)
+    match = re.search(r'id="tree-library"[^>]*data-pysx-click="([^"]+)"', session.rendered.body)
+    assert match is not None
+    handler = match[1]
+    initial = len(session.rendered.scopes.owners)
+
+    try:
+        session.rendered.scopes.acknowledge(session.rendered.scopes.pending_mounts())
+        assert session.rendered.scopes.pending_mounts() == []
+        opened = session.dispatch(handler, None, event=asdict(BrowserEvent("click", handler)))
+        assert any(
+            op["op"] == "list"
+            and any('id="tree-components"' in body for body in op["html"].values())
+            for op in opened
+        )
+        assert len(session.rendered.scopes.owners) > initial
+        assert other.pending == []
+        session.dispatch(handler, None, event=asdict(BrowserEvent("click", handler)))
+        assert len(session.rendered.scopes.owners) == initial
+    finally:
+        session.dispose()
+        other.dispose()
+    assert session.rendered.scopes.owners == {}
+    assert session.rendered.handlers == {}
+
+
+def test_components_example_checker_clean() -> None:
+    from pathlib import Path
+
+    assert diagnostics(Path("examples/composition.py")) == []
+
+
+@pytest.mark.acceptance
+def test_components_example_cli_startup_cleanup() -> None:
+    command = ["uv", "run", "--project", ".", "example", "run", "composition", "--port", "8759"]
+
+    with (
+        ready_server(command) as server,
+        urllib.request.urlopen("http://127.0.0.1:8759/", timeout=5) as response,
+    ):
+        assert server.poll() is None
+        assert response.status == 200
+        assert b"client.js" in response.read()
+
+    assert server.poll() is not None
 
 
 def test_themes_example_interactions_isolation_and_cleanup() -> None:

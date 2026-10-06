@@ -43,15 +43,19 @@ def test_styled_bases_types(tmp_path: Path, checker: str, valid: bool) -> None:
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
-def test_callable_dispatch_types(tmp_path: Path, checker: str, valid: bool) -> None:
+def test_callable_return_callable_dispatch_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = "from string.templatelib import Template\nfrom pysx import Component, html, render\n"
 
     if valid:
         source += "def app() -> Template:\n    return t'\\nspan: \\\"ok\\\"'\n"
         source += "fn: Component = app\nrender(app)\nhtml(t'\\nspan:', namespace={'Alias': fn})\n"
+        source += "def card(*, title: str, suffix: str = '!') -> Template:\n"
+        source += "    return t'\\nspan: {title}; {suffix}'\ncard(title='ok')\n"
     else:
         source = "from pysx import Component, render\n"
         source += "def bad() -> str:\n    return 'bad'\nfn: Component = bad\nrender(bad)\n"
+        source += "def card(*, title: str) -> str:\n    return title\n"
+        source += "card()\ncard(title=42)\ncard(title='ok', unknown=True)\n"
     fixture = tmp_path / "callable_contract.py"
     fixture.write_text(source)
     args = [sys.executable, "-m", checker]
@@ -66,7 +70,7 @@ def test_callable_dispatch_types(tmp_path: Path, checker: str, valid: bool) -> N
 
     if not valid:
         diagnostic = " - error:" if checker == "pyright" else ": error:"
-        assert output.count(diagnostic) == 2, output
+        assert output.count(diagnostic) == 5, output
 
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
@@ -144,13 +148,13 @@ def test_bindings_form_types(tmp_path: Path, checker: str, valid: bool) -> None:
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
 def test_schema_native_types(tmp_path: Path, checker: str, valid: bool) -> None:
-    from pysx.schema import BASELINE_TAGS, BOOLEAN_ATTRS, TAG_ATTRS, resolve_tag
+    from pysx.schema import BASELINE_TAGS, BOOLEAN_ATTRS, TAG_ATTRS
     from scripts.generate_native import spelling
 
     source = "from pysx import native as n" + (", signal\n" if valid else "\n")
 
     if valid:
-        for tag in dict.fromkeys(resolve_tag(tag) for tag in BASELINE_TAGS):
+        for tag in BASELINE_TAGS:
             attrs = TAG_ATTRS.get(tag, frozenset())
             kwargs = [
                 f"{spelling(attr)}="
@@ -170,9 +174,8 @@ def test_schema_native_types(tmp_path: Path, checker: str, valid: bool) -> None:
         source += 'n.Input(on_click="bad")\n'
 
         for tag in BASELINE_TAGS:
-            canonical = resolve_tag(tag)
-            forbidden = "cols" if "href" in TAG_ATTRS.get(canonical, frozenset()) else "href"
-            source += f'n.{canonical.capitalize()}({forbidden}="invalid")\n'
+            forbidden = "cols" if "href" in TAG_ATTRS.get(tag, frozenset()) else "href"
+            source += f'n.{tag.capitalize()}({forbidden}="invalid")\n'
         source += 'n.Fragment(id="invalid")\n'
     fixture = tmp_path / "native_contract.py"
     fixture.write_text(source)

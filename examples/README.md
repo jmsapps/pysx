@@ -102,6 +102,23 @@ Reset variables removes both overrides to reveal inherited fallbacks. Open a sec
 to verify it stays independent. Controls support keyboard activation and narrow screens.
 Press Ctrl+C to stop the server. See [styling](../docs/STYLING.md) for the public API.
 
+## Callable components and lifetimes
+
+```sh
+uv run --project . example run composition
+```
+
+Open http://127.0.0.1:8750. The panel is an inherited styled callable that receives
+caller-owned children. The tree recursively dispatches plain callable components.
+Click a node or press Tab to focus the tree before using the keyboard.
+Right opens a branch; Left closes it or moves to its parent. Up/Down moves through
+visible nodes, Home/End reaches their endpoints, and Enter increments a node's local
+activation count. Reverse roots preserves surviving state and DOM identity. Collapsing
+a branch cleans its descendants; remounting starts their local activation counts fresh.
+The counters distinguish server setup, acknowledged browser mount and cleanup.
+Open a second tab to check session isolation. Press Ctrl+C to stop the server.
+See [component ownership](../docs/GRAMMAR.md#component-ownership) for state and resource hooks.
+
 ## Adding an example
 
 Add `examples/<name>.py` with an `app` attribute; the registry discovers it

@@ -19,7 +19,6 @@ from pysx.schema import (
     allowed_attr,
     family_of,
     normalize_attr,
-    resolve_tag,
     tag_info,
 )
 from scripts.generate_native import CLIENT, generate_client, spelling
@@ -34,16 +33,15 @@ def ignore_event(_event: object) -> None:
 @pytest.mark.parametrize("tag", BASELINE["DSL_TAGS"])
 @pytest.mark.parametrize("reactive", [False, True])
 def test_schema_native_rows(tag: str, reactive: bool) -> None:
-    canonical = resolve_tag(tag)
     marker = getattr(elements, "del_" if tag == "del" else tag)
-    assert str(marker) == canonical
+    assert str(marker) == tag
     info = tag_info(tag)
     assert info is not None
-    assert info.name == canonical
-    assert info.void == (canonical in VOID)
-    attributes = BASELINE["TAG_ATTRS"].get(canonical, [])
+    assert info.name == tag
+    assert info.void == (tag in VOID)
+    attributes = BASELINE["TAG_ATTRS"].get(tag, [])
     assert set(attributes) <= info.attributes
-    hints = get_type_hints(getattr(native, canonical.capitalize() + "Attrs"))
+    hints = get_type_hints(getattr(native, tag.capitalize() + "Attrs"))
     values: dict[str, object] = {}
     sources: dict[str, Signal[object]] = {}
 
@@ -64,17 +62,17 @@ def test_schema_native_rows(tag: str, reactive: bool) -> None:
     values["id"] = "native-fixture"
     values["data-case"] = tag
 
-    if canonical == "fragment":
-        fragment = element(canonical, ("body",), {})
+    if tag == "fragment":
+        fragment = element(tag, ("body",), {})
         assert render(lambda: fragment).body == '<pysx-slot id="0">body</pysx-slot>'
     else:
-        fragment = element(canonical, (), values)
+        fragment = element(tag, (), values)
         rendered = render(lambda: fragment)
         markup = rendered.body
-        assert markup.startswith(f"<{canonical}")
+        assert markup.startswith(f"<{tag}")
         assert 'id="native-fixture"' in markup
         assert f'data-case="{tag}"' in markup
-        assert markup.endswith(">") if info.void else markup.endswith(f"</{canonical}>")
+        assert markup.endswith(">") if info.void else markup.endswith(f"</{tag}>")
 
         for source in sources.values():
             source.set(False if isinstance(source(), bool) else "3")

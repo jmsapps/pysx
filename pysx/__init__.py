@@ -17,6 +17,16 @@ from .elements import (
     ul,
 )
 from .events import BrowserEvent, EventHandler, on_event
+from .lifecycle import (
+    local_state,
+    on_cleanup,
+    on_mount,
+    on_setup,
+    own_effect,
+    own_subscription,
+    own_task,
+    own_timer,
+)
 from .operators import (
     all_of,
     any_of,
@@ -99,11 +109,19 @@ __all__ = [
     "length",
     "li",
     "list_index",
+    "local_state",
     "lt",
     "nav",
     "ne",
     "not_",
+    "on_cleanup",
     "on_event",
+    "on_mount",
+    "on_setup",
+    "own_effect",
+    "own_subscription",
+    "own_task",
+    "own_timer",
     "p",
     "project",
     "render",

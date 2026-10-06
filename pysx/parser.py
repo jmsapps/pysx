@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .schema import is_event, resolve_tag
+from .schema import is_event
 from .template import dedent_fragments
 
 
@@ -372,7 +372,7 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
 def _namespaces(nodes: list[Node], namespace: str = "html") -> None:
     for node in nodes:
         if isinstance(node, Element):
-            tag = resolve_tag(node.tag)
+            tag = node.tag
             node.namespace = tag if tag in {"svg", "math"} else namespace
             child_namespace = node.namespace
 

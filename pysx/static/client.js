@@ -321,6 +321,8 @@ socket.onmessage = (event) => {
     syncDom();
   } else if (message.t === "dom") {
     domCommand(message);
+  } else if (message.t === "mount") {
+    socket.send(JSON.stringify({t: "mounted", ids: message.ids}));
   }
 };
 
