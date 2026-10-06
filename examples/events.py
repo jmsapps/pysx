@@ -2,11 +2,13 @@
 
 from pysx import Fragment, component, html
 
-from .components import Card as Card
-from .components import Description as Description
-from .components import Eyebrow as Eyebrow
-from .components import Page as Page
-from .components import Title as Title
+from .components import (
+    Card,
+    Description,
+    Eyebrow,
+    Page,
+    Title,
+)
 from .components.events import event_controls
 
 
@@ -14,7 +16,8 @@ from .components.events import event_controls
 def app() -> Fragment:
     controls = event_controls()
 
-    return html(t"""
+    return html(
+        t"""
         Page(id="events-example")
             Eyebrow: "Browser capabilities"
             Title: "Keyboard & focus"
@@ -23,4 +26,12 @@ def app() -> Fragment:
             Description: "Each session has its own state."
             Card:
                 {controls}
-    """)
+    """,
+        use=(
+            Card,
+            Description,
+            Eyebrow,
+            Page,
+            Title,
+        ),
+    )

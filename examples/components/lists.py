@@ -1,9 +1,8 @@
 """Shared checkable list rows."""
 
-from pysx import input as input_element
-from pysx import label, li, span, styled, ul
+from pysx import styled
 
-List = styled(ul, t"""
+List = styled.ul(t"""
     list-style: none;
     padding: 0;
     margin: 0;
@@ -12,7 +11,7 @@ List = styled(ul, t"""
     gap: 8px;
 """)
 
-Item = styled(li, t"""
+Item = styled.li(t"""
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -23,7 +22,7 @@ Item = styled(li, t"""
     gap: 10px;
 """)
 
-Row = styled(label, t"""
+Row = styled.label(t"""
     display: flex;
     align-items: center;
     gap: 12px;
@@ -33,7 +32,7 @@ Row = styled(label, t"""
     cursor: pointer;
 """)
 
-Checkbox = styled(input_element, t"""
+Checkbox = styled.input(t"""
     width: 18px;
     height: 18px;
     margin: 0;
@@ -42,7 +41,7 @@ Checkbox = styled(input_element, t"""
     cursor: pointer;
 """)
 
-Text = styled(span, t"""
+Text = styled.span(t"""
     flex: 1;
     font-size: 14px;
     overflow-wrap: anywhere;

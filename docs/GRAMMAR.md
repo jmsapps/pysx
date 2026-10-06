@@ -25,7 +25,7 @@ root must be empty in markup and owns its explicitly created descendants.
 ```
 template   := NEWLINE line*
 line       := INDENT (element | conditional | alternative | content)
-element    := NAME [ "(" attrs ")" ] ":" [ content ]
+element    := (NAME | HOLE) [ "(" attrs ")" ] ":" [ content ]
 conditional:= "if" HOLE ":"
 alternative:= "else" ":"
 content    := item (";" item)*
@@ -46,6 +46,7 @@ Decided by **position and attribute name**, never by the value's Python type.
 | attribute | `bindValue`, `bindChecked`, `bindSelected` | `BIND` | typed control binding + `data-pysx-binding="hN"` |
 | attribute | other | `ATTR` | element gets `data-pysx-el="eN"` |
 | `if` header | — | `COND` | `<pysx-slot id="N">branch</pysx-slot>` |
+| opening markup line, followed by `(` and/or `:` | — | `TAG` | supplied native/styled/callable component |
 | content | — | `TEXT` | `<pysx-slot id="N">value</pysx-slot>` |
 
 A `TEXT` hole holding an `Each` renders as a keyed list. A `Template` or `Fragment` hole
@@ -53,6 +54,14 @@ inserts its node tree, so typed native constructors compose inside templates.
 `Children` holes insert caller-owned parsed child blocks as described below.
 These distinctions are confined to content position; event and binding attribute
 names are consumed by the DSL before values are evaluated.
+
+A hole opening a markup line becomes a component tag only when followed by an
+attribute list and/or `:`. `{Card}(id="preview"):` and `{shared.Card}:` use real
+Python references, including local bindings, imported aliases and partial callables.
+`{native.Input}()` is a childless tag. In all other positions holes retain their
+content meaning. Unsupported tag values raise a TypeError naming the received type.
+Parse caches contain hole indexes and syntax only, never component or session values.
+Literal-name tags and explicit `namespace` dictionaries remain available.
 
 `else:` binds to the most recent `if` opened at the same indent.
 
@@ -71,16 +80,20 @@ typed native constructors. Otherwise it is forwarded as the `children` keyword.
 Insert that object in a content hole to render it in its caller environment.
 Components return a `Template` or `Fragment`; other return types raise `TypeError`.
 
-Defining-module bindings and actual Python closure cells provide a component's namespace.
-Use `html(template, namespace={...})` for bindings used only in template text, including
-function-local aliases; `render(app, namespace={...})` provides explicit root bindings.
+Defining-module bindings and actual Python closure cells provide a component's namespace,
+so an imported or module-level component resolves from its bare name with no extra argument.
+`html(template, use=(Card, Panel))` names the components a template uses: each entry is an
+ordinary Python reference, and an entry carrying a `__name__` also binds under it, which
+covers components defined inside the calling function. `html(template, namespace={...})`
+remains available for a binding whose markup name differs from the object's own, and
+`render(app, namespace={...})` provides explicit root bindings.
 These mappings are copied; execution frames are never retained. Partials and callable
 instances use their underlying defining callable's module. A fragment's explicit bindings
 override module bindings. Caller children retain their own namespace when inserted.
 
-Use explicit namespace entries for ordinary imports used only as literal tags. For example,
-`from shared import Card` together with `html(t'\nCard:', namespace={"Card": Card})`
-provides a real Python reference that Ruff and Pyright recognize. Their unused-import
+Name imports used only as literal tags in `use=`. For example, `from shared import Card`
+together with `html(t'\nCard:', use=(Card,))` provides a real Python reference that Ruff and
+Pyright recognize; without one, both report the import as unused and Ruff's fix removes it. Their unused-import
 checks and import cleanup continue to apply to unrelated imports. Required, default and
 keyword-only props follow the callable's Python signature; missing or unexpected props
 raise `TypeError`. Python annotations are checked on ordinary component calls by static

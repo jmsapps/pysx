@@ -40,6 +40,7 @@ def app() -> Fragment:
     spacing = signal("24px")
     accent = signal("")
     classes = signal("preview")
+    mode = signal("primary")
 
     def current_name() -> str:
         theme = themes.current()
@@ -66,11 +67,13 @@ def app() -> Fragment:
     def local(_event: object) -> None:
         accent.set("#0d9488")
         classes.set("preview is-local")
+        mode.set("ghost")
 
     def reset(_event: object) -> None:
         spacing.set("")
         accent.set("")
         classes.set("preview")
+        mode.set("primary")
 
     return html(
         t"""
@@ -93,17 +96,9 @@ def app() -> Fragment:
             Actions:
                 ThemeAction(id="compact" onClick={compact}): "Compact"
                 ThemeAction(id="roomy" onClick={roomy}): "Roomy"
-                ThemeAction(id="local-accent" onClick={local}): "Local accent"
+                ThemeAction(id="local-accent" variant={mode} onClick={local}): "Local accent"
                 ThemeAction(id="reset-vars" onClick={reset}): "Reset variables"
     """,
+        use=(ThemePage, Eyebrow, Title, Description, Actions, ThemeAction, Preview),
         themes=themes,
-        namespace={
-            "ThemePage": ThemePage,
-            "Preview": Preview,
-            "ThemeAction": ThemeAction,
-            "Actions": Actions,
-            "Eyebrow": Eyebrow,
-            "Title": Title,
-            "Description": Description,
-        },
     )

@@ -15,14 +15,16 @@ from pysx import (
     signal,
 )
 
-from .components import Action as Action
-from .components import Actions as Actions
-from .components import Card as Card
-from .components import Description as Description
-from .components import Eyebrow as Eyebrow
-from .components import Page as Page
-from .components import SecondaryAction as SecondaryAction
-from .components import Title as Title
+from .components import (
+    Action,
+    Actions,
+    Card,
+    Description,
+    Eyebrow,
+    Page,
+    SecondaryAction,
+    Title,
+)
 
 
 @component
@@ -66,7 +68,8 @@ def app() -> Fragment:
     def reset_count(_event: object) -> None:
         count.set(1)
 
-    return html(t"""
+    return html(
+        t"""
         Page:
             header:
                 Eyebrow: "pysx / examples"
@@ -112,4 +115,15 @@ def app() -> Fragment:
                 if {eligible}:
                     p(id="operator-branch"):
                         "The first score is in the list and the count is above 2.5."
-    """)
+    """,
+        use=(
+            Action,
+            Actions,
+            Card,
+            Description,
+            Eyebrow,
+            Page,
+            SecondaryAction,
+            Title,
+        ),
+    )

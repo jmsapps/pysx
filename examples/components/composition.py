@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from pysx import (
     BrowserEvent,
-    Children,
     Dom,
     Fragment,
     batch,
@@ -25,17 +24,18 @@ from .controls import Action
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
-    from string.templatelib import Template
 
 
-def panel(*, children: Children) -> Template:
-    return t"\nsection: {children}"
-
-
-TreePanel = styled(
-    styled(panel, t"padding: 16px; border: 1px solid var(--border); border-radius: 12px;"),
-    t"background: var(--surface);",
-)
+Panel = styled.section(t"""
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    &:hover:
+      border-color: var(--accent);
+    @media (max-width: 600px):
+      padding: 12px;
+""")
+TreePanel = styled(Panel)(t"background: var(--surface);")
 
 
 @dataclass(frozen=True)
@@ -172,14 +172,15 @@ def tree_controls() -> Fragment:
         )
 
     def row(node: Entry) -> Fragment:
-        return html(t"\nBranch(node={node}):", namespace={"Branch": branch})
+
+        return html(t"\nbranch(node={node}):", use=(branch,))
 
     def reverse(_event: BrowserEvent) -> None:
         roots.set(list(reversed(roots())))
 
     return html(
         t"""
-            Panel:
+            TreePanel:
               ul(id="composition-tree",role="tree",aria-label="Component library",ref={root_ref}):
                 {each(roots, row, key=lambda node: node.key)}
               p(id="tree-setups"):
@@ -189,5 +190,5 @@ def tree_controls() -> Fragment:
               br:
               Action(id="tree-reverse", onClick={on_event(reverse)}): "Reverse roots"
         """,
-        namespace={"Panel": TreePanel, "Action": Action},
+        use=(TreePanel, Action),
     )

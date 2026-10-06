@@ -1,7 +1,9 @@
 # Native elements
 
 Lowercase markers in `pysx.elements` are frozen `ElementTag` objects. Their string
-form is the canonical HTML name, and they work with `styled()`.
+form is the canonical HTML name, and they work with `styled(Base)(css)`.
+`styled.<tag>(css)` declares a typed styled native directly, without a marker import;
+use `{Card}` in template tag position to reference the resulting component in Python.
 Every marker is named for its HTML tag; Python uses `del_` for the delete
 element, whose HTML name is a keyword.
 

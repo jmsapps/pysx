@@ -28,6 +28,7 @@ class HoleKind(Enum):
     ATTR = "ATTR"
     BIND = "BIND"
     COND = "COND"
+    TAG = "TAG"
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ class Text:
 
 @dataclass
 class Element:
-    tag: str
+    tag: str | Hole
     attrs: list[tuple[str, str | Hole]] = field(default_factory=list[tuple[str, str | Hole]])
     children: list[Node] = field(default_factory=lambda: list[Node]())
     namespace: str = "html"
@@ -91,6 +92,7 @@ def _split_lines(fragments: tuple[str, ...]) -> list[Line]:
 
 
 def _is_blank(line: Line) -> bool:
+
     return all(isinstance(p, Text) and not p.s.strip() for p in line)
 
 
@@ -102,14 +104,17 @@ def _indent_of(line: Line) -> int:
 
 
 def _is_event(name: str) -> bool:
+
     return is_event(name) or (len(name) > 2 and name.startswith("on") and name[2].isupper())
 
 
 def attr_kind(name: str) -> HoleKind:
     if _is_event(name):
+
         return HoleKind.EVENT
 
     if name in {"bindValue", "bindChecked", "bindSelected"}:
+
         return HoleKind.BIND
 
     return HoleKind.ATTR
@@ -126,6 +131,7 @@ class _Scan:
             p = self.line[self.pi]
 
             if isinstance(p, Hole) or self.ci < len(p.s):
+
                 return
             self.pi += 1
             self.ci = 0
@@ -137,6 +143,7 @@ class _Scan:
 
     def peek(self) -> str | Hole | None:
         if self.eof():
+
             return None
         p = self.line[self.pi]
 
@@ -179,9 +186,11 @@ def _take_string(sc: _Scan) -> str:
         c = sc.peek()
 
         if c is None:
+
             raise PysxSyntaxError("unterminated string literal")
 
         if isinstance(c, Hole):
+
             raise PysxSyntaxError("interpolation inside a string literal is not supported")
 
         if c == '"':
@@ -205,14 +214,17 @@ def _parse_attrs(sc: _Scan, holes: HoleTable) -> list[tuple[str, str | Hole]]:
             return attrs
 
         if c is None:
+
             raise PysxSyntaxError("unclosed '(' — attribute lists must be single-line")
         name = _take_name(sc)
 
         if not name:
+
             raise PysxSyntaxError(f"expected an attribute name, found {c!r}")
         sc.skip_ws()
 
         if sc.peek() != "=":
+
             raise PysxSyntaxError(f"expected '=' after attribute {name!r}")
         sc.advance()
         sc.skip_ws()
@@ -225,6 +237,7 @@ def _parse_attrs(sc: _Scan, holes: HoleTable) -> list[tuple[str, str | Hole]]:
         elif v == '"':
             attrs.append((name, _take_string(sc)))
         else:
+
             raise PysxSyntaxError(f"expected a string or interpolation for {name!r}")
         sc.skip_ws()
 
@@ -240,6 +253,7 @@ def _parse_content(sc: _Scan, holes: HoleTable) -> list[str | Hole]:
         c = sc.peek()
 
         if c is None:
+
             return items
 
         if c == ";":
@@ -266,6 +280,32 @@ def _parse_line(sc: _Scan, holes: HoleTable) -> Element | Conditional | _Else | 
     sc.skip_ws()
     c = sc.peek()
 
+    if isinstance(c, Hole):
+        saved = (sc.pi, sc.ci)
+        sc.advance()
+        sc.skip_ws()
+
+        if sc.peek() in {"(", ":"}:
+            holes[c.index] = (c.index, HoleKind.TAG, None)
+            attrs: list[tuple[str, str | Hole]] = []
+
+            if sc.peek() == "(":
+                sc.advance()
+                attrs = _parse_attrs(sc, holes)
+                sc.skip_ws()
+
+                if sc.eof():
+
+                    return Element(c, attrs)
+
+            if sc.peek() != ":":
+
+                raise PysxSyntaxError("expected ':' after component reference")
+            sc.advance()
+
+            return Element(c, attrs, list(_parse_content(sc, holes)))
+        sc.pi, sc.ci = saved
+
     if isinstance(c, str) and (c.isalpha() or c == "_"):
         tag = _take_name(sc)
 
@@ -274,12 +314,14 @@ def _parse_line(sc: _Scan, holes: HoleTable) -> Element | Conditional | _Else | 
             cond = sc.peek()
 
             if not isinstance(cond, Hole):
+
                 raise PysxSyntaxError("'if' needs an interpolated condition: if {expr}:")
             sc.advance()
             holes[cond.index] = (cond.index, HoleKind.COND, None)
             sc.skip_ws()
 
             if sc.peek() != ":":
+
                 raise PysxSyntaxError("expected ':' after if")
             sc.advance()
 
@@ -289,13 +331,14 @@ def _parse_line(sc: _Scan, holes: HoleTable) -> Element | Conditional | _Else | 
             sc.skip_ws()
 
             if sc.peek() != ":":
+
                 raise PysxSyntaxError("expected ':' after else")
             sc.advance()
 
             return _Else.BRANCH
 
         sc.skip_ws()
-        attrs: list[tuple[str, str | Hole]] = []
+        attrs = []
         had_parens = sc.peek() == "("
 
         if had_parens:
@@ -307,6 +350,7 @@ def _parse_line(sc: _Scan, holes: HoleTable) -> Element | Conditional | _Else | 
             # `input(...)` is a childless element. Without parentheses there is
             # nothing to separate a bare name from content, so require one.
             if had_parens and sc.eof():
+
                 return Element(tag, attrs, [])
 
             raise PysxSyntaxError(f"expected ':' after element {tag!r}")
@@ -322,6 +366,7 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
     lines = _split_lines(fragments)
 
     if lines and not _is_blank(lines[0]):
+
         raise PysxSyntaxError(
             "template must begin with a newline: text on the opening quote line "
             "has no recoverable indent"
@@ -335,6 +380,7 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
 
     for line in lines:
         if _is_blank(line):
+
             continue
         indent = _indent_of(line)
 
@@ -354,6 +400,7 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
             cond = open_conditionals.get(indent)
 
             if cond is None:
+
                 raise PysxSyntaxError("'else' without a matching 'if' at the same indent")
             stack.append((indent, cond.otherwise))
         else:
@@ -362,6 +409,7 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
     missing = [i for i in range(len(fragments) - 1) if i not in holes]
 
     if missing:
+
         raise PysxSyntaxError(f"interpolation(s) {missing} are not in a usable position")
 
     _namespaces(root)
@@ -373,7 +421,7 @@ def _namespaces(nodes: list[Node], namespace: str = "html") -> None:
     for node in nodes:
         if isinstance(node, Element):
             tag = node.tag
-            node.namespace = tag if tag in {"svg", "math"} else namespace
+            node.namespace = tag if isinstance(tag, str) and tag in {"svg", "math"} else namespace
             child_namespace = node.namespace
 
             if tag == "foreignObject" and namespace == "svg":

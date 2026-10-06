@@ -9,21 +9,49 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_styled_authoring_import_usage_real_tools(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "tests/test_components.py::test_template_import_usage_real_checkers[use]",
+            "--basetemp",
+            str(tmp_path / "import-proof"),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout
+
+
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
-def test_styled_bases_types(tmp_path: Path, checker: str, valid: bool) -> None:
+def test_styled_authoring_bases_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = "from pysx import styled, div, Fragment, html\n"
 
     if valid:
         source += "from typing import assert_type\n"
         source += "def base(label: str) -> Fragment:\n    return html(t'\\nspan: {label}')\n"
-        source += "tag = styled(styled(div, t'color: red'), t'color: blue')\n"
-        source += "fn = styled(styled(base, t'color: red'), t'color: blue')\n"
+        source += "tag = styled(styled(div)(t'color: red'))(t'color: blue')\n"
+        source += "fn = styled(styled(base)(t'color: red'))(t'color: blue')\n"
         source += "assert_type(fn('hello'), Fragment)\nassert_type(tag.tag, str)\n"
+        source += "button = styled.button(t'color: red', variants={'primary': t'color: blue'})\n"
+        source += "extended = styled(button)(t'padding: 3px')\n"
+        source += "assert_type(extended('go', disabled=True, variant='primary'), Fragment)\n"
+        source += 'html(t\'\\n{extended}(variant="primary"): \\"hello\\"\')\n'
     else:
         source = "from pysx import styled, Fragment, html\n"
         source += "def base(label: str) -> Fragment:\n    return html(t'\\nspan: {label}')\n"
-        source += "styled('div', t'color: red')\nfn = styled(base, t'color: red')\nfn(42)\n"
+        source += "styled('div')(t'color: red')\nfn = styled(base)(t'color: red')\nfn(42)\n"
+        source += (
+            "button = styled.button(t'color: red')\nbutton(href='wrong')\nbutton(variant=42)\n"
+        )
     fixture = tmp_path / "styled_contract.py"
     fixture.write_text(source)
     args = [sys.executable, "-m", checker]

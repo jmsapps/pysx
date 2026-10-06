@@ -130,7 +130,7 @@ def test_schema_native_composition_and_frozen_markers() -> None:
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         setattr(elements.div, field_name, "other")
-    assert styled(elements.div, t"color: red").tag == "div"
+    assert styled(elements.div)(t"color: red").tag == "div"
 
 
 @pytest.mark.parametrize("tag", sorted(VOID))

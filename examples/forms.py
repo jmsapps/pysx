@@ -5,12 +5,17 @@ from typing import cast
 
 from pysx import Fragment, component, html, native, signal
 
-from .components import Card as Card
-from .components import Description as Description
-from .components import Eyebrow as Eyebrow
-from .components import Field, Form, SecondaryAction, Submit
-from .components import Page as Page
-from .components import Title as Title
+from .components import (
+    Card,
+    Description,
+    Eyebrow,
+    Field,
+    Form,
+    Page,
+    SecondaryAction,
+    Submit,
+    Title,
+)
 
 
 @component
@@ -160,7 +165,8 @@ def app() -> Fragment:
         native.Dd(invalids, id="invalid-state"),
     )
 
-    return html(t"""
+    return html(
+        t"""
         Page(id="live-forms"):
             header:
                 Eyebrow: "pysx / examples"
@@ -181,4 +187,12 @@ def app() -> Fragment:
                 {readings}
                 h3: "Last submission"
                 pre(id="status"): {status}
-    """)
+    """,
+        use=(
+            Card,
+            Description,
+            Eyebrow,
+            Page,
+            Title,
+        ),
+    )

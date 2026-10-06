@@ -8,9 +8,27 @@ from pysx.check import Diagnostic, diagnostics
 HEADER = "from pysx import component, div, html, signal, styled\n\n"
 
 
+def test_styled_authoring_constant_variant_and_removed_call() -> None:
+    results, _lines = check(
+        'Action = styled.button(t"color: red", variants={"primary": t"color: blue"})\n'
+        'html(t\'\\n{Action}(variant="missing"): "click"\')\n'
+        'Old = styled(div, t"color: red")\n'
+    )
+    assert len(results) == 2
+    assert any("unknown variant" in item["message"] for item in results)
+    assert any("removed" in item["message"] for item in results)
+
+
+@pytest.mark.parametrize("value", ["42", "None", '"div"', "[]"])
+def test_component_tags_constant_unsupported_diagnostics(value: str) -> None:
+    results, _lines = check("html(t'\\n{" + value + '}: "child"\')\n')
+    assert len(results) == 1
+    assert "component tag" in results[0]["message"]
+
+
 @pytest.mark.parametrize("base", ['"div"', '"d\\x69v"', "None", "42"])
 def test_styling_diagnostics_invalid_base_raw_utf16(base: str) -> None:
-    results, lines = check(f'note = "😀"; Widget = styled({base}, t"color: red")\n')
+    results, lines = check(f'note = "😀"; Widget = styled({base})(t"color: red")\n')
     assert len(results) == 1
     result = results[0]
     line = lines[result["line"]].encode("utf-16-le")
@@ -22,7 +40,7 @@ def test_styling_diagnostics_invalid_base_raw_utf16(base: str) -> None:
 @pytest.mark.parametrize("hole", ["{color}", "{color!r}", "{color:>8}", "{color!s:>8}"])
 def test_styling_diagnostics_css_holes_metadata_raw_range(hole: str) -> None:
     results, lines = check(
-        f'color = signal("red")\nWidget = styled(div, t"""\n    /* 😀 */ color: {hole};\n""")\n'
+        f'color = signal("red")\nWidget = styled(div)(t"""\n    /* 😀 */ color: {hole};\n""")\n'
     )
     assert len(results) == 1
     result = results[0]
@@ -33,7 +51,7 @@ def test_styling_diagnostics_css_holes_metadata_raw_range(hole: str) -> None:
 
 
 def test_styling_diagnostics_multiline_base_range() -> None:
-    results, lines = check('Widget = styled("di\\\nv", t"color: red")\n')
+    results, lines = check('Widget = styled("di\\\nv")(t"color: red")\n')
     assert len(results) == 1
     result = results[0]
     assert "endLine" in result
@@ -45,7 +63,7 @@ def test_styling_diagnostics_multiline_base_range() -> None:
 def test_styling_diagnostics_css_regions_clean_and_global_type() -> None:
     results, _lines = check(
         "from pysx import css, global_style\n"
-        'Widget = styled(div, t"""color: red; --ink: blue; /* comment */""")\n'
+        'Widget = styled(div)(t"""color: red; --ink: blue; /* comment */""")\n'
         'body = css(t"padding: 3px")\n'
         'global_style("body { color: blue }")\n'
     )
@@ -69,7 +87,7 @@ def test_styling_diagnostics_css_attribute_metadata() -> None:
 
 def test_styling_diagnostics_raw_escapes_and_doubled_braces() -> None:
     results, lines = check(
-        'color = "red"\nWidget = styled(div, t"""\n    /* \\t {{ 😀 */ color: {color!r};\n""")\n'
+        'color = "red"\nWidget = styled(div)(t"""\n    /* \\t {{ 😀 */ color: {color!r};\n""")\n'
     )
     assert len(results) == 1
     result = results[0]
@@ -128,11 +146,13 @@ def check(body: str) -> tuple[list[Diagnostic], list[str]]:
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "case.py"
         p.write_text(HEADER + body, encoding="utf-8")
+
         return diagnostics(p), (HEADER + body).split("\n")
 
 
 def test_clean_examples_are_empty() -> None:
     here = Path(__file__).resolve().parents[1]
+
     for name in ("counter", "todos"):
         path = here / f"examples/{name}.py"
         assert diagnostics(path) == [], (name, diagnostics(path))
@@ -140,7 +160,7 @@ def test_clean_examples_are_empty() -> None:
 
 def test_unknown_tag_after_non_ascii_line() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         'NOTE = "café ☕ — a non-ASCII line before the diagnostic"\n'
         "\n"
         "@component\n"
@@ -160,7 +180,7 @@ def test_unknown_tag_after_non_ascii_line() -> None:
 
 def test_called_signal_column_is_utf16_on_a_non_ascii_line() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         "\n"
         "@component\n"
         "def app():\n"
@@ -190,7 +210,7 @@ def test_called_signal_column_is_utf16_on_a_non_ascii_line() -> None:
 
 def test_bare_lambda_reports_the_parenthesis_fix() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         "\n"
         "@component\n"
         "def app():\n"
@@ -206,7 +226,7 @@ def test_bare_lambda_reports_the_parenthesis_fix() -> None:
 
 def test_fstring_instead_of_tstring() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         "\n"
         "@component\n"
         "def app():\n"
@@ -222,7 +242,7 @@ def test_fstring_instead_of_tstring() -> None:
 
 def test_parser_error_is_reported() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         "\n"
         "@component\n"
         "def app():\n"

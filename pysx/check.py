@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
-from .parser import PysxSyntaxError, parse
+from .parser import Element, Hole, HoleKind, PysxSyntaxError, parse
 from .schema import normalize_attr
 
 if TYPE_CHECKING:
@@ -29,11 +29,13 @@ TAG_RE = re.compile(r"^\s*([A-Z][A-Za-z0-9_]*)")
 
 
 def _utf16(line: str, index: int) -> int:
+
     return len(line[:index].encode("utf-16-le")) // 2
 
 
 def _utf16_from_bytes(line: str, byte_col: int) -> int:
     prefix = line.encode("utf-8")[:byte_col].decode("utf-8", "ignore")
+
     return _utf16(line, len(prefix))
 
 
@@ -53,6 +55,7 @@ def _d(
     message: str,
     severity: Literal["error", "warning"] = "error",
 ) -> Diagnostic:
+
     return {
         "line": line0,
         "startChar": start,
@@ -96,6 +99,7 @@ def _signal_names(tree: ast.AST) -> set[str]:
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+
             continue
 
         fn = node.value.func
@@ -128,6 +132,7 @@ def _signal_names(tree: ast.AST) -> set[str]:
                 out.update(t.id for t in node.targets if isinstance(t, ast.Name))
 
         if out == previous:
+
             break
 
     return out
@@ -135,12 +140,15 @@ def _signal_names(tree: ast.AST) -> set[str]:
 
 def _reactive_expression(node: ast.AST, signals: set[str]) -> bool:
     if isinstance(node, ast.Name):
+
         return node.id in signals
 
     if isinstance(node, ast.Subscript):
+
         return _reactive_expression(node.value, signals)
 
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+
         return _reactive_expression(node.left, signals) or _reactive_expression(node.right, signals)
 
     if (
@@ -148,6 +156,7 @@ def _reactive_expression(node: ast.AST, signals: set[str]) -> bool:
         and len(node.ops) == 1
         and isinstance(node.ops[0], (ast.Lt, ast.LtE, ast.Gt, ast.GtE))
     ):
+
         return any(_reactive_expression(value, signals) for value in [node.left, *node.comparators])
 
     return False
@@ -158,6 +167,7 @@ def _operator_warnings(
 ) -> Iterator[tuple[ast.expr, str]]:
     # Deferred callbacks read signals deliberately; do not diagnose their bodies.
     if isinstance(node, ast.Lambda):
+
         return
 
     root = node if root is None else root
@@ -229,17 +239,39 @@ def _styling_diagnostics(tree: ast.AST, lines: list[str]) -> list[Diagnostic]:
     out: list[Diagnostic] = []
 
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+        if not isinstance(node, ast.Call):
+
             continue
-        name = node.func.id
+        declaration = (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "styled"
+        )
+        extension = (
+            isinstance(node.func, ast.Call)
+            and isinstance(node.func.func, ast.Name)
+            and node.func.func.id == "styled"
+        )
+        name = (
+            node.func.id
+            if isinstance(node.func, ast.Name)
+            else "styled"
+            if declaration or extension
+            else ""
+        )
 
         if name not in {"styled", "css", "global_style"} or not node.args:
+
             continue
 
         if name == "styled":
-            base = node.args[0]
+            base = (
+                node.func.args[0]
+                if extension and isinstance(node.func, ast.Call) and node.func.args
+                else node.args[0]
+            )
 
-            if isinstance(base, ast.Constant):
+            if not declaration and not extension and isinstance(base, ast.Constant):
                 out.append(
                     _span_diagnostic(
                         base,
@@ -248,11 +280,30 @@ def _styling_diagnostics(tree: ast.AST, lines: list[str]) -> list[Diagnostic]:
                         "strings are unsupported",
                     )
                 )
-            argument = node.args[1] if len(node.args) > 1 else None
+
+            if not declaration and not extension and len(node.args) > 1:
+                out.append(
+                    _span_diagnostic(
+                        node, lines, "styled(base, css) was removed; use styled(Base)(css)"
+                    )
+                )
+            argument = node.args[0] if declaration or extension else None
+
+            if (
+                declaration
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "fragment"
+            ):
+                out.append(
+                    _span_diagnostic(
+                        node.func, lines, "styled.fragment has no element to carry a class"
+                    )
+                )
         else:
             argument = node.args[0]
 
         if not isinstance(argument, ast.TemplateStr):
+
             continue
 
         if name == "global_style":
@@ -283,11 +334,57 @@ def _templates(tree: ast.AST) -> Iterator[ast.TemplateStr | ast.JoinedStr]:
             and node.args
         ):
             arg = node.args[0]
+
             if isinstance(arg, ast.TemplateStr):
                 yield arg
             elif isinstance(arg, ast.JoinedStr):
-                # f"""...""" eagerly interpolates; it is silently not a template.
+                # f-strings eagerly interpolate and cannot preserve live holes.
                 yield arg
+
+
+def _declared_variants(tree: ast.AST) -> dict[str, set[str]]:
+    assignments = {
+        target.id: node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    found: dict[str, set[str]] = {}
+
+    for _ in range(len(assignments) + 1):
+        for name, value in assignments.items():
+            if isinstance(value, ast.Name) and value.id in found:
+                found[name] = found[value.id].copy()
+            elif isinstance(value, ast.Call):
+                keys: set[str] = set()
+                factory = value.func
+
+                if (
+                    isinstance(factory, ast.Call)
+                    and isinstance(factory.func, ast.Name)
+                    and factory.func.id == "styled"
+                ):
+                    if factory.args and isinstance(factory.args[0], ast.Name):
+                        keys.update(found.get(factory.args[0].id, set()))
+                elif not (
+                    isinstance(factory, ast.Attribute)
+                    and isinstance(factory.value, ast.Name)
+                    and factory.value.id == "styled"
+                ):
+
+                    continue
+
+                for keyword in value.keywords:
+                    if keyword.arg == "variants" and isinstance(keyword.value, ast.Dict):
+                        keys.update(
+                            key.value
+                            for key in keyword.value.keys
+                            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                        )
+                found[name] = keys
+
+    return found
 
 
 def diagnostics(path: Path) -> list[Diagnostic]:
@@ -301,12 +398,14 @@ def diagnostics(path: Path) -> list[Diagnostic]:
         line = lines[row] if row < len(lines) else ""
         col = _utf16(line, max((exc.offset or 1) - 1, 0))
         message = exc.msg or "syntax error"
+
         if "lambda expressions are not allowed" in message:
             message = (
                 "a bare lambda is not allowed in a t-string hole "
                 "(':' starts a format spec) — wrap it in parentheses: "
                 "{(lambda e: ...)}"
             )
+
         return [_d(row, col, max(col + 1, len(line)), message)]
 
     bound = _bound_names(tree)
@@ -325,23 +424,37 @@ def diagnostics(path: Path) -> list[Diagnostic]:
                     'html() needs a t-string; f"""..."""  interpolates eagerly and is not reactive',
                 )
             )
+
             continue
 
         fragments = tuple(
             v.value for v in node.values if isinstance(v, ast.Constant) and isinstance(v.value, str)
         )
+
         try:
             skeleton = parse(fragments)
         except PysxSyntaxError as exc:
             line = lines[node.lineno - 1]
             col = _utf16_from_bytes(line, node.col_offset)
             out.append(_d(node.lineno - 1, col, col + 4, str(exc)))
+
             continue
 
         interpolations = [value for value in node.values if isinstance(value, ast.Interpolation)]
 
-        for index, _kind, name in skeleton.holes:
+        for index, kind, name in skeleton.holes:
+            if kind is HoleKind.TAG:
+                expression = interpolations[index].value
+
+                if isinstance(expression, (ast.Constant, ast.List, ast.Dict, ast.Set, ast.Tuple)):
+                    out.append(
+                        _span_diagnostic(
+                            expression, lines, "component tag requires an element or callable"
+                        )
+                    )
+
             if name is None or normalize_attr(name) not in {"css", "stylevars", "cssvars"}:
+
                 continue
             css_interpolation = interpolations[index]
 
@@ -354,15 +467,73 @@ def diagnostics(path: Path) -> list[Diagnostic]:
                     )
                 )
 
+        declared_variants = _declared_variants(tree)
+        pending = list(skeleton.root)
+
+        while pending:
+            element = pending.pop()
+
+            if not isinstance(element, Element):
+
+                continue
+            pending.extend(element.children)
+            tag_expr = (
+                interpolations[element.tag.index].value if isinstance(element.tag, Hole) else None
+            )
+            tag_name = (
+                tag_expr.id
+                if isinstance(tag_expr, ast.Name)
+                else element.tag
+                if isinstance(element.tag, str)
+                else None
+            )
+
+            if tag_name not in declared_variants:
+
+                continue
+
+            for attr, variant_value in element.attrs:
+                if attr != "variant":
+
+                    continue
+                variant_expression = (
+                    interpolations[variant_value.index].value
+                    if isinstance(variant_value, Hole)
+                    else None
+                )
+                constant = (
+                    variant_expression.value
+                    if isinstance(variant_expression, ast.Constant)
+                    else variant_value
+                    if isinstance(variant_value, str)
+                    else None
+                )
+
+                if isinstance(constant, str) and constant not in declared_variants[tag_name]:
+                    out.append(
+                        _span_diagnostic(
+                            variant_expression or node,
+                            lines,
+                            f"unknown variant {constant!r}; declared variants: "
+                            f"{sorted(declared_variants[tag_name])}",
+                        )
+                    )
+
         # Unknown tags, located in raw source lines so ranges cannot desync.
+
         for row in range(node.lineno, node.end_lineno or node.lineno):
             if row >= len(lines):
+
                 break
             match = TAG_RE.match(lines[row])
+
             if not match:
+
                 continue
             tag = match.group(1)
+
             if tag in bound:
+
                 continue
             start = _utf16(lines[row], match.start(1))
             out.append(
@@ -375,9 +546,12 @@ def diagnostics(path: Path) -> list[Diagnostic]:
             )
 
         # A called signal freezes at its first value, silently.
+
         for value in node.values:
             if not isinstance(value, ast.Interpolation):
+
                 continue
+
             for expression, message in _operator_warnings(value.value, signals):
                 # Direct interpolation ranges retain braces for the existing editor fix.
                 location = value if expression is value.value else expression
@@ -406,10 +580,13 @@ def diagnostics(path: Path) -> list[Diagnostic]:
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: python -m pysx.check <file.py>", file=sys.stderr)
+
         return 2
     print(json.dumps(diagnostics(Path(sys.argv[1])), indent=None))
+
     return 0
 
 
 if __name__ == "__main__":
+
     raise SystemExit(main())

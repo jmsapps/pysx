@@ -32,6 +32,7 @@ def test_serialization_live_boolean_classes_and_properties() -> None:
     classes = signal({"active": True, "inactive": False})
 
     def view() -> Fragment:
+
         return html(t"""
             input(checked={hidden} ariaChecked={hidden} value={value})
             div(className="base active" class={classes})
@@ -55,9 +56,11 @@ def test_serialization_live_key_and_class_escaping() -> None:
     rows = signal(['key":<&'])
 
     def row(value: str) -> Fragment:
+
         return html(t"""\n        div(class={value}): {value}\n        """)
 
     def view() -> Fragment:
+
         return html(t"""\n        div: {each(rows, row, key=lambda value: value)}\n        """)
 
     markup = render(view).body
@@ -71,6 +74,7 @@ def test_structured_state_selective_patches_and_event_batch() -> None:
     left = dict_key(root, "left")
 
     def app_fn() -> Fragment:
+
         return html(t"""\n        p: {left}\n        """)
 
     session = Session(app_fn)
@@ -93,6 +97,7 @@ def test_template_ergonomics_operator_text_branch_isolation_and_disposal() -> No
     visible = score > 0
 
     def app_fn() -> Fragment:
+
         return html(t"""
             div: {doubled}
             if {visible}:
@@ -120,6 +125,7 @@ def test_template_ergonomics_branch_removal_releases_operator_sources() -> None:
     doubled = count * 2
 
     def app_fn() -> Fragment:
+
         return html(t"""
             if {visible}:
                 p: {doubled}
@@ -147,6 +153,7 @@ def test_batching_transactions_event_patches() -> None:
         count.set(2)
 
     def app_fn() -> Fragment:
+
         return html(t"""
         button(onClick={click}): "change"
         p: {count}
@@ -203,8 +210,8 @@ def test_styled_class_applied_and_each_rule_defined_once() -> None:
 def test_identical_css_collapses_to_one_class() -> None:
     from pysx import div, styled, stylesheet
 
-    a = styled(div, t"""color: rebeccapurple;""")
-    b = styled(div, t"""color: rebeccapurple;""")
+    a = styled(div)(t"""color: rebeccapurple;""")
+    b = styled(div)(t"""color: rebeccapurple;""")
     assert a.css_class == b.css_class, (a, b)
     assert stylesheet().count(f".{a.css_class} {{") == 1
 
@@ -233,13 +240,14 @@ def test_sessions_do_not_share_state() -> None:
 def test_hole_value_is_escaped() -> None:
     from pysx import component, div, html, styled
 
-    Box = styled(div, t"""color: red;""")  # noqa: N806 - DSL component name
+    Box = styled(div)(t"""color: red;""")  # noqa: N806 - DSL component name
     payload = signal("<script>alert(1)</script>")
 
     ns = {"Box": Box}
 
     @component
     def view() -> Fragment:
+
         return html(t"""
             Box:
                 {payload}
@@ -251,7 +259,7 @@ def test_hole_value_is_escaped() -> None:
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in r.body, r.body
 
 
-Box = styled(div, t"""color: red;""")
+Box = styled(div)(t"""color: red;""")
 
 
 def mk(fn: Callable[[], Fragment]) -> Callable[[], Fragment]:
@@ -266,6 +274,7 @@ def test_reactive_attribute_gets_element_id_and_emits_attr_op() -> None:
 
     @mk
     def view() -> Fragment:
+
         return html(t"""
             Box(class={cls}):
                 "x"
@@ -290,6 +299,7 @@ def test_class_patch_keeps_the_scoped_class() -> None:
 
     @mk
     def view() -> Fragment:
+
         return html(t"""
             Box(class={active}):
                 "x"
@@ -317,6 +327,7 @@ def test_boolean_attribute_present_then_removed() -> None:
 
     @mk
     def view() -> Fragment:
+
         return html(t"""
             Box(hidden={on}):
                 "x"
@@ -336,6 +347,7 @@ def test_conditional_swaps_branch_html() -> None:
 
     @mk
     def view() -> Fragment:
+
         return html(t"""
             Box:
                 if {flag}:
@@ -357,6 +369,7 @@ def test_conditional_with_plain_flag_keeps_nested_watchers() -> None:
 
     @mk
     def view() -> Fragment:
+
         return html(t"""
             Box:
                 if {shown}:
@@ -379,12 +392,14 @@ class Row:
 def _list_view(items: Signal[list[Row]]) -> Callable[[], Fragment]:
     @component
     def item(row: Row) -> Fragment:
+
         return html(t"""
             li: {row.text}
         """)
 
     @mk
     def view() -> Fragment:
+
         return html(t"""
             Box:
                 {each(items, item, key=(lambda r: r.id))}
@@ -434,6 +449,7 @@ def test_bind_value_renders_value_and_input_hook() -> None:
 
     @mk
     def view() -> Fragment:
+
         return html(t"""
             Box:
                 input(bindValue={draft})

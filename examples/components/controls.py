@@ -1,8 +1,9 @@
 """Reusable controls and headings for the example apps."""
 
-from pysx import button, div, h1, p, span, styled
+from pysx import styled
 
-Action = styled(button, t"""
+Action = styled.button(
+    t"""
     border: 1px solid transparent;
     border-radius: 10px;
     min-height: 44px;
@@ -13,16 +14,28 @@ Action = styled(button, t"""
     background: var(--accent);
     box-shadow: 0 2px 4px rgba(66, 49, 160, 0.14);
     cursor: pointer;
-""")
+    &:hover:
+      filter: brightness(0.96);
+    &:focus-visible:
+      outline: 3px solid #a99cf2;
+      outline-offset: 3px;
+    &:active:
+      transform: translateY(1px);
+""",
+    variants={
+        "primary": t"background: var(--accent); color: white;",
+        "ghost": t"background: transparent; color: var(--muted);",
+    },
+)
 
-Title = styled(h1, t"""
+Title = styled.h1(t"""
     margin: 0;
     font-size: clamp(28px, 4vw, 34px);
     line-height: 1.2;
     letter-spacing: -0.035em;
 """)
 
-Eyebrow = styled(p, t"""
+Eyebrow = styled.p(t"""
     margin: 0 0 10px;
     color: var(--accent);
     font-size: 11px;
@@ -31,14 +44,14 @@ Eyebrow = styled(p, t"""
     text-transform: uppercase;
 """)
 
-Description = styled(p, t"""
+Description = styled.p(t"""
     margin: 10px 0 0;
     color: var(--muted);
     font-size: 14px;
     line-height: 1.7;
 """)
 
-Card = styled(div, t"""
+Card = styled.div(t"""
     padding: 22px;
     background: var(--surface-soft);
     border: 1px solid var(--border);
@@ -48,14 +61,14 @@ Card = styled(div, t"""
     gap: 14px;
 """)
 
-Actions = styled(div, t"""
+Actions = styled.div(t"""
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
     align-items: center;
 """)
 
-Metric = styled(p, t"""
+Metric = styled.p(t"""
     margin: 0;
     padding: 36px 24px;
     display: flex;
@@ -68,7 +81,7 @@ Metric = styled(p, t"""
     border-radius: 16px;
 """)
 
-Value = styled(span, t"""
+Value = styled.span(t"""
     color: var(--ink);
     font-size: clamp(56px, 8vw, 80px);
     line-height: 1;
@@ -77,7 +90,7 @@ Value = styled(span, t"""
     font-variant-numeric: tabular-nums;
 """)
 
-Reading = styled(p, t"""
+Reading = styled.p(t"""
     margin: 0;
     display: flex;
     flex-wrap: wrap;
@@ -89,7 +102,7 @@ Reading = styled(p, t"""
     line-height: 1.6;
 """)
 
-Result = styled(span, t"""
+Result = styled.span(t"""
     color: var(--ink);
     font-weight: 650;
     font-variant-numeric: tabular-nums;

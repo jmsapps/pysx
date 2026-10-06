@@ -11,23 +11,25 @@ from pysx import (
     signal,
 )
 
-from .components import Checkbox as Checkbox
-from .components import Clear as Clear
-from .components import CompactPage as CompactPage
-from .components import Description as Description
-from .components import Eyebrow as Eyebrow
-from .components import Field as Field
-from .components import FilterButton as FilterButton
-from .components import Filters as Filters
-from .components import Form as Form
-from .components import Item as Item
-from .components import List as List
-from .components import Meta as Meta
-from .components import Remove as Remove
-from .components import Row as Row
-from .components import Submit as Submit
-from .components import Text as Text
-from .components import Title as Title
+from .components import (
+    Checkbox,
+    Clear,
+    CompactPage,
+    Description,
+    Eyebrow,
+    Field,
+    FilterButton,
+    Filters,
+    Form,
+    Item,
+    List,
+    Meta,
+    Remove,
+    Row,
+    Submit,
+    Text,
+    Title,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -104,16 +106,26 @@ def app() -> Fragment:
         def remove_item(_e: object) -> None:
             remove(todo.id)
 
-        return html(t"""
+        return html(
+        t"""
             Item(class={"is-done" if todo.done else ""}, data-done={str(todo.done).lower()}):
                 Row:
                     Checkbox(type="checkbox", checked={todo.done}, onChange={toggle_item})
                     Text(class="todo-text"): {todo.text}
                 Remove(type="button", onClick={remove_item}):
                     "Remove"
-        """)
+        """,
+        use=(
+            Checkbox,
+            Item,
+            Remove,
+            Row,
+            Text,
+        ),
+    )
 
-    return html(t"""
+    return html(
+        t"""
         CompactPage:
             header:
                 Eyebrow: "pysx / examples"
@@ -145,4 +157,19 @@ def app() -> Fragment:
             if {has_completed}:
                 Clear(type="button", onClick={clear_completed}):
                     "Clear completed"
-    """)
+    """,
+        use=(
+            Clear,
+            CompactPage,
+            Description,
+            Eyebrow,
+            Field,
+            FilterButton,
+            Filters,
+            Form,
+            List,
+            Meta,
+            Submit,
+            Title,
+        ),
+    )

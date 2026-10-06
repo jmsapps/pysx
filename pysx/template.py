@@ -18,33 +18,51 @@ Fragments = tuple[str, ...]
 def _common_margin(lines: list[str]) -> str:
     """Longest common leading-whitespace prefix, ignoring blank lines."""
     margin: str | None = None
+
     for line in lines:
         stripped = line.lstrip()
+
         if not stripped:
+
             continue
         indent = line[: len(line) - len(stripped)]
+
         if margin is None:
             margin = indent
         elif indent.startswith(margin):
+
             continue
         elif margin.startswith(indent):
             margin = indent
         else:
             cut = 0
+
             for a, b in zip(margin, indent, strict=False):
                 if a != b:
+
                     break
                 cut += 1
             margin = margin[:cut]
+
         if not margin:
+
             break
+
     return margin or ""
 
 
 def _line_starts(strings: Fragments) -> list[str]:
     out: list[str] = []
-    for frag in strings:
-        out.extend(frag.split("\n")[1:])
+
+    for index, frag in enumerate(strings):
+        starts = frag.split("\n")[1:]
+
+        if starts and index < len(strings) - 1:
+            # A following hole makes even a zero-indent line nonblank. This
+            # marker is used only to measure whitespace, never passed to parsing.
+            starts[-1] += "\x00"
+        out.extend(starts)
+
     return out
 
 
@@ -57,22 +75,27 @@ def dedent_fragments(strings: Fragments) -> Fragments:
     would never hit: its __eq__ is identity-based.
     """
     margin = _common_margin(_line_starts(strings))
+
     if not margin:
+
         return strings
 
     width = len(margin)
     last = len(strings) - 1
     out: list[str] = []
+
     for index, frag in enumerate(strings):
         parts = frag.split("\n")
         end = len(parts) - 1
         rest: list[str] = []
+
         for position, line in enumerate(parts[1:], start=1):
             # The final line of a fragment that is followed by a hole is a line
             # *continuation*: its text is only the indentation, and the rest of
             # the line lives in the interpolation. Blanking it would destroy
             # that indentation and the node would reparent to column 0.
             continues = index < last and position == end
+
             if not line.strip() and not continues:
                 rest.append("")
             elif line.startswith(margin):
@@ -80,4 +103,5 @@ def dedent_fragments(strings: Fragments) -> Fragments:
             else:
                 rest.append(line)
         out.append("\n".join([parts[0], *rest]))
+
     return tuple(out)

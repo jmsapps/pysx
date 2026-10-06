@@ -29,7 +29,7 @@ from .lifecycle import Scopes
 from .parser import Conditional, Element, Hole, HoleKind, Node, Skeleton, attr_kind, parse
 from .reactive import Readable, Signal
 from .schema import BOOLEAN_ATTRS, NATIVE_TAGS, normalize_attr
-from .styled import StyledCallable, StyledTag, flatten, global_rules
+from .styled import StyledCallable, StyledTag, VariantClass, flatten, global_rules
 from .styles import (
     CssClass,
     StyleRegistry,
@@ -48,21 +48,46 @@ if TYPE_CHECKING:
 class Fragment:
     template: Template
     namespace: Mapping[str, object] | None = None
-    root_classes: tuple[str, ...] = ()
+    root_classes: tuple[object, ...] = ()
     themes: Themes | None = None
     rules: tuple[tuple[str, str], ...] = ()
+
+
+type Used = Callable[..., object] | ElementTag | StyledTag
+
+
+def _used(components: tuple[Used, ...]) -> dict[str, object]:
+    found: dict[str, object] = {}
+
+    for component in components:
+        if not callable(component) and not isinstance(  # pyright: ignore[reportUnnecessaryIsInstance]
+            component, (ElementTag, StyledTag)
+        ):
+            raise TypeError(f"use= takes components, received {type(component).__name__}")
+        name = getattr(component, "__name__", None)
+
+        if isinstance(name, str):
+            found[name] = component
+
+    return found
 
 
 def html(
     template: Template,
     *,
+    use: tuple[Used, ...] = (),
     namespace: Mapping[str, object] | None = None,
     themes: Themes | None = None,
 ) -> Fragment:
     if not isinstance(template, Template):  # pyright: ignore[reportUnnecessaryIsInstance]
-        raise TypeError('html() takes a t-string; did you write f""" instead of t"""?')
 
-    return Fragment(template, dict(namespace) if namespace is not None else None, themes=themes)
+        raise TypeError('html() takes a t-string; did you write f""" instead of t"""?')
+    bindings = _used(use)
+
+    if namespace is not None:
+        bindings.update(namespace)
+
+    return Fragment(template, bindings or None, themes=themes)
 
 
 def _template_skeleton(template: Template) -> Skeleton:
@@ -70,10 +95,12 @@ def _template_skeleton(template: Template) -> Skeleton:
 
     for index, _kind, name in skeleton.holes:
         if name is None or normalize_attr(name) not in {"css", "stylevars", "cssvars"}:
+
             continue
         interpolation = template.interpolations[index]
 
         if interpolation.conversion is not None or interpolation.format_spec:
+
             raise ValueError("CSS attribute interpolation metadata is unsupported")
 
     return skeleton
@@ -95,10 +122,12 @@ class Each[T]:
 def each[T](
     source: Readable[Iterable[T]], item: Callable[[T], Fragment], *, key: Callable[[T], object]
 ) -> Each[T]:
+
     return Each(source, item, key)
 
 
 def _read(value: object) -> object:
+
     return cast("Readable[object]", value)() if isinstance(value, Signal) else value
 
 
@@ -107,37 +136,45 @@ def _attr_text(value: object, name: str = "") -> str | None:
     value = _read(value)
 
     if value is None:
+
         return None
 
     if name in BOOLEAN_ATTRS:
+
         return None if value is False or value == 0 or value == "false" else ""
 
     if isinstance(value, bool):
+
         return str(value).lower()
 
     return str(value)
 
 
 def _class_text(value: object) -> str:
-    if isinstance(value, CssClass):
+    if isinstance(value, (CssClass, VariantClass)):
+
         return value()
     value = _read(value)
 
     if value is None or value is False:
+
         return ""
 
     if isinstance(value, dict):
+
         return " ".join(
             str(key) for key, enabled in cast("dict[object, object]", value).items() if enabled
         )
 
     if isinstance(value, (list, tuple, set)):
+
         return " ".join(str(item) for item in cast("Iterable[object]", value))
 
     return str(value)
 
 
 def _merge_classes(values: Iterable[str]) -> str:
+
     return " ".join(dict.fromkeys(" ".join(values).split()))
 
 
@@ -146,6 +183,7 @@ def _merge_classes(values: Iterable[str]) -> str:
 
 class Watcher:
     def refresh(self) -> list[Op]:
+
         raise NotImplementedError
 
 
@@ -159,6 +197,7 @@ class TextWatcher(Watcher):
         now = str(self.signal())
 
         if now == self.last:
+
             return []
         self.last = now
 
@@ -177,6 +216,7 @@ class CondWatcher(Watcher):
         now = bool(self.signal())
 
         if now == self.last:
+
             return [op for watcher in self.children for op in watcher.refresh()]
         self.last = now
         markup, self.children = self.render_branch(now)
@@ -195,6 +235,7 @@ class AttrWatcher(Watcher):
         now = _attr_text(self.signal, self.name)
 
         if now == self.last:
+
             return []
         self.last = now
 
@@ -210,6 +251,7 @@ class BindingWatcher(Watcher):
         now = self.binding.value()
 
         if now == self.last:
+
             return []
         self.last = now
 
@@ -227,12 +269,14 @@ class ClassWatcher(Watcher):
     last: str
 
     def merged(self) -> str:
+
         return _merge_classes(_class_text(value) for value in self.sources)
 
     def refresh(self) -> list[Op]:
         now = self.merged()
 
         if now == self.last:
+
             return []
         self.last = now
 
@@ -269,6 +313,7 @@ class InlineStyleWatcher(Watcher):
         value = self.value()
 
         if value == self.last:
+
             return []
         self.last = value
 
@@ -300,6 +345,7 @@ class ListWatcher(Watcher):
         changed = {k: v for k, v in markup.items() if self.markup.get(k) != v}
 
         if order == self.order and not changed:
+
             return []
         self.order, self.markup = order, markup
 
@@ -342,6 +388,7 @@ class Rendered:
         self.event_handlers.clear()
 
         if errors:
+
             raise ExceptionGroup("render cleanup failed", errors)
 
 
@@ -378,6 +425,7 @@ class _Emitter:
         and a click arriving after a patch still resolves."""
 
         if not self.handler_prefix:
+
             return f"h{hole_index}"
         hid = f"h{self.handler_prefix}{self.handler_n}"
         self.handler_n += 1
@@ -389,17 +437,29 @@ class _Emitter:
 
         return f"{self.prefix}e{self.element_ids}"
 
-    def _resolve(self, tag: str) -> tuple[str, list[str]]:
-        found = self.ns.get(tag)
+    def _resolve(self, tag: str | Hole) -> tuple[str, list[object]]:
+        found = self.values[tag.index] if isinstance(tag, Hole) else self.ns.get(tag)
 
         if isinstance(found, ElementTag):
+
             return found.name, []
 
         if isinstance(found, StyledTag):
             self.out.styles.add(self.prefix, found.css_class, flatten(found.declarations))
+
+            for _name, cls, body in found.variants:
+                self.out.styles.add(self.prefix, cls, body)
+
             return found.tag, [found.css_class]
 
+        if isinstance(tag, Hole):
+
+            raise TypeError(
+                f"component tag requires an element or callable; received {type(found).__name__}"
+            )
+
         if not tag[:1].isupper():
+
             return tag, []
 
         raise NameError(f"unknown component {tag!r}")
@@ -407,7 +467,7 @@ class _Emitter:
     # -- nodes ------------------------------------------------------------
 
     def nodes(
-        self, nodes: list[Node], *, static: bool = False, root_classes: tuple[str, ...] = ()
+        self, nodes: list[Node], *, static: bool = False, root_classes: tuple[object, ...] = ()
     ) -> str:
         parts: list[str] = []
 
@@ -423,7 +483,7 @@ class _Emitter:
 
         return "".join(parts)
 
-    def hole(self, hole: Hole, *, static: bool, root_classes: tuple[str, ...] = ()) -> str:
+    def hole(self, hole: Hole, *, static: bool, root_classes: tuple[object, ...] = ()) -> str:
         value = self.values[hole.index]
 
         if isinstance(value, Children):
@@ -459,6 +519,7 @@ class _Emitter:
             )
 
         if isinstance(value, Each):
+
             return self.list_slot(
                 hole, cast("Each[object]", value), static=static, root_classes=root_classes
             )
@@ -472,7 +533,7 @@ class _Emitter:
         return f'<pysx-slot id="{escaped_slot}">{_htmlmod.escape(text)}</pysx-slot>'
 
     def conditional(
-        self, node: Conditional, *, static: bool, root_classes: tuple[str, ...] = ()
+        self, node: Conditional, *, static: bool, root_classes: tuple[object, ...] = ()
     ) -> str:
         value = self.values[node.hole.index]
         slot = f"{self.prefix}{node.hole.index}"
@@ -485,6 +546,7 @@ class _Emitter:
             self.out.scopes.release(f"{scope_base}{int(not flag)}:")
             self.out.dom.revoke(prefix)
             self.out.styles.release(prefix)
+
             for hid in tuple(self.out.handlers):
                 if self.out.handler_owners.get(hid, "").startswith(prefix):
                     self.out.handlers.pop(hid, None)
@@ -528,7 +590,7 @@ class _Emitter:
         spec: Each[object],
         *,
         static: bool = False,
-        root_classes: tuple[str, ...] = (),
+        root_classes: tuple[object, ...] = (),
     ) -> str:
         slot = f"{self.prefix}{hole.index}"
         scope_slot = f"{self.scope_prefix}{hole.index}"
@@ -536,6 +598,7 @@ class _Emitter:
         def render_items(items: Iterable[object]) -> tuple[list[str], dict[str, str]]:
             self.out.dom.revoke(f"{slot}:")
             self.out.styles.release(f"{slot}:")
+
             for hid in tuple(self.out.handlers):
                 if hid.startswith(f"h{slot}:"):
                     self.out.handlers.pop(hid, None)
@@ -551,6 +614,7 @@ class _Emitter:
                     key = str(spec.key(item))
 
                     if key in markup:
+
                         raise ValueError(f"duplicate list key {key!r}")
                     order.append(key)
                     markup[key] = self.item(
@@ -560,6 +624,7 @@ class _Emitter:
             return order, markup
 
         order, markup = render_items(spec.source())
+
         if not static:
             self.out.watchers.append(
                 ListWatcher(slot, spec.source, spec, render_items, order, markup)
@@ -576,7 +641,7 @@ class _Emitter:
         key: str,
         *,
         scope_slot: str,
-        root_classes: tuple[str, ...] = (),
+        root_classes: tuple[object, ...] = (),
     ) -> str:
         token = dom_context.set(self.out.dom)
         owner_token = style_owner.set(f"{slot}:{key}:")
@@ -604,10 +669,11 @@ class _Emitter:
         )
 
         # Tag the item root so the client can reorder by key.
+
         return markup.replace(">", f' data-pysx-key="{_htmlmod.escape(key, quote=True)}">', 1)
 
     def call_component(
-        self, fn: Component, el: Element, *, static: bool, root_classes: tuple[str, ...]
+        self, fn: Component, el: Element, *, static: bool, root_classes: tuple[object, ...]
     ) -> str:
         props = {
             name: self.values[value.index] if isinstance(value, Hole) else value
@@ -624,6 +690,7 @@ class _Emitter:
         try:
             target = fn.base if isinstance(fn, StyledCallable) else fn
             with self.out.scopes.enter(scope_prefix, identity_for(target)):
+
                 return self._component_body(
                     fn, target, el, props, prefix, scope_prefix, static, root_classes
                 )
@@ -639,8 +706,18 @@ class _Emitter:
         prefix: str,
         scope_prefix: str,
         static: bool,
-        root_classes: tuple[str, ...],
+        root_classes: tuple[object, ...],
     ) -> str:
+        variant: VariantClass | None = None
+
+        if isinstance(fn, StyledCallable):
+            variant = VariantClass(fn.variants, props.pop("variant", None))
+            variant()
+            self.out.styles.apply((fn.css_class,))
+
+            for _key, cls, body in fn.variants:
+                self.out.styles.add(prefix, cls, body)
+                self.out.styles.apply((cls,))
         children_parameter = signature(target, annotation_format=Format.STRING).parameters.get(
             "children"
         )
@@ -655,6 +732,7 @@ class _Emitter:
             result = fn(**props)
 
         if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]
+
             raise TypeError("components must return Template or Fragment")
         fragment = result if isinstance(result, Fragment) else Fragment(result)
         namespace = namespace_for(fn) | dict(fragment.namespace or {})
@@ -672,13 +750,18 @@ class _Emitter:
         return sub.nodes(
             _template_skeleton(fragment.template).root,
             static=static,
-            root_classes=(*fragment.root_classes, *root_classes),
+            root_classes=(*fragment.root_classes, *root_classes, *((variant,) if variant else ())),
         )
 
-    def element(self, el: Element, *, static: bool, root_classes: tuple[str, ...] = ()) -> str:
-        found = self.ns.get(el.tag)
+    def element(self, el: Element, *, static: bool, root_classes: tuple[object, ...] = ()) -> str:
+        found = self.values[el.tag.index] if isinstance(el.tag, Hole) else self.ns.get(el.tag)
 
-        if callable(found) and el.tag not in NATIVE_TAGS:
+        if (
+            callable(found)
+            and not isinstance(found, StyledTag)
+            and (isinstance(el.tag, Hole) or el.tag not in NATIVE_TAGS)
+        ):
+
             return self.call_component(
                 cast("Component", found), el, static=static, root_classes=root_classes
             )
@@ -686,12 +769,21 @@ class _Emitter:
         classes: list[object] = list(scoped)
         classes.extend(root_classes)
 
+        if isinstance(found, StyledTag):
+            variant = next((value for name, value in el.attrs if name == "variant"), None)
+            source = self.values[variant.index] if isinstance(variant, Hole) else variant
+            classes.append(VariantClass(found.variants, source))
+
         if tag == "fragment":
             if el.attrs:
+
                 raise ValueError("fragment does not accept DOM attributes")
 
             return self.nodes(el.children, static=static, root_classes=(*scoped, *root_classes))
-        self.out.styles.apply((*scoped, *root_classes))
+        self.out.styles.apply(_class_text(value) for value in classes if _class_text(value))
+
+        if isinstance(found, StyledTag):
+            self.out.styles.apply(cls for _name, cls, _body in found.variants)
         attrs: list[str] = []
         typed_types: list[str] = []
         element_id: str | None = None
@@ -702,6 +794,7 @@ class _Emitter:
         }
 
         if sum(attr_kind(name) is HoleKind.BIND for name, _value in el.attrs) > 1:
+
             raise TypeError("a form control accepts exactly one binding")
         control_type = str(_read(raw_attributes.get("type", "text")))
         multiple = _attr_text(raw_attributes.get("multiple"), "multiple") is not None
@@ -732,18 +825,24 @@ class _Emitter:
                 self.out.watchers.append(style_watcher)
 
         for name, value in el.attrs:
+            if name == "variant" and isinstance(found, StyledTag):
+
+                continue
             kind = self._kind(name)
             raw_name = name
             name = normalize_attr(name) if el.namespace == "html" else name
 
             if normalize_attr(name) in {"css", "stylevars", "cssvars"}:
+
                 continue
 
             if name == "style" and variables is not None:
+
                 continue
 
             if not isinstance(value, Hole):
                 if kind is HoleKind.EVENT:
+
                     raise TypeError("event attributes require an interpolated callable")
                 text = _attr_text(value, name)
 
@@ -761,12 +860,14 @@ class _Emitter:
 
             if name == "ref":
                 if not isinstance(raw, DomRef):
+
                     raise TypeError("ref requires a DomRef")
                 token = self.out.dom.mount(raw, self.prefix)
                 attrs.append(f' data-pysx-ref="{token}"')
 
                 if raw.imperative:
                     if el.children:
+
                         raise DomError("imperative zones must have no reactive children")
                     attrs.append(' data-pysx-imperative="true"')
 
@@ -790,6 +891,7 @@ class _Emitter:
                     continue
 
                 if not callable(raw):
+
                     raise TypeError("event hole requires a callable")
                 self.out.handlers[hid] = cast("Callable[[object], object]", raw)
                 self.out.handler_owners[hid] = self.prefix
@@ -860,7 +962,11 @@ class _Emitter:
                 else:
                     attrs.append(f' {name}="{_htmlmod.escape(text, quote=True)}"')
 
-        if not static and any(isinstance(value, (Signal, CssClass)) for value in classes):
+        if not static and any(
+            isinstance(value, (Signal, CssClass))
+            or (isinstance(value, VariantClass) and isinstance(value.source, Signal))
+            for value in classes
+        ):
             element_id = element_id or self._next_element_id()
             watcher = ClassWatcher(
                 element_id,
@@ -887,6 +993,7 @@ class _Emitter:
         open_tag = f"<{tag}{''.join(attrs)}>"
 
         if tag in VOID:
+
             return open_tag
         content = (
             _htmlmod.escape(initial_value)
@@ -897,6 +1004,7 @@ class _Emitter:
         return open_tag + content + f"</{tag}>"
 
     def _kind(self, name: str) -> HoleKind:
+
         return attr_kind(name)
 
 
@@ -915,6 +1023,7 @@ def render(
             result = component_fn()
 
         if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]
+
             raise TypeError("components must return Template or Fragment")
         fragment = result if isinstance(result, Fragment) else Fragment(result)
 

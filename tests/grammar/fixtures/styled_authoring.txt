@@ -1,0 +1,36 @@
+from pysx import html, styled
+from shared import Card
+
+Panel = styled.section(t"""
+    padding: 16px;
+    &:hover:
+      border-color: var(--accent);
+    @media (max-width: 600px):
+      padding: 12px;
+""")
+TreePanel = styled(Panel)(t"""
+    background: white;
+""")
+Spaced = styled(TreePanel)(
+    t"""
+        letter-spacing: 0.02em;
+    """
+)
+Dotted = styled(shared.Card)(t"""
+    outline-offset: 2px;
+""")
+Action = styled.button(
+    t"""
+        min-height: 44px;
+    """,
+    variants={"ghost": t"""
+        opacity: 0.5;
+    """},
+)
+view = html(t"""
+    {TreePanel}(id="preview"):
+      {Card}(label="Imported"):
+        span: "Child"
+      {shared.Card}: "Attribute reference"
+""")
+AFTER_SENTINEL = "plain Python"

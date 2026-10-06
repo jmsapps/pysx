@@ -11,7 +11,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
   suite = args[i + 1];
 }
-if (suite && !["injection", "styling_diagnostics", "composition_recursive"].includes(suite)) throw new Error("empty grammar selection");
+if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring"].includes(suite)) throw new Error("empty grammar selection");
 const host = pylanceHost();
 const injectionPath = process.env.PYSX_INJECTION_GRAMMAR ??
   fileURLToPath(new URL("../../editor/syntaxes/pysx.injection.tmLanguage.json", import.meta.url));
@@ -36,10 +36,11 @@ try {
     if (!condition) throw new Error(`scope assertion failed: ${label}`);
     assertions++;
   };
-  const fixtures = suite === "composition_recursive" ? ["composition"] :
+  const fixtures = suite === "styled_authoring" ? ["styled_authoring"] :
+    suite === "composition_recursive" ? ["composition"] :
     suite === "styling_diagnostics" ? ["styling"] :
     suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
-    ["counter", "unclosed_paren", "odd_quote", "styling", "composition"];
+    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring"];
   for (const fixture of fixtures) {
     const lines = readFileSync(new URL(`fixtures/${fixture}.txt`, import.meta.url), "utf8").split("\n");
     let stack = textmate.INITIAL;
@@ -55,6 +56,26 @@ try {
     const sentinel = result.find((token) => token.text.includes("AFTER_SENTINEL"));
     const terminator = result.findIndex((token, index) => index > 0 &&
       token.text === '"""' && result[index - 1].scopes.some((scope) => scope.includes("pysx")));
+    if (fixture === "styled_authoring") {
+      for (const [value, scope] of [
+        ["padding", "support.type.property-name.css"],
+        ["background", "support.type.property-name.css"],
+        ["&", "entity.other.attribute-name.parent-selector.css"],
+        ["letter-spacing", "support.type.property-name.css"],
+        ["outline-offset", "support.type.property-name.css"],
+        ["min-height", "support.type.property-name.css"],
+        ["opacity", "support.type.property-name.css"],
+        ["@media", "keyword.control.at-rule.css"],
+        ["label", "entity.other.attribute-name.pysx"],
+        ["Child", "string.quoted.double.pysx"],
+      ]) check(result.some(token => token.text.includes(value) && token.scopes.includes(scope)), `${value}: ${scope}`);
+      for (const value of ["TreePanel", "Card", "shared"]) {
+        check(result.some(token => token.text.trim() === value && token.scopes.includes("meta.embedded.inline.python")), `${value}: genuine Python tag reference`);
+      }
+      check(result.some(token => token.text === "ghost" && !token.scopes.some(scope => scope.includes("css"))), "mapping keys stay Python");
+      check(sentinel && !sentinel.scopes.some(scope => scope.includes("pysx") || scope.includes("css") || scope.includes("function-call")), "authoring has no scope leakage");
+      continue;
+    }
     if (fixture === "styling") {
       for (const [value, scope] of [
         ["color", "support.type.property-name.css"],

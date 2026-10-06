@@ -1,6 +1,6 @@
 from pysx import css, div, global_style, html, styled
 
-Panel = styled(div, t"""
+Panel = styled.div(t"""
     /* CSS_COMMENT */
     color: #ff00aa;
     --accent: red;
@@ -12,8 +12,7 @@ snapshot = css(t"""
 global_style("""
     body { background: var(--accent); }
 """)
-Parent = styled(
-    Panel,
+Parent = styled(Panel)(
     t"""
         border-radius: 2px;
         border-left: 6px solid var(--preview-accent, var(--accent, #6554d9));

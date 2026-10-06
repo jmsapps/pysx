@@ -34,9 +34,7 @@ global_style("""
     }
     button, input { font: inherit; }
     button { transition: background-color 150ms, border-color 150ms, box-shadow 150ms; }
-    button:hover { filter: brightness(0.96); }
-    button:active { transform: translateY(1px); }
-    button:focus-visible, input:focus-visible {
+    input:focus-visible {
       outline: 3px solid #a99cf2;
       outline-offset: 3px;
     }

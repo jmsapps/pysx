@@ -1,21 +1,18 @@
 """Reusable combobox and roving-focus controls using public browser capabilities."""
 
-from pysx import BrowserEvent, Dom, Fragment, derived, html, native, on_event, signal, span, styled
+from pysx import BrowserEvent, Dom, Fragment, derived, html, native, on_event, signal, styled
 
 from .controls import Action, Actions
 from .forms import Field, SecondaryAction
 
-ColorSwatch = styled(
-    span,
-    t"""
+ColorSwatch = styled.span(t"""
     display: inline-block;
     width: 32px;
     height: 32px;
     flex-shrink: 0;
     border-radius: 8px;
     border: 1px solid var(--border);
-""",
-)
+""")
 
 
 def event_controls() -> Fragment:

@@ -35,7 +35,7 @@ def test_reactive_css_sessions_themes_and_styles() -> None:
 
         return html(
             t"""
-                div(id="styled" css={css} class={classes} styleVars={({"local": color})}): "hello"
+                div(id="styled" css={css} class={classes} styleVars={ ({"local": color}) }): "hello"
                 button(id="change" onClick={change}): "Change"
             """,
             themes=themes,
@@ -70,11 +70,12 @@ def test_reactive_css_branch_cleanup_and_shared_rule_counts() -> None:
     variable = signal("4px")
 
     def app() -> Fragment:
+
         return html(
             t"""
                 div(css="color: red"): "retained"
                 if {visible}:
-                    div(css={css} styleVars={({"gap": variable})}): "owned"
+                    div(css={css} styleVars={ ({"gap": variable}) }): "owned"
             """
         )
 
@@ -104,9 +105,11 @@ def test_reactive_css_rows_cleanup_and_order() -> None:
     rows = signal(["red", "blue"])
 
     def item(color: str) -> Fragment:
+
         return html(t"\ndiv(css={'color: ' + color}): {color}")
 
     def app() -> Fragment:
+
         return html(t"\nsection: {each(rows, item, key=lambda row: row)}")
 
     session = Session(app)
@@ -127,7 +130,7 @@ def test_reactive_css_runtime_definitions_do_not_enter_shared_registry() -> None
     before = stylesheet()
 
     def app() -> Fragment:
-        local = styled(div, Template("color: rgb(12, 34, 56)"))
+        local = styled(div)(Template("color: rgb(12, 34, 56)"))
         global_style("body { background: rgb(65, 43, 21) }")
 
         return html(t'\nLocal: "private"', namespace={"Local": local})
@@ -135,6 +138,7 @@ def test_reactive_css_runtime_definitions_do_not_enter_shared_registry() -> None
     first = Session(app)
 
     def other_app() -> Fragment:
+
         return html(t'\ndiv: "other"')
 
     other = Session(other_app)
@@ -174,9 +178,10 @@ def test_reactive_css_style_merge_and_literal_deduplication() -> None:
     style = signal("color:red")
 
     def app() -> Fragment:
+
         return html(
             t"""
-                div(css={t"padding: 1px"} style={style} styleVars={({"gap": value})}): "one"
+                div(css={t"padding: 1px"} style={style} styleVars={ ({"gap": value}) }): "one"
                 div(css="padding: 1px"): "two"
             """
         )
@@ -202,6 +207,7 @@ def test_reactive_css_stylesheet_precedes_class_in_reverse_update_order() -> Non
     css = signal("color: red")
 
     def app() -> Fragment:
+
         return html(t'\ndiv(class={classes} css={css}): "ordered"')
 
     session = Session(app)
@@ -219,12 +225,14 @@ def test_reactive_css_stylesheet_precedes_class_in_reverse_update_order() -> Non
 
 def test_reactive_css_preconstructed_callable_fragment_retains_its_rule() -> None:
     def base() -> Fragment:
+
         return html(t'\ndiv: "prebuilt"')
 
-    styled_base = styled(base, t"color: rgb(13, 24, 35)")
+    styled_base = styled(base)(t"color: rgb(13, 24, 35)")
     prebuilt = styled_base()
 
     def app() -> Fragment:
+
         return html(t"\nsection: {prebuilt}")
 
     session = Session(app)
@@ -242,6 +250,7 @@ def test_reactive_css_typed_native_authoring() -> None:
     value = signal("red")
 
     def app() -> Fragment:
+
         return native.Div("native", css=t"color: var(--ink)", style_vars={"ink": value})
 
     session = Session(app)
@@ -257,9 +266,10 @@ def test_reactive_css_typed_native_authoring() -> None:
 
 
 def test_runtime_css_outranks_the_styled_class_on_the_same_element() -> None:
-    card = styled(div, t"padding: 4px")
+    card = styled(div)(t"padding: 4px")
 
     def app() -> Fragment:
+
         return html(t'\nCard(css="padding: 11px"): "x"', namespace={"Card": card})
 
     result = render(app)

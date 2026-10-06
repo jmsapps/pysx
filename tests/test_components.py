@@ -20,16 +20,19 @@ if TYPE_CHECKING:
 
 
 def sample(*, title: str, children: Children | None = None) -> Template:
+
     return t"\nsection: {title}; {children if children is not None else ''}"
 
 
 @pytest.mark.parametrize("form", ["function", "alias", "nested", "partial", "instance"])
 def test_callable_return_callable_dispatch_forms(form: str) -> None:
     def nested(*, title: str, children: Children | None = None) -> Fragment:
+
         return html(sample(title=title, children=children))
 
     class Factory:
         def __call__(self, *, title: str, children: Children | None = None) -> Template:
+
             return sample(title=title, children=children)
 
     candidates = {
@@ -41,6 +44,7 @@ def test_callable_return_callable_dispatch_forms(form: str) -> None:
     }
 
     def app() -> Fragment:
+
         return html(
             t'\nWidget(title="hello"):\n  span: "child"', namespace={"Widget": candidates[form]}
         )
@@ -79,6 +83,7 @@ def test_callable_return_callable_dispatch_caller_children_structure_and_namespa
         return html(t"\narticle: {children}", namespace={"Caller": em})
 
     def app() -> Fragment:
+
         return html(t'\nChild:\n  Caller: "owned"', namespace={"Child": child, "Caller": strong})
 
     result = render(app)
@@ -93,9 +98,11 @@ def test_callable_return_callable_dispatch_caller_children_structure_and_namespa
 )
 def test_callable_return_callable_dispatch_root_exposure(body: str) -> None:
     def child() -> Template:
+
         return Template(body)
 
     def app() -> Fragment:
+
         return html(t"\nChild:", namespace={"Child": child})
 
     result = render(app)
@@ -105,6 +112,7 @@ def test_callable_return_callable_dispatch_root_exposure(body: str) -> None:
 
 def test_callable_return_callable_dispatch_invalid_return() -> None:
     def app() -> Fragment:
+
         return html(t"\nBad:", namespace={"Bad": lambda: "invalid"})
 
     with pytest.raises(TypeError, match="Template or Fragment"):
@@ -113,6 +121,7 @@ def test_callable_return_callable_dispatch_invalid_return() -> None:
 
 def test_callable_return_callable_dispatch_imported_alias() -> None:
     def app() -> Fragment:
+
         return html(t"\nImported:", namespace={"Imported": imported_app})
 
     result = render(app)
@@ -141,11 +150,13 @@ def test_callable_return_callable_dispatch_no_frame_retention() -> None:
 
 def test_callable_return_callable_dispatch_leaves_native_tags_unshadowed() -> None:
     def shadow() -> Fragment:
+
         return html(t'\nspan: "shadow"')
 
     reserved = ("div", "object", "template", "var", "math")
 
     def main() -> Fragment:
+
         return html(
             t"""
                 main:
@@ -167,6 +178,7 @@ def test_callable_return_callable_dispatch_leaves_native_tags_unshadowed() -> No
 
 def test_callable_return_lowercase_alias() -> None:
     def app() -> Fragment:
+
         return html(t'\ncard(title="lowercase"):', namespace={"card": sample})
 
     result = render(app)
@@ -191,6 +203,7 @@ def test_callable_return_props_and_escaped_strings() -> None:
         return t"\nspan: {value}; {label}; {onClick}"
 
     def app() -> Fragment:
+
         return html(
             t"\nChild(value={live}, onClick={'<script>unsafe</script>'})",
             namespace={"Child": child},
@@ -208,17 +221,40 @@ def test_callable_return_props_and_escaped_strings() -> None:
 @pytest.mark.parametrize("attrs", ["", '(label="extra")'])
 def test_callable_return_missing_or_unexpected_props(attrs: str) -> None:
     def child(*, title: str) -> Template:
+
         return t"\nspan: {title}"
 
     def app() -> Fragment:
+
         return html(Template(f"\nChild{attrs}:"), namespace={"Child": child})
 
     with pytest.raises(TypeError):
         render(app)
 
 
-def test_template_import_usage_real_checkers(tmp_path: Path) -> None:
-    """Explicit namespaces are useful bindings, rather than unused-import exemptions."""
+def test_callable_return_use_binds_and_validates() -> None:
+    from typing import Any
+
+    def card(*, label: str) -> Template:
+
+        return t"\nstrong: {label}"
+
+    def app() -> Fragment:
+
+        return html(t'\ncard(label="local"):', use=(card,))
+
+    body = render(app).body
+    assert body.startswith("<strong>")
+    assert "local" in body
+    invalid: Any = ("card",)
+
+    with pytest.raises(TypeError, match="use= takes components"):
+        html(t'\np: "x"', use=invalid)
+
+
+@pytest.mark.parametrize("form", ["use", "hole", "namespace"])
+def test_template_import_usage_real_checkers(tmp_path: Path, form: str) -> None:
+    """Template references are genuine usages, rather than unused-import exemptions."""
     import json
     import subprocess
     import sys
@@ -244,8 +280,12 @@ def test_template_import_usage_real_checkers(tmp_path: Path) -> None:
         "from shared import Card\n"
         "from pathlib import PurePath\n"
         "def app() -> Fragment:\n"
-        "    return html(t'\\nShared:', namespace={'Shared': Card})\n"
-        "assert render(app).body == '<strong>ordinary import</strong>'\n"
+        + {
+            "use": "    return html(t'\\nCard:', use=(Card,))\n",
+            "hole": "    return html(t'\\n{Card}:')\n",
+            "namespace": "    return html(t'\\nShared:', namespace={'Shared': Card})\n",
+        }[form]
+        + "assert render(app).body == '<strong>ordinary import</strong>'\n"
     )
 
     for checker in ("ruff", "pyright"):
@@ -320,3 +360,50 @@ def test_composition_recursive_shared_panel_and_checker(tmp_path: Path) -> None:
         assert "evaluated once and frozen" in problems[0]["message"]
     finally:
         result.dispose()
+
+
+def test_component_tags_direct_reference_forms_and_content() -> None:
+    from functools import partial
+    from types import SimpleNamespace
+
+    from pysx import native, styled
+
+    def local(*, label: str, children: Children) -> Fragment:
+
+        return html(t"\nsection:\n  {label}\n  {children}")
+
+    alias = local
+    fixed = partial(alias, label="partial")
+    shared = SimpleNamespace(Card=styled.div(t"padding: 4px"))
+    result = render(
+        lambda: html(t"""
+        {local}(label="local"):
+          {shared.Card}:
+            {native.Strong}: "nested"
+        {fixed}:
+          span: "partial-child"
+        {native.Br}()
+        {42}
+        p: {local}
+    """)
+    )
+    assert "<strong>nested</strong>" in result.body
+    assert "partial-child" in result.body
+    assert "<br>" in result.body
+    assert "42" in result.body
+    assert "function" in result.body
+
+
+def test_component_tags_structure_cache_never_keeps_values() -> None:
+    from pysx import native
+
+    first = render(lambda: html(t'\n{native.Strong}: "one"'))
+    second = render(lambda: html(t'\n{native.Em}: "one"'))
+    assert first.body == "<strong>one</strong>"
+    assert second.body == "<em>one</em>"
+
+
+@pytest.mark.parametrize("value", [None, 42, "div", ["div"]])
+def test_component_tags_unsupported_runtime_values(value: object) -> None:
+    with pytest.raises(TypeError, match=f"received {type(value).__name__}"):
+        render(lambda: html(t'\n{value}: "child"'))
