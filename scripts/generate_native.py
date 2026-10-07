@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import keyword
 import re
 import textwrap
 from pathlib import Path
@@ -16,6 +15,7 @@ from pysx.schema import (
     GLOBAL_ATTRS,
     NUMBER_ATTRS,
     TAG_ATTRS,
+    python_attr,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,28 +23,23 @@ TARGET = ROOT / "pysx" / "native.py"
 CLIENT = ROOT / "pysx" / "static" / "client.js"
 STYLED = ROOT / "pysx" / "styled_native.py"
 EVENTS_DECLARATION = re.compile(r"const EVENTS = \[[^\]]*\];")
-ALIASES = {"class": "class_name", "for": "html_for", "async": "async_", "default": "default_"}
 
 
 def spelling(attr: str) -> str:
-    name = ALIASES.get(attr, attr.replace("-", "_"))
 
-    return name + "_" if keyword.iskeyword(name) else name
+    return python_attr(attr, event_alias=False)
 
 
 def annotation(attr: str, tag: str = "") -> str:
     if attr.startswith("on"):
-
         return "Callable[[object], object] | EventHandler"
 
     if attr in BOOLEAN_ATTRS:
-
         return "bool | Signal[bool] | None"
 
     if attr in NUMBER_ATTRS and not (
         attr == "value" and tag in {"input", "button", "option", "data", "param"}
     ):
-
         return "int | float | str | Signal[int] | Signal[float] | Signal[str] | None"
 
     return "str | Signal[str] | None"
@@ -172,7 +167,6 @@ def generate_client(current: str) -> str:
     declaration = f"const EVENTS = [\n{body},\n];"
 
     if not EVENTS_DECLARATION.search(current):
-
         raise SystemExit("client.js has no EVENTS declaration to generate")
 
     return EVENTS_DECLARATION.sub(lambda _: declaration, current, count=1)
@@ -188,15 +182,12 @@ def main() -> None:
 
     if args.check:
         if ast.dump(ast.parse(TARGET.read_text())) != ast.dump(ast.parse(source)):
-
             raise SystemExit("native signatures are stale; run the generator")
 
         if CLIENT.read_text() != client:
-
             raise SystemExit("client event delegation is stale; run the generator")
 
         if ast.dump(ast.parse(STYLED.read_text())) != ast.dump(ast.parse(styled_source)):
-
             raise SystemExit("styled signatures are stale; run the generator")
     else:
         TARGET.write_text(source)

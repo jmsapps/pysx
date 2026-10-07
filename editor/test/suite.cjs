@@ -12,6 +12,7 @@ async function until(predicate, label) {
   throw new Error(`timeout waiting for ${label}`);
 }
 exports.run = async function () {
+  if (process.env.PYSX_EDITOR_SUITE === "authoring") return require("./authoring_suite.cjs").run();
   const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
   assert(extension, "fresh extension registered");
   await extension.activate();

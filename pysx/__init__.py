@@ -52,8 +52,10 @@ from .render import (
     Rendered,
     component,
     each,
+    each_indexed,
     html,
     render,
+    when,
 )
 from .structured import Projection, Structured, dict_key, list_index, project, structured
 from .styled import StyledCallable, StyledTag, global_style, styled, stylesheet
@@ -99,6 +101,7 @@ __all__ = [
     "dict_key",
     "div",
     "each",
+    "each_indexed",
     "effect",
     "eq",
     "form",
@@ -139,4 +142,5 @@ __all__ = [
     "styled",
     "stylesheet",
     "ul",
+    "when",
 ]

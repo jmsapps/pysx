@@ -27,11 +27,4 @@ def app() -> Fragment:
             Card:
                 {controls}
     """,
-        use=(
-            Card,
-            Description,
-            Eyebrow,
-            Page,
-            Title,
-        ),
     )

@@ -7,6 +7,7 @@ dependencies = ["websockets==17.1"]
 
 [project.scripts]
 example = "run_example:app"
+pysx-build = "pysx.build:main"
 
 [build-system]
 requires = ["uv_build==0.11.8"]
@@ -32,6 +33,8 @@ exclude = ["^build/", "^dist/", "^\\.venv/"]
 [tool.pyright]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
+reportUnusedImport = false
+reportUnusedVariable = false
 include = ["."]
 exclude = ["**/node_modules", "**/__pycache__", ".venv", "build", "dist"]
 venvPath = "."
@@ -48,6 +51,10 @@ select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "RUF", "PT", "TC", "ANN", 
 [tool.ruff.lint.per-file-ignores]
 # These modules intentionally expose observable command-line output.
 "pysx/check.py" = ["T201"]
+"pysx/analysis.py" = ["T201"]
+"pysx/quality.py" = ["T201"]
+"pysx/editor_model.py" = ["T201"]
+"pysx/build.py" = ["T201"]
 "pysx/server.py" = ["T201"]
 "editor/build_vsix.py" = ["T201"]
 "scripts/verify.py" = ["T201"]

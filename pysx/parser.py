@@ -473,7 +473,8 @@ def _parse_attrs(sc: _Scan, holes: HoleTable) -> list[tuple[str, str | Hole]]:
         if c is None:
 
             raise PysxSyntaxError("unclosed '(' in attribute list")
-        name = _take_name(sc)
+        start = sc.position()
+        name = LiteralText(_take_name(sc), Span(start, sc.position()))
 
         if not name:
 
@@ -771,7 +772,7 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
     fragments = dedent_fragments(strings)
     lines = _logical_lines(_split_lines(fragments, strings))
 
-    if lines and not _is_blank(lines[0]):
+    if lines and not _is_blank(lines[0]) and any("\n" in text for text in strings):
 
         raise PysxSyntaxError(
             "template must begin with a newline: text on the opening quote line "

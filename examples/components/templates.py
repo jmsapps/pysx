@@ -1,6 +1,6 @@
 """Shared styled surfaces for the template-language example."""
 
-from pysx import styled
+from pysx import Fragment, html, styled
 
 from .controls import Card
 from .page import Page
@@ -14,3 +14,8 @@ GroupPanel = styled(Card)(t"""
 """)
 GroupHeading = styled.h2(t"margin: 0; font-size: 18px;")
 SnapshotLabel = styled.p(t"margin: 0; color: var(--muted);")
+
+
+def snapshot_label(name: str) -> Fragment:
+
+    return html(t"SnapshotLabel: {name}")

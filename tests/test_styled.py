@@ -289,9 +289,10 @@ def test_styling_diagnostics_fresh_vsix_contents(tmp_path: Path) -> None:
     destination = tmp_path / "editor"
     destination.mkdir()
 
-    for name in ("build_vsix.py", "package.json", "extension.js"):
+    for name in ("build_vsix.py", "package.json", "extension.js", "authoring.js"):
         shutil.copyfile(root / "editor" / name, destination / name)
     shutil.copytree(root / "editor" / "syntaxes", destination / "syntaxes")
+    shutil.copytree(root / "editor" / "snippets", destination / "snippets")
     result = subprocess.run(
         [sys.executable, str(destination / "build_vsix.py")],
         capture_output=True,
@@ -305,7 +306,10 @@ def test_styling_diagnostics_fresh_vsix_contents(tmp_path: Path) -> None:
     with zipfile.ZipFile(archive) as package:
         grammar = "syntaxes/pysx.injection.tmLanguage.json"
         assert package.read("extension/" + grammar) == (root / "editor" / grammar).read_bytes()
-        assert b"endLine" in package.read("extension/extension.js")
+        assert b"endLine" in package.read("extension/authoring.js")
+        assert package.read("extension/snippets/python.json") == (
+            root / "editor" / "snippets" / "python.json"
+        ).read_bytes()
         assert b"support.type.property-name.css" in package.read("extension/" + grammar)
 
 
@@ -314,7 +318,7 @@ def test_styled_callable_wrapper_outranks_its_styled_base() -> None:
 
     def body() -> Fragment:
 
-        return html(t'\nBase: "x"')
+        return Fragment(t'\nBase: "x"')
 
     wrapper = styled(body)(t"padding: 9px")
     result = render(lambda: wrapper(), namespace={"Base": base})

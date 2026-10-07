@@ -21,6 +21,7 @@ from itertools import islice
 from string.templatelib import Interpolation, Template
 from typing import TYPE_CHECKING, cast
 
+from ._compiler_runtime import MissingComponent
 from .bindings import MAX_ROWS, Deferred, Environment, resolve
 from .bindings import Binding as LexicalBinding
 from .composition import Children, Component, identity_for, namespace_for
@@ -72,6 +73,12 @@ class Fragment:
     root_classes: tuple[object, ...] = ()
     themes: Themes | None = None
     rules: tuple[tuple[str, str], ...] = ()
+    bound: bool = False
+
+    def scope_namespace(self, fallback: Mapping[str, object]) -> dict[str, object]:
+        bindings = dict(self.namespace or {})
+
+        return bindings if self.bound else dict(fallback) | bindings
 
 
 type Used = Callable[..., object] | ElementTag | StyledTag
@@ -253,14 +260,84 @@ def component[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
 class Each[T]:
     source: Readable[Iterable[T]]
     item: Callable[[T], Fragment]
-    key: Callable[[T], object]
+    key: Callable[[T], str | int]
+    live: bool = True
+
+
+def _bounded_items[T](source: Iterable[T]) -> tuple[T, ...]:
+    items = tuple(islice(source, MAX_ROWS + 1))
+
+    if len(items) > MAX_ROWS:
+
+        raise ValueError("each exceeds 10000 rows")
+
+    return items
 
 
 def each[T](
-    source: Readable[Iterable[T]], item: Callable[[T], Fragment], *, key: Callable[[T], object]
+    source: Readable[Iterable[T]] | Iterable[T],
+    item: Callable[[T], Fragment],
+    *,
+    key: Callable[[T], str | int],
 ) -> Each[T]:
+    """Build keyed rows; readable sources are live, ordinary iterables are frozen."""
 
-    return Each(source, item, key)
+    if callable(source):
+
+        return Each(source, item, key)
+    items = _bounded_items(source)
+
+    return Each(lambda: items, item, key, live=False)
+
+
+def each_indexed[T](
+    source: Readable[Iterable[T]] | Iterable[T],
+    item: Callable[[int, T], Fragment],
+    *,
+    key: Callable[[T], str | int],
+) -> Each[tuple[int, T]]:
+    """Expose current positions while keeping identity attached to item keys."""
+
+    if callable(source):
+
+        def indexed() -> Iterable[tuple[int, T]]:
+
+            return enumerate(source())
+
+        return each(indexed, lambda row: item(*row), key=lambda row: key(row[1]))
+
+    return each(enumerate(source), lambda row: item(*row), key=lambda row: key(row[1]))
+
+
+@dataclass(frozen=True)
+class _Branch:
+    index: int
+    builder: Callable[[], Fragment]
+
+
+def when(
+    *,
+    conditions: Iterable[tuple[bool | Readable[bool], Callable[[], Fragment]]],
+    default: Callable[[], Fragment] | None = None,
+) -> Each[_Branch]:
+    """Construct only the first matching branch, with live reads and owned cleanup."""
+    choices = _bounded_items(conditions)
+
+    def selected() -> Iterable[_Branch]:
+        for index, (condition, builder) in enumerate(choices):
+            value = cast("object", condition() if callable(condition) else condition)
+
+            if not isinstance(value, bool):
+
+                raise TypeError("when conditions must be bool or readable bool")
+
+            if value:
+
+                return (_Branch(index, builder),)
+
+        return () if default is None else (_Branch(len(choices), default),)
+
+    return each(selected, lambda branch: branch.builder(), key=lambda branch: branch.index)
 
 
 def _read(value: object) -> object:
@@ -612,6 +689,10 @@ class _Emitter:
     def _resolve(self, tag: str | Hole) -> tuple[str, list[object]]:
         found = self._value(tag) if isinstance(tag, Hole) else self.ns.get(tag)
 
+        if isinstance(found, MissingComponent):
+
+            raise NameError(f"unknown component {found.name!r}")
+
         if isinstance(found, ElementTag):
 
             return found.name, []
@@ -732,7 +813,7 @@ class _Emitter:
 
         if isinstance(value, (Fragment, Template)):
             fragment = value if isinstance(value, Fragment) else Fragment(value)
-            namespace = self.ns | dict(fragment.namespace or {})
+            namespace = fragment.scope_namespace(self.ns)
             owner = f"{self.prefix}f{hole.index}:"
 
             for name, body in fragment.rules:
@@ -997,7 +1078,7 @@ class _Emitter:
 
             return html(Template("\n", Interpolation(children, "children")))
 
-        def key(pair: object) -> object:
+        def key(pair: object) -> str | int:
             if node.key is None:
 
                 return cast("tuple[int, object]", pair)[0]
@@ -1031,6 +1112,22 @@ class _Emitter:
         scope_slot = f"{self.scope_prefix}{hole.index}"
 
         def render_items(items: Iterable[object]) -> tuple[list[str], dict[str, str]]:
+            rows: list[tuple[str, object]] = []
+            keys: set[str] = set()
+
+            for item in _bounded_items(items):
+                raw_key = spec.key(item)
+
+                if type(raw_key) not in (str, int):
+
+                    raise TypeError("each keys must be strings or integers, excluding bool")
+                key = str(raw_key)
+
+                if key in keys:
+
+                    raise ValueError(f"duplicate list key {key!r}")
+                keys.add(key)
+                rows.append((key, item))
             self.out.dom.revoke(f"{slot}:")
             self.out.styles.release(f"{slot}:")
 
@@ -1045,12 +1142,7 @@ class _Emitter:
             markup: dict[str, str] = {}
 
             with self.out.scopes.reconcile(f"{scope_slot}:"):
-                for item in items:
-                    key = str(spec.key(item))
-
-                    if key in markup:
-
-                        raise ValueError(f"duplicate list key {key!r}")
+                for key, item in rows:
                     order.append(key)
                     markup[key] = self.item(
                         spec, item, slot, key, scope_slot=scope_slot, root_classes=root_classes
@@ -1060,7 +1152,7 @@ class _Emitter:
 
         order, markup = render_items(spec.source())
 
-        if not static:
+        if not static and spec.live:
             self.out.watchers.append(
                 ListWatcher(slot, spec.source, spec, render_items, order, markup)
             )
@@ -1093,7 +1185,7 @@ class _Emitter:
         for name, body in fragment.rules:
             self.out.styles.add(prefix, name, body)
         sub = _Emitter(
-            self.ns | dict(fragment.namespace or {}),
+            fragment.scope_namespace(self.ns),
             _prepared_values(fragment.template),
             self.out,
             prefix=prefix,
@@ -1175,7 +1267,7 @@ class _Emitter:
 
             raise TypeError("components must return Template or Fragment")
         fragment = result if isinstance(result, Fragment) else Fragment(result)
-        namespace = namespace_for(fn) | dict(fragment.namespace or {})
+        namespace = fragment.scope_namespace(namespace_for(fn))
 
         for name, body in fragment.rules:
             self.out.styles.add(prefix, name, body)
@@ -1479,7 +1571,7 @@ def render(
             out.styles.add("", name, body)
         skeleton = _template_skeleton(fragment.template)
         emitter = _Emitter(
-            namespace_for(component_fn) | dict(namespace or {}) | dict(fragment.namespace or {}),
+            fragment.scope_namespace(namespace_for(component_fn) | dict(namespace or {})),
             _prepared_values(fragment.template),
             out,
         )

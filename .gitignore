@@ -13,6 +13,8 @@ node_modules/
 editor/*.vsix
 editor/pysx-root.json
 .vscode-test/
+_pysx_revision_*/
+_pysx_revision_*.json
 
 # OS
 .DS_Store

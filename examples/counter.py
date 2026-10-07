@@ -34,5 +34,4 @@ def app() -> Fragment:
             Actions:
                 Action(type="button", onClick={increment}): "Increment"
     """,
-        use=(Action, Actions, Description, Eyebrow, Metric, Page, Title, Value),
     )

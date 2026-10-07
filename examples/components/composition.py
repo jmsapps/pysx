@@ -173,7 +173,7 @@ def tree_controls() -> Fragment:
 
     def row(node: Entry) -> Fragment:
 
-        return html(t"\nbranch(node={node}):", use=(branch,))
+        return html(t"\nbranch(node={node}):")
 
     def reverse(_event: BrowserEvent) -> None:
         roots.set(list(reversed(roots())))
@@ -190,5 +190,4 @@ def tree_controls() -> Fragment:
               br:
               Action(id="tree-reverse", onClick={on_event(reverse)}): "Reverse roots"
         """,
-        use=(TreePanel, Action),
     )

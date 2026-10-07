@@ -11,6 +11,56 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
+def test_inline_helper_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = (
+        "from pysx import Each, Fragment, each, each_indexed, html, signal, when\n"
+        "from typing import assert_type\n"
+        "def row(value: int) -> Fragment:\n    return html(t'p: {value}')\n"
+        "def indexed(index: int, value: int) -> Fragment:\n"
+        "    return html(t'p: {index} {value}')\n"
+        "values = signal([1, 2])\n"
+    )
+
+    if valid:
+        source += (
+            "assert_type(each(values, row, key=str), Each[int])\n"
+            "assert_type(each([1, 2], row, key=str), Each[int])\n"
+            "assert_type(each_indexed(values, indexed, key=str), Each[tuple[int, int]])\n"
+            "assert_type(each_indexed([1, 2], indexed, key=str), Each[tuple[int, int]])\n"
+            "flag = signal(True)\n"
+            "when(conditions=[(flag, lambda: row(1)), (False, lambda: row(2))], "
+            "default=lambda: row(3))\n"
+            "when(conditions=[(lambda: flag(), lambda: row(1))])\n"
+        )
+    else:
+        source += (
+            "each(values, lambda value: 'bad', key=str)\n"
+            "each(values, row, key=lambda value: 1.5)\n"
+            "each_indexed(values, row, key=str)\n"
+            "when(conditions=[(signal(1), lambda: row(1))])\n"
+            "when(conditions=[(True, lambda: 'bad')])\n"
+            "when([(True, lambda: row(1))])\n"
+        )
+    fixture = tmp_path / "inline_helper_contract.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "Fragment" in output
+        assert "bool" in output
+        assert "float" in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
 def test_branches_loops_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = "from pysx import Binding, Deferred, defer, defer2, bounded_while\n"
     source += "from typing import assert_type\nrow = Binding[int]('row')\n"

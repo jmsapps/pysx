@@ -58,6 +58,12 @@ Decided by **position and attribute name**, never by the value's Python type.
 
 A `TEXT` hole holding an `Each` renders as a keyed list. A `Template` or `Fragment` hole
 inserts its node tree, so typed native constructors compose inside templates.
+`each(source, builder, key=...)` accepts a live readable iterable or a bounded frozen
+ordinary iterable. `each_indexed(source, builder, key=...)` calls the builder with
+`(index, item)` while keys remain attached to items. String/integer keys exclude
+booleans and must be unique after wire string conversion. `when(conditions=...,
+default=...)` lazily renders the first true boolean/readable condition's builder as
+an owned keyed branch. See [helper contracts](AUTHORING.md#inline-row-and-branch-helpers).
 `Children` holes insert caller-owned parsed child blocks as described below.
 These distinctions are confined to content position; event and binding attribute
 names are consumed by the DSL before values are evaluated.
@@ -85,22 +91,32 @@ content meaning. Unsupported tag values raise a TypeError naming the received ty
 Parse caches contain hole indexes and syntax only, never component or session values.
 Literal-name tags and explicit `namespace` dictionaries remain available.
 
-## Branches and lexical loops
+## Branches and Python row helpers
 
 `elif` and `else` must immediately follow the preceding branch at the same parent
 and indentation. `match` contains `case` blocks; alternatives use `|`, and the
 wildcard `_` must be last. Inactive branches release subscriptions and owned state.
 Conditional attributes use ordinary Python expressions: pass a `derived` Signal
-for a live choice, or a deferred expression inside a row. An attribute value of
+for a live choice, or compute it in a Python row callback. An attribute value of
 `None` omits the attribute.
+
+Prefer `each`/`each_indexed` and ordinary Python assignments for rows and locals.
+Callbacks capture their parent and item normally, including event handlers. Use
+`when(conditions=[(condition, builder), ...], default=builder)` for lazy construction.
+See [the complete helper contract](AUTHORING.md#inline-row-and-branch-helpers).
+
+### Deprecated lexical syntax
+
+The `for`, `let`, `set` and `discard` productions above are compatibility syntax.
+The following describes their retained behavior, rather than recommended authoring.
 
 Python evaluates t-string holes before markup is parsed. Declare `row =
 Binding[Row]("row")`, supply `namespace={"row": row}`, and write `for row in
 {rows} key={defer(row, lambda value: value.id)}:`. Content and attributes can use
 `{row}` directly, or `defer(row, callback)` and `defer2(first, second, callback)`
 for typed expressions. Captured handlers retain their row's immutable environment.
-No text is evaluated and no execution frame is retained. Components keep bare tags
-with `use=`; `namespace` here supplies lexical identities.
+No text is evaluated and no execution frame is retained. In this legacy mode, `use=`
+supplies component inventories and `namespace` supplies lexical identities.
 
 Tuple patterns destructure source entries; use `enumerate` for indexed snapshots
 or a derived enumerated source for live indices. Nested loops may shadow bindings.
@@ -165,6 +181,13 @@ Components return a `Template` or `Fragment`; other return types raise `TypeErro
 
 Defining-module bindings and actual Python closure cells provide a component's namespace,
 so an imported or module-level component resolves from its bare name with no extra argument.
+The compiler resolves bare tags through ordinary Python lexical bindings and captures
+their actual objects in the fragment. Use normal imports and no inventory. Install the
+scoped loader before importing application modules, or build portable bytecode; use the
+shared template-aware tooling for import cleanup and typing. See [authoring](AUTHORING.md).
+
+### Deprecated explicit bindings
+
 `html(template, use=(Card, Panel))` names the components a template uses: each entry is an
 ordinary Python reference, and an entry carrying a `__name__` also binds under it, which
 covers components defined inside the calling function. `html(template, namespace={...})`
@@ -174,10 +197,9 @@ These mappings are copied; execution frames are never retained. Partials and cal
 instances use their underlying defining callable's module. A fragment's explicit bindings
 override module bindings. Caller children retain their own namespace when inserted.
 
-Name imports used only as literal tags in `use=`. For example, `from shared import Card`
-together with `html(t'\nCard:', use=(Card,))` provides a real Python reference that Ruff and
-Pyright recognize; without one, both report the import as unused and Ruff's fix removes it. Their unused-import
-checks and import cleanup continue to apply to unrelated imports. Required, default and
+These explicit bindings are retained for compatibility. New source uses ordinary imports
+and bare tags through the compiler, with template-aware Ruff and editor import actions.
+Unused-import checks and cleanup continue to apply to unrelated imports. Required, default and
 keyword-only props follow the callable's Python signature; missing or unexpected props
 raise `TypeError`. Python annotations are checked on ordinary component calls by static
 type checkers, rather than enforced as runtime coercions. Signals are passed intact;
@@ -234,4 +256,5 @@ colon is interpreted as the start of a t-string format specification.
 - **Event names come from the shared schema**, including body-specific events;
   capitalized `on[A-Z]…` names retain the open event convention. Event attributes
   require interpolated callables. Holes cannot appear in attribute-name position.
-- **Templates must begin with a newline.**
+- **Multiline templates must begin with a newline.** Single-line templates may put
+  markup immediately after the opening quote: `html(t'''Panel: "Hello"''')`.

@@ -234,15 +234,4 @@ def app() -> Fragment:
                     Action(type="button", id="t4-name", onClick={rename}): "toggle name"
                     Action(type="button", id="t4-reset", onClick={reset}): "reset state"
     """,
-        use=(
-            Action,
-            Actions,
-            Card,
-            Description,
-            Eyebrow,
-            Page,
-            Reading,
-            Result,
-            Title,
-        ),
     )

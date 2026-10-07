@@ -52,9 +52,13 @@ imperative zones, supported operations and limits.
 
 Run `uv run --project . example run templates` for live template controls.
 Reverse/add/remove groups, pick a nested row and switch through three branches.
-Headings use indexed lexical declarations and assignments; row actions retain
-their captured group after reorder. The initial comprehension and bounded while
-snapshots stay fixed. Each browser session owns its state.
+Headings use `each_indexed` and ordinary Python assignments; nested `each` callbacks
+retain their captured group after reorder. **Add child to first group** updates an
+independent readable child source. `when` lazily builds the selected branch alongside
+optional markup conditions and value matching. Local styled tags and cross-module
+snapshot fragments use ordinary imports and bare component names. The initial
+comprehension, iterable `each`, and bounded while snapshots stay fixed. Each browser
+session owns its state.
 
 ## Reactive state
 

@@ -150,6 +150,18 @@ def test_rejects_quote_line_content() -> None:
         )
 
 
+def test_single_line_markup_and_positioned_attribute_names() -> None:
+    from pysx.parser import LiteralText
+
+    skeleton = parse(t'''Panel(title="Hello"): "Content"'''.strings)
+    panel = skeleton.root[0]
+    assert isinstance(panel, Element)
+    name = panel.attrs[0][0]
+    assert isinstance(name, LiteralText)
+    assert name.span.start.offset == 6
+    assert name.span.end.offset == 11
+
+
 def test_attribute_hole_kinds() -> None:
     sk = parse(
         t"""

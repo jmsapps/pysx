@@ -1,0 +1,532 @@
+"""Shared compiler contract: lexical loads, original maps and strict props."""
+
+import ast
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from pysx.compiler import analyze
+from pysx.render import Fragment
+
+
+def test_runtime_local_component_is_a_real_closure() -> None:
+    source = """from pysx import html, styled
+def app():
+    Local = styled.section(t"color: red")
+    return lambda: html(t"Local: 'Hello'")
+"""
+    compilation = analyze(source)
+    assert compilation.complete
+    namespace: dict[str, object] = {}
+    exec(compilation.code(), namespace)
+    app = namespace["app"]
+    assert callable(app)
+    row = app()
+    assert callable(row)
+    assert "Local" in row.__code__.co_freevars
+    result = row()
+    assert isinstance(result, Fragment)
+    assert result.namespace is not None
+    assert "Local" in result.namespace
+
+
+@pytest.mark.parametrize(
+    ("imports", "call", "expected"),
+    [
+        ("from pysx import html", "html", True),
+        ("from pysx import html as template", "template", True),
+        ("from pysx.render import html", "html", True),
+        ("import pysx as px", "px.html", True),
+        ("import pysx.render as renderer", "renderer.html", True),
+        ("from pysx import html\ntemplate = html", "template", True),
+        ("from unrelated import html", "html", False),
+        ("def html(value): return value", "html", False),
+        ("from pysx import html\nhtml = lambda value: value", "html", False),
+    ],
+)
+def test_marker_identity(imports: str, call: str, expected: bool) -> None:
+    compilation = analyze(f"{imports}\nview = {call}(t\"Panel: 'hello'\")\n")
+    assert bool(compilation.calls) is expected
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        """def app(html):
+    return html(t"Panel: 'hello'")""",
+        """def app():
+    html = lambda value: value
+    return html(t"Panel: 'hello'")""",
+        """views = [html(t"Panel: 'hello'") for html in consumers]""",
+        """views = list(map(lambda html: html(t"Panel: 'hello'"), consumers))""",
+    ],
+)
+def test_lexical_marker_shadowing(body: str) -> None:
+    compilation = analyze("from pysx import html\n" + body)
+    assert not compilation.calls
+
+
+def test_nested_templates_preserve_conversions_and_eager_order() -> None:
+    source = """from pysx import html
+events = []
+def value(name):
+    events.append(name)
+    return name
+Panel = object()
+view = html(t"Panel: {value('first')!r} {html(t'p: {value(\"nested\")}')} {value('last'):>5}")
+"""
+    compilation = analyze(source)
+    assert compilation.complete
+    assert len(compilation.calls) == 2
+    namespace: dict[str, object] = {}
+    exec(compilation.code(), namespace)
+    assert namespace["events"] == ["first", "nested", "last"]
+    view = namespace["view"]
+    assert isinstance(view, Fragment)
+    assert view.template.interpolations[0].conversion == "r"
+    assert view.template.interpolations[2].format_spec == ">5"
+    projection = compilation.projection()
+    ast.parse(projection.text)
+    assert projection.text.count(".bind(") == 2
+
+
+def test_supported_assembly_and_origin_boundary() -> None:
+    compilation = analyze("""from pysx import html
+template = t"Panel: 'hi'"
+view = html(template + t"\n  p: 'child'")
+""")
+    # Multiline content on the quote line is intentionally still rejected.
+    assert not compilation.complete
+    compilation = analyze("""from pysx import html
+template = t"Panel: 'hi'"
+view = html(template)
+""")
+    assert compilation.complete
+    assert [reference.name for reference in compilation.references] == ["Panel"]
+    foreign = analyze("""from pysx import html
+template = t"Panel: 'hi'"
+def app():
+    return html(template)
+""")
+    assert not foreign.complete
+    assert "origin unavailable" in foreign.diagnostics[0].message
+
+
+def test_maps_tag_props_and_non_bmp_original_source() -> None:
+    source = """from pysx import html
+emoji = '😀'; view = html(t"Panel(title={emoji}): 'Hello'")
+"""
+    compilation = analyze(source)
+    projection = compilation.projection()
+    tag = compilation.references[0]
+    assert source[tag.span.start : tag.span.end] == "Panel"
+    generated = projection.text.index("'Panel': Panel") + len("'Panel': ")
+    assert projection.span(generated, generated + 5) == tag.span
+    prop = projection.text.rindex("title=")
+    span = projection.span(prop, prop + 5)
+    assert source[span.start : span.end] == "title"
+
+
+def test_cleanup_uncertainty_and_hygienic_helper() -> None:
+    source = """from pysx import html
+def app(_pysx_compiler):
+    return html(t"Panel: 'hello'")
+"""
+    compilation = analyze(source)
+    assert compilation.helper != "_pysx_compiler"
+    assert not analyze('from pysx import html\nview = html(t"Panel(")').complete
+    assert not analyze('from pysx import html\nview = html(t"').complete
+    type_only = analyze("""from typing import TYPE_CHECKING
+from pysx import html
+if TYPE_CHECKING:
+    from components import Panel
+view = html(t"Panel: 'hi'")
+""")
+    assert not type_only.complete
+    assert type_only.diagnostics[0].code == "type-only-component"
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        '"Module docstring"\nfrom __future__ import annotations\n',
+        '"Module docstring"; from __future__ import annotations; ',
+        "#!/usr/bin/env python\n# coding: utf-8\n",
+    ],
+)
+def test_preserves_module_docstring_and_future_imports(prefix: str) -> None:
+    source = prefix + "from pysx import html\nPanel = object()\nview = html(t\"Panel: 'hi'\")\n"
+    compilation = analyze(source)
+    assert compilation.complete
+    generated = compilation.projection()
+    compile(generated.text, "projection.py", "exec")
+    namespace: dict[str, object] = {}
+    exec(compilation.code(), namespace)
+
+    if prefix.startswith('"'):
+        assert namespace["__doc__"] == "Module docstring"
+
+
+def test_generated_validation_supports_await_and_assignment_expressions() -> None:
+    source = """from pysx import html
+async def app():
+    return html(t"Panel(title={await title()}, count={(count := 3)}): 'hello'")
+"""
+    compilation = analyze(source)
+    assert compilation.complete
+    compile(compilation.projection().text, "projection.py", "exec")
+
+
+def test_actual_ruff_preserves_only_template_used_imports(tmp_path: Path) -> None:
+    source = """from pysx import html
+from components import Panel, Unused
+view = html(t"Panel: 'hello'")
+"""
+    path = tmp_path / "projection.py"
+    path.write_text(analyze(source).projection().text)
+    checked = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--select", "F401,F821", str(path)],
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=False,
+    )
+    assert checked.returncode == 1
+    assert "`components.Unused` imported but unused" in checked.stdout
+    assert "`components.Panel` imported but unused" not in checked.stdout
+    assert "`pysx.html` imported but unused" not in checked.stdout
+
+
+def test_lowercase_components_and_reserved_native_tags() -> None:
+    compilation = analyze('''from pysx import html
+from components import row, third
+view = html(t"""
+    row:
+      section: 'native'
+      Other:
+        if {True}:
+          third: 'child'
+""")
+''')
+    assert compilation.complete
+    assert [reference.name for reference in compilation.references] == ["row", "Other", "third"]
+
+
+def test_rebound_assembly_is_not_guessed() -> None:
+    compilation = analyze("""from pysx import html
+template = t"One: 'hi'"
+template = t"Two: 'hi'"
+view = html(template)
+""")
+    assert not compilation.complete
+    assert not compilation.calls
+
+
+def test_ambiguous_marker_withholds_import_cleanup() -> None:
+    compilation = analyze("""from pysx import html
+view = html(t"Panel: 'hi'")
+html = other_consumer
+""")
+    assert not compilation.complete
+    assert compilation.diagnostics[0].code == "ambiguous-marker"
+
+
+def test_partial_unpacking_is_conservatively_unknown() -> None:
+    compilation = analyze("""from functools import partial
+from pysx import html
+Panel = partial(base, **props)
+view = html(t"Panel: 'hello'")
+""")
+    assert not compilation.complete
+    assert compilation.diagnostics[0].code == "partial-schema-unknown"
+    assert compilation.references[0].name == "Panel"
+
+
+def test_incomplete_python_error_maps_to_its_source_line() -> None:
+    source = """from pysx import html
+emoji = '😀'; view = html(t"Panel: 'hello'
+"""
+    compilation = analyze(source)
+    assert not compilation.complete
+    assert compilation.diagnostics[0].span.start >= source.index("emoji")
+
+
+def test_legacy_inventory_names_keep_their_compatibility_semantics() -> None:
+    source = """from pysx import html, styled
+Card = styled.section(t"color: red")
+view = html(t"Panel: 'hi'", namespace={"Panel": Card})
+"""
+    compilation = analyze(source)
+    assert compilation.complete
+    assert not compilation.calls
+    namespace: dict[str, object] = {}
+    exec(compilation.code(), namespace)
+    view = namespace["view"]
+    assert isinstance(view, Fragment)
+    assert view.namespace is not None
+    assert "Panel" in view.namespace
+
+
+def test_disjoint_attribute_assembly_has_an_explicit_source_diagnostic() -> None:
+    source = """from pysx import html
+view = html(t'Panel(title="He' + t'llo"):')
+"""
+    compilation = analyze(source)
+    assert not compilation.complete
+    assert "disjoint origins" in compilation.diagnostics[0].message
+
+
+def test_foreign_and_custom_markup_remains_native() -> None:
+    compilation = analyze('''from pysx import html
+view = html(t"""
+    svg:
+      circle(cx="10", cy="20")
+      foreignObject:
+        custom-widget: 'hello'
+""")
+''')
+    assert compilation.complete
+    assert not compilation.references
+    namespace: dict[str, object] = {}
+    exec(compilation.code(), namespace)
+    assert isinstance(namespace["view"], Fragment)
+    compile(compilation.projection().text, "projection.py", "exec")
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("invalid", [False, True])
+def test_workspace_signatures_without_import_execution(
+    tmp_path: Path, checker: str, invalid: bool
+) -> None:
+    components = tmp_path / "components.py"
+    components.write_text("""from functools import partial
+from pysx import Fragment, html, styled
+def panel(*children: object, title: str = "Default") -> Fragment:
+    return html(t"section: {title} {children}")
+Panel = partial(panel, title="Fixed")
+Card = styled(styled.section(t"color: red"))(t"padding: 2px")
+raise AssertionError("application must not execute during analysis")
+""")
+    expression = "42" if invalid else "'Hello'"
+    source = f"""from pysx import html, div as Box
+from components import Panel, Card
+view = html(t"Panel(title={{{expression}}}): 'Child'")
+native = html(t'''
+    Card(className={{{expression}}}, data-kind='card', aria-label='Title', variant={{None}}): 'Card'
+''')
+alias = html(t"{{Box}}(id={{'hello'}}): 'Child'")
+"""
+    compilation = analyze(source, str(tmp_path / "app.py"))
+    assert compilation.complete
+    path = tmp_path / "projection.py"
+    path.write_text(compilation.projection().text)
+    config = tmp_path / "pyrightconfig.json"
+    config.write_text(
+        json.dumps(
+            {
+                "typeCheckingMode": "strict",
+                "pythonVersion": "3.14",
+                "extraPaths": [str(tmp_path), str(Path(__file__).resolve().parents[1])],
+                "include": ["projection.py"],
+                "reportUnusedImport": False,
+            }
+        )
+    )
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args.extend(["--strict", "--follow-imports=silent"])
+    else:
+        args.extend(["--project", str(config)])
+    result = subprocess.run(
+        [*args, str(path)], capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (1 if invalid else 0), output
+
+    if invalid:
+        assert "int" in output or "42" in output, output
+        assert "str" in output, output
+
+
+def test_relative_imports_and_marker_reexports(tmp_path: Path) -> None:
+    package = tmp_path / "app"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "markers.py").write_text("from pysx import html\n")
+    source = """from .markers import html as template
+from .components import Panel
+view = template(t"Panel: 'hi'")
+"""
+    compilation = analyze(source, str(package / "view.py"))
+    assert compilation.complete
+    assert len(compilation.calls) == 1
+    assert (
+        compilation.calls[0].scope.identity(ast.Name("Panel", ast.Load())) == "app.components.Panel"
+    )
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("invalid", [False, True])
+def test_factory_native_children_projection(tmp_path: Path, checker: str, invalid: bool) -> None:
+    (tmp_path / "surfaces.py").write_text(
+        "from typing import TYPE_CHECKING\nfrom pysx import styled\n"
+        "if TYPE_CHECKING:\n    from pysx.styled_native import StyledDiv\n"
+        'def page() -> StyledDiv:\n    return styled.div(t"color: red")\n'
+        'Page = page()\nShell = styled(Page)(t"padding: 2px")\n'
+    )
+    value = "42" if invalid else "'panel'"
+    compilation = analyze(
+        "from pysx import html\nfrom surfaces import Shell\n"
+        f"view = html(t\"Shell(id={{{value}}}): 'child'\")\n",
+        str(tmp_path / "view.py"),
+        workspace_roots=(tmp_path,),
+    )
+    projection = compilation.projection().text
+    assert "_native.Div" in projection
+    assert "children=" not in projection
+    target = tmp_path / "view.py"
+    target.write_text(projection)
+    root = Path(__file__).resolve().parents[1]
+    (tmp_path / "pyrightconfig.json").write_text(
+        json.dumps(
+            {"typeCheckingMode": "strict", "pythonVersion": "3.14", "extraPaths": [str(root)]}
+        )
+    )
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args.append("--strict")
+    else:
+        args.extend(["--project", str(tmp_path / "pyrightconfig.json")])
+    result = subprocess.run(
+        [*args, str(target)], cwd=root, capture_output=True, text=True, timeout=60, check=False
+    )
+    assert result.returncode == (1 if invalid else 0), result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("invalid", [False, True])
+def test_typed_projection_props(tmp_path: Path, checker: str, invalid: bool) -> None:
+    expression = "row.id" if invalid else "row.title"
+    source = f"""from dataclasses import dataclass
+from functools import partial
+from pysx import Children, Fragment, each, html, signal, styled
+@dataclass
+class Row:
+    id: int
+    title: str
+def panel(*, title: str, children: Children | None = None) -> Fragment:
+    return html(t"section: {{title}} {{children}}")
+Panel = partial(panel)
+Styled = styled(panel)(t"color: red")
+rows = signal([Row(1, "one")])
+view = each(rows,
+    lambda row: html(t"Panel(title={{{expression}}}): 'Content'"),
+    key=lambda row: row.id)
+native = html(t"input(bindValue={{signal('value')}}, disabled={{False}})")
+decorated = html(t"Styled(title={{'hello'}}, variant={{None}}): 'child'")
+"""
+    compilation = analyze(source)
+    assert compilation.complete
+    path = tmp_path / "projection.py"
+    path.write_text(compilation.projection().text)
+    root = Path(__file__).resolve().parents[1]
+    (tmp_path / "pyrightconfig.json").write_text(
+        '{"typeCheckingMode":"strict","pythonVersion":"3.14","extraPaths":['
+        + repr(str(root)).replace("'", '"')
+        + '],"reportUnusedImport":false}'
+    )
+    command = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        command.extend(["--strict", "--no-incremental"])
+    result = subprocess.run(
+        [*command, str(path)], cwd=root, text=True, capture_output=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+
+    if invalid:
+        assert result.returncode == 1, output
+        assert '"int"' in output, output
+        assert '"str"' in output, output
+    else:
+        assert result.returncode == 0, output
+
+
+def test_unsaved_imported_schema_and_explicit_workspace_root(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    source = """from pysx import html
+from components import Card
+view = html(t"Card(disabled={True}): 'Go'")
+"""
+    buffers = {
+        str(
+            root / "components.py"
+        ): 'from pysx import styled\nCard = styled.button(t"color: red")\n'
+    }
+    compilation = analyze(
+        source, str(tmp_path / "app.py"), workspace_roots=(root,), buffers=buffers
+    )
+    assert compilation.complete
+    assert "_native.Button" in compilation.projection().text
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("kind", ["default", "required", "children"])
+def test_required_default_and_children_props(tmp_path: Path, checker: str, kind: str) -> None:
+    parameter = "title: str" if kind == "required" else 'title: str = "Default"'
+    markup = "panel: 'Child'" if kind == "children" else "panel:"
+    source = f'''from pysx import Fragment, html
+def panel(*, {parameter}) -> Fragment:
+    return html(t"p: {{title}}")
+view = html(t"{markup}")
+'''
+    fixture = tmp_path / "required.py"
+    fixture.write_text(analyze(source).projection().text)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args.append("--strict")
+    result = subprocess.run(
+        [*args, str(fixture)], text=True, capture_output=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if kind == "default" else 1), output
+
+    if kind != "default":
+        assert ("title" if kind == "required" else "children") in output, output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [False, True])
+def test_callable_instances_and_component_return_contract(
+    tmp_path: Path, checker: str, valid: bool
+) -> None:
+    return_type = "Fragment" if valid else "int"
+    result = 'html(t"p: {title} {children}")' if valid else "3"
+    source = f"""from pysx import Fragment, html
+class Widget:
+    def __call__(self, *children: object, title: str) -> {return_type}:
+        return {result}
+Panel = Widget()
+view = html(t"Panel(title={{'hello'}}): 'Child'")
+"""
+    fixture = tmp_path / "callable_instance.py"
+    fixture.write_text(analyze(source).projection().text)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args.append("--strict")
+    result_checked = subprocess.run(
+        [*args, str(fixture)], capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result_checked.stdout + result_checked.stderr
+    assert result_checked.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "component_result" in output, output

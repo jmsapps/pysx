@@ -20,5 +20,4 @@ def app() -> Fragment:
               Description: "Setup, browser mount and cleanup counters show separate lifetimes."
               tree_controls:
         """,
-        use=(Page, Eyebrow, Title, Description, tree_controls),
     )

@@ -54,7 +54,7 @@ try {
       stack = current.ruleStack;
     }
     tokens += result.length;
-    if (["render_snapshot", "templates_example"].includes(fixture)) {
+    if (fixture === "render_snapshot") {
       for (const word of ["in", "key"]) {
         check(result.some(token => token.text === word && token.scopes.includes("keyword.control.loop.pysx")), `${fixture}: ${word}`);
       }
@@ -73,16 +73,17 @@ try {
     const terminator = result.findIndex((token, index) => index > 0 &&
       token.text === '"""' && result[index - 1].scopes.some((scope) => scope.includes("pysx")));
     if (fixture === "templates_example") {
-      for (const word of ["if", "elif", "else", "for", "match", "case", "let", "set"]) {
+      for (const word of ["if", "elif", "else", "match", "case"]) {
         check(result.some(token => token.text.trim() === word && token.scopes.includes("keyword.control.conditional.pysx")), `example ${word}`);
       }
       for (const word of ["TemplatePage", "Action", "GroupPanel", "GroupHeading"]) {
         check(result.some(token => token.text === word && token.scopes.includes("support.class.component.pysx")), `example bare ${word}`);
       }
       check(result.some(token => token.text === "title" && token.scopes.includes("entity.other.attribute-name.pysx")), "example multiline attrs");
-      check(result.some(token => token.text.trim() === "tooltip" && token.scopes.includes("meta.embedded.inline.python")), "example deferred attr");
+      check(result.some(token => token.text.trim() === "tooltip" && token.scopes.includes("meta.embedded.inline.python")), "example Python attr");
       check(result.some(token => token.text.trim() === "snapshots" && token.scopes.includes("meta.embedded.inline.python")), "example snapshot hole");
-      check(result.some(token => token.text === "namespace" && !token.scopes.some(scope => scope.includes("pysx") || scope.includes("css"))), "example returns to Python");
+      check(result.some(token => token.text === "each_indexed" && token.scopes.includes("meta.embedded.inline.python")), "example inline helper");
+      check(result.some(token => token.text === "when" && !token.scopes.some(scope => scope.includes("pysx") || scope.includes("css"))), "example Python branch helper");
       continue;
     }
     if (fixture === "render_snapshot") {

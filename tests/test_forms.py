@@ -132,7 +132,8 @@ def test_bindings_form_invalid_controls(source: object) -> None:
 
 def test_bindings_form_wrong_runtime_types_and_edits() -> None:
     def view() -> Fragment:
-        return html(t"""\n        input(bindValue={signal(1)})\n        """)
+        # Deliberately invalid runtime fixture bypasses advisory static prop validation.
+        return Fragment(t"""\n        input(bindValue={signal(1)})\n        """)
 
     with pytest.raises(TypeError, match="payload"):
         Session(view)

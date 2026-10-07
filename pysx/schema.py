@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import keyword
 import re
 from collections.abc import Mapping  # noqa: TC003 - public runtime metadata annotations
 from dataclasses import dataclass
@@ -578,10 +579,33 @@ class TagInfo:
     fragment: bool = False
 
 
+def python_attr(name: str, *, event_alias: bool = True) -> str:
+    """Canonical Python spelling used by generated native signatures and analysis."""
+    aliases = {"class": "class_name", "for": "html_for", "async": "async_", "default": "default_"}
+    normalized = normalize_attr(name)
+
+    if event_alias and normalized.startswith("on") and normalized[2:] in EVENT_NAMES:
+        return "on_" + normalized[2:]
+    special = {
+        "bindvalue": "bind_value",
+        "bindchecked": "bind_checked",
+        "bindselected": "bind_selected",
+        "stylevars": "style_vars",
+        "cssvars": "css_vars",
+    }
+    spelling = special.get(normalized, aliases.get(normalized, normalized.replace("-", "_")))
+
+    return spelling + "_" if keyword.iskeyword(spelling) else spelling
+
+
 def normalize_attr(name: str) -> str:
     aliases = {
-        "class_name": "class", "className": "class", "html_for": "for", "htmlFor": "for",
-        "style_vars": "stylevars", "css_vars": "cssvars",
+        "class_name": "class",
+        "className": "class",
+        "html_for": "for",
+        "htmlFor": "for",
+        "style_vars": "stylevars",
+        "css_vars": "cssvars",
     }
 
     if name in aliases:

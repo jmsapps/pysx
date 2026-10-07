@@ -19,11 +19,15 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
+from .compiler import analyze
 from .parser import Conditional, Element, Hole, HoleKind, Loop, Match, PysxSyntaxError, parse
 from .schema import normalize_attr
+from .source_map import Positions
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
+
+    from .compiler import Compilation
 
 TAG_RE = re.compile(r"^\s*([A-Z][A-Za-z0-9_]*)")
 
@@ -207,6 +211,7 @@ def _operator_warnings(
     node: ast.AST, signals: set[str], *, root: ast.AST | None = None
 ) -> Iterator[tuple[ast.expr, str]]:
     # Deferred callbacks read signals deliberately; do not diagnose their bodies.
+
     if isinstance(node, ast.Lambda):
 
         return
@@ -477,12 +482,13 @@ def _declared_variants(tree: ast.AST) -> dict[str, set[str]]:
     return found
 
 
-def diagnostics(path: Path) -> list[Diagnostic]:
-    source = path.read_text("utf-8")
+def _legacy_diagnostics(
+    source: str, filename: str, tree: ast.Module | None = None
+) -> list[Diagnostic]:
     lines = source.split("\n")
 
     try:
-        tree = ast.parse(source, filename=str(path))
+        tree = tree if tree is not None else ast.parse(source, filename=filename)
     except SyntaxError as exc:
         row = max((exc.lineno or 1) - 1, 0)
         line = lines[row] if row < len(lines) else ""
@@ -698,6 +704,80 @@ def diagnostics(path: Path) -> list[Diagnostic]:
                 )
 
     return out
+
+
+def diagnostics_for_source(
+    source: str,
+    filename: str = "<template>",
+    *,
+    workspace_roots: tuple[Path, ...] = (),
+    buffers: Mapping[str, str] | None = None,
+    compilation: Compilation | None = None,
+) -> list[Diagnostic]:
+    """Current-buffer diagnostics and lexical tag ownership from the shared compiler."""
+    compilation = compilation or analyze(
+        source, filename, workspace_roots=workspace_roots, buffers=buffers
+    )
+
+    if compilation.source != source or compilation.filename != filename:
+
+        raise ValueError("diagnostic compilation does not match source")
+    positions = Positions(source)
+    legacy = _legacy_diagnostics(source, filename, compilation.tree)
+
+    if compilation.tree is None:
+
+        return legacy
+    # The old raw-line scan cannot see single-line, escaped or lexical tag bindings.
+    # Preserve it only for explicit compatibility calls omitted by the compiler.
+    compiled_lines = {
+        row
+        for call in compilation.calls
+        for row in range(call.node.lineno - 1, call.node.end_lineno or call.node.lineno)
+    }
+    out = [
+        item
+        for item in legacy
+        if not (item["line"] in compiled_lines and item["message"].startswith("unknown component"))
+    ]
+
+    for call in compilation.calls:
+        for reference in call.references:
+            if call.scope.owner(reference.name) is not None:
+
+                continue
+            start = positions.editor_position(reference.span.start)
+            end = positions.editor_position(reference.span.end)
+            item = _d(
+                start.line,
+                start.character,
+                end.character,
+                f"unknown component {reference.name!r}: no binding in this Python scope",
+            )
+            item["endLine"] = end.line
+            out.append(item)
+
+    for diagnostic in compilation.diagnostics:
+        if any(
+            "needs a t-string" in item["message"] and diagnostic.code == "template-source"
+            for item in out
+        ):
+
+            continue
+        start = positions.editor_position(diagnostic.span.start)
+        end = positions.editor_position(diagnostic.span.end)
+        item = _d(start.line, start.character, end.character, diagnostic.message, "warning")
+        item["endLine"] = end.line
+
+        if not any(existing["message"] == item["message"] for existing in out):
+            out.append(item)
+
+    return out
+
+
+def diagnostics(path: Path) -> list[Diagnostic]:
+
+    return diagnostics_for_source(path.read_text("utf-8"), str(path))
 
 
 def main() -> int:

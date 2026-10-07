@@ -49,9 +49,13 @@ GATES: tuple[Gate, ...] = (
     Gate("setup", "playwright", _playwright_install()),
     Gate("setup", "vscode-host", ("npm", "--prefix", "editor", "run", "setup:host")),
     Gate("python", "lockfile", ("uv", "lock", "--check")),
-    Gate("python", "ruff", ("uv", "run", "--project", ".", "ruff", "check", ".")),
-    Gate("python", "mypy", ("uv", "run", "--project", ".", "mypy")),
-    Gate("python", "pyright", ("uv", "run", "--project", ".", "pyright")),
+    Gate("python", "ruff", ("uv", "run", "--project", ".", "python", "-m", "pysx.quality", "ruff")),
+    Gate("python", "mypy", ("uv", "run", "--project", ".", "python", "-m", "pysx.quality", "mypy")),
+    Gate(
+        "python",
+        "pyright",
+        ("uv", "run", "--project", ".", "python", "-m", "pysx.quality", "pyright"),
+    ),
     Gate(
         "python",
         "generator",
@@ -140,6 +144,7 @@ def main() -> int:
         failures.append((gate, output))
 
         if gate.tier == "setup":
+
             break
 
     if failures:
@@ -153,4 +158,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+
     raise SystemExit(main())

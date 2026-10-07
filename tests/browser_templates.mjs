@@ -17,6 +17,9 @@ try {
   await page.locator('#reverse').click();
   await page.waitForFunction(() => document.querySelector('[data-group]')?.dataset.group === 'learn');
   assert.equal(await page.locator('[data-group="learn"] h2').textContent(), '1. Learn');
+  await page.locator('#add-child').click();
+  await page.waitForSelector('[data-pick="learn:child-2"]');
+  assert.equal(await other.locator('[data-pick="learn:child-2"]').count(), 0);
   await page.locator('[data-pick="work:build"]').click();
   await page.waitForFunction(() => document.querySelector('#selected')?.textContent === 'Selected: work / build');
   assert.equal(await other.locator('#selected').textContent(), 'Selected: none');

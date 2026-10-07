@@ -63,7 +63,8 @@ def test_callable_return_callable_dispatch_closure_and_explicit_namespace() -> N
             # A real closure binding is visible without a saved execution frame.
             assert local is strong
 
-            return html(t'\nLocal: "closure"')
+            # Explicit renderer namespaces belong to the raw-fragment compatibility path.
+            return Fragment(t'\nLocal: "closure"')
 
         return child
 
@@ -406,4 +407,4 @@ def test_component_tags_structure_cache_never_keeps_values() -> None:
 @pytest.mark.parametrize("value", [None, 42, "div", ["div"]])
 def test_component_tags_unsupported_runtime_values(value: object) -> None:
     with pytest.raises(TypeError, match=f"received {type(value).__name__}"):
-        render(lambda: html(t'\n{value}: "child"'))
+        render(lambda: Fragment(t'\n{value}: "child"'))

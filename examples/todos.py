@@ -115,13 +115,6 @@ def app() -> Fragment:
                 Remove(type="button", onClick={remove_item}):
                     "Remove"
         """,
-        use=(
-            Checkbox,
-            Item,
-            Remove,
-            Row,
-            Text,
-        ),
     )
 
     return html(
@@ -158,18 +151,4 @@ def app() -> Fragment:
                 Clear(type="button", onClick={clear_completed}):
                     "Clear completed"
     """,
-        use=(
-            Clear,
-            CompactPage,
-            Description,
-            Eyebrow,
-            Field,
-            FilterButton,
-            Filters,
-            Form,
-            List,
-            Meta,
-            Submit,
-            Title,
-        ),
     )

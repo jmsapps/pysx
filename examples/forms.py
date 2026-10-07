@@ -189,11 +189,4 @@ def app() -> Fragment:
                 h3: "Last submission"
                 pre(id="status"): {status}
     """,
-        use=(
-            Card,
-            Description,
-            Eyebrow,
-            Page,
-            Title,
-        ),
     )

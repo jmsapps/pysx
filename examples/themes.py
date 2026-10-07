@@ -99,6 +99,5 @@ def app() -> Fragment:
                 ThemeAction(id="local-accent" variant={mode} onClick={local}): "Local accent"
                 ThemeAction(id="reset-vars" onClick={reset}): "Reset variables"
     """,
-        use=(ThemePage, Eyebrow, Title, Description, Actions, ThemeAction, Preview),
         themes=themes,
     )

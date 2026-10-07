@@ -61,10 +61,11 @@ class StyledCallable[**P]:
         fragment = result if isinstance(result, Fragment) else Fragment(result)
         fragment = Fragment(
             fragment.template,
-            namespace_for(self.base) | dict(fragment.namespace or {}),
+            fragment.scope_namespace(namespace_for(self.base)),
             fragment.root_classes,
             fragment.themes,
             fragment.rules,
+            fragment.bound,
         )
 
         return _decorate(fragment, self.css_class, self.declarations, self.variants, None)
@@ -127,6 +128,7 @@ def _decorate(
         (*fragment.root_classes, cls, source),
         fragment.themes,
         (*fragment.rules, *rules),
+        fragment.bound,
     )
 
 
