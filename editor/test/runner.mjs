@@ -57,7 +57,7 @@ try {
   if (unpack.status !== 0) throw new Error(`fresh VSIX extraction failed: ${unpack.stderr}`);
   const extension = path.join(workspace, "extension");
   const consumer = path.join(workspace, "consumer");
-  if (suite === "authoring") mkdirSync(consumer);
+  if (suite !== "packaging") mkdirSync(consumer);
   const manifest = JSON.parse(readFileSync(path.join(extension, "package.json"), "utf8"));
   if (process.env.PYSX_EDITOR_PROBE === "1") {
     console.log(JSON.stringify({ root, interpreter, host: host.version, client: manifest.version, workspace }));
@@ -67,7 +67,7 @@ try {
     child = spawn(process.execPath, [fileURLToPath(new URL("launch.mjs", import.meta.url))], {
       cwd: root, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, PYSX_EDITOR_INPUT: JSON.stringify({ executable, extension, workspace,
-        root: fixture ? fixture.consumer : suite === "authoring" ? consumer : root, checkout: root, host, suite,
+        root: fixture ? fixture.consumer : consumer, checkout: root, host, suite,
         python: fixture?.python ?? interpreter, pythonExtension, ruffExtension: suite === "authoring" ? ruffExtension : null }) },
     });
     if (process.env.PYSX_EDITOR_STATE_FILE) {

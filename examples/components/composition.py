@@ -157,7 +157,10 @@ def tree_controls() -> Fragment:
         aria_expanded = opened if node.children else None
         keys = ("ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " ")
 
-        group = html(t'\nif {opened}:\n  ul(role="group"): {children}')
+        group = html(t"""
+            if {opened}:
+                ul(role="group"): {children}
+        """)
 
         return native.Li(
             native.Span(node.label, " · activations: ", visits),
@@ -181,13 +184,13 @@ def tree_controls() -> Fragment:
     return html(
         t"""
             TreePanel:
-              ul(id="composition-tree",role="tree",aria-label="Component library",ref={root_ref}):
+                ul(id="composition-tree",role="tree",aria-label="Component library",ref={root_ref}):
                 {each(roots, row, key=lambda node: node.key)}
-              p(id="tree-setups"):
+                p(id="tree-setups"):
                 "Setups: "; {setups}
-              p(id="tree-mounts"): "Browser mounts: "; {mounts}
-              p(id="tree-cleanups"): "Cleanups: "; {cleanups}
-              br:
-              Action(id="tree-reverse", onClick={on_event(reverse)}): "Reverse roots"
+                p(id="tree-mounts"): "Browser mounts: "; {mounts}
+                p(id="tree-cleanups"): "Cleanups: "; {cleanups}
+                br:
+                Action(id="tree-reverse", onClick={on_event(reverse)}): "Reverse roots"
         """,
     )

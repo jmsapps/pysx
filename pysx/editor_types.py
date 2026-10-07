@@ -35,6 +35,7 @@ def diagnostics(directory: Path, root: Path) -> dict[str, object]:
         exclude=[],
         ignore=[],
         typeCheckingMode="strict",
+        reportUnusedFunction="error",
     )
     configuration = root / f"{directory.name}.json"
 

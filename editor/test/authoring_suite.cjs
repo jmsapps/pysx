@@ -31,8 +31,9 @@ exports.run = async function () {
   await vscode.workspace.getConfiguration("pysx").update("pythonPath", process.env.PYSX_EDITOR_PYTHON, vscode.ConfigurationTarget.Workspace);
   await vscode.workspace.getConfiguration("python").update("defaultInterpreterPath", process.env.PYSX_EDITOR_PYTHON, vscode.ConfigurationTarget.Workspace);
   await vscode.workspace.getConfiguration("python").update("analysis.typeCheckingMode", "strict", vscode.ConfigurationTarget.Workspace);
+  fs.writeFileSync(path.join(root, "pyproject.toml"), '[tool.pyright]\ntypeCheckingMode = "strict"\n');
   fs.writeFileSync(path.join(root, "producer.py"), `from pysx import Children, Fragment, html
-def Panel(*, title: str, children: Children | None = None) -> Fragment:
+def Panel(*, title: str, maxWidth: int = 0, children: Children | None = None) -> Fragment:
     return html(t"section: {title}; {children}")
 def UnusedWidget() -> Fragment:
     return html(t"p: 'unused'")
@@ -61,6 +62,12 @@ input(type="text")
 {each(rows, lambda row: html(t'Panel(title={row.title})'), key=lambda row: row.id)}
 """)
 ordinary = pkg.exports.Panel(title='ordinary')
+def tree() -> Fragment:
+    def branch(*, node: Row) -> Fragment:
+        return html(t'Panel(title={node.title})')
+    def abandoned() -> Fragment:
+        return html(t'p: "unused"')
+    return html(t'branch(node={rows()[0]}):')
 `);
   const pylance = vscode.extensions.getExtension("ms-python.vscode-pylance");
   await pylance.activate();
@@ -84,6 +91,14 @@ ordinary = pkg.exports.Panel(title='ordinary')
   await vscode.workspace.getConfiguration("ruff", doc.uri).update("lint.ignore", null, vscode.ConfigurationTarget.WorkspaceFolder);
   assert.equal(vscode.workspace.getConfiguration("ruff", doc.uri).get("lint.ignore"), null);
   assert.equal(await vscode.commands.executeCommand("pysx.configureTooling"), true);
+  const configuredProject = fs.readFileSync(path.join(root, "pyproject.toml"), "utf8");
+  assert(configuredProject.includes("reportUnusedFunction = false"));
+  assert(configuredProject.includes('typeCheckingMode = "strict"'));
+  await eventually(async () => Boolean(await extension.exports.refresh(doc)), "snapshot after effective configuration change");
+  const rule = (item) => String(item.code?.value ?? item.code);
+  await eventually(() => !vscode.languages.getDiagnostics(doc.uri).some((item) => item.source !== "pysx" && ["reportUnusedImport", "reportUnusedFunction"].includes(rule(item))), "Pylance effective diagnostic handoff");
+  await eventually(() => vscode.languages.getDiagnostics(doc.uri).some((item) => item.source === "pysx" && rule(item) === "reportUnusedFunction" && item.message.includes("abandoned")), "genuine unused function retained");
+  assert(!vscode.languages.getDiagnostics(doc.uri).some((item) => rule(item) === "reportUnusedFunction" && item.message.includes('"branch"')));
   assert(vscode.workspace.getConfiguration("ruff", doc.uri).get("lint.ignore").includes("F401"));
   await vscode.workspace.getConfiguration("ruff", doc.uri).update("lint.ignore", ["E501"], vscode.ConfigurationTarget.WorkspaceFolder);
   assert.equal(await vscode.commands.executeCommand("pysx.configureTooling"), true);
@@ -114,6 +129,8 @@ ordinary = pkg.exports.Panel(title='ordinary')
     return values?.items.some((item) => String(item.label.label ?? item.label) === "title") ? values : null;
   }, "callable prop completion");
   assert(props.items.length);
+  assert(props.items.some((item) => String(item.label.label ?? item.label) === "maxWidth"));
+  assert(!props.items.some((item) => String(item.label.label ?? item.label) === "maxwidth"));
   const nativeProps = await vscode.commands.executeCommand("vscode.executeCompletionItemProvider", doc.uri, position(doc, 'type="text"', 2));
   assert(nativeProps.items.some((item) => String(item.label.label ?? item.label) === "type"));
 

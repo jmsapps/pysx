@@ -20,9 +20,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 from .compiler import analyze
-from .parser import Conditional, Element, Hole, HoleKind, Loop, Match, PysxSyntaxError, parse
+from .compiler_imports import WorkspaceResolver
+from .compiler_scope import Scope, ScopeIndex
+from .parser import (
+    Conditional,
+    Element,
+    Hole,
+    HoleKind,
+    LiteralText,
+    Loop,
+    Match,
+    PysxSyntaxError,
+    parse,
+)
 from .schema import normalize_attr
-from .source_map import Positions
+from .source_map import LiteralMapper, Positions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -437,53 +449,87 @@ def template_fragments(node: ast.TemplateStr) -> tuple[str, ...]:
     return tuple(strings)
 
 
-def _declared_variants(tree: ast.AST) -> dict[str, set[str]]:
-    assignments = {
-        target.id: node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        for target in node.targets
-        if isinstance(target, ast.Name)
-    }
-    found: dict[str, set[str]] = {}
+def _variant_keys(
+    expression: ast.expr,
+    scope: Scope,
+    resolver: WorkspaceResolver,
+    seen: frozenset[tuple[int, str]] = frozenset(),
+) -> set[str] | None:
+    """Unknown or competing declarations cannot prove a variant invalid."""
+    key = (id(scope), ast.dump(expression))
 
-    for _ in range(len(assignments) + 1):
-        for name, value in assignments.items():
-            if isinstance(value, ast.Name) and value.id in found:
-                found[name] = found[value.id].copy()
-            elif isinstance(value, ast.Call):
-                keys: set[str] = set()
-                factory = value.func
+    if key in seen or len(seen) >= 32:
 
-                if (
-                    isinstance(factory, ast.Call)
-                    and isinstance(factory.func, ast.Name)
-                    and factory.func.id == "styled"
-                ):
-                    if factory.args and isinstance(factory.args[0], ast.Name):
-                        keys.update(found.get(factory.args[0].id, set()))
-                elif not (
-                    isinstance(factory, ast.Attribute)
-                    and isinstance(factory.value, ast.Name)
-                    and factory.value.id == "styled"
-                ):
+        return None
+    seen = seen | {key}
 
-                    continue
+    if isinstance(expression, ast.Name):
+        binding = scope.binding(expression.id)
 
-                for keyword in value.keywords:
-                    if keyword.arg == "variants" and isinstance(keyword.value, ast.Dict):
-                        keys.update(
-                            key.value
-                            for key in keyword.value.keys
-                            if isinstance(key, ast.Constant) and isinstance(key.value, str)
-                        )
-                found[name] = keys
+        if isinstance(binding, ast.expr):
 
-    return found
+            return _variant_keys(binding, scope, resolver, seen)
+    identity = scope.identity(expression)
+
+    if identity is not None and not isinstance(expression, ast.Call):
+        resolved = resolver.resolve(identity)
+
+        if resolved is not None and isinstance(resolved[1], ast.expr):
+
+            return _variant_keys(resolved[1], resolved[0].scope, resolver, seen)
+
+    if not isinstance(expression, ast.Call):
+
+        return None
+    factory = expression.func
+    identity = resolver.identity(scope.identity(factory))
+    keys: set[str] | None = None
+
+    if identity is not None and identity.startswith("pysx.styled."):
+        from .schema import NATIVE_TAGS
+
+        tag = identity.removeprefix("pysx.styled.").removeprefix("styled.")
+
+        if tag in NATIVE_TAGS:
+            keys = set()
+    elif (
+        isinstance(factory, ast.Call)
+        and resolver.identity(scope.identity(factory.func)) in {"pysx.styled", "pysx.styled.styled"}
+        and factory.args
+    ):
+        keys = _variant_keys(factory.args[0], scope, resolver, seen)
+
+    if keys is None:
+
+        return None
+
+    for keyword in expression.keywords:
+        if keyword.arg != "variants":
+
+            continue
+
+        if isinstance(keyword.value, ast.Constant) and keyword.value.value is None:
+
+            continue
+
+        if not isinstance(keyword.value, ast.Dict):
+
+            return None
+
+        for name in keyword.value.keys:
+            if not isinstance(name, ast.Constant) or not isinstance(name.value, str):
+
+                return None
+            keys.add(name.value)
+
+    return keys
 
 
 def _legacy_diagnostics(
-    source: str, filename: str, tree: ast.Module | None = None
+    source: str,
+    filename: str,
+    tree: ast.Module | None = None,
+    compilation: Compilation | None = None,
 ) -> list[Diagnostic]:
     lines = source.split("\n")
 
@@ -508,6 +554,10 @@ def _legacy_diagnostics(
     signals = _signal_names(tree)
     snapshots = _snapshot_names(tree, signals)
     out: list[Diagnostic] = _styling_diagnostics(tree, lines)
+    resolver = compilation.resolver if compilation is not None else WorkspaceResolver(filename)
+    scopes = ScopeIndex(tree, package=resolver.package)
+    mapper = LiteralMapper(source)
+    positions = Positions(source)
 
     for node in _templates(tree):
         if isinstance(node, ast.JoinedStr):
@@ -575,7 +625,6 @@ def _legacy_diagnostics(
                     )
                 )
 
-        declared_variants = _declared_variants(tree)
         pending = list(skeleton.root)
 
         while pending:
@@ -603,7 +652,16 @@ def _legacy_diagnostics(
                 else None
             )
 
-            if tag_name not in declared_variants:
+            if tag_name is None:
+
+                continue
+            keys = _variant_keys(
+                tag_expr if tag_expr is not None else ast.Name(tag_name, ast.Load()),
+                scopes.nodes.get(node, scopes.nodes[tree]),
+                resolver,
+            )
+
+            if keys is None:
 
                 continue
 
@@ -624,15 +682,25 @@ def _legacy_diagnostics(
                     else None
                 )
 
-                if isinstance(constant, str) and constant not in declared_variants[tag_name]:
-                    out.append(
-                        _span_diagnostic(
-                            variant_expression or node,
-                            lines,
-                            f"unknown variant {constant!r}; declared variants: "
-                            f"{sorted(declared_variants[tag_name])}",
-                        )
-                    )
+                if isinstance(constant, str) and constant not in keys:
+                    message = f"unknown variant {constant!r}; declared variants: {sorted(keys)}"
+
+                    if variant_expression is not None:
+                        out.append(_span_diagnostic(variant_expression, lines, message))
+                    elif isinstance(variant_value, LiteralText):
+                        try:
+                            span = mapper.template(node).location(
+                                variant_value.span.start,
+                                variant_value.span.end.offset - variant_value.span.start.offset,
+                            )
+                        except ValueError:
+
+                            continue
+                        begin = positions.editor_position(span.start)
+                        finish = positions.editor_position(span.end)
+                        diagnostic = _d(begin.line, begin.character, finish.character, message)
+                        diagnostic["endLine"] = finish.line
+                        out.append(diagnostic)
 
         # Unknown tags, located in raw source lines so ranges cannot desync.
 
@@ -723,7 +791,7 @@ def diagnostics_for_source(
 
         raise ValueError("diagnostic compilation does not match source")
     positions = Positions(source)
-    legacy = _legacy_diagnostics(source, filename, compilation.tree)
+    legacy = _legacy_diagnostics(source, filename, compilation.tree, compilation)
 
     if compilation.tree is None:
 

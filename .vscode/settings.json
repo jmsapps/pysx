@@ -6,7 +6,8 @@
   ],
   "python.analysis.diagnosticSeverityOverrides": {
     "reportUnusedImport": "none",
-    "reportUnusedVariable": "none"
+    "reportUnusedVariable": "none",
+    "reportUnusedFunction": "none"
   },
   "python.analysis.disableTaggedHints": true,
   "python.analysis.fixAll": [],

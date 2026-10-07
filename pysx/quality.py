@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import tokenize
+import tomllib
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -162,6 +163,18 @@ def type_project(root: Path, backend: str) -> int:
 
         if config.is_file():
             (tree / "pyproject.toml").write_bytes(config.read_bytes())
+
+        if backend == "pyright":
+            settings: dict[str, object] = {}
+
+            if config.is_file():
+                settings = cast(
+                    "dict[str, object]",
+                    tomllib.loads(config.read_text()).get("tool", {}).get("pyright", {}),
+                )
+            (tree / "pyrightconfig.json").write_text(
+                json.dumps(dict(settings, reportUnusedFunction="error")), encoding="utf-8"
+            )
 
         for package in files:
             marker = package.parent / "py.typed"

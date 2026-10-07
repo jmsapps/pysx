@@ -137,7 +137,7 @@ def sites_for(compilation: Compilation, projection: MappedText) -> list[Site]:
             role=role,
         )
 
-        if target[0] in NATIVE_TAGS:
+        if role == "component" and target[0] in NATIVE_TAGS:
             results[origin]["native"] = True
 
     for call in compilation.calls:
@@ -162,6 +162,7 @@ def sites_for(compilation: Compilation, projection: MappedText) -> list[Site]:
 
                     if site is not None:
                         site["props"] = props
+                        site["native"] = True
 
     return list(results.values())
 

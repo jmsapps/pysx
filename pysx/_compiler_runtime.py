@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import builtins
 import linecache
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from .composition import Children
 
@@ -23,6 +24,9 @@ class MissingComponent:
     name: str
 
 
+class_namespace = builtins.locals
+
+
 def capture[T](name: str, reader: Callable[[], T]) -> T | MissingComponent:
     """Read a lexical binding once; an absent tag fails only when rendered."""
 
@@ -32,6 +36,18 @@ def capture[T](name: str, reader: Callable[[], T]) -> T | MissingComponent:
     except NameError:
 
         return MissingComponent(name)
+
+
+def capture_class[T](
+    name: str, reader: Callable[[], T], namespace: Mapping[str, object]
+) -> T | MissingComponent:
+    """Class locals precede closure/global lookup; absent names remain deferred."""
+
+    if name in namespace:
+
+        return cast("T", namespace[name])
+
+    return capture(name, reader)
 
 
 def bind(

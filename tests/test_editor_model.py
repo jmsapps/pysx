@@ -2,13 +2,57 @@
 
 import ast
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pysx.analysis import utf16_offsets
+from pysx.analysis import projection_for_source, utf16_offsets
 from pysx.editor_model import workspace_model
 from pysx.editor_types import diagnostics
+
+
+def test_callable_prop_spelling_does_not_make_it_a_native_site() -> None:
+    source = """from pysx import Fragment, html
+def Panel(*, title: str, maxWidth: int = 0) -> Fragment:
+    return html(t'p: {title}')
+view = html(t'Panel(title={"x"})')
+native = html(t'input(title="x")')
+"""
+    model = projection_for_source(source, "/private/tmp/prop_sites.py")
+    props = [site for site in model["sites"] if site["role"] == "prop"]
+    assert len(props) == 2
+    assert props[0].get("native") is not True
+    assert props[1].get("native") is True
+
+
+def test_project_handoff_retains_genuine_unused_function_diagnostics(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.pyright]\ntypeCheckingMode = "strict"\nreportUnusedFunction = false\n'
+    )
+    (tmp_path / "view.py").write_text("""from pysx import Fragment, html
+def app() -> Fragment:
+    def branch() -> Fragment:
+        return html(t'p: "used"')
+    def dead() -> Fragment:
+        return html(t'p: "unused"')
+    return html(t'branch:')
+""")
+    revision = "_pysx_revision_functions"
+    models = workspace_model({"root": str(tmp_path), "revision": revision, "buffers": {}})
+    directory = tmp_path / revision
+    directory.mkdir()
+    (directory / "__init__.py").write_text("")
+
+    for model in models:
+        path = directory / model["relative"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(model["text"])
+    result = diagnostics(directory, tmp_path)
+    reported = cast("list[dict[str, object]]", result["generalDiagnostics"])
+    unused = [item for item in reported if item.get("rule") == "reportUnusedFunction"]
+    assert len(unused) == 1
+    assert "dead" in str(unused[0]["message"])
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,7 +103,7 @@ def test_model_cache_invalidates_imported_signature_and_ruff_config(tmp_path: Pa
     producer = tmp_path / "components.py"
     producer.write_text(
         "from pysx import Children, Fragment, html\n"
-        'def Panel(*, children: Children | None = None) -> Fragment:\n'
+        "def Panel(*, children: Children | None = None) -> Fragment:\n"
         '    return html(t"p: {children}")\n'
     )
     consumer = tmp_path / "view.py"

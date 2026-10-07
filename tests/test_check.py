@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from pysx.check import Diagnostic, diagnostics
+from pysx.check import Diagnostic, diagnostics, diagnostics_for_source
 
 HEADER = "from pysx import component, div, html, signal, styled\n\n"
 
@@ -78,6 +78,75 @@ def test_styled_authoring_constant_variant_and_removed_call() -> None:
     assert len(results) == 2
     assert any("unknown variant" in item["message"] for item in results)
     assert any("removed" in item["message"] for item in results)
+
+
+def test_variant_inheritance_uses_workspace_scopes_and_imports(tmp_path: Path) -> None:
+    (tmp_path / "base.py").write_text(
+        'from pysx import styled\n'
+        'Heading = styled.h1(t"color: red", variants={"big": t"font-size: 2em"})\n'
+    )
+    (tmp_path / "exports.py").write_text("from base import Heading as Header\n")
+    source = """from pysx import styled, html
+from exports import Header
+Local = styled(Header)(t"color: blue", variants={"small": t"font-size: 1em"})
+view = html(t'Local(variant="big"): "valid"')
+invalid = html(t'Local(variant="wrong"): "bad"')
+def local():
+    Local = styled.p(t"color: green", variants={"other": t"color: black"})
+    return html(t'Local(variant="other"): "valid"')
+"""
+    findings = diagnostics_for_source(
+        source, str(tmp_path / "view.py"), workspace_roots=(tmp_path,)
+    )
+    variants = [item for item in findings if "unknown variant" in item["message"]]
+    assert len(variants) == 1
+    assert "wrong" in variants[0]["message"]
+    assert "['big', 'small']" in variants[0]["message"]
+
+
+def test_dynamic_variant_base_does_not_claim_an_empty_variant_set() -> None:
+    source = """from pysx import html, styled
+def decorate(base):
+    Local = styled(base)(t"color: red")
+    return html(t'Local(variant="big"): "valid if inherited"')
+"""
+    assert not any("unknown variant" in item["message"] for item in diagnostics_for_source(source))
+
+
+@pytest.mark.parametrize("module", ["pysx", "pysx.styled"])
+def test_variant_metadata_recognizes_styled_import_aliases(module: str) -> None:
+    source = f'''from {module} import styled as style
+from pysx import html
+Base = style.h1(t"color: red", variants={{"big": t"font-size: 2em"}})
+Local = style(Base)(t"color: blue")
+view = html(t'Local(variant="missing"): "bad"')
+'''
+    findings = [
+        item for item in diagnostics_for_source(source) if "unknown variant" in item["message"]
+    ]
+    assert len(findings) == 1
+    assert "['big']" in findings[0]["message"]
+
+
+@pytest.mark.parametrize("literal", ['"wrong"', '"wr\\u006fng"'])
+def test_literal_variant_error_maps_only_its_raw_value(literal: str) -> None:
+    source = f"""from pysx import styled, html
+Heading = styled.h1(t"color: red", variants={{"big": t"font-size: 2em"}})
+view = html(t\"\"\"
+    Heading(title="😀", variant={literal}): "hello"
+\"\"\")
+"""
+    findings = [
+        item for item in diagnostics_for_source(source) if "unknown variant" in item["message"]
+    ]
+    assert len(findings) == 1
+    diagnostic = findings[0]
+    assert diagnostic["line"] == diagnostic.get("endLine") == 3
+    line = source.splitlines()[3]
+    selected = line.encode("utf-16-le")[
+        diagnostic["startChar"] * 2 : diagnostic["endChar"] * 2
+    ].decode("utf-16-le")
+    assert selected == literal
 
 
 @pytest.mark.parametrize("value", ["42", "None", '"div"', "[]"])

@@ -188,5 +188,4 @@ def app() -> Fragment:
                 {readings}
                 h3: "Last submission"
                 pre(id="status"): {status}
-    """,
-    )
+    """)

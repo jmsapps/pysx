@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from .parser import Node
 
-VERSION = "1"
+VERSION = "2"
 MAX_SOURCE_BYTES = 4 * 1024 * 1024
 MAX_PROJECTION_BYTES = 16 * 1024 * 1024
 
@@ -96,18 +96,28 @@ class Compilation:
                 self.source[positions.starts[end.line] : reference.span.end].encode()
             )
 
-            if call.scope.kind == "class":
-
-                return name
             getter = ast.Lambda(
                 ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
                 name,
             )
             result = ast.Call(
-                ast.Attribute(ast.Name(helper, ast.Load()), "capture", ast.Load()),
+                ast.Attribute(
+                    ast.Name(helper, ast.Load()),
+                    "capture_class" if call.scope.kind == "class" else "capture",
+                    ast.Load(),
+                ),
                 [ast.Constant(reference.name), getter],
                 [],
             )
+
+            if call.scope.kind == "class":
+                result.args.append(
+                    ast.Call(
+                        ast.Attribute(ast.Name(helper, ast.Load()), "class_namespace", ast.Load()),
+                        [],
+                        [],
+                    )
+                )
 
             return ast.copy_location(result, name)
 
@@ -526,6 +536,16 @@ def analyze(
         for alias in node.names
     )
     names.update(node.arg for node in ast.walk(tree) if isinstance(node, ast.arg))
+    names.update(
+        name
+        for scope in scopes.nodes.values()
+        for name in (*scope.bindings, *scope.globals, *scope.nonlocals)
+    )
+    names.update(
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.TypeVar, ast.ParamSpec, ast.TypeVarTuple))
+    )
     names.update(
         node.name
         for node in ast.walk(tree)

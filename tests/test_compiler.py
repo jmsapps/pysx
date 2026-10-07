@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -147,6 +148,67 @@ view = html(t"Panel: 'hi'")
 """)
     assert not type_only.complete
     assert type_only.diagnostics[0].code == "type-only-component"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'try:\n        raise ValueError("oops")\n'
+        '    except ValueError as _pysx_compiler:\n        return html(t"p: \'hello\'")',
+        "match 1:\n        case _pysx_compiler:\n            return html(t\"p: 'hello'\")",
+        "match [1]:\n        case [*_pysx_compiler]:\n            return html(t\"p: 'hello'\")",
+        "match {}:\n        case {**_pysx_compiler}:\n            return html(t\"p: 'hello'\")",
+    ],
+)
+def test_helper_hygiene_for_exception_and_pattern_bindings(body: str) -> None:
+    from pysx.render import render
+
+    source = f"from pysx import html\ndef app():\n    {body}\n"
+    compilation = analyze(source)
+    assert compilation.helper != "_pysx_compiler"
+    namespace: dict[str, object] = {}
+    exec(compilation.code(), namespace)
+    app = namespace["app"]
+    assert callable(app)
+    assert "hello" in render(lambda: cast("Fragment", app())).body
+
+
+def test_class_body_capture_preserves_locals_closures_and_missing_branches() -> None:
+    from pysx.render import render
+
+    source = '''from pysx import html, styled
+def build():
+    Outer = styled.strong(t"color: red")
+    class Widget:
+        Local = styled.em(t"color: blue")
+        locals = None
+        fragment = html(t"""
+if {False}:
+    Missing: "bad"
+else:
+    Local: "local"
+    Outer: "outer"
+""")
+    return Widget.fragment
+'''
+    namespace: dict[str, object] = {}
+    exec(analyze(source).code(), namespace)
+    captured = namespace["build"]
+    assert callable(captured)
+    body = render(lambda: cast("Fragment", captured())).body
+    assert "<em" in body
+    assert "local" in body
+    assert "<strong" in body
+    assert "outer" in body
+    assert "bad" not in body
+
+    namespace = {}
+    exec(analyze(source.replace("if {False}", "if {True}")).code(), namespace)
+    build = namespace["build"]
+    assert callable(build)
+
+    with pytest.raises(NameError, match="Missing"):
+        render(lambda: cast("Fragment", build()))
 
 
 @pytest.mark.parametrize(

@@ -123,11 +123,12 @@ exports.activate = function (context) {
         raw.severity === "error" ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning);
       item.code = raw.rule;
       const code = String(item.code?.value ?? item.code);
-      if (!["reportArgumentType", "reportCallIssue", "reportReturnType", "reportGeneralTypeIssues"].includes(code)) continue;
+      const unusedFunction = code === "reportUnusedFunction";
+      if (!unusedFunction && !["reportArgumentType", "reportCallIssue", "reportReturnType", "reportGeneralTypeIssues"].includes(code)) continue;
       const start = generatedOffsetAt(model, item.range.start), end = generatedOffsetAt(model, item.range.end);
-      if (!model.validation.some(([begin, finish]) => begin <= start && end <= finish)) continue;
+      if (!unusedFunction && !model.validation.some(([begin, finish]) => begin <= start && end <= finish)) continue;
       let span = mappedOffsets(model, start, end, true);
-      if (!span) {
+      if (!span && !unusedFunction) {
         const validation = model.validation.find(([begin, finish]) => begin <= start && end <= finish);
         const origin = model.map.slice(...validation).find((value) => value != null);
         if (origin) span = origin;
@@ -411,12 +412,23 @@ exports.activate = function (context) {
       for (const diagnostic of model.diagnostics) output.appendLine(diagnostic.message);
       return fail("pysx: The active file could not be completely analyzed. Resolve its pysx diagnostics before configuring template-aware imports.");
     }
+    const pythonPath = await interpreter(doc);
+    const configuration = await worker(pythonPath, ["-m", "pysx.editor_config", state.root], state.root, undefined, state.token);
+    if (!valid(state)) return fail("pysx: Workspace changed during setup. Run Configure Template-Aware Imports again.");
+    if (configuration) {
+      const configDoc = await vscode.workspace.openTextDocument(configuration.filename);
+      if (configDoc.isDirty || configDoc.getText() !== configuration.source) return fail("pysx: Save the Pyright configuration before configuring template-aware imports.");
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(configDoc.uri, new vscode.Range(configDoc.positionAt(0), configDoc.positionAt(configDoc.getText().length)), configuration.text);
+      if (!await vscode.workspace.applyEdit(edit) || !await configDoc.save()) return fail("pysx: Could not save the project Pyright configuration. Setup is incomplete.");
+      output.appendLine(`Updated effective Pyright settings in ${configuration.filename}.`);
+    }
     await vscode.extensions.getExtension("ms-python.vscode-pylance")?.activate();
     const target = vscode.ConfigurationTarget.WorkspaceFolder;
     const python = vscode.workspace.getConfiguration("python", doc.uri);
     const severity = python.get("analysis.diagnosticSeverityOverrides", {});
     await python.update("analysis.ignore", [...new Set([...python.get("analysis.ignore", []), "**/_pysx_revision_*/**"])], target);
-    await python.update("analysis.diagnosticSeverityOverrides", { ...severity, reportUnusedImport: "none", reportUnusedVariable: "none" }, target);
+    await python.update("analysis.diagnosticSeverityOverrides", { ...severity, reportUnusedImport: "none", reportUnusedVariable: "none", reportUnusedFunction: "none" }, target);
     await python.update("analysis.disableTaggedHints", true, target);
     await python.update("analysis.fixAll", python.get("analysis.fixAll", []).filter((kind) => kind !== "source.unusedImports"), target);
     const editor = vscode.workspace.getConfiguration("editor", doc.uri);

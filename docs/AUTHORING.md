@@ -159,9 +159,16 @@ and run the command again. Unsupported active files must be corrected first.
 The command configures this workspace
 folder to use the pysx unused-import diagnostics and save action. It preserves the
 existing type-checking level and other diagnostic overrides, disables Pylance unused
-hints and overlapping import/unused-local checks, and excludes overlapping Ruff
+hints and overlapping import/unused-local/function checks, and excludes overlapping Ruff
 rules when that extension is installed. Ordinary Python typing remains with
 Pylance. Use strict mode for full prop/type feedback.
+
+When `pyrightconfig.json` or `[tool.pyright]` exists, setup updates that effective
+project configuration because it takes precedence over editor severity settings.
+It preserves other settings, retains strict typing, and excludes private revision
+diagnostics. Save pending configuration edits before setup. Unused imports and locals
+remain checked by template-aware Ruff; unused functions remain checked by the owned
+Pyright projection, including functions referenced only through bare markup tags.
 
 Ruff's unset `lint.ignore` value is nullable; setup treats it as an empty list and
 preserves existing ignored rules. The editor qualification host loads Python,
