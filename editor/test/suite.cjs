@@ -3,8 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vscode = require("vscode");
 
-async function until(predicate, label) {
-  const deadline = Date.now() + 15000;
+async function until(predicate, label, timeout = 15000) {
+  const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -55,11 +55,13 @@ exports.run = async function () {
   assert(await vscode.workspace.applyEdit(edit));
   assert(await document.save(), "saved-file trigger");
   let diagnostic;
+  // Cold interpreter/provider startup plus strict analysis can exceed 15s on CI.
+  // Keep the actual saved-file assertion and the runner's overall deadline.
   await until(() => {
     diagnostic = vscode.languages.getDiagnostics(document.uri).find((item) =>
       item.source === "pysx" && item.message.includes("unknown component 'Pge'"));
     return Boolean(diagnostic);
-  }, "saved-file checker diagnostic");
+  }, "saved-file checker diagnostic", 60000);
   assert.equal(diagnostic.range.start.line, 2);
   assert.equal(diagnostic.range.start.character, 4);
   // Closing a tab may retain its text model in VSCode's cache. Changing the

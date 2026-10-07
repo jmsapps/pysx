@@ -13,7 +13,9 @@ const digest = (text) => crypto.createHash("sha256").update(text).digest("hex");
 async function interpreter(document) {
   const folder = vscode.workspace.getWorkspaceFolder(document.uri);
   const config = vscode.workspace.getConfiguration("pysx", document.uri);
-  const candidates = [config.get("pythonPath")];
+  const explicit = config.get("pythonPath");
+  if (explicit && fs.existsSync(explicit) && fs.statSync(explicit).isFile()) return explicit;
+  const candidates = [];
   const python = vscode.extensions.getExtension("ms-python.python");
   if (python) {
     const api = await python.activate();

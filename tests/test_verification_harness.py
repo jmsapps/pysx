@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 from pathlib import Path
 from typing import cast
 
@@ -134,6 +135,46 @@ def test_editor_discovery_and_fresh_build() -> None:
     assert Path(state["interpreter"]).is_file()
     assert not Path(state["workspace"]).exists()
     assert "VERIFICATION PASSED" not in result.stdout
+
+
+@pytest.mark.parametrize("candidate", ["executable", "directory"])
+def test_editor_explicit_interpreter_skips_environment_discovery(candidate: str) -> None:
+    script = r'''
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+const executable = process.argv[1], explicit = process.argv[2];
+let discoveries = 0;
+const vscode = {
+  workspace: {
+    getWorkspaceFolder: () => null,
+    workspaceFolders: [],
+    getConfiguration: section => ({ get: () => section === "pysx" ? explicit : undefined }),
+  },
+  extensions: { getExtension: () => {
+    discoveries++;
+    assert.notEqual(explicit, executable, "explicit interpreter must not wait on Python startup");
+    return { activate: async () => ({ environments: {
+      getActiveEnvironmentPath: () => ({ path: executable }),
+      resolveEnvironment: async () => ({ executable: { uri: { fsPath: executable } } }),
+    } }) };
+  } },
+};
+const select = vm.runInNewContext(fs.readFileSync("editor/authoring.js", "utf8") +
+  "\ninterpreter;", {
+    require: name => name === "vscode" ? vscode : require(name), exports: {}, process,
+  });
+select({ uri: {} }).then(result => {
+  assert.equal(result, executable);
+  assert.equal(discoveries, explicit === executable ? 0 : 1);
+}).catch(error => { console.error(error); process.exitCode = 1; });
+'''
+    explicit = sys.executable if candidate == "executable" else str(Path(sys.executable).parent)
+    result = subprocess.run(
+        ["node", "-e", script, sys.executable, explicit], cwd=ROOT,
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("missing", ["PYSX_PYLANCE_EXTENSION", "PYSX_VSCODE_EXECUTABLE"])

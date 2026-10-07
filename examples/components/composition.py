@@ -185,9 +185,9 @@ def tree_controls() -> Fragment:
         t"""
             TreePanel:
                 ul(id="composition-tree",role="tree",aria-label="Component library",ref={root_ref}):
-                {each(roots, row, key=lambda node: node.key)}
+                    {each(roots, row, key=lambda node: node.key)}
                 p(id="tree-setups"):
-                "Setups: "; {setups}
+                    "Setups: "; {setups}
                 p(id="tree-mounts"): "Browser mounts: "; {mounts}
                 p(id="tree-cleanups"): "Cleanups: "; {cleanups}
                 br:
