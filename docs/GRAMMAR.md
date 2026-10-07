@@ -24,15 +24,19 @@ root must be empty in markup and owns its explicitly created descendants.
 
 ```
 template   := NEWLINE line*
-line       := INDENT (element | conditional | alternative | content)
-element    := NAME [ "(" attrs ")" ] ":" [ content ]
+line       := INDENT (element | conditional | alternative | loop | match | case | local | content)
+element    := (NAME | HOLE) [ "(" attrs ")" ] ":" [ content ]
 conditional:= "if" HOLE ":"
-alternative:= "else" ":"
+alternative:= "elif" HOLE ":" | "else" ":"
+loop       := "for" (NAME | "(" NAME ("," NAME)* ")") "in" HOLE ["key=" HOLE] ":"
+match      := "match" HOLE ":"
+case       := "case" ("_" | (STRING | NUMBER | "True" | "False" | "None" | HOLE) ("|" pattern)*) ":"
+local      := ("let" | "set") NAME "=" HOLE | "discard" HOLE
 content    := item (";" item)*
 item       := STRING | HOLE
 attrs      := attr ("," attr)* [","]
 attr       := NAME "=" (STRING | HOLE)
-STRING     := '"' [^"\n]* '"'          ; no escapes; first '"' closes
+STRING     := double-quoted or single-quoted text with quoted escapes
 HOLE       := a gap between two t-string fragments
 ```
 
@@ -46,13 +50,117 @@ Decided by **position and attribute name**, never by the value's Python type.
 | attribute | `bindValue`, `bindChecked`, `bindSelected` | `BIND` | typed control binding + `data-pysx-binding="hN"` |
 | attribute | other | `ATTR` | element gets `data-pysx-el="eN"` |
 | `if` header | — | `COND` | `<pysx-slot id="N">branch</pysx-slot>` |
+| opening markup line, followed by `(` and/or `:` | — | `TAG` | supplied native/styled/callable component |
 | content | — | `TEXT` | `<pysx-slot id="N">value</pysx-slot>` |
+| loop source / explicit key | — | `SOURCE` / `KEY` | bounded rows with keyed or positional identity |
+| local statement | — | `LOCAL` | lexical declaration, assignment or discarded expression |
+| match selector / case pattern | — | `MATCH` / `CASE` | selected owned branch |
 
 A `TEXT` hole holding an `Each` renders as a keyed list. A `Template` or `Fragment` hole
 inserts its node tree, so typed native constructors compose inside templates.
+`each(source, builder, key=...)` accepts a live readable iterable or a bounded frozen
+ordinary iterable. `each_indexed(source, builder, key=...)` calls the builder with
+`(index, item)` while keys remain attached to items. String/integer keys exclude
+booleans and must be unique after wire string conversion. `when(conditions=...,
+default=...)` lazily renders the first true boolean/readable condition's builder as
+an owned keyed branch. See [helper contracts](AUTHORING.md#inline-row-and-branch-helpers).
 `Children` holes insert caller-owned parsed child blocks as described below.
 These distinctions are confined to content position; event and binding attribute
 names are consumed by the DSL before values are evaluated.
+
+List/tuple content renders recursively as a snapshot, including raw Templates and
+Fragments within it. Each entry retains its namespace, styles and captured handlers;
+ordinary values are escaped. No snapshot watchers are created, even for a Signal
+inside an entry: its value is read once. Direct Template/Fragment composition keeps
+the existing explicit live holes. Snapshot traversal is bounded to 10000 entries
+and 128 levels, including nested containers. Comprehensions and bounded Python loop
+builders produce ordinary snapshots; changing their source cannot rebuild them.
+
+Raw Signal dispatch comes first. A Signal holding a list, tuple, Template or Fragment
+uses one owned content watcher and coarse HTML updates; unchanged markup emits no
+operation. Its rendered entries remain escaped and retain their namespaces. Use a
+DSL loop or `each()` for keyed row reconciliation. The checker warns conservatively
+about known Signal-dependent sequence/comprehension expressions and assigned aliases;
+it does not evaluate code or inspect deferred lambda bodies.
+
+A hole opening a markup line becomes a component tag only when followed by an
+attribute list and/or `:`. `{Card}(id="preview"):` and `{shared.Card}:` use real
+Python references, including local bindings, imported aliases and partial callables.
+`{native.Input}()` is a childless tag. In all other positions holes retain their
+content meaning. Unsupported tag values raise a TypeError naming the received type.
+Parse caches contain hole indexes and syntax only, never component or session values.
+Literal-name tags and explicit `namespace` dictionaries remain available.
+
+## Branches and Python row helpers
+
+`elif` and `else` must immediately follow the preceding branch at the same parent
+and indentation. `match` contains `case` blocks; alternatives use `|`, and the
+wildcard `_` must be last. Inactive branches release subscriptions and owned state.
+Conditional attributes use ordinary Python expressions: pass a `derived` Signal
+for a live choice, or compute it in a Python row callback. An attribute value of
+`None` omits the attribute.
+
+Prefer `each`/`each_indexed` and ordinary Python assignments for rows and locals.
+Callbacks capture their parent and item normally, including event handlers. Use
+`when(conditions=[(condition, builder), ...], default=builder)` for lazy construction.
+See [the complete helper contract](AUTHORING.md#inline-row-and-branch-helpers).
+
+### Deprecated lexical syntax
+
+The `for`, `let`, `set` and `discard` productions above are compatibility syntax.
+The following describes their retained behavior, rather than recommended authoring.
+
+Python evaluates t-string holes before markup is parsed. Declare `row =
+Binding[Row]("row")`, supply `namespace={"row": row}`, and write `for row in
+{rows} key={defer(row, lambda value: value.id)}:`. Content and attributes can use
+`{row}` directly, or `defer(row, callback)` and `defer2(first, second, callback)`
+for typed expressions. Captured handlers retain their row's immutable environment.
+No text is evaluated and no execution frame is retained. In this legacy mode, `use=`
+supplies component inventories and `namespace` supplies lexical identities.
+
+Tuple patterns destructure source entries; use `enumerate` for indexed snapshots
+or a derived enumerated source for live indices. Nested loops may shadow bindings.
+`let name = {value}` introduces a value in the current body; `set name = {value}`
+requires an existing binding and shadows it in that body. `discard {expression}`
+evaluates a deferred expression without emitting markup. These expressions run
+again when their enclosing reactive row renders, so side effects must tolerate
+repeated evaluation. Child bodies cannot mutate the parent's environment.
+
+Loops traverse at most 10000 entries. Explicit keys must be unique non-None
+strings or integers; the renderer uses their string representation as identity.
+Omitting `key=` uses position: state survives replacement at that position,
+and removing then reinserting a position remounts it. A keyed row retains its
+component state across reordering. Snapshot sources create no loop watchers;
+Signals and deferred live sources update through the existing list owner.
+`bounded_while(condition, builder, limit=10000)` is the ordinary Python while
+equivalent: it returns a tuple of snapshot results and rejects nontermination
+past the requested limit. Comprehensions remain ordinary Python snapshots.
+
+## Template coordinates and interpolation metadata
+
+Attribute lists may continue across lines. Python holes remain atomic, including
+nested expression delimiters. Markup strings accept either quote and `\\`, `\"`,
+`\'`, `\n`, `\r`, and `\t` escapes; unknown escapes retain their backslash. Python
+decodes ordinary t-string escapes first, so use raw t-strings or double backslashes
+when a quoted escape must reach the markup scanner. CRLF is accepted. Structural
+indentation uses spaces; tabs in indentation raise a positioned syntax error.
+Literal braces use Python's doubled-brace spelling.
+
+Assigned and assembled Templates retain their fragments and interpolation metadata.
+Adjacent holes retain the empty static fragment between them. Syntax nodes are immutable,
+with spans in original decoded fragment indexes/offsets and zero-based logical lines/
+columns; a hole occupies one logical column. These coordinates are distinct from raw
+Python source offsets and editor UTF-16 columns. Text, tag, attribute values and complete
+element/conditional blocks carry coordinates. The structure-only parse cache holds 256
+entries; each template is bounded to 1 MiB of UTF-8 static text, 16384 holes and 128 nested
+blocks. It never stores interpolation values.
+
+Text and ordinary attributes honor conversion (`!s`, `!r`, `!a`) followed by Python's
+format specification. Snapshot values format once; a formatted Signal stays live and
+updates its text or attribute watcher. Explicit formatting turns structural snapshot
+values into escaped text. Metadata is rejected on event, binding, condition and component
+tag holes, and on CSS capability attributes (`css`, `styleVars`, `cssVars`), with the
+offending hole's template position. Formatting errors propagate rather than being ignored.
 
 `else:` binds to the most recent `if` opened at the same indent.
 
@@ -71,17 +179,27 @@ typed native constructors. Otherwise it is forwarded as the `children` keyword.
 Insert that object in a content hole to render it in its caller environment.
 Components return a `Template` or `Fragment`; other return types raise `TypeError`.
 
-Defining-module bindings and actual Python closure cells provide a component's namespace.
-Use `html(template, namespace={...})` for bindings used only in template text, including
-function-local aliases; `render(app, namespace={...})` provides explicit root bindings.
+Defining-module bindings and actual Python closure cells provide a component's namespace,
+so an imported or module-level component resolves from its bare name with no extra argument.
+The compiler resolves bare tags through ordinary Python lexical bindings and captures
+their actual objects in the fragment. Use normal imports and no inventory. Install the
+scoped loader before importing application modules, or build portable bytecode; use the
+shared template-aware tooling for import cleanup and typing. See [authoring](AUTHORING.md).
+
+### Deprecated explicit bindings
+
+`html(template, use=(Card, Panel))` names the components a template uses: each entry is an
+ordinary Python reference, and an entry carrying a `__name__` also binds under it, which
+covers components defined inside the calling function. `html(template, namespace={...})`
+remains available for a binding whose markup name differs from the object's own, and
+`render(app, namespace={...})` provides explicit root bindings.
 These mappings are copied; execution frames are never retained. Partials and callable
 instances use their underlying defining callable's module. A fragment's explicit bindings
 override module bindings. Caller children retain their own namespace when inserted.
 
-Use explicit namespace entries for ordinary imports used only as literal tags. For example,
-`from shared import Card` together with `html(t'\nCard:', namespace={"Card": Card})`
-provides a real Python reference that Ruff and Pyright recognize. Their unused-import
-checks and import cleanup continue to apply to unrelated imports. Required, default and
+These explicit bindings are retained for compatibility. New source uses ordinary imports
+and bare tags through the compiler, with template-aware Ruff and editor import actions.
+Unused-import checks and cleanup continue to apply to unrelated imports. Required, default and
 keyword-only props follow the callable's Python signature; missing or unexpected props
 raise `TypeError`. Python annotations are checked on ordinary component calls by static
 type checkers, rather than enforced as runtime coercions. Signals are passed intact;
@@ -138,4 +256,5 @@ colon is interpreted as the start of a t-string format specification.
 - **Event names come from the shared schema**, including body-specific events;
   capitalized `on[A-Z]…` names retain the open event convention. Event attributes
   require interpolated callables. Holes cannot appear in attribute-name position.
-- **Templates must begin with a newline.**
+- **Multiline templates must begin with a newline.** Single-line templates may put
+  markup immediately after the opening quote: `html(t'''Panel: "Hello"''')`.

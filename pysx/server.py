@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import importlib
 import inspect
 import json
 from http import HTTPStatus
@@ -20,6 +19,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from .dom import DomError
 from .events import decode_event
 from .forms import PayloadError, form_edits
+from .loader import import_app
 from .reactive import Effect, batch
 from .render import Fragment, Watcher, render
 from .styles import style_context
@@ -61,6 +61,7 @@ class Session:
         self._live = True
 
     def _watch(self, watcher: Watcher) -> Effect:
+
         return Effect(lambda: self._collect(watcher))
 
     def _collect(self, watcher: Watcher) -> None:
@@ -144,6 +145,7 @@ class Session:
             fn = cast("Callable[[object], object]", listener[0].callback)
 
         if fn is None and not edits:
+
             return []
         typed = self.rendered.event_handlers.get(handler_id)
 
@@ -195,6 +197,7 @@ class Session:
             target = self.rendered.bindings.get(hid)
 
             if target is None:
+
                 continue
             equal = target.signal() == payload
             own = [
@@ -241,6 +244,7 @@ class Session:
             errors.append(error)
 
         if errors:
+
             raise ExceptionGroup("session cleanup failed", errors)
 
 
@@ -248,6 +252,7 @@ async def close_session(
     session: Session, worker: asyncio.Task[None] | None, error: BaseException | None
 ) -> None:
     """Dispose a connection's session without masking the error that ended it."""
+
     if worker is not None:
         worker.cancel()
         await asyncio.gather(worker, return_exceptions=True)
@@ -256,6 +261,7 @@ async def close_session(
         session.dispose()
     except Exception as cleanup_error:
         if error is None:
+
             raise
         error.add_note(f"session cleanup also failed: {cleanup_error}")
 
@@ -272,9 +278,10 @@ def _static(connection: ServerConnection, name: str, content_type: str) -> Respo
 
 def _load_app(spec: str) -> Callable[[], Template | Fragment]:
     module_name, _, attr = spec.partition(":")
-    app: object = getattr(importlib.import_module(module_name), attr or "app")
+    app: object = getattr(import_app(module_name), attr or "app")
 
     if not callable(app):
+
         raise TypeError("app must be callable")
 
     return cast("Callable[[], Template | Fragment]", app)
@@ -290,12 +297,15 @@ def main() -> None:
 
     async def process_request(connection: ServerConnection, request: Request) -> Response | None:
         if request.path in ("/", "/index.html"):
+
             return _static(connection, "index.html", "text/html; charset=utf-8")
 
         if request.path == "/client.js":
+
             return _static(connection, "client.js", "text/javascript; charset=utf-8")
 
         if request.path == "/ws":
+
             return None
 
         return connection.respond(HTTPStatus.NOT_FOUND, "not found\n")
@@ -329,14 +339,17 @@ def main() -> None:
                 handler_id = message.get("h", "")
 
                 if not isinstance(handler_id, str):
+
                     continue
                 revision = message.get("rev")
                 after = message.get("after")
 
                 if revision is not None and (type(revision) is not int or revision < 0):
+
                     continue
 
                 if after is not None and not isinstance(after, str):
+
                     continue
 
                 try:
@@ -393,9 +406,11 @@ def main() -> None:
                 try:
                     decoded: object = json.loads(raw)
                 except TypeError, ValueError:
+
                     continue
 
                 if not isinstance(decoded, dict):
+
                     continue
                 message = cast("dict[str, object]", decoded)
 
@@ -420,6 +435,7 @@ def main() -> None:
     try:
         asyncio.run(run())
     except OSError as exc:
+
         raise SystemExit(f"cannot bind {args.host}:{args.port}: {exc}") from exc
     except KeyboardInterrupt:
         pass

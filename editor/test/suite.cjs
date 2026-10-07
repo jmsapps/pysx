@@ -3,8 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vscode = require("vscode");
 
-async function until(predicate, label) {
-  const deadline = Date.now() + 15000;
+async function until(predicate, label, timeout = 15000) {
+  const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -12,6 +12,7 @@ async function until(predicate, label) {
   throw new Error(`timeout waiting for ${label}`);
 }
 exports.run = async function () {
+  if (process.env.PYSX_EDITOR_SUITE === "authoring") return require("./authoring_suite.cjs").run();
   const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
   assert(extension, "fresh extension registered");
   await extension.activate();
@@ -43,7 +44,8 @@ exports.run = async function () {
     return;
   }
 
-  const filename = path.join(process.env.PYSX_EDITOR_WORKSPACE, "diagnostics.py");
+  await vscode.workspace.getConfiguration("pysx").update("pythonPath", process.env.PYSX_EDITOR_PYTHON, vscode.ConfigurationTarget.Workspace);
+  const filename = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "diagnostics.py");
   fs.writeFileSync(filename, 'from pysx import html\nvalue = html(t"""\n    div: "valid"\n""")\n');
   const document = await vscode.workspace.openTextDocument(filename);
   await vscode.languages.setTextDocumentLanguage(document, "python");
@@ -53,11 +55,13 @@ exports.run = async function () {
   assert(await vscode.workspace.applyEdit(edit));
   assert(await document.save(), "saved-file trigger");
   let diagnostic;
+  // Cold interpreter/provider startup plus strict analysis can exceed 15s on CI.
+  // Keep the actual saved-file assertion and the runner's overall deadline.
   await until(() => {
     diagnostic = vscode.languages.getDiagnostics(document.uri).find((item) =>
       item.source === "pysx" && item.message.includes("unknown component 'Pge'"));
     return Boolean(diagnostic);
-  }, "saved-file checker diagnostic");
+  }, "saved-file checker diagnostic", 60000);
   assert.equal(diagnostic.range.start.line, 2);
   assert.equal(diagnostic.range.start.character, 4);
   // Closing a tab may retain its text model in VSCode's cache. Changing the

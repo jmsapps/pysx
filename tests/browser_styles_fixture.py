@@ -27,7 +27,7 @@ def app() -> Fragment:
 
     return html(
         t"""
-        div(id="sample" css={css} class={classes} styleVars={({"local": variable})}): "Sample"
+        div(id="sample" css={css} class={classes} styleVars={ ({"local": variable}) }): "Sample"
         if {visible}:
             div(id="owned" css="margin-left: 37px"): "Owned"
         button(id="change" onClick={change}): "Change"

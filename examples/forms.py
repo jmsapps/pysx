@@ -3,14 +3,19 @@
 import json
 from typing import cast
 
-from pysx import Fragment, component, html, native, signal
+from pysx import Fragment, component, derived, html, native, signal
 
-from .components import Card as Card
-from .components import Description as Description
-from .components import Eyebrow as Eyebrow
-from .components import Field, Form, SecondaryAction, Submit
-from .components import Page as Page
-from .components import Title as Title
+from .components import (
+    Card,
+    Description,
+    Eyebrow,
+    Field,
+    Form,
+    Page,
+    SecondaryAction,
+    Submit,
+    Title,
+)
 
 
 @component
@@ -21,6 +26,7 @@ def app() -> Fragment:
     checked = signal(False)
     single = signal("a")
     selected = signal(["a"])
+    selected_text = derived(lambda: repr(selected()))
     radio = signal("a")
     corrected = signal("ABC")
     status = signal("ready")
@@ -149,7 +155,7 @@ def app() -> Fragment:
         native.Dt("Single choice"),
         native.Dd(single, id="single-state"),
         native.Dt("Multiple choices"),
-        native.Dd(selected, id="multi-state"),
+        native.Dd(selected_text, id="multi-state"),
         native.Dt("Radio choice"),
         native.Dd(radio, id="radio-state"),
         native.Dt("Corrected text"),
@@ -160,7 +166,8 @@ def app() -> Fragment:
         native.Dd(invalids, id="invalid-state"),
     )
 
-    return html(t"""
+    return html(
+        t"""
         Page(id="live-forms"):
             header:
                 Eyebrow: "pysx / examples"

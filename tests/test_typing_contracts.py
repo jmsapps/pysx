@@ -11,19 +11,157 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
-def test_styled_bases_types(tmp_path: Path, checker: str, valid: bool) -> None:
+def test_inline_helper_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = (
+        "from pysx import Each, Fragment, each, each_indexed, html, signal, when\n"
+        "from typing import assert_type\n"
+        "def row(value: int) -> Fragment:\n    return html(t'p: {value}')\n"
+        "def indexed(index: int, value: int) -> Fragment:\n"
+        "    return html(t'p: {index} {value}')\n"
+        "values = signal([1, 2])\n"
+    )
+
+    if valid:
+        source += (
+            "assert_type(each(values, row, key=str), Each[int])\n"
+            "assert_type(each([1, 2], row, key=str), Each[int])\n"
+            "assert_type(each_indexed(values, indexed, key=str), Each[tuple[int, int]])\n"
+            "assert_type(each_indexed([1, 2], indexed, key=str), Each[tuple[int, int]])\n"
+            "flag = signal(True)\n"
+            "when(conditions=[(flag, lambda: row(1)), (False, lambda: row(2))], "
+            "default=lambda: row(3))\n"
+            "when(conditions=[(lambda: flag(), lambda: row(1))])\n"
+        )
+    else:
+        source += (
+            "each(values, lambda value: 'bad', key=str)\n"
+            "each(values, row, key=lambda value: 1.5)\n"
+            "each_indexed(values, row, key=str)\n"
+            "when(conditions=[(signal(1), lambda: row(1))])\n"
+            "when(conditions=[(True, lambda: 'bad')])\n"
+            "when([(True, lambda: row(1))])\n"
+        )
+    fixture = tmp_path / "inline_helper_contract.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "Fragment" in output
+        assert "bool" in output
+        assert "float" in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_branches_loops_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = "from pysx import Binding, Deferred, defer, defer2, bounded_while\n"
+    source += "from typing import assert_type\nrow = Binding[int]('row')\n"
+
+    if valid:
+        source += "name = Binding[str]('name')\n"
+        source += "assert_type(defer(row, lambda n: n + 1), Deferred[int])\n"
+        source += "assert_type(defer2(row, name, lambda n, s: s * n), Deferred[str])\n"
+        source += "assert_type(bounded_while(lambda: False, lambda: 1), tuple[int, ...])\n"
+    else:
+        source += "def wrong(value: str) -> str:\n    return value.upper()\n"
+        source += "defer(row, wrong)\nbounded_while(lambda: 'wrong', lambda: 1)\n"
+    fixture = tmp_path / "bindings_contract.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "str" in output
+        assert "bool" in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_positioned_multiline_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = "from pysx import html, render, signal\n"
+
+    if valid:
+        source += (
+            "value = signal(1.25)\n"
+            "view = t'\\np(\\n title={value:.2f}\\n): {value!s:>8}'\n"
+            "render(lambda: html(view))\n"
+        )
+    else:
+        source += "html(f'\\np: {signal(1.25)}')\n"
+    fixture = tmp_path / "positioned.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "Template" in output
+
+
+def test_styled_authoring_import_usage_real_tools(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "tests/test_components.py::test_template_import_usage_real_checkers[use]",
+            "--basetemp",
+            str(tmp_path / "import-proof"),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_styled_authoring_bases_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = "from pysx import styled, div, Fragment, html\n"
 
     if valid:
         source += "from typing import assert_type\n"
         source += "def base(label: str) -> Fragment:\n    return html(t'\\nspan: {label}')\n"
-        source += "tag = styled(styled(div, t'color: red'), t'color: blue')\n"
-        source += "fn = styled(styled(base, t'color: red'), t'color: blue')\n"
+        source += "tag = styled(styled(div)(t'color: red'))(t'color: blue')\n"
+        source += "fn = styled(styled(base)(t'color: red'))(t'color: blue')\n"
         source += "assert_type(fn('hello'), Fragment)\nassert_type(tag.tag, str)\n"
+        source += "button = styled.button(t'color: red', variants={'primary': t'color: blue'})\n"
+        source += "extended = styled(button)(t'padding: 3px')\n"
+        source += "assert_type(extended('go', disabled=True, variant='primary'), Fragment)\n"
+        source += 'html(t\'\\n{extended}(variant="primary"): \\"hello\\"\')\n'
     else:
         source = "from pysx import styled, Fragment, html\n"
         source += "def base(label: str) -> Fragment:\n    return html(t'\\nspan: {label}')\n"
-        source += "styled('div', t'color: red')\nfn = styled(base, t'color: red')\nfn(42)\n"
+        source += "styled('div')(t'color: red')\nfn = styled(base)(t'color: red')\nfn(42)\n"
+        source += (
+            "button = styled.button(t'color: red')\nbutton(href='wrong')\nbutton(variant=42)\n"
+        )
     fixture = tmp_path / "styled_contract.py"
     fixture.write_text(source)
     args = [sys.executable, "-m", checker]

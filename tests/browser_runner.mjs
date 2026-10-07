@@ -16,6 +16,21 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "templates_example", cases: [
+    [0, "templates", "browser_templates.mjs", "TEMPLATES BROWSER PASSED"],
+  ] },
+  { suite: "render_snapshot", cases: [
+    [0, "control_fixture", "browser_control.mjs", "CONTROL BROWSER PASSED"],
+    [0, "snapshot_fixture", "browser_snapshot.mjs", "SNAPSHOT BROWSER PASSED"],
+  ] },
+  { suite: "branches_loops", cases: [
+    [0, "control_fixture", "browser_control.mjs", "CONTROL BROWSER PASSED"],
+  ] },
+  { suite: "styled_authoring", cases: [
+    [0, "authoring_fixture", "browser_authoring.mjs", "AUTHORING BROWSER PASSED"],
+    [0, "composition", "browser_tree.mjs", "TREE BROWSER PASSED"],
+    [0, "themes", "browser_themes.mjs", "THEMES BROWSER PASSED"],
+  ] },
   { suite: "components_example", cases: [
     [0, "composition", "browser_tree.mjs", "TREE BROWSER PASSED"],
   ] },
@@ -159,6 +174,12 @@ try {
       ["-m", "pysx.server", "--app", "tests.browser_components_fixture:app", "--port", String(port)] :
       name === "tree_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_tree_fixture:app", "--port", String(port)] :
+      name === "snapshot_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_snapshot_fixture:app", "--port", String(port)] :
+      name === "control_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_control_fixture:app", "--port", String(port)] :
+      name === "authoring_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_authoring_fixture:app", "--port", String(port)] :
       name === "styled_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_styled_fixture:app", "--port", String(port)] :
       name === "styles_fixture" ?

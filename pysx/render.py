@@ -17,19 +17,38 @@ from annotationlib import Format
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from inspect import Parameter, signature
-from string.templatelib import Template
+from itertools import islice
+from string.templatelib import Interpolation, Template
 from typing import TYPE_CHECKING, cast
 
+from ._compiler_runtime import MissingComponent
+from .bindings import MAX_ROWS, Deferred, Environment, resolve
+from .bindings import Binding as LexicalBinding
 from .composition import Children, Component, identity_for, namespace_for
 from .dom import DomController, DomError, DomRef, dom_context
 from .elements import VOID, ElementTag
 from .events import EventHandler
 from .forms import Binding, make_binding
 from .lifecycle import Scopes
-from .parser import Conditional, Element, Hole, HoleKind, Node, Skeleton, attr_kind, parse
-from .reactive import Readable, Signal
+from .parser import (
+    Case,
+    Conditional,
+    Element,
+    Hole,
+    HoleKind,
+    InterpolationError,
+    Local,
+    Loop,
+    Match,
+    Node,
+    Position,
+    Skeleton,
+    attr_kind,
+    parse,
+)
+from .reactive import Readable, Signal, derived
 from .schema import BOOLEAN_ATTRS, NATIVE_TAGS, normalize_attr
-from .styled import StyledCallable, StyledTag, flatten, global_rules
+from .styled import StyledCallable, StyledTag, VariantClass, flatten, global_rules
 from .styles import (
     CssClass,
     StyleRegistry,
@@ -39,8 +58,11 @@ from .styles import (
     style_owner,
     variable_values,
 )
+from .template import template_values
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .wire import Op
 
 
@@ -48,35 +70,184 @@ if TYPE_CHECKING:
 class Fragment:
     template: Template
     namespace: Mapping[str, object] | None = None
-    root_classes: tuple[str, ...] = ()
+    root_classes: tuple[object, ...] = ()
     themes: Themes | None = None
     rules: tuple[tuple[str, str], ...] = ()
+    bound: bool = False
+
+    def scope_namespace(self, fallback: Mapping[str, object]) -> dict[str, object]:
+        bindings = dict(self.namespace or {})
+
+        return bindings if self.bound else dict(fallback) | bindings
+
+
+type Used = Callable[..., object] | ElementTag | StyledTag
+
+
+def _lexical_live(value: object) -> bool:
+
+    return isinstance(value, (Signal, Deferred, LexicalBinding))
+
+
+def _signal_reader(value: object) -> Readable[object] | None:
+
+    return cast("Readable[object]", value) if isinstance(value, Signal) else None
+
+
+def _structured_content(value: object) -> bool:
+
+    return isinstance(value, (Template, Fragment, list, tuple))
+
+
+def _validate_snapshot(
+    value: object,
+    depth: int = 0,
+    path: frozenset[int] = frozenset(),
+    budget: list[int] | None = None,
+) -> None:
+    if not _structured_content(value):
+
+        return
+
+    if depth >= 128 or id(value) in path:
+
+        raise ValueError("snapshot nesting exceeds 128 levels or contains a cycle")
+    nested_path = path | {id(value)}
+    counter = budget if budget is not None else [0]
+
+    if isinstance(value, Fragment):
+        _validate_snapshot(value.template, depth + 1, nested_path, counter)
+    elif isinstance(value, Template):
+        for entry in value.values:
+            _validate_snapshot(entry, depth + 1, nested_path, counter)
+    else:
+        for entry in cast("Sequence[object]", value):
+            counter[0] += 1
+
+            if counter[0] > MAX_ROWS:
+
+                raise ValueError("snapshot exceeds 10000 entries")
+            _validate_snapshot(entry, depth + 1, nested_path, counter)
+
+
+def _used(components: tuple[Used, ...]) -> dict[str, object]:
+    found: dict[str, object] = {}
+
+    for component in components:
+        if not callable(component) and not isinstance(  # pyright: ignore[reportUnnecessaryIsInstance]
+            component, (ElementTag, StyledTag)
+        ):
+
+            raise TypeError(f"use= takes components, received {type(component).__name__}")
+        name = getattr(component, "__name__", None)
+
+        if isinstance(name, str):
+            found[name] = component
+
+    return found
 
 
 def html(
     template: Template,
     *,
+    use: tuple[Used, ...] = (),
     namespace: Mapping[str, object] | None = None,
     themes: Themes | None = None,
 ) -> Fragment:
     if not isinstance(template, Template):  # pyright: ignore[reportUnnecessaryIsInstance]
-        raise TypeError('html() takes a t-string; did you write f""" instead of t"""?')
 
-    return Fragment(template, dict(namespace) if namespace is not None else None, themes=themes)
+        raise TypeError('html() takes a t-string; did you write f""" instead of t"""?')
+    bindings = _used(use)
+
+    if namespace is not None:
+        bindings.update(namespace)
+
+    return Fragment(template, bindings or None, themes=themes)
 
 
 def _template_skeleton(template: Template) -> Skeleton:
     skeleton = parse(template.strings)
 
-    for index, _kind, name in skeleton.holes:
-        if name is None or normalize_attr(name) not in {"css", "stylevars", "cssvars"}:
-            continue
+    for index, kind, name in skeleton.holes:
         interpolation = template.interpolations[index]
 
         if interpolation.conversion is not None or interpolation.format_spec:
-            raise ValueError("CSS attribute interpolation metadata is unsupported")
+            position = _hole_position(skeleton.root, index)
+
+            if name is not None and normalize_attr(name) in {"css", "stylevars", "cssvars"}:
+
+                raise InterpolationError(
+                    "CSS attribute interpolation metadata is unsupported", position
+                )
+
+            if kind not in {HoleKind.TEXT, HoleKind.ATTR}:
+
+                raise InterpolationError(
+                    f"{kind.value} interpolation conversion/format metadata is unsupported",
+                    position,
+                )
 
     return skeleton
+
+
+def _hole_position(nodes: Sequence[Node], index: int) -> Position | None:
+    for node in nodes:
+        holes: list[Hole] = []
+
+        if isinstance(node, Hole):
+            holes.append(node)
+        elif isinstance(node, Element):
+            if isinstance(node.tag, Hole):
+                holes.append(node.tag)
+            holes.extend(value for _name, value in node.attrs if isinstance(value, Hole))
+            found = _hole_position(node.children, index)
+
+            if found is not None:
+
+                return found
+        elif isinstance(node, Conditional):
+            holes.append(node.hole)
+            found = _hole_position((*node.then, *node.otherwise), index)
+
+            if found is not None:
+
+                return found
+
+        if isinstance(node, Loop):
+            holes.append(node.source)
+
+            if node.key is not None:
+                holes.append(node.key)
+            found = _hole_position(node.children, index)
+
+            if found is not None:
+
+                return found
+        elif isinstance(node, Local):
+            holes.append(node.value)
+        elif isinstance(node, Match):
+            holes.append(node.value)
+
+            for case in node.cases:
+                holes.extend(pattern for pattern in case.patterns if isinstance(pattern, Hole))
+                found = _hole_position(case.children, index)
+
+                if found is not None:
+
+                    return found
+
+        for hole in holes:
+            if hole.index == index:
+
+                return hole.position
+
+    return None
+
+
+def _prepared_values(template: Template) -> tuple[object, ...]:
+    _template_skeleton(template)
+
+    return template_values(template)
 
 
 def component[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
@@ -89,16 +260,88 @@ def component[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
 class Each[T]:
     source: Readable[Iterable[T]]
     item: Callable[[T], Fragment]
-    key: Callable[[T], object]
+    key: Callable[[T], str | int]
+    live: bool = True
+
+
+def _bounded_items[T](source: Iterable[T]) -> tuple[T, ...]:
+    items = tuple(islice(source, MAX_ROWS + 1))
+
+    if len(items) > MAX_ROWS:
+
+        raise ValueError("each exceeds 10000 rows")
+
+    return items
 
 
 def each[T](
-    source: Readable[Iterable[T]], item: Callable[[T], Fragment], *, key: Callable[[T], object]
+    source: Readable[Iterable[T]] | Iterable[T],
+    item: Callable[[T], Fragment],
+    *,
+    key: Callable[[T], str | int],
 ) -> Each[T]:
-    return Each(source, item, key)
+    """Build keyed rows; readable sources are live, ordinary iterables are frozen."""
+
+    if callable(source):
+
+        return Each(source, item, key)
+    items = _bounded_items(source)
+
+    return Each(lambda: items, item, key, live=False)
+
+
+def each_indexed[T](
+    source: Readable[Iterable[T]] | Iterable[T],
+    item: Callable[[int, T], Fragment],
+    *,
+    key: Callable[[T], str | int],
+) -> Each[tuple[int, T]]:
+    """Expose current positions while keeping identity attached to item keys."""
+
+    if callable(source):
+
+        def indexed() -> Iterable[tuple[int, T]]:
+
+            return enumerate(source())
+
+        return each(indexed, lambda row: item(*row), key=lambda row: key(row[1]))
+
+    return each(enumerate(source), lambda row: item(*row), key=lambda row: key(row[1]))
+
+
+@dataclass(frozen=True)
+class _Branch:
+    index: int
+    builder: Callable[[], Fragment]
+
+
+def when(
+    *,
+    conditions: Iterable[tuple[bool | Readable[bool], Callable[[], Fragment]]],
+    default: Callable[[], Fragment] | None = None,
+) -> Each[_Branch]:
+    """Construct only the first matching branch, with live reads and owned cleanup."""
+    choices = _bounded_items(conditions)
+
+    def selected() -> Iterable[_Branch]:
+        for index, (condition, builder) in enumerate(choices):
+            value = cast("object", condition() if callable(condition) else condition)
+
+            if not isinstance(value, bool):
+
+                raise TypeError("when conditions must be bool or readable bool")
+
+            if value:
+
+                return (_Branch(index, builder),)
+
+        return () if default is None else (_Branch(len(choices), default),)
+
+    return each(selected, lambda branch: branch.builder(), key=lambda branch: branch.index)
 
 
 def _read(value: object) -> object:
+
     return cast("Readable[object]", value)() if isinstance(value, Signal) else value
 
 
@@ -107,37 +350,45 @@ def _attr_text(value: object, name: str = "") -> str | None:
     value = _read(value)
 
     if value is None:
+
         return None
 
     if name in BOOLEAN_ATTRS:
+
         return None if value is False or value == 0 or value == "false" else ""
 
     if isinstance(value, bool):
+
         return str(value).lower()
 
     return str(value)
 
 
 def _class_text(value: object) -> str:
-    if isinstance(value, CssClass):
+    if isinstance(value, (CssClass, VariantClass)):
+
         return value()
     value = _read(value)
 
     if value is None or value is False:
+
         return ""
 
     if isinstance(value, dict):
+
         return " ".join(
             str(key) for key, enabled in cast("dict[object, object]", value).items() if enabled
         )
 
     if isinstance(value, (list, tuple, set)):
+
         return " ".join(str(item) for item in cast("Iterable[object]", value))
 
     return str(value)
 
 
 def _merge_classes(values: Iterable[str]) -> str:
+
     return " ".join(dict.fromkeys(" ".join(values).split()))
 
 
@@ -146,6 +397,7 @@ def _merge_classes(values: Iterable[str]) -> str:
 
 class Watcher:
     def refresh(self) -> list[Op]:
+
         raise NotImplementedError
 
 
@@ -159,6 +411,7 @@ class TextWatcher(Watcher):
         now = str(self.signal())
 
         if now == self.last:
+
             return []
         self.last = now
 
@@ -177,9 +430,27 @@ class CondWatcher(Watcher):
         now = bool(self.signal())
 
         if now == self.last:
+
             return [op for watcher in self.children for op in watcher.refresh()]
         self.last = now
         markup, self.children = self.render_branch(now)
+
+        return [{"op": "html", "id": self.slot, "v": markup}]
+
+
+@dataclass
+class ContentWatcher(Watcher):
+    slot: str
+    render_content: Callable[[], str]
+    last: str
+
+    def refresh(self) -> list[Op]:
+        markup = self.render_content()
+
+        if markup == self.last:
+
+            return []
+        self.last = markup
 
         return [{"op": "html", "id": self.slot, "v": markup}]
 
@@ -195,6 +466,7 @@ class AttrWatcher(Watcher):
         now = _attr_text(self.signal, self.name)
 
         if now == self.last:
+
             return []
         self.last = now
 
@@ -210,6 +482,7 @@ class BindingWatcher(Watcher):
         now = self.binding.value()
 
         if now == self.last:
+
             return []
         self.last = now
 
@@ -227,12 +500,14 @@ class ClassWatcher(Watcher):
     last: str
 
     def merged(self) -> str:
+
         return _merge_classes(_class_text(value) for value in self.sources)
 
     def refresh(self) -> list[Op]:
         now = self.merged()
 
         if now == self.last:
+
             return []
         self.last = now
 
@@ -269,6 +544,7 @@ class InlineStyleWatcher(Watcher):
         value = self.value()
 
         if value == self.last:
+
             return []
         self.last = value
 
@@ -300,6 +576,7 @@ class ListWatcher(Watcher):
         changed = {k: v for k, v in markup.items() if self.markup.get(k) != v}
 
         if order == self.order and not changed:
+
             return []
         self.order, self.markup = order, markup
 
@@ -342,6 +619,7 @@ class Rendered:
         self.event_handlers.clear()
 
         if errors:
+
             raise ExceptionGroup("render cleanup failed", errors)
 
 
@@ -357,9 +635,15 @@ class _Emitter:
         prefix: str = "",
         handler_prefix: str | None = None,
         scope_prefix: str | None = None,
+        environment: Environment | None = None,
+        snapshot_depth: int = 0,
+        snapshot_budget: list[int] | None = None,
     ) -> None:
         self.ns = ns
         self.values = values
+        self.environment = environment or Environment()
+        self.snapshot_depth = snapshot_depth
+        self.snapshot_budget = snapshot_budget
         self.out = out
         self.element_ids = 0
         # Scoped to this emitter, so one list item numbers its handlers across
@@ -372,12 +656,25 @@ class _Emitter:
 
     # -- helpers ----------------------------------------------------------
 
+    def _value(self, hole: Hole) -> object:
+
+        return self._lexical_value(hole, self.environment)
+
+    def _lexical_value(self, hole: Hole, environment: Environment) -> object:
+        try:
+
+            return resolve(self.values[hole.index], environment)
+        except KeyError as error:
+
+            raise InterpolationError(str(error), hole.position) from error
+
     def _handler_id(self, hole_index: int) -> str:
         """Top level: stable by hole index. Inside a list item: stable by
         (list, key, ordinal), so the same item keeps its ids across re-renders
         and a click arriving after a patch still resolves."""
 
         if not self.handler_prefix:
+
             return f"h{hole_index}"
         hid = f"h{self.handler_prefix}{self.handler_n}"
         self.handler_n += 1
@@ -389,17 +686,33 @@ class _Emitter:
 
         return f"{self.prefix}e{self.element_ids}"
 
-    def _resolve(self, tag: str) -> tuple[str, list[str]]:
-        found = self.ns.get(tag)
+    def _resolve(self, tag: str | Hole) -> tuple[str, list[object]]:
+        found = self._value(tag) if isinstance(tag, Hole) else self.ns.get(tag)
+
+        if isinstance(found, MissingComponent):
+
+            raise NameError(f"unknown component {found.name!r}")
 
         if isinstance(found, ElementTag):
+
             return found.name, []
 
         if isinstance(found, StyledTag):
             self.out.styles.add(self.prefix, found.css_class, flatten(found.declarations))
+
+            for _name, cls, body in found.variants:
+                self.out.styles.add(self.prefix, cls, body)
+
             return found.tag, [found.css_class]
 
+        if isinstance(tag, Hole):
+
+            raise TypeError(
+                f"component tag requires an element or callable; received {type(found).__name__}"
+            )
+
         if not tag[:1].isupper():
+
             return tag, []
 
         raise NameError(f"unknown component {tag!r}")
@@ -407,7 +720,18 @@ class _Emitter:
     # -- nodes ------------------------------------------------------------
 
     def nodes(
-        self, nodes: list[Node], *, static: bool = False, root_classes: tuple[str, ...] = ()
+        self, nodes: Sequence[Node], *, static: bool = False, root_classes: tuple[object, ...] = ()
+    ) -> str:
+        environment = self.environment
+
+        try:
+
+            return self._nodes(nodes, static=static, root_classes=root_classes)
+        finally:
+            self.environment = environment
+
+    def _nodes(
+        self, nodes: Sequence[Node], *, static: bool, root_classes: tuple[object, ...]
     ) -> str:
         parts: list[str] = []
 
@@ -418,13 +742,60 @@ class _Emitter:
                 parts.append(self.hole(node, static=static, root_classes=root_classes))
             elif isinstance(node, Conditional):
                 parts.append(self.conditional(node, static=static, root_classes=root_classes))
+            elif isinstance(node, Loop):
+                parts.append(self.loop(node, static=static, root_classes=root_classes))
+            elif isinstance(node, Local):
+                value = self._value(node.value)
+
+                if node.name is not None:
+                    binding = self.ns.get(node.name)
+
+                    if not isinstance(binding, LexicalBinding):
+
+                        raise InterpolationError(
+                            f"missing lexical binding {node.name!r}", node.value.position
+                        )
+                    declaration = cast("LexicalBinding[object]", binding)
+
+                    if node.operation == "set":
+                        try:
+                            self.environment.get(declaration)
+                        except KeyError as error:
+
+                            raise InterpolationError(str(error), node.value.position) from error
+                    self.environment = self.environment.child((declaration,), (value,))
+            elif isinstance(node, Match):
+                parts.append(self.match(node, static=static, root_classes=root_classes))
             else:
                 parts.append(self.element(node, static=static, root_classes=root_classes))
 
         return "".join(parts)
 
-    def hole(self, hole: Hole, *, static: bool, root_classes: tuple[str, ...] = ()) -> str:
-        value = self.values[hole.index]
+    def hole(self, hole: Hole, *, static: bool, root_classes: tuple[object, ...] = ()) -> str:
+        value: object
+
+        if isinstance(self.values[hole.index], Deferred) and not static:
+            environment = self.environment
+            value = derived(lambda: _read(resolve(self.values[hole.index], environment)))
+        else:
+            value = self._value(hole)
+
+        reader = _signal_reader(value)
+
+        if reader is not None:
+            current = reader()
+
+            if _structured_content(current):
+                if not static:
+
+                    return self.content_slot(hole, reader, root_classes)
+                value = current
+            elif static:
+                value = current
+
+        if isinstance(value, (list, tuple)):
+
+            return self.snapshot(hole, cast("Sequence[object]", value), root_classes)
 
         if isinstance(value, Children):
             sub = _Emitter(
@@ -433,23 +804,29 @@ class _Emitter:
                 self.out,
                 prefix=f"{self.prefix}f{hole.index}:",
                 scope_prefix=f"{self.scope_prefix}f{hole.index}:",
+                environment=value.environment or self.environment,
+                snapshot_depth=self.snapshot_depth,
+                snapshot_budget=self.snapshot_budget,
             )
 
             return sub.nodes(list(value.nodes), static=static, root_classes=root_classes)
 
         if isinstance(value, (Fragment, Template)):
             fragment = value if isinstance(value, Fragment) else Fragment(value)
-            namespace = self.ns | dict(fragment.namespace or {})
+            namespace = fragment.scope_namespace(self.ns)
             owner = f"{self.prefix}f{hole.index}:"
 
             for name, body in fragment.rules:
                 self.out.styles.add(owner, name, body)
             sub = _Emitter(
                 namespace,
-                fragment.template.values,
+                _prepared_values(fragment.template),
                 self.out,
                 prefix=f"{self.prefix}f{hole.index}:",
                 scope_prefix=f"{self.scope_prefix}f{hole.index}:",
+                environment=self.environment,
+                snapshot_depth=self.snapshot_depth,
+                snapshot_budget=self.snapshot_budget,
             )
 
             return sub.nodes(
@@ -459,6 +836,7 @@ class _Emitter:
             )
 
         if isinstance(value, Each):
+
             return self.list_slot(
                 hole, cast("Each[object]", value), static=static, root_classes=root_classes
             )
@@ -471,20 +849,101 @@ class _Emitter:
 
         return f'<pysx-slot id="{escaped_slot}">{_htmlmod.escape(text)}</pysx-slot>'
 
-    def conditional(
-        self, node: Conditional, *, static: bool, root_classes: tuple[str, ...] = ()
+    def snapshot(
+        self, hole: Hole, entries: Sequence[object], root_classes: tuple[object, ...]
     ) -> str:
-        value = self.values[node.hole.index]
+        if self.snapshot_budget is None:
+            _validate_snapshot(entries)
+
+        if self.snapshot_depth >= 128:
+
+            raise ValueError("snapshot nesting exceeds 128 levels")
+        budget = self.snapshot_budget if self.snapshot_budget is not None else [0]
+        parts: list[str] = []
+
+        for index, entry in enumerate(entries):
+            budget[0] += 1
+
+            if budget[0] > MAX_ROWS:
+
+                raise ValueError("snapshot exceeds 10000 entries")
+            prefix = f"{self.prefix}{hole.index}:snapshot:{index}:"
+            sub = _Emitter(
+                self.ns,
+                (entry,),
+                self.out,
+                prefix=prefix,
+                scope_prefix=f"{self.scope_prefix}{hole.index}:snapshot:{index}:",
+                environment=self.environment,
+                snapshot_depth=self.snapshot_depth + 1,
+                snapshot_budget=budget,
+            )
+            parts.append(sub.hole(Hole(0), static=True, root_classes=root_classes))
+
+        return "".join(parts)
+
+    def content_slot(
+        self, hole: Hole, source: Readable[object], root_classes: tuple[object, ...]
+    ) -> str:
+        slot = f"{self.prefix}{hole.index}"
+        owner = f"{slot}:snapshot:"
+        scope_owner = f"{self.scope_prefix}{hole.index}:snapshot:"
+        environment = self.environment
+
+        def content() -> str:
+            self.out.dom.revoke(owner)
+            self.out.styles.release(owner)
+
+            for hid in tuple(self.out.handlers):
+                if self.out.handler_owners.get(hid, "").startswith(owner):
+                    self.out.handlers.pop(hid, None)
+                    self.out.bindings.pop(hid, None)
+                    self.out.bind_elements.pop(hid, None)
+                    self.out.handler_owners.pop(hid, None)
+                    self.out.event_handlers.pop(hid, None)
+            value = source()
+            entries = (
+                cast("Sequence[object]", value) if isinstance(value, (list, tuple)) else (value,)
+            )
+            sub = _Emitter(
+                self.ns,
+                self.values,
+                self.out,
+                prefix=self.prefix,
+                scope_prefix=self.scope_prefix,
+                environment=environment,
+            )
+            with self.out.scopes.reconcile(scope_owner):
+
+                return sub.snapshot(hole, entries, root_classes)
+
+        markup = content()
+        self.out.watchers.append(ContentWatcher(slot, content, markup))
+
+        return f'<pysx-slot id="{_htmlmod.escape(slot, quote=True)}">{markup}</pysx-slot>'
+
+    def conditional(
+        self, node: Conditional, *, static: bool, root_classes: tuple[object, ...] = ()
+    ) -> str:
+        value: object
+
+        if isinstance(self.values[node.hole.index], Deferred) and not static:
+            environment = self.environment
+            value = derived(lambda: _read(resolve(self.values[node.hole.index], environment)))
+        else:
+            value = self._value(node.hole)
         slot = f"{self.prefix}{node.hole.index}"
 
         prefix = f"{slot}:branch:"
         scope_base = f"{self.scope_prefix}{node.hole.index}:branch:"
+        captured_environment = self.environment
 
         def branch(flag: bool) -> tuple[str, list[Watcher]]:
             scope_prefix = f"{scope_base}{int(flag)}:"
             self.out.scopes.release(f"{scope_base}{int(not flag)}:")
             self.out.dom.revoke(prefix)
             self.out.styles.release(prefix)
+
             for hid in tuple(self.out.handlers):
                 if self.out.handler_owners.get(hid, "").startswith(prefix):
                     self.out.handlers.pop(hid, None)
@@ -500,6 +959,9 @@ class _Emitter:
                 prefix=prefix,
                 handler_prefix="" if not self.handler_prefix else prefix,
                 scope_prefix=scope_prefix,
+                environment=captured_environment,
+                snapshot_depth=self.snapshot_depth,
+                snapshot_budget=self.snapshot_budget,
             )
             with self.out.scopes.reconcile(scope_prefix):
                 markup = sub.nodes(
@@ -522,20 +984,153 @@ class _Emitter:
 
         return f'<pysx-slot id="{_htmlmod.escape(slot, quote=True)}">{markup}</pysx-slot>'
 
+    def match(self, node: Match, *, static: bool, root_classes: tuple[object, ...]) -> str:
+        environment = self.environment
+        raw = self.values[node.value.index]
+        live = not static and (
+            _lexical_live(raw)
+            or any(
+                _lexical_live(self.values[pattern.index])
+                for case in node.cases
+                for pattern in case.patterns
+                if isinstance(pattern, Hole)
+            )
+        )
+        conditions: list[object] = []
+
+        for case in node.cases:
+
+            def selected(case: Case = case) -> bool:
+                value = _read(resolve(raw, environment))
+
+                return case.wildcard or any(
+                    value == _read(resolve(self.values[pattern.index], environment))
+                    if isinstance(pattern, Hole)
+                    else value == pattern
+                    for pattern in case.patterns
+                )
+
+            conditions.append(derived(selected) if live else selected())
+        branch: tuple[Node, ...] = ()
+
+        for index in reversed(range(len(node.cases))):
+            branch = (
+                Conditional(Hole(len(self.values) + index), node.cases[index].children, branch),
+            )
+        sub = _Emitter(
+            self.ns,
+            (*self.values, *conditions),
+            self.out,
+            prefix=f"{self.prefix}{node.value.index}:match:",
+            scope_prefix=f"{self.scope_prefix}{node.value.index}:match:",
+            environment=environment,
+            snapshot_depth=self.snapshot_depth,
+            snapshot_budget=self.snapshot_budget,
+        )
+
+        return sub.nodes(branch, static=static, root_classes=root_classes)
+
+    def loop(self, node: Loop, *, static: bool, root_classes: tuple[object, ...]) -> str:
+        declarations: list[LexicalBinding[object]] = []
+
+        for name in node.names:
+            binding = self.ns.get(name)
+
+            if not isinstance(binding, LexicalBinding):
+
+                raise InterpolationError(f"missing lexical binding {name!r}", node.source.position)
+            declarations.append(cast("LexicalBinding[object]", binding))
+        environment = self.environment
+        raw = self.values[node.source.index]
+
+        def items() -> Iterable[object]:
+            source = _read(self._lexical_value(node.source, environment))
+
+            if not isinstance(source, Iterable):
+
+                raise TypeError("loop source must be iterable")
+            rows: list[object] = []
+
+            for index, row in enumerate(cast("Iterable[object]", source)):
+                if index >= MAX_ROWS:
+
+                    raise ValueError("loop exceeds 10000 rows")
+                rows.append((index, row))
+
+            return rows
+
+        def row_environment(pair: object) -> Environment:
+            _index, row = cast("tuple[int, object]", pair)
+            values: tuple[object, ...]
+
+            if len(declarations) == 1:
+                values = (row,)
+            else:
+                if not isinstance(row, Iterable):
+
+                    raise ValueError("destructured row must be iterable")
+                values = tuple(islice(cast("Iterable[object]", row), len(declarations) + 1))
+
+            return environment.child(tuple(declarations), values)
+
+        def item(pair: object) -> Fragment:
+            children = Children(node.children, self.values, self.ns, row_environment(pair))
+
+            return html(Template("\n", Interpolation(children, "children")))
+
+        def key(pair: object) -> str | int:
+            if node.key is None:
+
+                return cast("tuple[int, object]", pair)[0]
+            value = _read(self._lexical_value(node.key, row_environment(pair)))
+
+            if not isinstance(value, (str, int)) or isinstance(value, bool):
+
+                raise InterpolationError("loop key must be a string or integer", node.key.position)
+
+            return value
+
+        live = _lexical_live(raw)
+        source = derived(items) if live else items
+
+        return self.list_slot(
+            node.source,
+            Each(source, item, key),
+            static=static or not live,
+            root_classes=root_classes,
+        )
+
     def list_slot(
         self,
         hole: Hole,
         spec: Each[object],
         *,
         static: bool = False,
-        root_classes: tuple[str, ...] = (),
+        root_classes: tuple[object, ...] = (),
     ) -> str:
         slot = f"{self.prefix}{hole.index}"
         scope_slot = f"{self.scope_prefix}{hole.index}"
 
         def render_items(items: Iterable[object]) -> tuple[list[str], dict[str, str]]:
+            rows: list[tuple[str, object]] = []
+            keys: set[str] = set()
+
+            for item in _bounded_items(items):
+                raw_key = spec.key(item)
+
+                if type(raw_key) not in (str, int):
+
+                    raise TypeError("each keys must be strings or integers, excluding bool")
+                key = str(raw_key)
+
+                if key in keys:
+
+                    raise ValueError(f"duplicate list key {key!r}")
+                keys.add(key)
+                rows.append((key, item))
             self.out.dom.revoke(f"{slot}:")
             self.out.styles.release(f"{slot}:")
+
             for hid in tuple(self.out.handlers):
                 if hid.startswith(f"h{slot}:"):
                     self.out.handlers.pop(hid, None)
@@ -547,11 +1142,7 @@ class _Emitter:
             markup: dict[str, str] = {}
 
             with self.out.scopes.reconcile(f"{scope_slot}:"):
-                for item in items:
-                    key = str(spec.key(item))
-
-                    if key in markup:
-                        raise ValueError(f"duplicate list key {key!r}")
+                for key, item in rows:
                     order.append(key)
                     markup[key] = self.item(
                         spec, item, slot, key, scope_slot=scope_slot, root_classes=root_classes
@@ -560,7 +1151,8 @@ class _Emitter:
             return order, markup
 
         order, markup = render_items(spec.source())
-        if not static:
+
+        if not static and spec.live:
             self.out.watchers.append(
                 ListWatcher(slot, spec.source, spec, render_items, order, markup)
             )
@@ -576,7 +1168,7 @@ class _Emitter:
         key: str,
         *,
         scope_slot: str,
-        root_classes: tuple[str, ...] = (),
+        root_classes: tuple[object, ...] = (),
     ) -> str:
         token = dom_context.set(self.out.dom)
         owner_token = style_owner.set(f"{slot}:{key}:")
@@ -593,29 +1185,35 @@ class _Emitter:
         for name, body in fragment.rules:
             self.out.styles.add(prefix, name, body)
         sub = _Emitter(
-            self.ns | dict(fragment.namespace or {}),
-            fragment.template.values,
+            fragment.scope_namespace(self.ns),
+            _prepared_values(fragment.template),
             self.out,
             prefix=prefix,
             scope_prefix=f"{scope_slot}:k{len(key)}:{key}:",
+            environment=self.environment,
+            snapshot_depth=self.snapshot_depth,
+            snapshot_budget=self.snapshot_budget,
         )
         markup = sub.nodes(
             skeleton.root, static=True, root_classes=(*fragment.root_classes, *root_classes)
         )
 
         # Tag the item root so the client can reorder by key.
+
         return markup.replace(">", f' data-pysx-key="{_htmlmod.escape(key, quote=True)}">', 1)
 
     def call_component(
-        self, fn: Component, el: Element, *, static: bool, root_classes: tuple[str, ...]
+        self, fn: Component, el: Element, *, static: bool, root_classes: tuple[object, ...]
     ) -> str:
         props = {
-            name: self.values[value.index] if isinstance(value, Hole) else value
+            name: self._value(value) if isinstance(value, Hole) else value
             for name, value in el.attrs
         }
 
         if el.children:
-            props["children"] = Children(tuple(el.children), self.values, dict(self.ns))
+            props["children"] = Children(
+                tuple(el.children), self.values, dict(self.ns), self.environment
+            )
         self.component_n += 1
         prefix = f"{self.prefix}c{self.component_n}:"
         scope_prefix = f"{self.scope_prefix}c{self.component_n}:"
@@ -624,6 +1222,7 @@ class _Emitter:
         try:
             target = fn.base if isinstance(fn, StyledCallable) else fn
             with self.out.scopes.enter(scope_prefix, identity_for(target)):
+
                 return self._component_body(
                     fn, target, el, props, prefix, scope_prefix, static, root_classes
                 )
@@ -639,8 +1238,18 @@ class _Emitter:
         prefix: str,
         scope_prefix: str,
         static: bool,
-        root_classes: tuple[str, ...],
+        root_classes: tuple[object, ...],
     ) -> str:
+        variant: VariantClass | None = None
+
+        if isinstance(fn, StyledCallable):
+            variant = VariantClass(fn.variants, props.pop("variant", None))
+            variant()
+            self.out.styles.apply((fn.css_class,))
+
+            for _key, cls, body in fn.variants:
+                self.out.styles.add(prefix, cls, body)
+                self.out.styles.apply((cls,))
         children_parameter = signature(target, annotation_format=Format.STRING).parameters.get(
             "children"
         )
@@ -655,30 +1264,39 @@ class _Emitter:
             result = fn(**props)
 
         if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]
+
             raise TypeError("components must return Template or Fragment")
         fragment = result if isinstance(result, Fragment) else Fragment(result)
-        namespace = namespace_for(fn) | dict(fragment.namespace or {})
+        namespace = fragment.scope_namespace(namespace_for(fn))
 
         for name, body in fragment.rules:
             self.out.styles.add(prefix, name, body)
         sub = _Emitter(
             namespace,
-            fragment.template.values,
+            _prepared_values(fragment.template),
             self.out,
             prefix=prefix,
             scope_prefix=scope_prefix,
+            environment=self.environment,
+            snapshot_depth=self.snapshot_depth,
+            snapshot_budget=self.snapshot_budget,
         )
 
         return sub.nodes(
             _template_skeleton(fragment.template).root,
             static=static,
-            root_classes=(*fragment.root_classes, *root_classes),
+            root_classes=(*fragment.root_classes, *root_classes, *((variant,) if variant else ())),
         )
 
-    def element(self, el: Element, *, static: bool, root_classes: tuple[str, ...] = ()) -> str:
-        found = self.ns.get(el.tag)
+    def element(self, el: Element, *, static: bool, root_classes: tuple[object, ...] = ()) -> str:
+        found = self._value(el.tag) if isinstance(el.tag, Hole) else self.ns.get(el.tag)
 
-        if callable(found) and el.tag not in NATIVE_TAGS:
+        if (
+            callable(found)
+            and not isinstance(found, StyledTag)
+            and (isinstance(el.tag, Hole) or el.tag not in NATIVE_TAGS)
+        ):
+
             return self.call_component(
                 cast("Component", found), el, static=static, root_classes=root_classes
             )
@@ -686,22 +1304,32 @@ class _Emitter:
         classes: list[object] = list(scoped)
         classes.extend(root_classes)
 
+        if isinstance(found, StyledTag):
+            variant = next((value for name, value in el.attrs if name == "variant"), None)
+            source = self._value(variant) if isinstance(variant, Hole) else variant
+            classes.append(VariantClass(found.variants, source))
+
         if tag == "fragment":
             if el.attrs:
+
                 raise ValueError("fragment does not accept DOM attributes")
 
             return self.nodes(el.children, static=static, root_classes=(*scoped, *root_classes))
-        self.out.styles.apply((*scoped, *root_classes))
+        self.out.styles.apply(_class_text(value) for value in classes if _class_text(value))
+
+        if isinstance(found, StyledTag):
+            self.out.styles.apply(cls for _name, cls, _body in found.variants)
         attrs: list[str] = []
         typed_types: list[str] = []
         element_id: str | None = None
         initial_value: str | None = None
         raw_attributes = {
-            name: self.values[value.index] if isinstance(value, Hole) else value
+            name: self._value(value) if isinstance(value, Hole) else value
             for name, value in el.attrs
         }
 
         if sum(attr_kind(name) is HoleKind.BIND for name, _value in el.attrs) > 1:
+
             raise TypeError("a form control accepts exactly one binding")
         control_type = str(_read(raw_attributes.get("type", "text")))
         multiple = _attr_text(raw_attributes.get("multiple"), "multiple") is not None
@@ -732,18 +1360,24 @@ class _Emitter:
                 self.out.watchers.append(style_watcher)
 
         for name, value in el.attrs:
+            if name == "variant" and isinstance(found, StyledTag):
+
+                continue
             kind = self._kind(name)
             raw_name = name
             name = normalize_attr(name) if el.namespace == "html" else name
 
             if normalize_attr(name) in {"css", "stylevars", "cssvars"}:
+
                 continue
 
             if name == "style" and variables is not None:
+
                 continue
 
             if not isinstance(value, Hole):
                 if kind is HoleKind.EVENT:
+
                     raise TypeError("event attributes require an interpolated callable")
                 text = _attr_text(value, name)
 
@@ -757,16 +1391,18 @@ class _Emitter:
 
                 continue
 
-            raw = self.values[value.index]
+            raw = self._value(value)
 
             if name == "ref":
                 if not isinstance(raw, DomRef):
+
                     raise TypeError("ref requires a DomRef")
                 token = self.out.dom.mount(raw, self.prefix)
                 attrs.append(f' data-pysx-ref="{token}"')
 
                 if raw.imperative:
                     if el.children:
+
                         raise DomError("imperative zones must have no reactive children")
                     attrs.append(' data-pysx-imperative="true"')
 
@@ -790,6 +1426,7 @@ class _Emitter:
                     continue
 
                 if not callable(raw):
+
                     raise TypeError("event hole requires a callable")
                 self.out.handlers[hid] = cast("Callable[[object], object]", raw)
                 self.out.handler_owners[hid] = self.prefix
@@ -860,7 +1497,11 @@ class _Emitter:
                 else:
                     attrs.append(f' {name}="{_htmlmod.escape(text, quote=True)}"')
 
-        if not static and any(isinstance(value, (Signal, CssClass)) for value in classes):
+        if not static and any(
+            isinstance(value, (Signal, CssClass))
+            or (isinstance(value, VariantClass) and isinstance(value.source, Signal))
+            for value in classes
+        ):
             element_id = element_id or self._next_element_id()
             watcher = ClassWatcher(
                 element_id,
@@ -887,6 +1528,7 @@ class _Emitter:
         open_tag = f"<{tag}{''.join(attrs)}>"
 
         if tag in VOID:
+
             return open_tag
         content = (
             _htmlmod.escape(initial_value)
@@ -897,6 +1539,7 @@ class _Emitter:
         return open_tag + content + f"</{tag}>"
 
     def _kind(self, name: str) -> HoleKind:
+
         return attr_kind(name)
 
 
@@ -915,6 +1558,7 @@ def render(
             result = component_fn()
 
         if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]
+
             raise TypeError("components must return Template or Fragment")
         fragment = result if isinstance(result, Fragment) else Fragment(result)
 
@@ -927,8 +1571,8 @@ def render(
             out.styles.add("", name, body)
         skeleton = _template_skeleton(fragment.template)
         emitter = _Emitter(
-            namespace_for(component_fn) | dict(namespace or {}) | dict(fragment.namespace or {}),
-            fragment.template.values,
+            fragment.scope_namespace(namespace_for(component_fn) | dict(namespace or {})),
+            _prepared_values(fragment.template),
             out,
         )
         out.body = emitter.nodes(skeleton.root, root_classes=fragment.root_classes)

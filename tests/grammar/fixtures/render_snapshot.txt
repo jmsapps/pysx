@@ -1,0 +1,31 @@
+from pysx import Binding, defer, html
+
+def view():
+    row = Binding[int]("row")
+    return html(rt"""
+        if {visible}:
+          p: "first"
+        elif {other}:
+          p: 'second'
+        else:
+          p: "last"
+        match {mode}:
+          case "a" | "b":
+            span: "pair"
+          case _:
+            span: "other"
+        for row in {rows} key={row}:
+          let label = {defer(row, str)}
+          set label = {defer(row, lambda n: f"row-{n}")}
+          discard {defer(row, print)}
+          Card(
+            title={label}
+            data-row={row},
+          ): "literal {{braces}}"
+          {tuple(html(t'\nspan: {n}') for n in range(2))}
+    """, use=(Card,), namespace={"row": row})
+
+single = html(t'''
+    section: 'single quoted'
+''')
+AFTER_SENTINEL = 1

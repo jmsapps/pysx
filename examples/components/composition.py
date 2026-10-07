@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from pysx import (
     BrowserEvent,
-    Children,
     Dom,
     Fragment,
     batch,
@@ -25,17 +24,18 @@ from .controls import Action
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
-    from string.templatelib import Template
 
 
-def panel(*, children: Children) -> Template:
-    return t"\nsection: {children}"
-
-
-TreePanel = styled(
-    styled(panel, t"padding: 16px; border: 1px solid var(--border); border-radius: 12px;"),
-    t"background: var(--surface);",
-)
+Panel = styled.section(t"""
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    &:hover:
+      border-color: var(--accent);
+    @media (max-width: 600px):
+      padding: 12px;
+""")
+TreePanel = styled(Panel)(t"background: var(--surface);")
 
 
 @dataclass(frozen=True)
@@ -157,7 +157,10 @@ def tree_controls() -> Fragment:
         aria_expanded = opened if node.children else None
         keys = ("ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " ")
 
-        group = html(t'\nif {opened}:\n  ul(role="group"): {children}')
+        group = html(t"""
+            if {opened}:
+                ul(role="group"): {children}
+        """)
 
         return native.Li(
             native.Span(node.label, " · activations: ", visits),
@@ -172,22 +175,22 @@ def tree_controls() -> Fragment:
         )
 
     def row(node: Entry) -> Fragment:
-        return html(t"\nBranch(node={node}):", namespace={"Branch": branch})
+
+        return html(t"\nbranch(node={node}):")
 
     def reverse(_event: BrowserEvent) -> None:
         roots.set(list(reversed(roots())))
 
     return html(
         t"""
-            Panel:
-              ul(id="composition-tree",role="tree",aria-label="Component library",ref={root_ref}):
-                {each(roots, row, key=lambda node: node.key)}
-              p(id="tree-setups"):
-                "Setups: "; {setups}
-              p(id="tree-mounts"): "Browser mounts: "; {mounts}
-              p(id="tree-cleanups"): "Cleanups: "; {cleanups}
-              br:
-              Action(id="tree-reverse", onClick={on_event(reverse)}): "Reverse roots"
+            TreePanel:
+                ul(id="composition-tree",role="tree",aria-label="Component library",ref={root_ref}):
+                    {each(roots, row, key=lambda node: node.key)}
+                p(id="tree-setups"):
+                    "Setups: "; {setups}
+                p(id="tree-mounts"): "Browser mounts: "; {mounts}
+                p(id="tree-cleanups"): "Cleanups: "; {cleanups}
+                br:
+                Action(id="tree-reverse", onClick={on_event(reverse)}): "Reverse roots"
         """,
-        namespace={"Panel": TreePanel, "Action": Action},
     )

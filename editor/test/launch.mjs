@@ -13,10 +13,11 @@ if (process.env.PYSX_EDITOR_FORCE_TIMEOUT === "1") {
 await runTests({
   version: "1.140.0",
   vscodeExecutablePath: input.executable,
-  extensionDevelopmentPath: [input.extension, input.host.directory],
+  extensionDevelopmentPath: [input.extension, input.host.directory, input.pythonExtension, ...(input.ruffExtension ? [input.ruffExtension] : [])],
   extensionTestsPath: fileURLToPath(new URL("suite.cjs", import.meta.url)),
   extensionTestsEnv: { PYSX_EDITOR_WORKSPACE: input.workspace,
     PYSX_EDITOR_SUITE: input.suite, PYSX_EDITOR_PYTHON: input.python ?? "",
+    PYSX_EDITOR_PERFORMANCE: process.env.PYSX_EDITOR_PERFORMANCE ?? "",
     PYSX_EDITOR_CHECKOUT: input.checkout },
   launchArgs: [input.root, "--user-data-dir", path.join(input.workspace, "profile"),
     "--extensions-dir", path.join(input.workspace, "extensions"),

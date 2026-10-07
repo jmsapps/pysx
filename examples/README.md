@@ -11,6 +11,7 @@ uv run --project . example run reactive_state
 uv run --project . example run operators
 uv run --project . example run forms
 uv run --project . example run events
+uv run --project . example run templates
 uv run --project . example run
 ```
 
@@ -46,6 +47,18 @@ Default cancellation happens immediately in the browser. Python callbacks receiv
 typed `BrowserEvent` snapshots through `on_event`; async callbacks await owned
 `DomRef.handle()` commands. See [the protocol](../docs/PROTOCOL.md) for ownership,
 imperative zones, supported operations and limits.
+
+## Templates
+
+Run `uv run --project . example run templates` for live template controls.
+Reverse/add/remove groups, pick a nested row and switch through three branches.
+Headings use `each_indexed` and ordinary Python assignments; nested `each` callbacks
+retain their captured group after reorder. **Add child to first group** updates an
+independent readable child source. `when` lazily builds the selected branch alongside
+optional markup conditions and value matching. Local styled tags and cross-module
+snapshot fragments use ordinary imports and bare component names. The initial
+comprehension, iterable `each`, and bounded while snapshots stay fixed. Each browser
+session owns its state.
 
 ## Reactive state
 

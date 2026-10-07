@@ -7,7 +7,6 @@ from .components.composition import tree_controls
 
 
 def app() -> Fragment:
-    controls = tree_controls()
 
     return html(
         t"""
@@ -19,7 +18,6 @@ def app() -> Fragment:
               Description: "Up/Down moves focus. Home/End reaches the first/last visible node."
               Description: "Enter activates a node. Reverse roots preserves its local count."
               Description: "Setup, browser mount and cleanup counters show separate lifetimes."
-              {controls}
+              tree_controls:
         """,
-        namespace={"Page": Page, "Eyebrow": Eyebrow, "Title": Title, "Description": Description},
     )

@@ -1,13 +1,15 @@
 from pysx import Fragment, component, html, signal
 
-from .components import Action as Action
-from .components import Actions as Actions
-from .components import Description as Description
-from .components import Eyebrow as Eyebrow
-from .components import Metric as Metric
-from .components import Page as Page
-from .components import Title as Title
-from .components import Value as Value
+from .components import (
+    Action,
+    Actions,
+    Description,
+    Eyebrow,
+    Metric,
+    Page,
+    Title,
+    Value,
+)
 
 
 @component
@@ -19,7 +21,8 @@ def app() -> Fragment:
     def increment(_e: object) -> None:
         count.set(count() + 1)
 
-    return html(t"""
+    return html(
+        t"""
         Page(id="container"):
             header:
                 Eyebrow: "pysx / examples"
@@ -30,4 +33,5 @@ def app() -> Fragment:
                 Value: {count}
             Actions:
                 Action(type="button", onClick={increment}): "Increment"
-    """)
+    """,
+    )

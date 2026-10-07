@@ -7,7 +7,20 @@ try {
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${process.argv[2]}`);
-  const focused = async id => page.waitForFunction(id => document.activeElement?.id === id, id);
+  const focused = async id => {
+    try {
+      await page.waitForFunction(id => document.activeElement?.id === id, id);
+    } catch (error) {
+      const state = await page.evaluate(() => ({
+        active: document.activeElement?.id || document.activeElement?.tagName,
+        tabs: [...document.querySelectorAll('#composition-tree [tabindex]')]
+          .map(node => [node.id, node.getAttribute("tabindex")]),
+        roots: [...document.querySelectorAll('#composition-tree > pysx-list > li')]
+          .map(node => node.id),
+      }));
+      throw new Error(`expected focus on ${id}: ${JSON.stringify(state)}`, { cause: error });
+    }
+  };
   await page.waitForFunction(() => document.querySelector("#tree-mounts")?.textContent.endsWith("2"));
   assert.equal(await page.locator("#composition-tree").getAttribute("role"), "tree");
   assert.equal(await page.locator("#tree-library").getAttribute("aria-expanded"), "false");
@@ -47,7 +60,16 @@ try {
   assert.equal(await original.evaluate(node => node === document.querySelector("#tree-notes")), true);
   assert.ok((await page.locator("#tree-notes").textContent()).includes("activations: 1"));
   console.log("  ok  root reorder preserves component state, handlers and untouched DOM");
-  await page.locator("#tree-library").focus();
+  // Verify the selected tab stop survives reordering, then re-enter that same
+  // row without depending on sequential-navigation state after DOM moves.
+  // The initial Tab above checks keyboard entry; arrow keys below still use
+  // the widget's owned focus commands. Focusing a different row can race patches.
+  assert.equal(await page.locator("#tree-notes").getAttribute("tabindex"), "0");
+  assert.equal(await page.locator("#composition-tree").locator('[tabindex="0"]').count(), 1);
+  await page.locator("#tree-notes").focus();
+  await focused("tree-notes");
+  await page.keyboard.press("ArrowDown");
+  await focused("tree-library");
   await page.keyboard.press("ArrowLeft");
   await page.waitForFunction(() => !document.querySelector("#tree-components"));
   await focused("tree-library");

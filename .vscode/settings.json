@@ -1,4 +1,32 @@
 {
   "//": "written by pysx — pins Pylance to the 3.14 venv so t-strings parse",
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.analysis.ignore": [
+    "**/_pysx_revision_*/**"
+  ],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportUnusedImport": "none",
+    "reportUnusedVariable": "none",
+    "reportUnusedFunction": "none"
+  },
+  "python.analysis.disableTaggedHints": true,
+  "python.analysis.fixAll": [],
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit",
+    "source.fixAll": "never",
+    "source.fixAll.pylance": "never",
+    "source.fixAll.ruff": "never",
+    "source.organizeImports": "never",
+    "source.organizeImports.ruff": "never",
+    "source.unusedImports": "never",
+    "source.organizeImports.pysx": "explicit"
+  },
+  "ruff.lint.ignore": [
+    "F401",
+    "F811",
+    "F821",
+    "F823",
+    "F841",
+    "TC"
+  ]
 }

@@ -33,6 +33,7 @@ def test_locked_tools() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
     names = {package["name"] for package in lock["package"]}
+
     for name in ("pytest", "ruff", "mypy", "pyright"):
         assert name in names
         version = next(package["version"] for package in lock["package"] if package["name"] == name)
@@ -43,6 +44,7 @@ def test_locked_tools() -> None:
         *config["build-system"]["requires"],
         *config["dependency-groups"]["dev"],
     ]
+
     for dependency in declared:
         name, separator, version = dependency.partition("==")
         assert name
@@ -66,7 +68,13 @@ def test_ci_configuration() -> None:
 
 def test_verification_manifest_covers_the_required_checks() -> None:
     manifest = {" ".join(gate.command) for gate in GATES}
-    for command in ("ruff check .", "mypy", "pyright", "pytest -q"):
+
+    for command in (
+        "python -m pysx.quality ruff",
+        "python -m pysx.quality mypy",
+        "python -m pysx.quality pyright",
+        "pytest -q",
+    ):
         assert f"uv run --project . {command}" in manifest
     assert "uv lock --check" in manifest
     assert {gate.tier for gate in GATES} == set(TIERS)
@@ -89,6 +97,7 @@ def test_verification_manifest_entrypoint_lists_its_gates() -> None:
 
 def test_maintained_scope() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]
+
     for name in ("pysx", "examples", "tests", "editor", "run_example.py"):
         assert name not in config["pyright"]["exclude"]
         assert name not in config["ruff"]["extend-exclude"]

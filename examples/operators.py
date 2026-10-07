@@ -25,15 +25,17 @@ from pysx import (
     structured,
 )
 
-from .components import Action as Action
-from .components import Actions as Actions
-from .components import Card as Card
-from .components import Description as Description
-from .components import Eyebrow as Eyebrow
-from .components import Page as Page
-from .components import Reading as Reading
-from .components import Result as Result
-from .components import Title as Title
+from .components import (
+    Action,
+    Actions,
+    Card,
+    Description,
+    Eyebrow,
+    Page,
+    Reading,
+    Result,
+    Title,
+)
 
 
 @component
@@ -109,7 +111,8 @@ def app() -> Fragment:
             profile.set({"scores": {"first": 10}})
             tags.set(["alpha", "beta"])
 
-    return html(t"""
+    return html(
+        t"""
         Page(id="container"):
             header:
                 Eyebrow: "pysx / examples"
@@ -230,4 +233,5 @@ def app() -> Fragment:
                     Action(type="button", id="t4-count", onClick={advance}): "count + 1"
                     Action(type="button", id="t4-name", onClick={rename}): "toggle name"
                     Action(type="button", id="t4-reset", onClick={reset}): "reset state"
-    """)
+    """,
+    )

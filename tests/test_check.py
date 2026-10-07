@@ -3,14 +3,162 @@ from pathlib import Path
 
 import pytest
 
-from pysx.check import Diagnostic, diagnostics
+from pysx.check import Diagnostic, diagnostics, diagnostics_for_source
 
 HEADER = "from pysx import component, div, html, signal, styled\n\n"
 
 
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "[value]",
+        "(value,)",
+        "[str(n) for n in range(value())]",
+        "alias",
+    ],
+)
+def test_render_snapshot_freeze_warnings(expression: str) -> None:
+    results, _lines = check(
+        "value = signal(2)\nparts = [str(n) for n in range(value())]\nalias = parts\n"
+        + "html(t'\\ndiv: {"
+        + expression
+        + "}')\n"
+    )
+    assert len(results) == 1
+    assert results[0]["severity"] == "warning"
+    assert "snapshot" in results[0]["message"]
+
+
+def test_render_snapshot_clean_constants_and_deferred_callbacks() -> None:
+    results, _lines = check(
+        "from pysx import Binding, defer\n"
+        "value = signal(2)\nrow = Binding[int]('row')\n"
+        "html(t'\\ndiv: {[1, 2]}')\n"
+        "html(t'\\ndiv: {defer(row, lambda n: [value() + n])}')\n"
+    )
+    assert results == []
+
+
+def test_positioned_multiline_checker_normalizes_adjacent_empty_fragments() -> None:
+    results, _lines = check(
+        'number = signal(1.25)\nlabel = "é"\n'
+        "view = t'\\np(title={number:.2f}): {number!s}{label!a}'\n"
+        "html(view)\n"
+    )
+    assert results == []
+
+
+def test_positioned_multiline_checker_assembled_templates_and_metadata() -> None:
+    results, _lines = check(
+        "head = t'\\nbutton(\\n  onClick={(lambda: None)!r}\\n):'\n"
+        "tail = t' \"😀\"\\n'\nhtml(head + tail)\n"
+    )
+    assert len(results) == 1
+    assert "EVENT interpolation" in results[0]["message"]
+
+
+def test_positioned_multiline_ast_fragments_match_runtime_strings() -> None:
+    import ast
+
+    from pysx.check import template_fragments
+
+    left, right = "a", "b"
+    template = t"\np: {left}{right}"
+    expression = ast.parse("t'\\np: {left}{right}'", mode="eval").body
+    assert isinstance(expression, ast.TemplateStr)
+    assert template_fragments(expression) == template.strings
+
+
+def test_styled_authoring_constant_variant_and_removed_call() -> None:
+    results, _lines = check(
+        'Action = styled.button(t"color: red", variants={"primary": t"color: blue"})\n'
+        'html(t\'\\n{Action}(variant="missing"): "click"\')\n'
+        'Old = styled(div, t"color: red")\n'
+    )
+    assert len(results) == 2
+    assert any("unknown variant" in item["message"] for item in results)
+    assert any("removed" in item["message"] for item in results)
+
+
+def test_variant_inheritance_uses_workspace_scopes_and_imports(tmp_path: Path) -> None:
+    (tmp_path / "base.py").write_text(
+        'from pysx import styled\n'
+        'Heading = styled.h1(t"color: red", variants={"big": t"font-size: 2em"})\n'
+    )
+    (tmp_path / "exports.py").write_text("from base import Heading as Header\n")
+    source = """from pysx import styled, html
+from exports import Header
+Local = styled(Header)(t"color: blue", variants={"small": t"font-size: 1em"})
+view = html(t'Local(variant="big"): "valid"')
+invalid = html(t'Local(variant="wrong"): "bad"')
+def local():
+    Local = styled.p(t"color: green", variants={"other": t"color: black"})
+    return html(t'Local(variant="other"): "valid"')
+"""
+    findings = diagnostics_for_source(
+        source, str(tmp_path / "view.py"), workspace_roots=(tmp_path,)
+    )
+    variants = [item for item in findings if "unknown variant" in item["message"]]
+    assert len(variants) == 1
+    assert "wrong" in variants[0]["message"]
+    assert "['big', 'small']" in variants[0]["message"]
+
+
+def test_dynamic_variant_base_does_not_claim_an_empty_variant_set() -> None:
+    source = """from pysx import html, styled
+def decorate(base):
+    Local = styled(base)(t"color: red")
+    return html(t'Local(variant="big"): "valid if inherited"')
+"""
+    assert not any("unknown variant" in item["message"] for item in diagnostics_for_source(source))
+
+
+@pytest.mark.parametrize("module", ["pysx", "pysx.styled"])
+def test_variant_metadata_recognizes_styled_import_aliases(module: str) -> None:
+    source = f'''from {module} import styled as style
+from pysx import html
+Base = style.h1(t"color: red", variants={{"big": t"font-size: 2em"}})
+Local = style(Base)(t"color: blue")
+view = html(t'Local(variant="missing"): "bad"')
+'''
+    findings = [
+        item for item in diagnostics_for_source(source) if "unknown variant" in item["message"]
+    ]
+    assert len(findings) == 1
+    assert "['big']" in findings[0]["message"]
+
+
+@pytest.mark.parametrize("literal", ['"wrong"', '"wr\\u006fng"'])
+def test_literal_variant_error_maps_only_its_raw_value(literal: str) -> None:
+    source = f"""from pysx import styled, html
+Heading = styled.h1(t"color: red", variants={{"big": t"font-size: 2em"}})
+view = html(t\"\"\"
+    Heading(title="😀", variant={literal}): "hello"
+\"\"\")
+"""
+    findings = [
+        item for item in diagnostics_for_source(source) if "unknown variant" in item["message"]
+    ]
+    assert len(findings) == 1
+    diagnostic = findings[0]
+    assert diagnostic["line"] == diagnostic.get("endLine") == 3
+    line = source.splitlines()[3]
+    selected = line.encode("utf-16-le")[
+        diagnostic["startChar"] * 2 : diagnostic["endChar"] * 2
+    ].decode("utf-16-le")
+    assert selected == literal
+
+
+@pytest.mark.parametrize("value", ["42", "None", '"div"', "[]"])
+def test_component_tags_constant_unsupported_diagnostics(value: str) -> None:
+    results, _lines = check("html(t'\\n{" + value + '}: "child"\')\n')
+    assert len(results) == 1
+    assert "component tag" in results[0]["message"]
+
+
 @pytest.mark.parametrize("base", ['"div"', '"d\\x69v"', "None", "42"])
 def test_styling_diagnostics_invalid_base_raw_utf16(base: str) -> None:
-    results, lines = check(f'note = "😀"; Widget = styled({base}, t"color: red")\n')
+    results, lines = check(f'note = "😀"; Widget = styled({base})(t"color: red")\n')
     assert len(results) == 1
     result = results[0]
     line = lines[result["line"]].encode("utf-16-le")
@@ -22,7 +170,7 @@ def test_styling_diagnostics_invalid_base_raw_utf16(base: str) -> None:
 @pytest.mark.parametrize("hole", ["{color}", "{color!r}", "{color:>8}", "{color!s:>8}"])
 def test_styling_diagnostics_css_holes_metadata_raw_range(hole: str) -> None:
     results, lines = check(
-        f'color = signal("red")\nWidget = styled(div, t"""\n    /* 😀 */ color: {hole};\n""")\n'
+        f'color = signal("red")\nWidget = styled(div)(t"""\n    /* 😀 */ color: {hole};\n""")\n'
     )
     assert len(results) == 1
     result = results[0]
@@ -33,7 +181,7 @@ def test_styling_diagnostics_css_holes_metadata_raw_range(hole: str) -> None:
 
 
 def test_styling_diagnostics_multiline_base_range() -> None:
-    results, lines = check('Widget = styled("di\\\nv", t"color: red")\n')
+    results, lines = check('Widget = styled("di\\\nv")(t"color: red")\n')
     assert len(results) == 1
     result = results[0]
     assert "endLine" in result
@@ -45,7 +193,7 @@ def test_styling_diagnostics_multiline_base_range() -> None:
 def test_styling_diagnostics_css_regions_clean_and_global_type() -> None:
     results, _lines = check(
         "from pysx import css, global_style\n"
-        'Widget = styled(div, t"""color: red; --ink: blue; /* comment */""")\n'
+        'Widget = styled(div)(t"""color: red; --ink: blue; /* comment */""")\n'
         'body = css(t"padding: 3px")\n'
         'global_style("body { color: blue }")\n'
     )
@@ -69,7 +217,7 @@ def test_styling_diagnostics_css_attribute_metadata() -> None:
 
 def test_styling_diagnostics_raw_escapes_and_doubled_braces() -> None:
     results, lines = check(
-        'color = "red"\nWidget = styled(div, t"""\n    /* \\t {{ 😀 */ color: {color!r};\n""")\n'
+        'color = "red"\nWidget = styled(div)(t"""\n    /* \\t {{ 😀 */ color: {color!r};\n""")\n'
     )
     assert len(results) == 1
     result = results[0]
@@ -128,11 +276,13 @@ def check(body: str) -> tuple[list[Diagnostic], list[str]]:
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "case.py"
         p.write_text(HEADER + body, encoding="utf-8")
+
         return diagnostics(p), (HEADER + body).split("\n")
 
 
 def test_clean_examples_are_empty() -> None:
     here = Path(__file__).resolve().parents[1]
+
     for name in ("counter", "todos"):
         path = here / f"examples/{name}.py"
         assert diagnostics(path) == [], (name, diagnostics(path))
@@ -140,7 +290,7 @@ def test_clean_examples_are_empty() -> None:
 
 def test_unknown_tag_after_non_ascii_line() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         'NOTE = "café ☕ — a non-ASCII line before the diagnostic"\n'
         "\n"
         "@component\n"
@@ -160,7 +310,7 @@ def test_unknown_tag_after_non_ascii_line() -> None:
 
 def test_called_signal_column_is_utf16_on_a_non_ascii_line() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         "\n"
         "@component\n"
         "def app():\n"
@@ -190,7 +340,7 @@ def test_called_signal_column_is_utf16_on_a_non_ascii_line() -> None:
 
 def test_bare_lambda_reports_the_parenthesis_fix() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         "\n"
         "@component\n"
         "def app():\n"
@@ -206,7 +356,7 @@ def test_bare_lambda_reports_the_parenthesis_fix() -> None:
 
 def test_fstring_instead_of_tstring() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         "\n"
         "@component\n"
         "def app():\n"
@@ -222,7 +372,7 @@ def test_fstring_instead_of_tstring() -> None:
 
 def test_parser_error_is_reported() -> None:
     body = (
-        'Page = styled(div, t"""color: red;""")\n'
+        'Page = styled(div)(t"""color: red;""")\n'
         "\n"
         "@component\n"
         "def app():\n"

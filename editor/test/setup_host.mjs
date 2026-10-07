@@ -21,6 +21,8 @@ for (let attempt = 1; attempt <= attempts; attempt += 1) {
   try {
     result = await runVSCodeCommand([
       "--install-extension", "ms-python.vscode-pylance@2026.4.1", "--force",
+      "--install-extension", "ms-python.python@2026.8.0",
+      "--install-extension", "charliermarsh.ruff@2026.84.0",
     ], { version: "1.140.0", spawn: { timeout: 120000 } });
     failure = null;
     break;

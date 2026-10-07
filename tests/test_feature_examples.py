@@ -12,10 +12,71 @@ from examples.composition import app as composition_app
 from examples.events import app as events_app
 from examples.forms import app as forms_app
 from examples.reactive_state import app
+from examples.templates import app as templates_app
 from examples.themes import app as themes_app
 from pysx import BrowserEvent
 from pysx.check import diagnostics
 from pysx.server import Session
+
+
+def test_templates_interactions_isolation_and_cleanup() -> None:
+    session, other = Session(templates_app), Session(templates_app)
+
+    def handler(attribute: str, value: str) -> str:
+        match = re.search(
+            rf'{attribute}="{value}"[^>]*data-pysx-click="([^"]+)"', session.rendered.body
+        )
+        assert match is not None
+
+        return match[1]
+
+    try:
+        assert "1. Work" in session.rendered.body
+        assert "While step 2" in session.rendered.body
+        assert "Template(" not in session.rendered.body
+        picked = handler("data-pick", "work:build")
+        reversed_ops = session.dispatch(handler("id", "reverse"), None)
+        assert any(op["op"] == "list" and op["keys"] == ["learn", "work"] for op in reversed_ops)
+        assert any("1. Learn" in str(op) for op in reversed_ops)
+        assert any(
+            op["op"] == "text" and op["v"] == "work / build"
+            for op in session.dispatch(picked, None)
+        )
+        assert other.pending == []
+        assert any(
+            "Compact details" in str(op) for op in session.dispatch(handler("id", "cycle"), None)
+        )
+        assert any("Quiet mode" in str(op) for op in session.dispatch(handler("id", "cycle"), None))
+        assert any("extra-1" in str(op) for op in session.dispatch(handler("id", "add"), None))
+        assert all(
+            "While step" not in str(op) for op in session.dispatch(handler("id", "remove"), None)
+        )
+    finally:
+        session.dispose()
+        other.dispose()
+    assert session.rendered.scopes.owners == {}
+    assert session.rendered.handlers == {}
+
+
+def test_templates_checker_clean_and_registered() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["templates"] == "examples.templates:app"
+    assert diagnostics(Path("examples/templates.py")) == []
+    assert diagnostics(Path("examples/components/templates.py")) == []
+
+
+@pytest.mark.acceptance
+def test_templates_cli_startup_and_ctrl_c_exit() -> None:
+    command = ["uv", "run", "--project", ".", "example", "run", "templates", "--port", "8761"]
+    with ready_server(command) as server:
+        with urllib.request.urlopen("http://127.0.0.1:8761/", timeout=5) as response:
+            assert response.status == 200
+            assert b"client.js" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
 
 
 def test_components_example_interactions_isolation_and_cleanup() -> None:

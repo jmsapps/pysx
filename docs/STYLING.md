@@ -1,9 +1,43 @@
 # Styling
 
-`styled(base, t"color: red; padding: 8px")` accepts an element marker, another styled
-object, or an ordinary callable returning a Template or Fragment. CSS is a flat list
-of declarations; blocks and interpolations are rejected. Use element objects rather
-than strings as bases.
+Declare native components with `styled.section(t"padding: 8px;")` and extend a
+component with `styled(Panel)(t"color: red;")`. Extension accepts native markers,
+styled components, and ordinary callables returning a Template or Fragment.
+The two-argument form is removed. `styled.fragment` is unavailable because a fragment
+has no element to carry a class. Native factories have tag-specific typed attributes.
+
+```python
+Panel = styled.section(t"""
+    padding: 16px;
+    &:hover:
+      border-color: var(--accent);
+    @media (max-width: 600px):
+      padding: 12px;
+""")
+TreePanel = styled(Panel)(t"background: var(--surface);")
+Action = styled.button(t"min-height: 44px;", variants={
+    "primary": t"background: var(--accent); color: white;",
+    "ghost": t"background: transparent; color: var(--muted);",
+})
+view = html(t"""
+    TreePanel(id="preview"):
+      Action(variant="primary"): "Save"
+""", use=(TreePanel, Action))
+```
+
+Nested selector and at-rule headers end in `:` and use spaces for indentation.
+`&` anchors the component class; pseudo-classes, modifier classes, attribute selectors,
+descendants, `@media` and `@supports` compose to at most 8 levels and 128 blocks per
+declaration. Selectors cannot escape their component; sibling selectors targeting
+outside it are rejected. CSS braces and interpolations are rejected. Document-level
+rules belong in `global_style()`.
+
+Declared variants generate a finite mapping of classes. `variant` accepts
+`str | Signal[str] | None`, switches classes without replacing elements, and is
+consumed before DOM emission or callable prop forwarding. An unknown name raises
+with the declared names. Extension inherits variants; declarations for the same name
+append in lineage order. Use CSS variables for continuous values and registered theme
+variables for theme-dependent appearance.
 
 Each inheritance chain flattens its declarations into one rule, preserving their order.
 Later declarations override earlier declarations independently of registration order.

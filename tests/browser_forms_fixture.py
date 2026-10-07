@@ -90,7 +90,7 @@ def app() -> Fragment:
         native.Div(note, id="note-state"),
         native.Div(checked, id="check-state"),
         native.Div(single, id="single-state"),
-        native.Div(selected, id="multi-state"),
+        native.Div(html(t"\n{selected!r}"), id="multi-state"),
         native.Div(radio, id="radio-state"),
         native.Div(corrected, id="corrected-state"),
         native.Div(resets, id="reset-state"),

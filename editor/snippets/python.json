@@ -1,0 +1,17 @@
+{
+  "pysx fragment": {
+    "prefix": "pysx-html",
+    "body": ["html(t\"\"\"", "    ${1:Panel}:", "      ${2:p}: \"${3:Content}\"", "\"\"\")"],
+    "description": "Fragment with compiler-bound bare component tags"
+  },
+  "pysx keyed rows": {
+    "prefix": "pysx-each",
+    "body": ["each(", "    ${1:rows},", "    lambda ${2:row}: html(t'${3:Card}: {${2:row}.${4:title}}'),", "    key=lambda ${2:row}: ${2:row}.${5:id},", ")"],
+    "description": "Live readable rows or frozen iterable rows with stable item keys"
+  },
+  "pysx lazy branches": {
+    "prefix": "pysx-when",
+    "body": ["when(", "    conditions=[", "        (${1:condition}, lambda: html(t'${2:Panel}: \"${3:Selected}\"')),", "    ],", "    default=lambda: html(t'${4:p}: \"${5:Default}\"'),", ")"],
+    "description": "Ordered lazy condition builders with an optional default"
+  }
+}

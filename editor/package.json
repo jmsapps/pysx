@@ -13,6 +13,24 @@
     "Programming Languages"
   ],
   "contributes": {
+    "snippets": [{ "language": "python", "path": "./snippets/python.json" }],
+    "commands": [
+      { "command": "pysx.rename", "title": "pysx: Rename Python and Markup Symbol" },
+      { "command": "pysx.refresh", "title": "pysx: Refresh Analysis" },
+      { "command": "pysx.configureTooling", "title": "pysx: Configure Template-Aware Imports" }
+    ],
+    "keybindings": [
+      { "command": "pysx.rename", "key": "f2", "when": "editorTextFocus && pysx.managedDocument" }
+    ],
+    "menus": { "editor/context": [
+      { "command": "pysx.rename", "when": "editorLangId == python", "group": "1_modification" }
+    ] },
+    "configuration": {
+      "title": "pysx",
+      "properties": {
+        "pysx.pythonPath": { "type": "string", "default": "", "scope": "resource", "description": "Python 3.14+ executable with pysx and Ruff installed." }
+      }
+    },
     "grammars": [
       {
         "scopeName": "source.pysx.injection",
@@ -23,6 +41,7 @@
       }
     ],
     "configurationDefaults": {
+      "files.exclude": { "**/_pysx_revision_*": true },
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {

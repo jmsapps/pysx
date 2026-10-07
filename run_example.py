@@ -16,7 +16,17 @@ except ModuleNotFoundError:  # pragma: no cover - depends on install mode
         "run it through uv:  uv run --project . python run_example.py run <name>"
     )
 
-from examples import examples
+
+def _registry() -> dict[str, str]:
+    from pysx.loader import install_loader
+
+    install_loader(packages=("examples",))
+    from examples import examples as registry
+
+    return registry
+
+
+examples = _registry()
 
 app = typer.Typer(add_completion=False, help="Run a bundled pysx example.")
 
@@ -31,22 +41,23 @@ def _main() -> None:
 
 
 def _available() -> str:
+
     return "\n".join(f"  {name}" for name in examples)
 
 
 @app.command()
 def run(
     name: str = typer.Argument(default="", help="Example to serve."),
-    port: int = typer.Option(
-        int(os.environ.get("PSX_PORT", "8750")), help="Port to serve on."
-    ),
+    port: int = typer.Option(int(os.environ.get("PSX_PORT", "8750")), help="Port to serve on."),
     host: str = typer.Option("127.0.0.1", help="Interface to bind."),
 ) -> None:
     """Serve an example by name."""
+
     if name not in examples:
         problem = "no example named" if name else "no example given"
         subject = f" {name!r}" if name else ""
         typer.echo(f"{problem}{subject}. available:\n{_available()}", err=True)
+
         raise typer.Exit(code=2)
 
     from pysx.server import main as serve
