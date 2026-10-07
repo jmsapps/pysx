@@ -8,6 +8,67 @@ from pysx.check import Diagnostic, diagnostics
 HEADER = "from pysx import component, div, html, signal, styled\n\n"
 
 
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "[value]",
+        "(value,)",
+        "[str(n) for n in range(value())]",
+        "alias",
+    ],
+)
+def test_render_snapshot_freeze_warnings(expression: str) -> None:
+    results, _lines = check(
+        "value = signal(2)\nparts = [str(n) for n in range(value())]\nalias = parts\n"
+        + "html(t'\\ndiv: {"
+        + expression
+        + "}')\n"
+    )
+    assert len(results) == 1
+    assert results[0]["severity"] == "warning"
+    assert "snapshot" in results[0]["message"]
+
+
+def test_render_snapshot_clean_constants_and_deferred_callbacks() -> None:
+    results, _lines = check(
+        "from pysx import Binding, defer\n"
+        "value = signal(2)\nrow = Binding[int]('row')\n"
+        "html(t'\\ndiv: {[1, 2]}')\n"
+        "html(t'\\ndiv: {defer(row, lambda n: [value() + n])}')\n"
+    )
+    assert results == []
+
+
+def test_positioned_multiline_checker_normalizes_adjacent_empty_fragments() -> None:
+    results, _lines = check(
+        'number = signal(1.25)\nlabel = "é"\n'
+        "view = t'\\np(title={number:.2f}): {number!s}{label!a}'\n"
+        "html(view)\n"
+    )
+    assert results == []
+
+
+def test_positioned_multiline_checker_assembled_templates_and_metadata() -> None:
+    results, _lines = check(
+        "head = t'\\nbutton(\\n  onClick={(lambda: None)!r}\\n):'\n"
+        "tail = t' \"😀\"\\n'\nhtml(head + tail)\n"
+    )
+    assert len(results) == 1
+    assert "EVENT interpolation" in results[0]["message"]
+
+
+def test_positioned_multiline_ast_fragments_match_runtime_strings() -> None:
+    import ast
+
+    from pysx.check import template_fragments
+
+    left, right = "a", "b"
+    template = t"\np: {left}{right}"
+    expression = ast.parse("t'\\np: {left}{right}'", mode="eval").body
+    assert isinstance(expression, ast.TemplateStr)
+    assert template_fragments(expression) == template.strings
+
+
 def test_styled_authoring_constant_variant_and_removed_call() -> None:
     results, _lines = check(
         'Action = styled.button(t"color: red", variants={"primary": t"color: blue"})\n'

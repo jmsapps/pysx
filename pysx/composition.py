@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from string.templatelib import Template
     from types import FunctionType
 
+    from .bindings import Environment
     from .parser import Node
     from .render import Fragment
 
@@ -41,6 +42,7 @@ class Children:
     nodes: tuple[Node, ...]
     values: tuple[object, ...]
     namespace: Mapping[str, object]
+    environment: Environment | None = None
 
 
 def namespace_for(fn: Component) -> dict[str, object]:

@@ -47,7 +47,14 @@ try {
   assert.equal(await original.evaluate(node => node === document.querySelector("#tree-notes")), true);
   assert.ok((await page.locator("#tree-notes").textContent()).includes("activations: 1"));
   console.log("  ok  root reorder preserves component state, handlers and untouched DOM");
-  await page.locator("#tree-library").focus();
+  // Traverse through the widget's keyboard handler so its owned focus command
+  // follows the tab-stop patches. A raw focus() on a different row races those
+  // server-driven row patches, especially in WebKit.
+  await page.locator("#tree-reverse").focus();
+  await page.keyboard.press("Shift+Tab");
+  await focused("tree-notes");
+  await page.keyboard.press("ArrowDown");
+  await focused("tree-library");
   await page.keyboard.press("ArrowLeft");
   await page.waitForFunction(() => !document.querySelector("#tree-components"));
   await focused("tree-library");

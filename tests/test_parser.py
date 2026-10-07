@@ -11,6 +11,69 @@ from pysx.parser import (
     parse,
 )
 
+
+def test_positioned_multiline_coordinates_immutable_structure_and_cache() -> None:
+    from dataclasses import FrozenInstanceError
+
+    from pysx import native
+    from pysx.parser import LiteralText, Position
+
+    template = t"""
+        {native.Div}(
+            title={"😀"},
+            id='positioned'
+        ):
+            span: "child"
+    """
+    skeleton = parse(template.strings)
+    assert skeleton is parse(template.strings)
+    assert skeleton.strings is template.strings
+    element = skeleton.root[0]
+    assert isinstance(element, Element)
+    assert isinstance(element.tag, Hole)
+    assert element.span is not None
+    assert element.span.start == element.tag.position
+    assert element.span.start == Position(0, template.strings[0].index("\n") + 9, 1, 8)
+    attr = element.attrs[0][1]
+    assert isinstance(attr, Hole)
+    assert attr.position is not None
+    assert attr.position.line == 2
+    assert template.strings[attr.position.fragment][attr.position.offset :] == ""
+
+    with pytest.raises(FrozenInstanceError):
+        element.__setattr__("tag", "changed")
+    assert isinstance(element.children, tuple)
+    literal = element.attrs[1][1]
+    assert isinstance(literal, LiteralText)
+    assert literal.span.start.line == literal.span.end.line == 3
+    assert element.span.end.line == 5
+    with pytest.raises(AttributeError, match="immutable"):
+        literal.__setattr__("_span", element.span)
+    assert parse.cache_info().maxsize == 256
+
+
+@pytest.mark.parametrize(
+    ("strings", "expected"),
+    [
+        (("\ndiv(\n  id=oops\n):",), (2, 5)),
+        (("\n\tdiv:",), (1, 0)),
+        (("\n  else:",), (1, 2)),
+    ],
+)
+def test_positioned_multiline_errors(strings: tuple[str, ...], expected: tuple[int, int]) -> None:
+    with pytest.raises(PysxSyntaxError) as caught:
+        parse(strings)
+    position = caught.value.position
+    assert position is not None
+    assert (position.line, position.column) == expected
+
+
+@pytest.mark.parametrize("strings", [("\n" + "a" * 1_048_576,), ("",) * 16386])
+def test_positioned_multiline_cache_input_bounds(strings: tuple[str, ...]) -> None:
+    with pytest.raises(PysxSyntaxError, match="exceeds"):
+        parse(strings)
+
+
 if TYPE_CHECKING:
     from string.templatelib import Template
 
@@ -27,17 +90,14 @@ def counter(count: object, handler: object) -> Template:
 
 def test_hole_table_matches_contract() -> None:
     sk = parse(counter("C", "H").strings)
-    assert sk.holes == [
-        (0, HoleKind.TEXT, None),
-        (1, HoleKind.EVENT, "onClick"),
-    ], sk.holes
+    assert sk.holes == ((0, HoleKind.TEXT, None), (1, HoleKind.EVENT, "onClick")), sk.holes
 
 
 def test_no_onclick_remnant_in_statics() -> None:
     sk = parse(counter("C", "H").strings)
     texts: list[str] = []
 
-    def walk(nodes: list[Node]) -> None:
+    def walk(nodes: tuple[Node, ...]) -> None:
         for n in nodes:
             if isinstance(n, Element):
                 texts.extend(v for _, v in n.attrs if isinstance(v, str))
@@ -57,14 +117,14 @@ def test_tree_shape() -> None:
     page = sk.root[0]
     assert isinstance(page, Element)
     assert page.tag == "Page"
-    assert page.attrs == [("id", "container")]
+    assert page.attrs == (("id", "container"),)
     assert page.children[0] == "Count: "
     assert page.children[1] == Hole(0)
     action = page.children[2]
     assert isinstance(action, Element)
     assert action.tag == "Action"
-    assert action.attrs == [("type", "button"), ("onClick", Hole(1))]
-    assert action.children == ["Increment"]
+    assert action.attrs == (("type", "button"), ("onClick", Hole(1)))
+    assert action.children == ("Increment",)
 
 
 def test_inline_content_after_colon() -> None:
@@ -78,7 +138,7 @@ def test_inline_content_after_colon() -> None:
     assert isinstance(page, Element)
     action = page.children[0]
     assert isinstance(action, Element)
-    assert action.children == ["Go"]
+    assert action.children == ("Go",)
 
 
 def test_rejects_quote_line_content() -> None:
@@ -97,11 +157,11 @@ def test_attribute_hole_kinds() -> None:
             "x"
     """.strings
     )
-    assert sk.holes == [
+    assert sk.holes == (
         (0, HoleKind.ATTR, "id"),
         (1, HoleKind.EVENT, "onClick"),
         (2, HoleKind.BIND, "bindValue"),
-    ], sk.holes
+    ), sk.holes
 
 
 def test_conditional_with_else() -> None:
@@ -116,15 +176,15 @@ def test_conditional_with_else() -> None:
                 Action: "no"
     """.strings
     )
-    assert sk.holes == [(0, HoleKind.COND, None)], sk.holes
+    assert sk.holes == ((0, HoleKind.COND, None),), sk.holes
     page = sk.root[0]
     assert isinstance(page, Element)
     cond = page.children[0]
     assert isinstance(cond, Conditional), page.children
     assert isinstance(cond.then[0], Element)
-    assert cond.then[0].children == ["yes"]
+    assert cond.then[0].children == ("yes",)
     assert isinstance(cond.otherwise[0], Element)
-    assert cond.otherwise[0].children == ["no"]
+    assert cond.otherwise[0].children == ("no",)
 
 
 def test_conditional_without_else() -> None:
@@ -142,9 +202,9 @@ def test_conditional_without_else() -> None:
     assert isinstance(page, Element)
     cond = page.children[0]
     assert isinstance(cond, Conditional)
-    assert cond.otherwise == []
+    assert cond.otherwise == ()
     assert isinstance(page.children[1], Element)
-    assert page.children[1].children == ["always"], page.children
+    assert page.children[1].children == ("always",), page.children
 
 
 def test_else_without_if_is_rejected() -> None:
@@ -158,15 +218,18 @@ def test_else_without_if_is_rejected() -> None:
         )
 
 
-def test_rejects_multiline_attrs() -> None:
-    with pytest.raises(PysxSyntaxError, match="single-line"):
-        parse(
-            t"""
-            Page(
-                id="x"):
-                "y"
-        """.strings
-        )
+def test_positioned_multiline_attrs() -> None:
+    skeleton = parse(
+        t"""
+        Page(
+            id="x"):
+            "y"
+    """.strings
+    )
+    page = skeleton.root[0]
+    assert isinstance(page, Element)
+    assert page.attrs == (("id", "x"),)
+    assert page.children == ("y",)
 
 
 def test_hole_in_attribute_name_position_is_rejected() -> None:
@@ -186,7 +249,7 @@ def test_component_tags_hole_in_tag_position() -> None:
             "y"
     """.strings
     )
-    assert skeleton.holes == [(0, HoleKind.TAG, None)]
+    assert skeleton.holes == ((0, HoleKind.TAG, None),)
 
 
 def test_text_containing_braces_and_nul_is_not_a_hole() -> None:
@@ -199,4 +262,4 @@ def test_text_containing_braces_and_nul_is_not_a_hole() -> None:
     page = sk.root[0]
     assert isinstance(page, Element)
     assert page.children[0] == "a{b}c\x00\x00d", page.children[0]
-    assert sk.holes == [(0, HoleKind.TEXT, None)]
+    assert sk.holes == ((0, HoleKind.TEXT, None),)

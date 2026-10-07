@@ -28,9 +28,9 @@ Action = styled.button(
     """},
 )
 view = html(t"""
-    {TreePanel}(id="preview"):
-      {Card}(label="Imported"):
+    TreePanel(id="preview"):
+      Card(label="Imported"):
         span: "Child"
       {shared.Card}: "Attribute reference"
-""")
+""", use=(TreePanel, Card))
 AFTER_SENTINEL = "plain Python"

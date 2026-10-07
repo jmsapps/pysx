@@ -235,8 +235,8 @@
       ]
     },
     "pysx-template": {
-      "begin": "(t)(\"\"\")",
-      "end": "(\"\"\")",
+      "begin": "([rR][tT]|[tT][rR]|[tT])(\"\"\"|'''|\"|')",
+      "end": "\\2",
       "beginCaptures": {
         "1": {
           "name": "storage.type.string.python"
@@ -246,7 +246,7 @@
         }
       },
       "endCaptures": {
-        "1": {
+        "0": {
           "name": "punctuation.definition.string.end.python"
         }
       },
@@ -263,6 +263,12 @@
           "include": "#hole"
         },
         {
+          "include": "#loop-header"
+        },
+        {
+          "include": "#local-binding"
+        },
+        {
           "include": "#keyword"
         },
         {
@@ -276,6 +282,9 @@
         },
         {
           "include": "#text-string"
+        },
+        {
+          "include": "#text-string-single"
         },
         {
           "include": "#punctuation"
@@ -314,7 +323,7 @@
     },
     "attributes": {
       "begin": "\\(",
-      "end": "\\)|(?=\"\"\")",
+      "end": "\\)|(?=\"\"\"|\\'\\'\\')",
       "beginCaptures": {
         "0": {
           "name": "punctuation.definition.tag.begin.pysx"
@@ -347,6 +356,9 @@
           "include": "#text-string"
         },
         {
+          "include": "#text-string-single"
+        },
+        {
           "match": ",",
           "name": "punctuation.separator.pysx"
         }
@@ -355,7 +367,7 @@
     "text-string": {
       "name": "string.quoted.double.pysx",
       "begin": "\"",
-      "end": "\"|(?=$)",
+      "end": "(?=\"\"\"|''')|\"",
       "beginCaptures": {
         "0": {
           "name": "punctuation.definition.string.begin.pysx"
@@ -365,7 +377,13 @@
         "0": {
           "name": "punctuation.definition.string.end.pysx"
         }
-      }
+      },
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.pysx"
+        }
+      ]
     },
     "punctuation": {
       "patterns": [
@@ -379,9 +397,37 @@
         }
       ]
     },
+    "local-binding": {
+      "match": "^\\s*(let|set)\\s+([A-Za-z_][A-Za-z0-9_-]*)\\s*(=)",
+      "captures": {
+        "1": { "name": "keyword.control.conditional.pysx" },
+        "2": { "name": "variable.other.readwrite.pysx" },
+        "3": { "name": "keyword.operator.assignment.pysx" }
+      }
+    },
+    "loop-header": {
+      "begin": "^\\s*(for)\\b",
+      "end": "(?=:)",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.conditional.pysx" }
+      },
+      "patterns": [
+        { "include": "#hole" },
+        {
+          "match": "\\b(in)\\b|\\b(key)\\s*(=)",
+          "captures": {
+            "1": { "name": "keyword.control.loop.pysx" },
+            "2": { "name": "keyword.control.loop.pysx" },
+            "3": { "name": "keyword.operator.assignment.pysx" }
+          }
+        },
+        { "match": "\\b[A-Za-z_][A-Za-z0-9_-]*\\b", "name": "variable.other.readwrite.pysx" },
+        { "match": "[(),]", "name": "punctuation.separator.pysx" }
+      ]
+    },
     "keyword": {
-      "comment": "if/else are the only control words in the DSL. elif and match are not grammar; highlighting them would paint tokens the parser rejects.",
-      "match": "^\\s*(if|else)\\b",
+      "comment": "Positioned branches, loops, matching and local statements.",
+      "match": "^\\s*(if|elif|else|for|match|case|let|set|discard)\\b",
       "captures": {
         "1": {
           "name": "keyword.control.conditional.pysx"
@@ -390,7 +436,7 @@
     },
     "element-html": {
       "comment": "Lowercase tag at the head of an indented line. Deliberately generic: render.py passes any lowercase tag straight through without validation, so the grammar must not claim a fixed set.",
-      "match": "^\\s*(?!if\\b|else\\b)([a-z][A-Za-z0-9_-]*)\\b",
+      "match": "^\\s*(?!if\\b|elif\\b|else\\b|for\\b|match\\b|case\\b|let\\b|set\\b|discard\\b)([a-z][A-Za-z0-9_-]*)\\b",
       "captures": {
         "1": {
           "name": "entity.name.tag.pysx"
@@ -409,6 +455,27 @@
         },
         {
           "include": "source.python"
+        }
+      ]
+    },
+    "text-string-single": {
+      "name": "string.quoted.single.pysx",
+      "begin": "'",
+      "end": "(?=\"\"\"|''')|'",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.pysx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.pysx"
+        }
+      },
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.pysx"
         }
       ]
     }

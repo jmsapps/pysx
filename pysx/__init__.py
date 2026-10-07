@@ -1,3 +1,4 @@
+from .bindings import Binding, Deferred, bounded_while, defer, defer2
 from .composition import Children, Component
 from .dom import Dom, DomError, DomListener, DomNode, DomRef, Rect
 from .elements import (
@@ -59,9 +60,11 @@ from .styled import StyledCallable, StyledTag, global_style, styled, stylesheet
 from .styles import Theme, Themes, css
 
 __all__ = [
+    "Binding",
     "BrowserEvent",
     "Children",
     "Component",
+    "Deferred",
     "Dom",
     "DomError",
     "DomListener",
@@ -83,12 +86,15 @@ __all__ = [
     "all_of",
     "any_of",
     "batch",
+    "bounded_while",
     "br",
     "button",
     "component",
     "concat",
     "contains",
     "css",
+    "defer",
+    "defer2",
     "derived",
     "dict_key",
     "div",

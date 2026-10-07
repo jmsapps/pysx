@@ -1,13 +1,72 @@
-
 from typing import TYPE_CHECKING
 
+import pytest
+
+from pysx import html, render, signal
 from pysx.template import dedent_fragments
+
+
+def test_positioned_multiline_snapshot_conversion_format_and_adjacent_holes() -> None:
+    number = 1.25
+    text = "é<&"
+    template = t"\np: {number:.2f}{text!a:>16}"
+    result = render(lambda: html(template))
+    assert "1.25" in result.body
+    assert "\\xe9&lt;&amp;" in result.body
+    assert result.watchers == []
+
+
+def test_positioned_multiline_live_conversion_format_and_attr_updates() -> None:
+    number = signal(1.25)
+    template = t"\np(title={number:.2f}): {number!s:>8}"
+    result = render(lambda: html(template))
+    assert 'title="1.25"' in result.body
+    number.set(2.5)
+    ops = [op for watcher in result.watchers for op in watcher.refresh()]
+    assert ops == [
+        {"op": "attr", "id": "e1", "name": "title", "v": "2.50"},
+        {"op": "text", "id": "1", "v": "     2.5"},
+    ]
+    result.dispose()
+
+
+def test_positioned_multiline_raw_quoted_crlf_assigned_and_assembled() -> None:
+    from string.templatelib import Template
+
+    first = rt"""
+        p(title='a\'b'): "a\"b\\c\n{{literal}}😀"
+    """
+    second = Template('\r\nspan(id="assembled"):\r\n  "second"\r\n')
+    template = first + second
+    result = render(lambda: html(template))
+    assert 'title="a&#x27;b"' in result.body
+    assert "a&quot;b\\c\n{literal}😀" in result.body
+    assert '<span id="assembled">second</span>' in result.body
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        t'\nif {True!s}:\n  p: "bad"',
+        t'\nbutton(onClick={(lambda: None)!r}): "bad"',
+        t"\ninput(bindValue={signal('x')!s})",
+        t'\n{42!s}: "bad"',
+    ],
+)
+def test_positioned_multiline_incompatible_metadata_is_positioned(template: Template) -> None:
+    from pysx.parser import InterpolationError
+
+    with pytest.raises(InterpolationError, match="metadata") as caught:
+        render(lambda: html(template))
+    assert caught.value.position is not None
+
 
 if TYPE_CHECKING:
     from string.templatelib import Template
 
 
 def _counter_template(count: object, handler: object) -> Template:
+
     return t"""
         Page(id="container"):
             "Count: "; {count}
@@ -30,6 +89,7 @@ def test_structure_preserved() -> None:
     tpl = _counter_template("C", "H")
     got = dedent_fragments(tpl.strings)
     assert len(got) == len(tpl.strings)
+
     for a, b in zip(tpl.strings, got, strict=True):
         assert a.count("\n") == b.count("\n"), (a, b)
 

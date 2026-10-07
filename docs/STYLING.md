@@ -20,9 +20,9 @@ Action = styled.button(t"min-height: 44px;", variants={
     "ghost": t"background: transparent; color: var(--muted);",
 })
 view = html(t"""
-    {TreePanel}(id="preview"):
-      {Action}(variant="primary"): "Save"
-""")
+    TreePanel(id="preview"):
+      Action(variant="primary"): "Save"
+""", use=(TreePanel, Action))
 ```
 
 Nested selector and at-rule headers end in `:` and use spaces for indentation.

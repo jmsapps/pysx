@@ -11,7 +11,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
   suite = args[i + 1];
 }
-if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring"].includes(suite)) throw new Error("empty grammar selection");
+if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example"].includes(suite)) throw new Error("empty grammar selection");
 const host = pylanceHost();
 const injectionPath = process.env.PYSX_INJECTION_GRAMMAR ??
   fileURLToPath(new URL("../../editor/syntaxes/pysx.injection.tmLanguage.json", import.meta.url));
@@ -36,13 +36,16 @@ try {
     if (!condition) throw new Error(`scope assertion failed: ${label}`);
     assertions++;
   };
-  const fixtures = suite === "styled_authoring" ? ["styled_authoring"] :
+  const fixtures = suite === "templates_example" ? ["templates_example"] :
+    suite === "render_snapshot" ? ["render_snapshot"] :
+    suite === "styled_authoring" ? ["styled_authoring"] :
     suite === "composition_recursive" ? ["composition"] :
     suite === "styling_diagnostics" ? ["styling"] :
     suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
-    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring"];
+    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example"];
   for (const fixture of fixtures) {
-    const lines = readFileSync(new URL(`fixtures/${fixture}.txt`, import.meta.url), "utf8").split("\n");
+    const source = fixture === "templates_example" ? "../../examples/templates.py" : `fixtures/${fixture}.txt`;
+    const lines = readFileSync(new URL(source, import.meta.url), "utf8").split("\n");
     let stack = textmate.INITIAL;
     const result = [];
     for (const [index, line] of lines.entries()) {
@@ -51,11 +54,50 @@ try {
       stack = current.ruleStack;
     }
     tokens += result.length;
+    if (["render_snapshot", "templates_example"].includes(fixture)) {
+      for (const word of ["in", "key"]) {
+        check(result.some(token => token.text === word && token.scopes.includes("keyword.control.loop.pysx")), `${fixture}: ${word}`);
+      }
+      for (const word of ["let", "set"]) {
+        const row = lines.findIndex(line => new RegExp(`^\\s*${word}\\s+`).test(line));
+        check(result.some(token => token.line === row && token.text.trim() === word && token.scopes.includes("keyword.control.conditional.pysx")), `${fixture}: ${word} keyword`);
+        const name = lines[row].match(/(?:let|set)\s+([\w-]+)/)[1];
+        check(result.some(token => token.line === row && token.text === name && token.scopes.includes("variable.other.readwrite.pysx")), `${fixture}: ${word} binding`);
+        check(result.some(token => token.line === row && token.text === "=" && token.scopes.includes("keyword.operator.assignment.pysx")), `${fixture}: ${word} assignment`);
+      }
+      check(result.some(token => token.text === "=" && token.scopes.includes("keyword.operator.assignment.pysx") && /\bkey\s*=/.test(lines[token.line])), `${fixture}: key assignment`);
+    }
     // Anchoring on the sentinel line would leave the t-string terminator and the
     // blank line after it unchecked, which is exactly where leakage surfaces.
     const sentinel = result.find((token) => token.text.includes("AFTER_SENTINEL"));
     const terminator = result.findIndex((token, index) => index > 0 &&
       token.text === '"""' && result[index - 1].scopes.some((scope) => scope.includes("pysx")));
+    if (fixture === "templates_example") {
+      for (const word of ["if", "elif", "else", "for", "match", "case", "let", "set"]) {
+        check(result.some(token => token.text.trim() === word && token.scopes.includes("keyword.control.conditional.pysx")), `example ${word}`);
+      }
+      for (const word of ["TemplatePage", "Action", "GroupPanel", "GroupHeading"]) {
+        check(result.some(token => token.text === word && token.scopes.includes("support.class.component.pysx")), `example bare ${word}`);
+      }
+      check(result.some(token => token.text === "title" && token.scopes.includes("entity.other.attribute-name.pysx")), "example multiline attrs");
+      check(result.some(token => token.text.trim() === "tooltip" && token.scopes.includes("meta.embedded.inline.python")), "example deferred attr");
+      check(result.some(token => token.text.trim() === "snapshots" && token.scopes.includes("meta.embedded.inline.python")), "example snapshot hole");
+      check(result.some(token => token.text === "namespace" && !token.scopes.some(scope => scope.includes("pysx") || scope.includes("css"))), "example returns to Python");
+      continue;
+    }
+    if (fixture === "render_snapshot") {
+      for (const word of ["if", "elif", "else", "for", "match", "case", "let", "set", "discard"]) {
+        check(result.some(token => token.text.trim() === word && token.scopes.includes("keyword.control.conditional.pysx")), `${word}: control keyword`);
+      }
+      check(result.some(token => token.text === "Card" && token.scopes.includes("support.class.component.pysx")), "bare component tag");
+      check(result.some(token => token.text === "title" && token.scopes.includes("entity.other.attribute-name.pysx")), "multiline attribute");
+      check(result.some(token => token.text.includes("single quoted") && token.scopes.includes("string.quoted.single.pysx")), "single template/text quotes");
+      check(result.some(token => token.text.includes("braces") && token.scopes.includes("string.quoted.double.pysx")), "literal braces stay text");
+      check(result.some(token => token.text.trim() === "defer" && token.scopes.includes("meta.embedded.inline.python")), "deferred expression returns to Python");
+      check(result.some(token => token.text.trim() === "tuple" && token.scopes.includes("meta.embedded.inline.python")), "snapshot expression returns to Python");
+      check(sentinel && !sentinel.scopes.some(scope => scope.includes("pysx") || scope.includes("css") || scope.includes("function-call")), "no snapshot scope leakage");
+      continue;
+    }
     if (fixture === "styled_authoring") {
       for (const [value, scope] of [
         ["padding", "support.type.property-name.css"],
@@ -69,9 +111,11 @@ try {
         ["label", "entity.other.attribute-name.pysx"],
         ["Child", "string.quoted.double.pysx"],
       ]) check(result.some(token => token.text.includes(value) && token.scopes.includes(scope)), `${value}: ${scope}`);
-      for (const value of ["TreePanel", "Card", "shared"]) {
-        check(result.some(token => token.text.trim() === value && token.scopes.includes("meta.embedded.inline.python")), `${value}: genuine Python tag reference`);
+      for (const value of ["TreePanel", "Card"]) {
+        check(result.some(token => token.text === value && token.scopes.includes("support.class.component.pysx")), `${value}: literal component tag`);
       }
+      check(result.some(token => token.text.trim() === "shared" && token.scopes.includes("meta.embedded.inline.python")), "attribute expression tag returns to Python");
+      check(result.some(token => token.text === "use" && token.scopes.includes("source.python") && !token.scopes.some(scope => scope.includes("pysx"))), "use references remain Python");
       check(result.some(token => token.text === "ghost" && !token.scopes.some(scope => scope.includes("css"))), "mapping keys stay Python");
       check(sentinel && !sentinel.scopes.some(scope => scope.includes("pysx") || scope.includes("css") || scope.includes("function-call")), "authoring has no scope leakage");
       continue;

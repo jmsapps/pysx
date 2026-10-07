@@ -17,17 +17,35 @@ from annotationlib import Format
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from inspect import Parameter, signature
-from string.templatelib import Template
+from itertools import islice
+from string.templatelib import Interpolation, Template
 from typing import TYPE_CHECKING, cast
 
+from .bindings import MAX_ROWS, Deferred, Environment, resolve
+from .bindings import Binding as LexicalBinding
 from .composition import Children, Component, identity_for, namespace_for
 from .dom import DomController, DomError, DomRef, dom_context
 from .elements import VOID, ElementTag
 from .events import EventHandler
 from .forms import Binding, make_binding
 from .lifecycle import Scopes
-from .parser import Conditional, Element, Hole, HoleKind, Node, Skeleton, attr_kind, parse
-from .reactive import Readable, Signal
+from .parser import (
+    Case,
+    Conditional,
+    Element,
+    Hole,
+    HoleKind,
+    InterpolationError,
+    Local,
+    Loop,
+    Match,
+    Node,
+    Position,
+    Skeleton,
+    attr_kind,
+    parse,
+)
+from .reactive import Readable, Signal, derived
 from .schema import BOOLEAN_ATTRS, NATIVE_TAGS, normalize_attr
 from .styled import StyledCallable, StyledTag, VariantClass, flatten, global_rules
 from .styles import (
@@ -39,8 +57,11 @@ from .styles import (
     style_owner,
     variable_values,
 )
+from .template import template_values
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .wire import Op
 
 
@@ -56,6 +77,52 @@ class Fragment:
 type Used = Callable[..., object] | ElementTag | StyledTag
 
 
+def _lexical_live(value: object) -> bool:
+
+    return isinstance(value, (Signal, Deferred, LexicalBinding))
+
+
+def _signal_reader(value: object) -> Readable[object] | None:
+
+    return cast("Readable[object]", value) if isinstance(value, Signal) else None
+
+
+def _structured_content(value: object) -> bool:
+
+    return isinstance(value, (Template, Fragment, list, tuple))
+
+
+def _validate_snapshot(
+    value: object,
+    depth: int = 0,
+    path: frozenset[int] = frozenset(),
+    budget: list[int] | None = None,
+) -> None:
+    if not _structured_content(value):
+
+        return
+
+    if depth >= 128 or id(value) in path:
+
+        raise ValueError("snapshot nesting exceeds 128 levels or contains a cycle")
+    nested_path = path | {id(value)}
+    counter = budget if budget is not None else [0]
+
+    if isinstance(value, Fragment):
+        _validate_snapshot(value.template, depth + 1, nested_path, counter)
+    elif isinstance(value, Template):
+        for entry in value.values:
+            _validate_snapshot(entry, depth + 1, nested_path, counter)
+    else:
+        for entry in cast("Sequence[object]", value):
+            counter[0] += 1
+
+            if counter[0] > MAX_ROWS:
+
+                raise ValueError("snapshot exceeds 10000 entries")
+            _validate_snapshot(entry, depth + 1, nested_path, counter)
+
+
 def _used(components: tuple[Used, ...]) -> dict[str, object]:
     found: dict[str, object] = {}
 
@@ -63,6 +130,7 @@ def _used(components: tuple[Used, ...]) -> dict[str, object]:
         if not callable(component) and not isinstance(  # pyright: ignore[reportUnnecessaryIsInstance]
             component, (ElementTag, StyledTag)
         ):
+
             raise TypeError(f"use= takes components, received {type(component).__name__}")
         name = getattr(component, "__name__", None)
 
@@ -93,17 +161,86 @@ def html(
 def _template_skeleton(template: Template) -> Skeleton:
     skeleton = parse(template.strings)
 
-    for index, _kind, name in skeleton.holes:
-        if name is None or normalize_attr(name) not in {"css", "stylevars", "cssvars"}:
-
-            continue
+    for index, kind, name in skeleton.holes:
         interpolation = template.interpolations[index]
 
         if interpolation.conversion is not None or interpolation.format_spec:
+            position = _hole_position(skeleton.root, index)
 
-            raise ValueError("CSS attribute interpolation metadata is unsupported")
+            if name is not None and normalize_attr(name) in {"css", "stylevars", "cssvars"}:
+
+                raise InterpolationError(
+                    "CSS attribute interpolation metadata is unsupported", position
+                )
+
+            if kind not in {HoleKind.TEXT, HoleKind.ATTR}:
+
+                raise InterpolationError(
+                    f"{kind.value} interpolation conversion/format metadata is unsupported",
+                    position,
+                )
 
     return skeleton
+
+
+def _hole_position(nodes: Sequence[Node], index: int) -> Position | None:
+    for node in nodes:
+        holes: list[Hole] = []
+
+        if isinstance(node, Hole):
+            holes.append(node)
+        elif isinstance(node, Element):
+            if isinstance(node.tag, Hole):
+                holes.append(node.tag)
+            holes.extend(value for _name, value in node.attrs if isinstance(value, Hole))
+            found = _hole_position(node.children, index)
+
+            if found is not None:
+
+                return found
+        elif isinstance(node, Conditional):
+            holes.append(node.hole)
+            found = _hole_position((*node.then, *node.otherwise), index)
+
+            if found is not None:
+
+                return found
+
+        if isinstance(node, Loop):
+            holes.append(node.source)
+
+            if node.key is not None:
+                holes.append(node.key)
+            found = _hole_position(node.children, index)
+
+            if found is not None:
+
+                return found
+        elif isinstance(node, Local):
+            holes.append(node.value)
+        elif isinstance(node, Match):
+            holes.append(node.value)
+
+            for case in node.cases:
+                holes.extend(pattern for pattern in case.patterns if isinstance(pattern, Hole))
+                found = _hole_position(case.children, index)
+
+                if found is not None:
+
+                    return found
+
+        for hole in holes:
+            if hole.index == index:
+
+                return hole.position
+
+    return None
+
+
+def _prepared_values(template: Template) -> tuple[object, ...]:
+    _template_skeleton(template)
+
+    return template_values(template)
 
 
 def component[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
@@ -220,6 +357,23 @@ class CondWatcher(Watcher):
             return [op for watcher in self.children for op in watcher.refresh()]
         self.last = now
         markup, self.children = self.render_branch(now)
+
+        return [{"op": "html", "id": self.slot, "v": markup}]
+
+
+@dataclass
+class ContentWatcher(Watcher):
+    slot: str
+    render_content: Callable[[], str]
+    last: str
+
+    def refresh(self) -> list[Op]:
+        markup = self.render_content()
+
+        if markup == self.last:
+
+            return []
+        self.last = markup
 
         return [{"op": "html", "id": self.slot, "v": markup}]
 
@@ -404,9 +558,15 @@ class _Emitter:
         prefix: str = "",
         handler_prefix: str | None = None,
         scope_prefix: str | None = None,
+        environment: Environment | None = None,
+        snapshot_depth: int = 0,
+        snapshot_budget: list[int] | None = None,
     ) -> None:
         self.ns = ns
         self.values = values
+        self.environment = environment or Environment()
+        self.snapshot_depth = snapshot_depth
+        self.snapshot_budget = snapshot_budget
         self.out = out
         self.element_ids = 0
         # Scoped to this emitter, so one list item numbers its handlers across
@@ -418,6 +578,18 @@ class _Emitter:
         self.component_n = 0
 
     # -- helpers ----------------------------------------------------------
+
+    def _value(self, hole: Hole) -> object:
+
+        return self._lexical_value(hole, self.environment)
+
+    def _lexical_value(self, hole: Hole, environment: Environment) -> object:
+        try:
+
+            return resolve(self.values[hole.index], environment)
+        except KeyError as error:
+
+            raise InterpolationError(str(error), hole.position) from error
 
     def _handler_id(self, hole_index: int) -> str:
         """Top level: stable by hole index. Inside a list item: stable by
@@ -438,7 +610,7 @@ class _Emitter:
         return f"{self.prefix}e{self.element_ids}"
 
     def _resolve(self, tag: str | Hole) -> tuple[str, list[object]]:
-        found = self.values[tag.index] if isinstance(tag, Hole) else self.ns.get(tag)
+        found = self._value(tag) if isinstance(tag, Hole) else self.ns.get(tag)
 
         if isinstance(found, ElementTag):
 
@@ -467,7 +639,18 @@ class _Emitter:
     # -- nodes ------------------------------------------------------------
 
     def nodes(
-        self, nodes: list[Node], *, static: bool = False, root_classes: tuple[object, ...] = ()
+        self, nodes: Sequence[Node], *, static: bool = False, root_classes: tuple[object, ...] = ()
+    ) -> str:
+        environment = self.environment
+
+        try:
+
+            return self._nodes(nodes, static=static, root_classes=root_classes)
+        finally:
+            self.environment = environment
+
+    def _nodes(
+        self, nodes: Sequence[Node], *, static: bool, root_classes: tuple[object, ...]
     ) -> str:
         parts: list[str] = []
 
@@ -478,13 +661,60 @@ class _Emitter:
                 parts.append(self.hole(node, static=static, root_classes=root_classes))
             elif isinstance(node, Conditional):
                 parts.append(self.conditional(node, static=static, root_classes=root_classes))
+            elif isinstance(node, Loop):
+                parts.append(self.loop(node, static=static, root_classes=root_classes))
+            elif isinstance(node, Local):
+                value = self._value(node.value)
+
+                if node.name is not None:
+                    binding = self.ns.get(node.name)
+
+                    if not isinstance(binding, LexicalBinding):
+
+                        raise InterpolationError(
+                            f"missing lexical binding {node.name!r}", node.value.position
+                        )
+                    declaration = cast("LexicalBinding[object]", binding)
+
+                    if node.operation == "set":
+                        try:
+                            self.environment.get(declaration)
+                        except KeyError as error:
+
+                            raise InterpolationError(str(error), node.value.position) from error
+                    self.environment = self.environment.child((declaration,), (value,))
+            elif isinstance(node, Match):
+                parts.append(self.match(node, static=static, root_classes=root_classes))
             else:
                 parts.append(self.element(node, static=static, root_classes=root_classes))
 
         return "".join(parts)
 
     def hole(self, hole: Hole, *, static: bool, root_classes: tuple[object, ...] = ()) -> str:
-        value = self.values[hole.index]
+        value: object
+
+        if isinstance(self.values[hole.index], Deferred) and not static:
+            environment = self.environment
+            value = derived(lambda: _read(resolve(self.values[hole.index], environment)))
+        else:
+            value = self._value(hole)
+
+        reader = _signal_reader(value)
+
+        if reader is not None:
+            current = reader()
+
+            if _structured_content(current):
+                if not static:
+
+                    return self.content_slot(hole, reader, root_classes)
+                value = current
+            elif static:
+                value = current
+
+        if isinstance(value, (list, tuple)):
+
+            return self.snapshot(hole, cast("Sequence[object]", value), root_classes)
 
         if isinstance(value, Children):
             sub = _Emitter(
@@ -493,6 +723,9 @@ class _Emitter:
                 self.out,
                 prefix=f"{self.prefix}f{hole.index}:",
                 scope_prefix=f"{self.scope_prefix}f{hole.index}:",
+                environment=value.environment or self.environment,
+                snapshot_depth=self.snapshot_depth,
+                snapshot_budget=self.snapshot_budget,
             )
 
             return sub.nodes(list(value.nodes), static=static, root_classes=root_classes)
@@ -506,10 +739,13 @@ class _Emitter:
                 self.out.styles.add(owner, name, body)
             sub = _Emitter(
                 namespace,
-                fragment.template.values,
+                _prepared_values(fragment.template),
                 self.out,
                 prefix=f"{self.prefix}f{hole.index}:",
                 scope_prefix=f"{self.scope_prefix}f{hole.index}:",
+                environment=self.environment,
+                snapshot_depth=self.snapshot_depth,
+                snapshot_budget=self.snapshot_budget,
             )
 
             return sub.nodes(
@@ -532,14 +768,94 @@ class _Emitter:
 
         return f'<pysx-slot id="{escaped_slot}">{_htmlmod.escape(text)}</pysx-slot>'
 
+    def snapshot(
+        self, hole: Hole, entries: Sequence[object], root_classes: tuple[object, ...]
+    ) -> str:
+        if self.snapshot_budget is None:
+            _validate_snapshot(entries)
+
+        if self.snapshot_depth >= 128:
+
+            raise ValueError("snapshot nesting exceeds 128 levels")
+        budget = self.snapshot_budget if self.snapshot_budget is not None else [0]
+        parts: list[str] = []
+
+        for index, entry in enumerate(entries):
+            budget[0] += 1
+
+            if budget[0] > MAX_ROWS:
+
+                raise ValueError("snapshot exceeds 10000 entries")
+            prefix = f"{self.prefix}{hole.index}:snapshot:{index}:"
+            sub = _Emitter(
+                self.ns,
+                (entry,),
+                self.out,
+                prefix=prefix,
+                scope_prefix=f"{self.scope_prefix}{hole.index}:snapshot:{index}:",
+                environment=self.environment,
+                snapshot_depth=self.snapshot_depth + 1,
+                snapshot_budget=budget,
+            )
+            parts.append(sub.hole(Hole(0), static=True, root_classes=root_classes))
+
+        return "".join(parts)
+
+    def content_slot(
+        self, hole: Hole, source: Readable[object], root_classes: tuple[object, ...]
+    ) -> str:
+        slot = f"{self.prefix}{hole.index}"
+        owner = f"{slot}:snapshot:"
+        scope_owner = f"{self.scope_prefix}{hole.index}:snapshot:"
+        environment = self.environment
+
+        def content() -> str:
+            self.out.dom.revoke(owner)
+            self.out.styles.release(owner)
+
+            for hid in tuple(self.out.handlers):
+                if self.out.handler_owners.get(hid, "").startswith(owner):
+                    self.out.handlers.pop(hid, None)
+                    self.out.bindings.pop(hid, None)
+                    self.out.bind_elements.pop(hid, None)
+                    self.out.handler_owners.pop(hid, None)
+                    self.out.event_handlers.pop(hid, None)
+            value = source()
+            entries = (
+                cast("Sequence[object]", value) if isinstance(value, (list, tuple)) else (value,)
+            )
+            sub = _Emitter(
+                self.ns,
+                self.values,
+                self.out,
+                prefix=self.prefix,
+                scope_prefix=self.scope_prefix,
+                environment=environment,
+            )
+            with self.out.scopes.reconcile(scope_owner):
+
+                return sub.snapshot(hole, entries, root_classes)
+
+        markup = content()
+        self.out.watchers.append(ContentWatcher(slot, content, markup))
+
+        return f'<pysx-slot id="{_htmlmod.escape(slot, quote=True)}">{markup}</pysx-slot>'
+
     def conditional(
         self, node: Conditional, *, static: bool, root_classes: tuple[object, ...] = ()
     ) -> str:
-        value = self.values[node.hole.index]
+        value: object
+
+        if isinstance(self.values[node.hole.index], Deferred) and not static:
+            environment = self.environment
+            value = derived(lambda: _read(resolve(self.values[node.hole.index], environment)))
+        else:
+            value = self._value(node.hole)
         slot = f"{self.prefix}{node.hole.index}"
 
         prefix = f"{slot}:branch:"
         scope_base = f"{self.scope_prefix}{node.hole.index}:branch:"
+        captured_environment = self.environment
 
         def branch(flag: bool) -> tuple[str, list[Watcher]]:
             scope_prefix = f"{scope_base}{int(flag)}:"
@@ -562,6 +878,9 @@ class _Emitter:
                 prefix=prefix,
                 handler_prefix="" if not self.handler_prefix else prefix,
                 scope_prefix=scope_prefix,
+                environment=captured_environment,
+                snapshot_depth=self.snapshot_depth,
+                snapshot_budget=self.snapshot_budget,
             )
             with self.out.scopes.reconcile(scope_prefix):
                 markup = sub.nodes(
@@ -583,6 +902,122 @@ class _Emitter:
             self.out.watchers.extend(watchers)
 
         return f'<pysx-slot id="{_htmlmod.escape(slot, quote=True)}">{markup}</pysx-slot>'
+
+    def match(self, node: Match, *, static: bool, root_classes: tuple[object, ...]) -> str:
+        environment = self.environment
+        raw = self.values[node.value.index]
+        live = not static and (
+            _lexical_live(raw)
+            or any(
+                _lexical_live(self.values[pattern.index])
+                for case in node.cases
+                for pattern in case.patterns
+                if isinstance(pattern, Hole)
+            )
+        )
+        conditions: list[object] = []
+
+        for case in node.cases:
+
+            def selected(case: Case = case) -> bool:
+                value = _read(resolve(raw, environment))
+
+                return case.wildcard or any(
+                    value == _read(resolve(self.values[pattern.index], environment))
+                    if isinstance(pattern, Hole)
+                    else value == pattern
+                    for pattern in case.patterns
+                )
+
+            conditions.append(derived(selected) if live else selected())
+        branch: tuple[Node, ...] = ()
+
+        for index in reversed(range(len(node.cases))):
+            branch = (
+                Conditional(Hole(len(self.values) + index), node.cases[index].children, branch),
+            )
+        sub = _Emitter(
+            self.ns,
+            (*self.values, *conditions),
+            self.out,
+            prefix=f"{self.prefix}{node.value.index}:match:",
+            scope_prefix=f"{self.scope_prefix}{node.value.index}:match:",
+            environment=environment,
+            snapshot_depth=self.snapshot_depth,
+            snapshot_budget=self.snapshot_budget,
+        )
+
+        return sub.nodes(branch, static=static, root_classes=root_classes)
+
+    def loop(self, node: Loop, *, static: bool, root_classes: tuple[object, ...]) -> str:
+        declarations: list[LexicalBinding[object]] = []
+
+        for name in node.names:
+            binding = self.ns.get(name)
+
+            if not isinstance(binding, LexicalBinding):
+
+                raise InterpolationError(f"missing lexical binding {name!r}", node.source.position)
+            declarations.append(cast("LexicalBinding[object]", binding))
+        environment = self.environment
+        raw = self.values[node.source.index]
+
+        def items() -> Iterable[object]:
+            source = _read(self._lexical_value(node.source, environment))
+
+            if not isinstance(source, Iterable):
+
+                raise TypeError("loop source must be iterable")
+            rows: list[object] = []
+
+            for index, row in enumerate(cast("Iterable[object]", source)):
+                if index >= MAX_ROWS:
+
+                    raise ValueError("loop exceeds 10000 rows")
+                rows.append((index, row))
+
+            return rows
+
+        def row_environment(pair: object) -> Environment:
+            _index, row = cast("tuple[int, object]", pair)
+            values: tuple[object, ...]
+
+            if len(declarations) == 1:
+                values = (row,)
+            else:
+                if not isinstance(row, Iterable):
+
+                    raise ValueError("destructured row must be iterable")
+                values = tuple(islice(cast("Iterable[object]", row), len(declarations) + 1))
+
+            return environment.child(tuple(declarations), values)
+
+        def item(pair: object) -> Fragment:
+            children = Children(node.children, self.values, self.ns, row_environment(pair))
+
+            return html(Template("\n", Interpolation(children, "children")))
+
+        def key(pair: object) -> object:
+            if node.key is None:
+
+                return cast("tuple[int, object]", pair)[0]
+            value = _read(self._lexical_value(node.key, row_environment(pair)))
+
+            if not isinstance(value, (str, int)) or isinstance(value, bool):
+
+                raise InterpolationError("loop key must be a string or integer", node.key.position)
+
+            return value
+
+        live = _lexical_live(raw)
+        source = derived(items) if live else items
+
+        return self.list_slot(
+            node.source,
+            Each(source, item, key),
+            static=static or not live,
+            root_classes=root_classes,
+        )
 
     def list_slot(
         self,
@@ -659,10 +1094,13 @@ class _Emitter:
             self.out.styles.add(prefix, name, body)
         sub = _Emitter(
             self.ns | dict(fragment.namespace or {}),
-            fragment.template.values,
+            _prepared_values(fragment.template),
             self.out,
             prefix=prefix,
             scope_prefix=f"{scope_slot}:k{len(key)}:{key}:",
+            environment=self.environment,
+            snapshot_depth=self.snapshot_depth,
+            snapshot_budget=self.snapshot_budget,
         )
         markup = sub.nodes(
             skeleton.root, static=True, root_classes=(*fragment.root_classes, *root_classes)
@@ -676,12 +1114,14 @@ class _Emitter:
         self, fn: Component, el: Element, *, static: bool, root_classes: tuple[object, ...]
     ) -> str:
         props = {
-            name: self.values[value.index] if isinstance(value, Hole) else value
+            name: self._value(value) if isinstance(value, Hole) else value
             for name, value in el.attrs
         }
 
         if el.children:
-            props["children"] = Children(tuple(el.children), self.values, dict(self.ns))
+            props["children"] = Children(
+                tuple(el.children), self.values, dict(self.ns), self.environment
+            )
         self.component_n += 1
         prefix = f"{self.prefix}c{self.component_n}:"
         scope_prefix = f"{self.scope_prefix}c{self.component_n}:"
@@ -741,10 +1181,13 @@ class _Emitter:
             self.out.styles.add(prefix, name, body)
         sub = _Emitter(
             namespace,
-            fragment.template.values,
+            _prepared_values(fragment.template),
             self.out,
             prefix=prefix,
             scope_prefix=scope_prefix,
+            environment=self.environment,
+            snapshot_depth=self.snapshot_depth,
+            snapshot_budget=self.snapshot_budget,
         )
 
         return sub.nodes(
@@ -754,7 +1197,7 @@ class _Emitter:
         )
 
     def element(self, el: Element, *, static: bool, root_classes: tuple[object, ...] = ()) -> str:
-        found = self.values[el.tag.index] if isinstance(el.tag, Hole) else self.ns.get(el.tag)
+        found = self._value(el.tag) if isinstance(el.tag, Hole) else self.ns.get(el.tag)
 
         if (
             callable(found)
@@ -771,7 +1214,7 @@ class _Emitter:
 
         if isinstance(found, StyledTag):
             variant = next((value for name, value in el.attrs if name == "variant"), None)
-            source = self.values[variant.index] if isinstance(variant, Hole) else variant
+            source = self._value(variant) if isinstance(variant, Hole) else variant
             classes.append(VariantClass(found.variants, source))
 
         if tag == "fragment":
@@ -789,7 +1232,7 @@ class _Emitter:
         element_id: str | None = None
         initial_value: str | None = None
         raw_attributes = {
-            name: self.values[value.index] if isinstance(value, Hole) else value
+            name: self._value(value) if isinstance(value, Hole) else value
             for name, value in el.attrs
         }
 
@@ -856,7 +1299,7 @@ class _Emitter:
 
                 continue
 
-            raw = self.values[value.index]
+            raw = self._value(value)
 
             if name == "ref":
                 if not isinstance(raw, DomRef):
@@ -1037,7 +1480,7 @@ def render(
         skeleton = _template_skeleton(fragment.template)
         emitter = _Emitter(
             namespace_for(component_fn) | dict(namespace or {}) | dict(fragment.namespace or {}),
-            fragment.template.values,
+            _prepared_values(fragment.template),
             out,
         )
         out.body = emitter.nodes(skeleton.root, root_classes=fragment.root_classes)

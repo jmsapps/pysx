@@ -9,6 +9,66 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_branches_loops_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = "from pysx import Binding, Deferred, defer, defer2, bounded_while\n"
+    source += "from typing import assert_type\nrow = Binding[int]('row')\n"
+
+    if valid:
+        source += "name = Binding[str]('name')\n"
+        source += "assert_type(defer(row, lambda n: n + 1), Deferred[int])\n"
+        source += "assert_type(defer2(row, name, lambda n, s: s * n), Deferred[str])\n"
+        source += "assert_type(bounded_while(lambda: False, lambda: 1), tuple[int, ...])\n"
+    else:
+        source += "def wrong(value: str) -> str:\n    return value.upper()\n"
+        source += "defer(row, wrong)\nbounded_while(lambda: 'wrong', lambda: 1)\n"
+    fixture = tmp_path / "bindings_contract.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "str" in output
+        assert "bool" in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_positioned_multiline_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = "from pysx import html, render, signal\n"
+
+    if valid:
+        source += (
+            "value = signal(1.25)\n"
+            "view = t'\\np(\\n title={value:.2f}\\n): {value!s:>8}'\n"
+            "render(lambda: html(view))\n"
+        )
+    else:
+        source += "html(f'\\np: {signal(1.25)}')\n"
+    fixture = tmp_path / "positioned.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "Template" in output
+
+
 def test_styled_authoring_import_usage_real_tools(tmp_path: Path) -> None:
     result = subprocess.run(
         [

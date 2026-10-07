@@ -13,13 +13,62 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache
 
 from .schema import is_event
 from .template import dedent_fragments
 
 
+@dataclass(frozen=True)
+class Position:
+    fragment: int
+    offset: int
+    line: int = 0
+    column: int = 0
+
+
+@dataclass(frozen=True)
+class Span:
+    start: Position
+    end: Position
+
+
 class PysxSyntaxError(SyntaxError):
-    pass
+    def __init__(self, message: str, position: Position | None = None) -> None:
+        super().__init__(message)
+        self.position = position
+
+        if position is not None:
+            self.lineno = position.line + 1
+            self.offset = position.column + 1
+
+
+class InterpolationError(ValueError):
+    def __init__(self, message: str, position: Position | None = None) -> None:
+        super().__init__(message)
+        self.position = position
+
+
+class LiteralText(str):
+    """Immutable positioned text with ordinary string equality and rendering."""
+
+    __slots__ = ("_span",)
+    _span: Span
+
+    def __new__(cls, value: str, span: Span) -> LiteralText:
+        result = super().__new__(cls, value)
+        object.__setattr__(result, "_span", span)
+
+        return result
+
+    @property
+    def span(self) -> Span:
+
+        return self._span
+
+    def __setattr__(self, name: str, value: object) -> None:
+
+        raise AttributeError("literal syntax nodes are immutable")
 
 
 class HoleKind(Enum):
@@ -29,66 +78,244 @@ class HoleKind(Enum):
     BIND = "BIND"
     COND = "COND"
     TAG = "TAG"
+    SOURCE = "SOURCE"
+    KEY = "KEY"
+    LOCAL = "LOCAL"
+    MATCH = "MATCH"
+    CASE = "CASE"
 
 
 @dataclass(frozen=True)
 class Hole:
     index: int
+    position: Position | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
 class Text:
     s: str
+    position: Position = Position(0, 0)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Element:
     tag: str | Hole
-    attrs: list[tuple[str, str | Hole]] = field(default_factory=list[tuple[str, str | Hole]])
-    children: list[Node] = field(default_factory=lambda: list[Node]())
+    attrs: tuple[tuple[str, str | Hole], ...] = ()
+    children: tuple[Node, ...] = ()
     namespace: str = "html"
+    span: Span | None = None
+
+
+@dataclass(frozen=True)
+class Conditional:
+    hole: Hole
+    then: tuple[Node, ...] = ()
+    otherwise: tuple[Node, ...] = ()
+    span: Span | None = None
+
+
+@dataclass(frozen=True)
+class Loop:
+    names: tuple[str, ...]
+    source: Hole
+    key: Hole | None = None
+    children: tuple[Node, ...] = ()
+    span: Span | None = None
+
+
+@dataclass(frozen=True)
+class Local:
+    operation: str
+    name: str | None
+    value: Hole
+    span: Span | None = None
+
+
+@dataclass(frozen=True)
+class Case:
+    patterns: tuple[str | int | float | bool | Hole | None, ...]
+    wildcard: bool = False
+    children: tuple[Node, ...] = ()
+    span: Span | None = None
+
+
+@dataclass(frozen=True)
+class Match:
+    value: Hole
+    cases: tuple[Case, ...] = ()
+    span: Span | None = None
+
+
+type Node = Element | Conditional | Loop | Local | Match | str | Hole
+type HoleTable = dict[int, tuple[int, HoleKind, str | None]]
 
 
 @dataclass
-class Conditional:
+class _Element:
+    tag: str | Hole
+    attrs: list[tuple[str, str | Hole]] = field(default_factory=list[tuple[str, str | Hole]])
+    children: list[_Builder] = field(default_factory=lambda: list[_Builder]())
+    span: Span | None = None
+
+
+@dataclass
+class _Conditional:
     hole: Hole
-    then: list[Node] = field(default_factory=lambda: list[Node]())
-    otherwise: list[Node] = field(default_factory=lambda: list[Node]())
+    then: list[_Builder] = field(default_factory=lambda: list[_Builder]())
+    otherwise: list[_Builder] = field(default_factory=lambda: list[_Builder]())
+    span: Span | None = None
 
 
-type Node = Element | Conditional | str | Hole
-type HoleTable = dict[int, tuple[int, HoleKind, str | None]]
+@dataclass
+class _Loop:
+    names: tuple[str, ...]
+    source: Hole
+    key: Hole | None = None
+    children: list[_Builder] = field(default_factory=lambda: list[_Builder]())
+    span: Span | None = None
+
+
+@dataclass
+class _Local:
+    operation: str
+    name: str | None
+    value: Hole
+    span: Span | None = None
+
+
+@dataclass
+class _Case:
+    patterns: tuple[str | int | float | bool | Hole | None, ...]
+    wildcard: bool = False
+    children: list[_Builder] = field(default_factory=lambda: list[_Builder]())
+    span: Span | None = None
+
+
+@dataclass
+class _Match:
+    value: Hole
+    children: list[_Builder] = field(default_factory=lambda: list[_Builder]())
+    span: Span | None = None
+
+
+@dataclass
+class _Elif:
+    hole: Hole
+
+
+type _Builder = _Element | _Conditional | _Loop | _Local | _Match | _Case | str | Hole
 
 
 class _Else(Enum):
     BRANCH = "else"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Skeleton:
-    root: list[Node]
-    holes: list[tuple[int, HoleKind, str | None]]
+    root: tuple[Node, ...]
+    holes: tuple[tuple[int, HoleKind, str | None], ...]
+    strings: tuple[str, ...] = ()
 
 
 Piece = Text | Hole
 Line = list[Piece]
 
 
-def _split_lines(fragments: tuple[str, ...]) -> list[Line]:
+def _split_lines(fragments: tuple[str, ...], originals: tuple[str, ...]) -> list[Line]:
     lines: list[Line] = [[]]
     last = len(fragments) - 1
 
-    for i, frag in enumerate(fragments):
-        parts = frag.split("\n")
-        lines[-1].append(Text(parts[0]))
+    row = 0
+    column = 0
 
-        for part in parts[1:]:
-            lines.append([Text(part)])
+    for i, frag in enumerate(fragments):
+        offset = 0
+        source_parts = originals[i].split("\n")
+
+        for number, part in enumerate(frag.split("\n")):
+            original = source_parts[number]
+            removed = len(original) - len(part)
+            text = Text(part.rstrip("\r"), Position(i, offset + removed, row, column + removed))
+            lines[-1].append(text)
+            offset += len(original)
+            column += len(original)
+
+            if number < len(source_parts) - 1:
+                offset += 1
+                row += 1
+                column = 0
+                lines.append([])
 
         if i < last:
-            lines[-1].append(Hole(i))
+            lines[-1].append(Hole(i, Position(i, offset, row, column)))
+            column += 1
 
     return lines
+
+
+def _logical_lines(lines: list[Line]) -> list[Line]:
+    result: list[Line] = []
+    pending: Line = []
+    depth = 0
+    quote = ""
+    escaped = False
+
+    for line in lines:
+        if (
+            not quote
+            and line
+            and isinstance(line[0], Text)
+            and "\t" in line[0].s[: len(line[0].s) - len(line[0].s.lstrip())]
+        ):
+
+            raise PysxSyntaxError("markup indentation uses spaces, not tabs", line[0].position)
+
+        if pending:
+            tail = pending[-1]
+            position = tail.position or Position(0, 0)
+            width = len(tail.s) if isinstance(tail, Text) else 1
+            pending.append(
+                Text(
+                    "\n",
+                    Position(
+                        position.fragment,
+                        position.offset + width,
+                        position.line,
+                        position.column + width,
+                    ),
+                )
+            )
+        pending.extend(line)
+
+        for piece in line:
+            if isinstance(piece, Hole):
+
+                continue
+
+            for char in piece.s:
+                if escaped:
+                    escaped = False
+                elif char == "\\" and quote:
+                    escaped = True
+                elif quote:
+                    if char == quote:
+                        quote = ""
+                elif char in {"'", '"'}:
+                    quote = char
+                elif char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+
+        if depth <= 0 and not quote:
+            result.append(pending)
+            pending = []
+            depth = 0
+
+    if pending:
+        result.append(pending)
+
+    return result
 
 
 def _is_blank(line: Line) -> bool:
@@ -125,6 +352,20 @@ class _Scan:
         self.line = line
         self.pi = 0
         self.ci = 0
+
+    def position(self) -> Position:
+        self._norm()
+        index = min(self.pi, len(self.line) - 1)
+        piece = self.line[index]
+        position = piece.position or Position(0, 0)
+        width = (
+            self.ci if self.pi < len(self.line) else len(piece.s) if isinstance(piece, Text) else 1
+        )
+        text = piece.s[:width] if isinstance(piece, Text) else ""
+        row = position.line + text.count("\n")
+        column = len(text.rsplit("\n", 1)[-1]) if "\n" in text else position.column + width
+
+        return Position(position.fragment, position.offset + width, row, column)
 
     def _norm(self) -> None:
         while self.pi < len(self.line):
@@ -164,7 +405,7 @@ class _Scan:
         return ch
 
     def skip_ws(self) -> None:
-        while (c := self.peek()) is not None and isinstance(c, str) and c in " \t":
+        while (c := self.peek()) is not None and isinstance(c, str) and c in " \t\r\n":
             self.advance()
 
 
@@ -179,7 +420,8 @@ def _take_name(sc: _Scan) -> str:
 
 
 def _take_string(sc: _Scan) -> str:
-    sc.advance()  # opening quote
+    start = sc.position()
+    quote = sc.advance()
     out: list[str] = []
 
     while True:
@@ -193,11 +435,26 @@ def _take_string(sc: _Scan) -> str:
 
             raise PysxSyntaxError("interpolation inside a string literal is not supported")
 
-        if c == '"':
+        if c == quote:
             sc.advance()
 
-            return "".join(out)
+            return LiteralText("".join(out), Span(start, sc.position()))
         sc.advance()
+
+        if c == "\\":
+            escaped = sc.peek()
+
+            if not isinstance(escaped, str):
+
+                raise PysxSyntaxError("incomplete quoted escape")
+            sc.advance()
+            out.append(
+                {"n": "\n", "r": "\r", "t": "\t", '"': '"', "'": "'", "\\": "\\"}.get(
+                    escaped, "\\" + escaped
+                )
+            )
+
+            continue
         out.append(c)
 
 
@@ -215,7 +472,7 @@ def _parse_attrs(sc: _Scan, holes: HoleTable) -> list[tuple[str, str | Hole]]:
 
         if c is None:
 
-            raise PysxSyntaxError("unclosed '(' — attribute lists must be single-line")
+            raise PysxSyntaxError("unclosed '(' in attribute list")
         name = _take_name(sc)
 
         if not name:
@@ -234,7 +491,7 @@ def _parse_attrs(sc: _Scan, holes: HoleTable) -> list[tuple[str, str | Hole]]:
             sc.advance()
             holes[v.index] = (v.index, attr_kind(name), name)
             attrs.append((name, v))
-        elif v == '"':
+        elif v in {'"', "'"}:
             attrs.append((name, _take_string(sc)))
         else:
 
@@ -268,7 +525,7 @@ def _parse_content(sc: _Scan, holes: HoleTable) -> list[str | Hole]:
 
             continue
 
-        if c == '"':
+        if c in {'"', "'"}:
             items.append(_take_string(sc))
 
             continue
@@ -276,7 +533,36 @@ def _parse_content(sc: _Scan, holes: HoleTable) -> list[str | Hole]:
         raise PysxSyntaxError(f"unexpected {c!r} in content")
 
 
-def _parse_line(sc: _Scan, holes: HoleTable) -> Element | Conditional | _Else | list[str | Hole]:
+def _hole(sc: _Scan, holes: HoleTable, kind: HoleKind) -> Hole:
+    sc.skip_ws()
+    value = sc.peek()
+
+    if not isinstance(value, Hole):
+
+        raise PysxSyntaxError(f"{kind.value.lower()} requires an interpolation")
+    sc.advance()
+    holes[value.index] = (value.index, kind, None)
+
+    return value
+
+
+def _colon(sc: _Scan) -> None:
+    sc.skip_ws()
+
+    if sc.peek() != ":":
+
+        raise PysxSyntaxError("expected ':' after control header")
+    sc.advance()
+    sc.skip_ws()
+
+    if not sc.eof():
+
+        raise PysxSyntaxError("control headers require an indented body")
+
+
+def _parse_line(
+    sc: _Scan, holes: HoleTable
+) -> _Element | _Conditional | _Loop | _Local | _Match | _Case | _Else | _Elif | list[str | Hole]:
     sc.skip_ws()
     c = sc.peek()
 
@@ -296,20 +582,143 @@ def _parse_line(sc: _Scan, holes: HoleTable) -> Element | Conditional | _Else | 
 
                 if sc.eof():
 
-                    return Element(c, attrs)
+                    return _Element(c, attrs)
 
             if sc.peek() != ":":
 
                 raise PysxSyntaxError("expected ':' after component reference")
             sc.advance()
 
-            return Element(c, attrs, list(_parse_content(sc, holes)))
+            return _Element(c, attrs, list(_parse_content(sc, holes)))
         sc.pi, sc.ci = saved
 
     if isinstance(c, str) and (c.isalpha() or c == "_"):
         tag = _take_name(sc)
 
-        if tag == "if":
+        if tag == "for":
+            sc.skip_ws()
+            names: list[str] = []
+            destructured = sc.peek() == "("
+
+            if destructured:
+                sc.advance()
+
+            while True:
+                sc.skip_ws()
+                name = _take_name(sc)
+
+                if not name or name in names:
+
+                    raise PysxSyntaxError("loop requires distinct binding names")
+                names.append(name)
+                sc.skip_ws()
+
+                if not destructured or sc.peek() == ")":
+                    if destructured:
+                        sc.advance()
+
+                    break
+
+                if sc.peek() != ",":
+
+                    raise PysxSyntaxError("expected ',' in destructured loop bindings")
+                sc.advance()
+            sc.skip_ws()
+
+            if _take_name(sc) != "in":
+
+                raise PysxSyntaxError("expected 'in' after loop bindings")
+            source = _hole(sc, holes, HoleKind.SOURCE)
+            sc.skip_ws()
+            key: Hole | None = None
+
+            if sc.peek() != ":":
+                if _take_name(sc) != "key":
+
+                    raise PysxSyntaxError("explicitly keyed loops require key={...}")
+                sc.skip_ws()
+
+                if sc.peek() != "=":
+
+                    raise PysxSyntaxError("expected '=' after loop key")
+                sc.advance()
+                key = _hole(sc, holes, HoleKind.KEY)
+            _colon(sc)
+
+            return _Loop(tuple(names), source, key)
+
+        if tag in {"let", "set", "discard"}:
+            local_name = None
+
+            if tag != "discard":
+                sc.skip_ws()
+                local_name = _take_name(sc)
+                sc.skip_ws()
+
+                if not local_name or sc.peek() != "=":
+
+                    raise PysxSyntaxError("local bindings require name = {value}")
+                sc.advance()
+            local_value = _hole(sc, holes, HoleKind.LOCAL)
+            sc.skip_ws()
+
+            if not sc.eof():
+
+                raise PysxSyntaxError("unexpected text after local binding")
+
+            return _Local(tag, local_name, local_value)
+
+        if tag == "match":
+            match_value = _hole(sc, holes, HoleKind.MATCH)
+            _colon(sc)
+
+            return _Match(match_value)
+
+        if tag == "case":
+            sc.skip_ws()
+            patterns: list[str | int | float | bool | Hole | None] = []
+            wildcard = sc.peek() == "_"
+
+            if wildcard:
+                sc.advance()
+            else:
+                while True:
+                    sc.skip_ws()
+                    pattern_value = sc.peek()
+
+                    if isinstance(pattern_value, Hole):
+                        patterns.append(_hole(sc, holes, HoleKind.CASE))
+                    elif pattern_value in {'"', "'"}:
+                        patterns.append(_take_string(sc))
+                    else:
+                        token: list[str] = []
+
+                        while isinstance(ch := sc.peek(), str) and (ch.isalnum() or ch in ".-+"):
+                            token.append(ch)
+                            sc.advance()
+                        literal = "".join(token)
+
+                        if literal in {"True", "False", "None"}:
+                            patterns.append({"True": True, "False": False, "None": None}[literal])
+                        else:
+                            try:
+                                patterns.append(float(literal) if "." in literal else int(literal))
+                            except ValueError as exc:
+
+                                raise PysxSyntaxError(
+                                    "case requires literal alternatives or interpolations"
+                                ) from exc
+                    sc.skip_ws()
+
+                    if sc.peek() != "|":
+
+                        break
+                    sc.advance()
+            _colon(sc)
+
+            return _Case(tuple(patterns), wildcard)
+
+        if tag in {"if", "elif"}:
             sc.skip_ws()
             cond = sc.peek()
 
@@ -320,20 +729,12 @@ def _parse_line(sc: _Scan, holes: HoleTable) -> Element | Conditional | _Else | 
             holes[cond.index] = (cond.index, HoleKind.COND, None)
             sc.skip_ws()
 
-            if sc.peek() != ":":
+            _colon(sc)
 
-                raise PysxSyntaxError("expected ':' after if")
-            sc.advance()
-
-            return Conditional(cond)
+            return _Conditional(cond) if tag == "if" else _Elif(cond)
 
         if tag == "else":
-            sc.skip_ws()
-
-            if sc.peek() != ":":
-
-                raise PysxSyntaxError("expected ':' after else")
-            sc.advance()
+            _colon(sc)
 
             return _Else.BRANCH
 
@@ -351,32 +752,39 @@ def _parse_line(sc: _Scan, holes: HoleTable) -> Element | Conditional | _Else | 
             # nothing to separate a bare name from content, so require one.
             if had_parens and sc.eof():
 
-                return Element(tag, attrs, [])
+                return _Element(tag, attrs, [])
 
             raise PysxSyntaxError(f"expected ':' after element {tag!r}")
         sc.advance()
 
-        return Element(tag, attrs, list(_parse_content(sc, holes)))
+        return _Element(tag, attrs, list(_parse_content(sc, holes)))
 
     return _parse_content(sc, holes)
 
 
+@lru_cache(maxsize=256)
 def parse(strings: tuple[str, ...]) -> Skeleton:
+    if sum(len(value.encode("utf-8")) for value in strings) > 1_048_576 or len(strings) > 16385:
+
+        raise PysxSyntaxError("template exceeds 1 MiB or 16384 holes", Position(0, 0))
+    _logical_lines(_split_lines(strings, strings))  # Validate original indentation before dedent.
     fragments = dedent_fragments(strings)
-    lines = _split_lines(fragments)
+    lines = _logical_lines(_split_lines(fragments, strings))
 
     if lines and not _is_blank(lines[0]):
 
         raise PysxSyntaxError(
             "template must begin with a newline: text on the opening quote line "
-            "has no recoverable indent"
+            "has no recoverable indent",
+            Position(0, 0),
         )
 
-    root: list[Node] = []
+    root: list[_Builder] = []
     holes: HoleTable = {}
-    stack: list[tuple[int, list[Node]]] = [(-1, root)]
+    stack: list[tuple[int, list[_Builder]]] = [(-1, root)]
     # `else:` binds to the most recent `if` opened at the same indent.
-    open_conditionals: dict[int, Conditional] = {}
+    open_conditionals: dict[tuple[int, int], tuple[_Conditional, _Conditional, bool]] = {}
+    owners: dict[int, _Element | _Conditional | _Loop | _Match | _Case] = {}
 
     for line in lines:
         if _is_blank(line):
@@ -387,24 +795,66 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
         while len(stack) > 1 and indent <= stack[-1][0]:
             stack.pop()
         parent = stack[-1][1]
-        node = _parse_line(_Scan(line), holes)
+        scanner = _Scan(line)
+        scanner.skip_ws()
+        start = scanner.position()
 
-        if isinstance(node, Element):
+        try:
+            node = _parse_line(scanner, holes)
+        except PysxSyntaxError as exc:
+
+            raise PysxSyntaxError(str(exc), scanner.position()) from exc
+
+        if len(stack) > 128:
+
+            raise PysxSyntaxError("template nesting exceeds 128 levels", start)
+
+        if isinstance(node, (_Element, _Conditional, _Loop, _Local, _Match, _Case)):
+            node.span = Span(start, scanner.position())
+
+        if isinstance(node, (_Element, _Loop, _Match, _Case)):
+            if isinstance(node, _Case) and not isinstance(owners.get(id(parent)), _Match):
+
+                raise PysxSyntaxError("case must be directly inside match", start)
             parent.append(node)
+            owners[id(node.children)] = node
             stack.append((indent, node.children))
-        elif isinstance(node, Conditional):
+        elif isinstance(node, _Conditional):
             parent.append(node)
-            open_conditionals[indent] = node
+            open_conditionals[id(parent), indent] = (node, node, False)
+            owners[id(node.then)] = node
+            owners[id(node.otherwise)] = node
             stack.append((indent, node.then))
-        elif isinstance(node, _Else):
-            cond = open_conditionals.get(indent)
+        elif isinstance(node, (_Else, _Elif)):
+            chain = open_conditionals.get((id(parent), indent))
 
-            if cond is None:
+            if chain is None or not parent or parent[-1] is not chain[0] or chain[2]:
 
-                raise PysxSyntaxError("'else' without a matching 'if' at the same indent")
-            stack.append((indent, cond.otherwise))
+                raise PysxSyntaxError(
+                    "branch without a matching contiguous if at the same indent", start
+                )
+            first, tail, _closed = chain
+
+            if isinstance(node, _Elif):
+                branch = _Conditional(node.hole, span=Span(start, scanner.position()))
+                tail.otherwise.append(branch)
+                owners[id(branch.then)] = branch
+                owners[id(branch.otherwise)] = branch
+                open_conditionals[id(parent), indent] = (first, branch, False)
+                stack.append((indent, branch.then))
+            else:
+                open_conditionals[id(parent), indent] = (first, tail, True)
+                stack.append((indent, tail.otherwise))
+        elif isinstance(node, _Local):
+            parent.append(node)
         else:
             parent.extend(node)
+
+        for _level, body in stack:
+            owner = owners.get(id(body))
+
+            if owner is not None and owner.span is not None:
+                owner.span = Span(owner.span.start, scanner.position())
 
     missing = [i for i in range(len(fragments) - 1) if i not in holes]
 
@@ -412,21 +862,87 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
 
         raise PysxSyntaxError(f"interpolation(s) {missing} are not in a usable position")
 
-    _namespaces(root)
-
-    return Skeleton(root, [holes[i] for i in range(len(fragments) - 1)])
+    return Skeleton(_freeze(root), tuple(holes[i] for i in range(len(fragments) - 1)), strings)
 
 
-def _namespaces(nodes: list[Node], namespace: str = "html") -> None:
+def _freeze(nodes: list[_Builder], namespace: str = "html") -> tuple[Node, ...]:
+    frozen: list[Node] = []
+
     for node in nodes:
-        if isinstance(node, Element):
+        if isinstance(node, _Element):
             tag = node.tag
-            node.namespace = tag if isinstance(tag, str) and tag in {"svg", "math"} else namespace
-            child_namespace = node.namespace
+            current = tag if isinstance(tag, str) and tag in {"svg", "math"} else namespace
+            child_namespace = current
 
             if tag == "foreignObject" and namespace == "svg":
                 child_namespace = "html"
-            _namespaces(node.children, child_namespace)
-        elif isinstance(node, Conditional):
-            _namespaces(node.then, namespace)
-            _namespaces(node.otherwise, namespace)
+            frozen.append(
+                Element(
+                    tag,
+                    tuple(node.attrs),
+                    _freeze(node.children, child_namespace),
+                    current,
+                    node.span,
+                )
+            )
+        elif isinstance(node, _Conditional):
+            frozen.append(
+                Conditional(
+                    node.hole,
+                    _freeze(node.then, namespace),
+                    _freeze(node.otherwise, namespace),
+                    node.span,
+                )
+            )
+        elif isinstance(node, _Loop):
+            if not node.children:
+
+                raise PysxSyntaxError(
+                    "loop requires an indented body", node.span.start if node.span else None
+                )
+            frozen.append(
+                Loop(
+                    node.names, node.source, node.key, _freeze(node.children, namespace), node.span
+                )
+            )
+        elif isinstance(node, _Local):
+            frozen.append(Local(node.operation, node.name, node.value, node.span))
+        elif isinstance(node, _Match):
+            cases: list[Case] = []
+
+            for child in node.children:
+                if not isinstance(child, _Case):
+
+                    raise PysxSyntaxError(
+                        "match requires case blocks", node.span.start if node.span else None
+                    )
+
+                if cases and cases[-1].wildcard:
+
+                    raise PysxSyntaxError(
+                        "wildcard case must be last", child.span.start if child.span else None
+                    )
+                cases.append(
+                    Case(
+                        child.patterns,
+                        child.wildcard,
+                        _freeze(child.children, namespace),
+                        child.span,
+                    )
+                )
+
+            if not cases:
+
+                raise PysxSyntaxError(
+                    "match requires case blocks", node.span.start if node.span else None
+                )
+            frozen.append(Match(node.value, tuple(cases), node.span))
+        elif isinstance(node, _Case):
+
+            raise PysxSyntaxError(
+                "case must be directly inside match", node.span.start if node.span else None
+            )
+        else:
+            frozen.append(node)
+
+    return tuple(frozen)

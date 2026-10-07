@@ -3,7 +3,7 @@
 import json
 from typing import cast
 
-from pysx import Fragment, component, html, native, signal
+from pysx import Fragment, component, derived, html, native, signal
 
 from .components import (
     Card,
@@ -26,6 +26,7 @@ def app() -> Fragment:
     checked = signal(False)
     single = signal("a")
     selected = signal(["a"])
+    selected_text = derived(lambda: repr(selected()))
     radio = signal("a")
     corrected = signal("ABC")
     status = signal("ready")
@@ -154,7 +155,7 @@ def app() -> Fragment:
         native.Dt("Single choice"),
         native.Dd(single, id="single-state"),
         native.Dt("Multiple choices"),
-        native.Dd(selected, id="multi-state"),
+        native.Dd(selected_text, id="multi-state"),
         native.Dt("Radio choice"),
         native.Dd(radio, id="radio-state"),
         native.Dt("Corrected text"),

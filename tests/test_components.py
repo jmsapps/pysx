@@ -232,7 +232,7 @@ def test_callable_return_missing_or_unexpected_props(attrs: str) -> None:
         render(app)
 
 
-def test_callable_return_use_binds_and_validates() -> None:
+def test_component_tags_use_binds_and_validates() -> None:
     from typing import Any
 
     def card(*, label: str) -> Template:

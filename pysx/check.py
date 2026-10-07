@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
-from .parser import Element, Hole, HoleKind, PysxSyntaxError, parse
+from .parser import Conditional, Element, Hole, HoleKind, Loop, Match, PysxSyntaxError, parse
 from .schema import normalize_attr
 
 if TYPE_CHECKING:
@@ -160,6 +160,47 @@ def _reactive_expression(node: ast.AST, signals: set[str]) -> bool:
         return any(_reactive_expression(value, signals) for value in [node.left, *node.comparators])
 
     return False
+
+
+def _reads_signal(node: ast.AST, signals: set[str]) -> bool:
+    if isinstance(node, ast.Lambda):
+
+        return False
+
+    if isinstance(node, ast.Name) and node.id in signals:
+
+        return True
+
+    return any(_reads_signal(child, signals) for child in ast.iter_child_nodes(node))
+
+
+def _snapshot_expression(node: ast.AST, signals: set[str]) -> bool:
+
+    return isinstance(node, (ast.List, ast.Tuple, ast.ListComp)) and _reads_signal(node, signals)
+
+
+def _snapshot_names(tree: ast.AST, signals: set[str]) -> set[str]:
+    names: set[str] = set()
+    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
+
+    for _ in range(len(assignments) + 1):
+        previous = names.copy()
+
+        for assignment in assignments:
+            value = assignment.value
+
+            if _snapshot_expression(value, signals) or (
+                isinstance(value, ast.Name) and value.id in names
+            ):
+                names.update(
+                    target.id for target in assignment.targets if isinstance(target, ast.Name)
+                )
+
+        if names == previous:
+
+            break
+
+    return names
 
 
 def _operator_warnings(
@@ -326,6 +367,43 @@ def _styling_diagnostics(tree: ast.AST, lines: list[str]) -> list[Diagnostic]:
 
 
 def _templates(tree: ast.AST) -> Iterator[ast.TemplateStr | ast.JoinedStr]:
+    assignments = {
+        target.id: node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+
+    def resolve(
+        expression: ast.expr, visited: frozenset[str] = frozenset()
+    ) -> ast.TemplateStr | ast.JoinedStr | None:
+        if isinstance(expression, (ast.TemplateStr, ast.JoinedStr)):
+
+            return expression
+
+        if isinstance(expression, ast.Name) and expression.id not in visited:
+            value = assignments.get(expression.id)
+
+            if value is not None:
+
+                return resolve(value, visited | {expression.id})
+
+        if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Add):
+            left, right = resolve(expression.left, visited), resolve(expression.right, visited)
+
+            if isinstance(left, ast.TemplateStr) and isinstance(right, ast.TemplateStr):
+                combined = ast.TemplateStr(values=[*left.values, *right.values])
+                ast.copy_location(combined, left)
+                combined.end_lineno, combined.end_col_offset = (
+                    right.end_lineno,
+                    right.end_col_offset,
+                )
+
+                return combined
+
+        return None
+
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
@@ -333,13 +411,25 @@ def _templates(tree: ast.AST) -> Iterator[ast.TemplateStr | ast.JoinedStr]:
             and node.func.id == "html"
             and node.args
         ):
-            arg = node.args[0]
+            arg = resolve(node.args[0])
 
             if isinstance(arg, ast.TemplateStr):
                 yield arg
             elif isinstance(arg, ast.JoinedStr):
                 # f-strings eagerly interpolate and cannot preserve live holes.
                 yield arg
+
+
+def template_fragments(node: ast.TemplateStr) -> tuple[str, ...]:
+    strings = [""]
+
+    for value in node.values:
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            strings[-1] += value.value
+        elif isinstance(value, ast.Interpolation):
+            strings.append("")
+
+    return tuple(strings)
 
 
 def _declared_variants(tree: ast.AST) -> dict[str, set[str]]:
@@ -410,6 +500,7 @@ def diagnostics(path: Path) -> list[Diagnostic]:
 
     bound = _bound_names(tree)
     signals = _signal_names(tree)
+    snapshots = _snapshot_names(tree, signals)
     out: list[Diagnostic] = _styling_diagnostics(tree, lines)
 
     for node in _templates(tree):
@@ -427,9 +518,7 @@ def diagnostics(path: Path) -> list[Diagnostic]:
 
             continue
 
-        fragments = tuple(
-            v.value for v in node.values if isinstance(v, ast.Constant) and isinstance(v.value, str)
-        )
+        fragments = template_fragments(node)
 
         try:
             skeleton = parse(fragments)
@@ -443,6 +532,19 @@ def diagnostics(path: Path) -> list[Diagnostic]:
         interpolations = [value for value in node.values if isinstance(value, ast.Interpolation)]
 
         for index, kind, name in skeleton.holes:
+            interpolation = interpolations[index]
+
+            if (
+                interpolation.conversion != -1 or interpolation.format_spec is not None
+            ) and kind not in {HoleKind.TEXT, HoleKind.ATTR}:
+                out.append(
+                    _span_diagnostic(
+                        interpolation,
+                        lines,
+                        f"{kind.value} interpolation conversion/format metadata is unsupported",
+                    )
+                )
+
             if kind is HoleKind.TAG:
                 expression = interpolations[index].value
 
@@ -472,6 +574,13 @@ def diagnostics(path: Path) -> list[Diagnostic]:
 
         while pending:
             element = pending.pop()
+
+            if isinstance(element, Conditional):
+                pending.extend((*element.then, *element.otherwise))
+            elif isinstance(element, Loop):
+                pending.extend(element.children)
+            elif isinstance(element, Match):
+                pending.extend(child for case in element.cases for child in case.children)
 
             if not isinstance(element, Element):
 
@@ -549,6 +658,20 @@ def diagnostics(path: Path) -> list[Diagnostic]:
 
         for value in node.values:
             if not isinstance(value, ast.Interpolation):
+
+                continue
+
+            if _snapshot_expression(value.value, signals) or (
+                isinstance(value.value, ast.Name) and value.value.id in snapshots
+            ):
+                warning = _span_diagnostic(
+                    value.value,
+                    lines,
+                    "Sequence/comprehension content is a snapshot; source Signal changes "
+                    "do not rebuild it. Use a live Signal source or a DSL loop.",
+                )
+                warning["severity"] = "warning"
+                out.append(warning)
 
                 continue
 

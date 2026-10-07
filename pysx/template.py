@@ -11,6 +11,57 @@ make the margin empty.
 from __future__ import annotations
 
 from functools import lru_cache
+from string.templatelib import Template, convert
+from typing import TYPE_CHECKING, cast
+
+from .bindings import Binding, Deferred, Environment, resolve
+from .reactive import Signal, derived
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Literal
+
+
+def template_values(template: Template) -> tuple[object, ...]:
+    """Preserve structural values; explicitly formatted Signals remain live."""
+    values: list[object] = []
+
+    for interpolation in template.interpolations:
+        value = interpolation.value
+        conversion = interpolation.conversion
+        spec = interpolation.format_spec
+
+        if conversion is None and not spec:
+            values.append(value)
+
+            continue
+
+        def formatted(
+            value: object = value,
+            conversion: Literal["s", "r", "a"] | None = conversion,
+            spec: str = spec,
+        ) -> str:
+            current = cast("Signal[object]", value)() if isinstance(value, Signal) else value
+            converted = convert(current, conversion) if conversion is not None else current
+
+            return format(converted, spec)
+
+        if isinstance(value, (Deferred, Binding)):
+
+            def deferred_format(
+                environment: Environment,
+                original: object = value,
+                formatter: Callable[[object], str] = formatted,
+            ) -> str:
+
+                return formatter(resolve(original, environment))
+
+            values.append(Deferred(deferred_format))
+        else:
+            values.append(derived(formatted) if isinstance(value, Signal) else formatted())
+
+    return tuple(values)
+
 
 Fragments = tuple[str, ...]
 

@@ -26,6 +26,69 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
+def test_render_snapshot_templates_fragments_namespaces_and_escaping() -> None:
+    left = styled.section(t"color: red")
+    right = styled.aside(t"color: blue")
+    entries = [
+        html(t'\nCard: "left"', namespace={"Card": left}),
+        (html(t'\nCard: "right"', namespace={"Card": right}), t'\np: "raw"'),
+        "<unsafe>&",
+    ]
+    output = render(lambda: html(t"\ndiv: {entries}"))
+    assert "<section" in output.body
+    assert "<aside" in output.body
+    assert "<p>raw</p>" in output.body
+    assert "&lt;unsafe&gt;&amp;" in output.body
+    assert "Fragment(" not in output.body
+    assert "Template(" not in output.body
+    assert output.watchers == []
+    assert "color: red" in output.css
+    assert "color: blue" in output.css
+
+
+def test_render_snapshot_nested_signals_freeze_and_live_source_updates() -> None:
+    value = signal("initial")
+    snapshots = [html(t"\np: {value}"), value]
+    live = signal(["a", "b"])
+
+    def view() -> Fragment:
+
+        return html(t"""
+            section: {snapshots}
+            aside: {live}
+        """)
+
+    session = Session(view)
+    assert len(session.rendered.watchers) == 1
+    assert not value.observers
+    value.set("changed")
+    assert session.pending == []
+    live.set(["<new>"])
+    assert len(session.pending) == 1
+    assert session.pending[0]["op"] == "html"
+    assert "&lt;new&gt;" in str(session.pending[0])
+    session.dispose()
+    assert not live.observers
+
+
+def test_render_snapshot_structured_live_templates_and_captured_handlers() -> None:
+    calls: list[str] = []
+
+    def click(label: str) -> Callable[[object], None]:
+
+        return lambda _event: calls.append(label)
+
+    source = signal([html(t'\nbutton(onClick={click("first")}): "first"')])
+    session = Session(lambda: html(t"\ndiv: {source}"))
+    source.set([html(t'\nbutton(onClick={click("second")}): "second"')])
+    assert any("second" in str(op) for op in session.pending)
+    assert len(session.rendered.handlers) == 1
+    next(iter(session.rendered.handlers.values()))(None)
+    assert calls == ["second"]
+    session.dispose()
+    assert session.rendered.handlers == {}
+
+
 def test_serialization_live_boolean_classes_and_properties() -> None:
     hidden = signal(False)
     value = signal("initial")
