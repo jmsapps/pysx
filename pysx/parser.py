@@ -156,6 +156,8 @@ class _Element:
     attrs: list[tuple[str, str | Hole]] = field(default_factory=list[tuple[str, str | Hole]])
     children: list[_Builder] = field(default_factory=lambda: list[_Builder]())
     span: Span | None = None
+    body_eligible: bool = True
+    colon_header: bool = False
 
 
 @dataclass
@@ -204,6 +206,11 @@ class _Elif:
 
 
 type _Builder = _Element | _Conditional | _Loop | _Local | _Match | _Case | str | Hole
+
+
+@dataclass
+class _Row:
+    nodes: list[_Builder]
 
 
 class _Else(Enum):
@@ -352,6 +359,7 @@ class _Scan:
         self.line = line
         self.pi = 0
         self.ci = 0
+        self.statement_end: Position | None = None
 
     def position(self) -> Position:
         self._norm()
@@ -503,6 +511,26 @@ def _parse_attrs(sc: _Scan, holes: HoleTable) -> list[tuple[str, str | Hole]]:
             sc.advance()
 
 
+def _starts_element(sc: _Scan) -> bool:
+    """Read-only lookahead: never stamp a hole until its role is decided."""
+    c = sc.peek()
+
+    if isinstance(c, str):
+
+        return c.isalpha() or c == "_"
+
+    if not isinstance(c, Hole):
+
+        return False
+    saved = sc.pi, sc.ci
+    sc.advance()
+    sc.skip_ws()
+    explicit = sc.peek() in {"(", ":"}
+    sc.pi, sc.ci = saved
+
+    return explicit
+
+
 def _parse_content(sc: _Scan, holes: HoleTable) -> list[str | Hole]:
     items: list[str | Hole] = []
 
@@ -515,7 +543,16 @@ def _parse_content(sc: _Scan, holes: HoleTable) -> list[str | Hole]:
             return items
 
         if c == ";":
-            sc.advance()
+            saved = sc.pi, sc.ci
+
+            while sc.peek() == ";":
+                sc.advance()
+                sc.skip_ws()
+
+            if _starts_element(sc):
+                sc.pi, sc.ci = saved
+
+                return items
 
             continue
 
@@ -523,11 +560,13 @@ def _parse_content(sc: _Scan, holes: HoleTable) -> list[str | Hole]:
             sc.advance()
             holes[c.index] = (c.index, HoleKind.TEXT, None)
             items.append(c)
+            sc.statement_end = sc.position()
 
             continue
 
         if c in {'"', "'"}:
             items.append(_take_string(sc))
+            sc.statement_end = sc.position()
 
             continue
 
@@ -562,7 +601,7 @@ def _colon(sc: _Scan) -> None:
 
 
 def _parse_line(
-    sc: _Scan, holes: HoleTable
+    sc: _Scan, holes: HoleTable, *, allow_controls: bool = True
 ) -> _Element | _Conditional | _Loop | _Local | _Match | _Case | _Else | _Elif | list[str | Hole]:
     sc.skip_ws()
     c = sc.peek()
@@ -574,14 +613,16 @@ def _parse_line(
 
         if sc.peek() in {"(", ":"}:
             holes[c.index] = (c.index, HoleKind.TAG, None)
+            sc.statement_end = sc.position()
             attrs: list[tuple[str, str | Hole]] = []
 
             if sc.peek() == "(":
                 sc.advance()
                 attrs = _parse_attrs(sc, holes)
+                sc.statement_end = sc.position()
                 sc.skip_ws()
 
-                if sc.eof():
+                if sc.eof() or sc.peek() == ";":
 
                     return _Element(c, attrs)
 
@@ -589,12 +630,21 @@ def _parse_line(
 
                 raise PysxSyntaxError("expected ':' after component reference")
             sc.advance()
+            sc.statement_end = sc.position()
 
-            return _Element(c, attrs, list(_parse_content(sc, holes)))
+            return _Element(c, attrs, list(_parse_content(sc, holes)), colon_header=True)
         sc.pi, sc.ci = saved
 
     if isinstance(c, str) and (c.isalpha() or c == "_"):
+        tag_start = sc.position()
         tag = _take_name(sc)
+        sc.statement_end = sc.position()
+
+        if not allow_controls and tag in {
+            "if", "elif", "else", "for", "match", "case", "let", "set", "discard"
+        }:
+
+            raise PysxSyntaxError("control and local statements remain line-based", tag_start)
 
         if tag == "for":
             sc.skip_ws()
@@ -746,21 +796,64 @@ def _parse_line(
         if had_parens:
             sc.advance()
             attrs = _parse_attrs(sc, holes)
+            sc.statement_end = sc.position()
         sc.skip_ws()
 
         if sc.peek() != ":":
-            # `input(...)` is a childless element. Without parentheses there is
-            # nothing to separate a bare name from content, so require one.
-            if had_parens and sc.eof():
+            if sc.eof() or sc.peek() == ";":
 
-                return _Element(tag, attrs, [])
+                return _Element(tag, attrs, [], body_eligible=had_parens)
 
             raise PysxSyntaxError(f"expected ':' after element {tag!r}")
         sc.advance()
+        sc.statement_end = sc.position()
 
-        return _Element(tag, attrs, list(_parse_content(sc, holes)))
+        return _Element(tag, attrs, list(_parse_content(sc, holes)), colon_header=True)
 
     return _parse_content(sc, holes)
+
+
+def _parse_row(
+    sc: _Scan, holes: HoleTable
+) -> _Row | _Conditional | _Loop | _Local | _Match | _Case | _Else | _Elif:
+    nodes: list[_Builder] = []
+    allow_controls = True
+
+    while True:
+        sc.skip_ws()
+
+        while sc.peek() == ";":
+            allow_controls = False
+            sc.advance()
+            sc.skip_ws()
+
+        if sc.eof():
+
+            break
+        start = sc.position()
+        sc.statement_end = None
+        node = _parse_line(sc, holes, allow_controls=allow_controls)
+
+        if isinstance(node, _Element):
+            node.span = Span(start, sc.statement_end or sc.position())
+            nodes.append(node)
+        elif isinstance(node, list):
+            nodes.extend(node)
+        else:
+
+            return node
+        allow_controls = False
+
+    if len(nodes) > 1:
+        for item in nodes:
+            if isinstance(item, _Element) and item.colon_header and not item.children:
+
+                raise PysxSyntaxError(
+                    "content-free colon header in a sibling row; use a bare name or ()",
+                    item.span.start if item.span else None,
+                )
+
+    return _Row(nodes)
 
 
 @lru_cache(maxsize=256)
@@ -786,6 +879,7 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
     # `else:` binds to the most recent `if` opened at the same indent.
     open_conditionals: dict[tuple[int, int], tuple[_Conditional, _Conditional, bool]] = {}
     owners: dict[int, _Element | _Conditional | _Loop | _Match | _Case] = {}
+    forbidden_body: tuple[int, str, int] | None = None
 
     for line in lines:
         if _is_blank(line):
@@ -801,17 +895,47 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
         start = scanner.position()
 
         try:
-            node = _parse_line(scanner, holes)
+            row = _parse_row(scanner, holes)
         except PysxSyntaxError as exc:
 
-            raise PysxSyntaxError(str(exc), scanner.position()) from exc
+            raise PysxSyntaxError(exc.msg, exc.position or scanner.position()) from exc
+
+        node: _Element | _Conditional | _Loop | _Local | _Match | _Case | _Else | _Elif | _Row = row
+
+        if isinstance(row, _Row) and len(row.nodes) == 1 and isinstance(row.nodes[0], _Element):
+            node = row.nodes[0]
+
+        if not isinstance(row, _Row) or row.nodes:
+            if forbidden_body is not None and (
+                indent > forbidden_body[0]
+                or (indent == forbidden_body[0] and id(parent) != forbidden_body[2])
+            ):
+
+                raise PysxSyntaxError(forbidden_body[1], start)
+            forbidden_body = None
+
+            if isinstance(node, _Element) and not node.body_eligible:
+                forbidden_body = (
+                    indent,
+                    f"bare element {node.tag!r} cannot own a body; add a colon: {node.tag}:",
+                    id(parent),
+                )
+            elif isinstance(node, _Row) and any(isinstance(item, _Element) for item in node.nodes):
+                forbidden_body = (
+                    indent,
+                    "a mixed/sibling row cannot own a body; put the parent on its own row with ':'",
+                    id(parent),
+                )
 
         if len(stack) > 128:
 
             raise PysxSyntaxError("template nesting exceeds 128 levels", start)
 
         if isinstance(node, (_Element, _Conditional, _Loop, _Local, _Match, _Case)):
-            node.span = Span(start, scanner.position())
+            node.span = Span(
+                node.span.start if isinstance(node, _Element) and node.span else start,
+                scanner.position(),
+            )
 
         if isinstance(node, (_Element, _Loop, _Match, _Case)):
             if isinstance(node, _Case) and not isinstance(owners.get(id(parent)), _Match):
@@ -819,7 +943,9 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
                 raise PysxSyntaxError("case must be directly inside match", start)
             parent.append(node)
             owners[id(node.children)] = node
-            stack.append((indent, node.children))
+
+            if not isinstance(node, _Element) or node.body_eligible:
+                stack.append((indent, node.children))
         elif isinstance(node, _Conditional):
             parent.append(node)
             open_conditionals[id(parent), indent] = (node, node, False)
@@ -849,7 +975,7 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
         elif isinstance(node, _Local):
             parent.append(node)
         else:
-            parent.extend(node)
+            parent.extend(node.nodes)
 
         for _level, body in stack:
             owner = owners.get(id(body))

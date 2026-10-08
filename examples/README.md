@@ -51,6 +51,8 @@ imperative zones, supported operations and limits.
 ## Templates
 
 Run `uv run --project . example run templates` for live template controls.
+**Update heading** changes a live heading followed by two styled break siblings on
+one row. The action is a later inline sibling, and each session owns its heading.
 Reverse/add/remove groups, pick a nested row and switch through three branches.
 Headings use `each_indexed` and ordinary Python assignments; nested `each` callbacks
 retain their captured group after reorder. **Add child to first group** updates an

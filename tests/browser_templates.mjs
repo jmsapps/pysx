@@ -9,6 +9,32 @@ try {
   await Promise.all([page.goto(url), other.goto(url)]);
   await Promise.all([page.waitForSelector('#templates-example'), other.waitForSelector('#templates-example')]);
   const snapshots = await page.locator('#snapshots').textContent();
+  const siblings = await page.evaluateHandle(() => {
+    const parent = document.querySelector('#inline-siblings');
+    const heading = document.querySelector('#live-heading');
+    const [first, second] = parent.querySelectorAll(':scope > br');
+    return { parent, heading, first, second };
+  });
+  const sameSiblings = () => page.evaluate(({parent, heading, first, second}) =>
+    heading === document.querySelector('#live-heading') &&
+    first === parent.querySelectorAll(':scope > br')[0] &&
+    second === parent.querySelectorAll(':scope > br')[1] &&
+    heading.parentNode === parent && first.parentNode === parent && second.parentNode === parent &&
+    heading.nextElementSibling === first && first.nextElementSibling === second &&
+    second.nextElementSibling === document.querySelector('#advance-heading'), siblings);
+  assert(await sameSiblings());
+  await page.locator('#advance-heading').click();
+  await page.waitForFunction(() => document.querySelector('#live-heading')?.textContent === 'Live values updated');
+  assert(await sameSiblings(), 'heading and both breaks retain their DOM objects and parent');
+  assert.equal(await other.locator('#live-heading').textContent(), 'Live values');
+  await other.locator('#advance-heading').click();
+  await other.waitForFunction(() => document.querySelector('#live-heading')?.textContent === 'Live values updated');
+  await page.locator('#advance-heading').click();
+  await page.waitForFunction(() => document.querySelector('#live-heading')?.textContent === 'Live values');
+  assert.equal(await other.locator('#live-heading').textContent(), 'Live values updated');
+  assert(await sameSiblings());
+  await siblings.dispose();
+  console.log("  ok  inline heading and styled breaks preserve sibling identity and isolate later handlers");
   assert.equal(await page.locator('[data-group]').count(), 2);
   assert.equal(await page.locator('[data-pick]').count(), 3);
   assert.equal(await page.locator('[data-pick="work:plan"]').getAttribute('title'), null);

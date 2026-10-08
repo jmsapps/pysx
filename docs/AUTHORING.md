@@ -52,6 +52,26 @@ Templates and files imported without the loader use the existing runtime path; b
 tag closure capture requires compilation. Statically unsupported template assembly
 is advisory rather than silently inventing bindings.
 
+## Childless tags and inline siblings
+
+Omit the colon when supplying no content, and separate inline siblings with semicolons:
+
+```python
+Break = styled.br(t"")
+view = pysx(t'''\nCard:\n    h2: "Live values"; Break; Break;''')
+```
+
+Native, styled and callable tags share this syntax. Use `:` for an indented body.
+Standalone parenthesized forms retain their existing body support, including `Card();`.
+A row with several elements or parent-level text cannot own an indented body.
+
+Content-only segments stay inside the preceding colon element:
+`p: "Hello "; {name}; Break; span: "Next"` creates three sibling elements.
+Content after a childless tag belongs to the enclosing parent. Bare `{value}` stays
+content; use `{Component}()` or `{Component}: "text"` for a dynamic tag. Empty segments
+are allowed, and quoted semicolons stay text. Controls remain on their own rows.
+See [the complete grammar and nesting rules](GRAMMAR.md#childless-invocations-and-inline-siblings).
+
 ## Inline row and branch helpers
 
 Use ordinary Python callbacks inside interpolations:

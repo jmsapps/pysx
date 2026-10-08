@@ -13,6 +13,7 @@ GroupPanel = styled(Card)(t"""
       border-color: var(--accent);
 """)
 GroupHeading = styled.h2(t"margin: 0; font-size: 18px;")
+Break = styled.br(t"")
 SnapshotLabel = styled.p(t"margin: 0; color: var(--muted);")
 
 

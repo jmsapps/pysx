@@ -11,7 +11,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
   suite = args[i + 1];
 }
-if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example"].includes(suite)) throw new Error("empty grammar selection");
+if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings"].includes(suite)) throw new Error("empty grammar selection");
 const host = pylanceHost();
 const injectionPath = process.env.PYSX_INJECTION_GRAMMAR ??
   fileURLToPath(new URL("../../editor/syntaxes/pysx.injection.tmLanguage.json", import.meta.url));
@@ -37,12 +37,13 @@ try {
     assertions++;
   };
   const fixtures = suite === "templates_example" ? ["templates_example"] :
+    suite === "inline_siblings" ? ["inline_siblings"] :
     suite === "render_snapshot" ? ["render_snapshot"] :
     suite === "styled_authoring" ? ["styled_authoring"] :
     suite === "composition_recursive" ? ["composition"] :
     suite === "styling_diagnostics" ? ["styling"] :
     suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
-    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example"];
+    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings"];
   for (const fixture of fixtures) {
     const source = fixture === "templates_example" ? "../../examples/templates.py" : `fixtures/${fixture}.txt`;
     const lines = readFileSync(new URL(source, import.meta.url), "utf8").split("\n");
@@ -50,10 +51,47 @@ try {
     const result = [];
     for (const [index, line] of lines.entries()) {
       const current = grammar.tokenizeLine(line, stack);
-      for (const token of current.tokens) result.push({ line: index, text: line.slice(token.startIndex, token.endIndex), scopes: token.scopes });
+      for (const token of current.tokens) result.push({ line: index, start: token.startIndex, end: token.endIndex, text: line.slice(token.startIndex, token.endIndex), scopes: token.scopes });
       stack = current.ruleStack;
     }
     tokens += result.length;
+    if (fixture === "inline_siblings") {
+      const at = (marker, word, occurrence = 0) => {
+        const row = lines.findIndex(line => line.includes(marker));
+        check(row >= 0, `row exists: ${marker}`);
+        let column = -1;
+        for (let i = 0; i <= occurrence; i++) column = lines[row].indexOf(word, column + 1);
+        check(column >= 0, `occurrence exists: ${word}/${occurrence}`);
+        return result.find(token => token.line === row && token.start <= column && token.end > column);
+      };
+      const scoped = (marker, word, occurrence, scope) => check(at(marker, word, occurrence)?.scopes.includes(scope), `${marker}: ${word}/${occurrence}: ${scope}`);
+      scoped('h2: "Live"', "h2", 0, "entity.name.tag.pysx");
+      for (const occurrence of [0, 1]) scoped('h2: "Live"', "Break", occurrence, "support.class.component.pysx");
+      for (const occurrence of [0, 1, 2]) scoped('h2: "Live"', ";", occurrence, "punctuation.terminator.pysx");
+      scoped('h2: "Live"', ":", 0, "punctuation.section.block.pysx");
+      for (const occurrence of [0, 1]) scoped("br;; br;", "br", occurrence, "entity.name.tag.pysx");
+      scoped('Icon(name=', "Icon", 0, "support.class.component.pysx");
+      scoped('Icon(name=', "name", 0, "entity.other.attribute-name.pysx");
+      scoped('Icon(name=', ";", 0, "string.quoted.double.pysx");
+      scoped('Icon(name=', "span", 0, "entity.name.tag.pysx");
+      scoped('"Label";', "br", 0, "entity.name.tag.pysx");
+      scoped('"Label";', "span", 0, "entity.name.tag.pysx");
+      for (const occurrence of [0, 1]) scoped("p: {value};", "Component", occurrence, "meta.embedded.inline.python");
+      scoped("p: {value};", "other", 0, "meta.embedded.inline.python");
+      scoped('title="quoted;', "br", 0, "string.quoted.double.pysx");
+      scoped('onClick={', "handler", 0, "meta.embedded.inline.python");
+      scoped("); br", "br", 0, "entity.name.tag.pysx");
+      scoped('escaped', "br", 0, "string.quoted.double.pysx");
+      scoped('escaped', "Card", 0, "string.quoted.double.pysx");
+      scoped('escaped', "br", 1, "entity.name.tag.pysx");
+      for (const name of ["_lower", "lower"]) scoped("_lower; lower", name, name === "lower" ? 1 : 0, "entity.name.tag.pysx");
+      scoped('inline =', "br", 0, "entity.name.tag.pysx");
+      scoped('inline =', "Break", 0, "support.class.component.pysx");
+      scoped('inline =', "br", 1, "entity.name.tag.pysx");
+      const sentinel = at("AFTER_SENTINEL", "AFTER_SENTINEL");
+      check(sentinel && !sentinel.scopes.some(scope => scope.includes("pysx") || scope.includes("function-call")), "inline siblings do not leak scopes");
+      continue;
+    }
     if (fixture === "render_snapshot") {
       for (const word of ["in", "key"]) {
         check(result.some(token => token.text === word && token.scopes.includes("keyword.control.loop.pysx")), `${fixture}: ${word}`);
@@ -76,7 +114,7 @@ try {
       for (const word of ["if", "elif", "else", "match", "case"]) {
         check(result.some(token => token.text.trim() === word && token.scopes.includes("keyword.control.conditional.pysx")), `example ${word}`);
       }
-      for (const word of ["TemplatePage", "Action", "GroupPanel", "GroupHeading"]) {
+      for (const word of ["TemplatePage", "Action", "GroupPanel", "GroupHeading", "Break"]) {
         check(result.some(token => token.text === word && token.scopes.includes("support.class.component.pysx")), `example bare ${word}`);
       }
       check(result.some(token => token.text === "title" && token.scopes.includes("entity.other.attribute-name.pysx")), "example multiline attrs");
@@ -84,6 +122,14 @@ try {
       check(result.some(token => token.text.trim() === "snapshots" && token.scopes.includes("meta.embedded.inline.python")), "example snapshot hole");
       check(result.some(token => token.text === "each_indexed" && token.scopes.includes("meta.embedded.inline.python")), "example inline helper");
       check(result.some(token => token.text === "when" && !token.scopes.some(scope => scope.includes("pysx") || scope.includes("css"))), "example Python branch helper");
+      const inlineRow = lines.findIndex(line => line.includes('GroupHeading(id="live-heading")'));
+      check(inlineRow >= 0, "example inline heading row exists");
+      const breaks = result.filter(token => token.line === inlineRow && token.text === "Break");
+      check(breaks.length === 2 && breaks.every(token => token.scopes.includes("support.class.component.pysx")), "both styled break sibling occurrences");
+      check(result.some(token => token.line === inlineRow && token.text === "Action" && token.scopes.includes("support.class.component.pysx")), "later sibling action tag");
+      const handlerRow = lines.findIndex(line => line.includes("onClick={advance_heading}"));
+      check(result.some(token => token.line === handlerRow && token.text === "onClick" && token.scopes.includes("entity.other.attribute-name.pysx")), "later sibling handler attribute");
+      check(result.filter(token => token.line === inlineRow && token.text === ";" && token.scopes.includes("punctuation.terminator.pysx")).length === 3, "example sibling separators");
       continue;
     }
     if (fixture === "render_snapshot") {

@@ -44,7 +44,15 @@ def UnusedWidget() -> Fragment:
   fs.writeFileSync(path.join(root, "closed.py"), `from pysx import Fragment, pysx
 from producer import Panel
 def app() -> Fragment:
-    return pysx(t"Panel(title={'closed'})")
+    return pysx(t"br; Panel(title={'closed'})")
+`);
+  fs.writeFileSync(path.join(root, "aliases.py"), `from pysx import Fragment, pysx
+from producer import Panel as lower
+view = pysx(t"p: 'alias'; br; lower(title={'outer'})")
+def shadow() -> Fragment:
+    def lower(*, title: int) -> Fragment:
+        return pysx(t"p: {title}")
+    return pysx(t"br; lower(title={7})")
 `);
   fs.writeFileSync(path.join(root, "consumer.py"), `from dataclasses import dataclass
 from pysx import Fragment, each, pysx, signal
@@ -57,14 +65,14 @@ class Row:
 rows = signal([Row(1, 'row')])
 def app() -> Fragment:
     return pysx(t"""
-Panel(title={'Hello'}): "😀 Panel quoted text"
+br; Panel(title={'Hello'}): "😀 Panel quoted text"
 input(type="text")
-{each(rows, lambda row: pysx(t'Panel(title={row.title})'), key=lambda row: row.id)}
+{each(rows, lambda row: pysx(t'br; Panel(title={row.title})'), key=lambda row: row.id)}
 """)
 ordinary = pkg.exports.Panel(title='ordinary')
 def tree() -> Fragment:
     def branch(*, node: Row) -> Fragment:
-        return pysx(t'Panel(title={node.title})')
+        return pysx(t'br; Panel(title={node.title})')
     def abandoned() -> Fragment:
         return pysx(t'p: "unused"')
     return pysx(t'branch(node={rows()[0]}):')
@@ -83,6 +91,8 @@ def tree() -> Fragment:
   assert.equal(await vscode.commands.executeCommand("pysx.configureTooling"), false);
   assert.equal(JSON.stringify(vscode.workspace.getConfiguration("python", doc.uri).get("analysis.diagnosticSeverityOverrides", {})), settingsBefore);
   await vscode.window.showTextDocument(doc);
+  await eventually(async () => Boolean(await extension.exports.refresh(doc)), "saved inline-sibling snapshot");
+  assert(!vscode.languages.getDiagnostics(doc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("producer.Panel")), "saved later-sibling import retained");
   await replace(doc, "'Hello'", "'Unsaved'");
   await eventually(async () => Boolean(await extension.exports.refresh(doc)), "immutable snapshot");
   await eventually(() => vscode.languages.getDiagnostics(doc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("UnusedWidget")), "genuine unused import");
@@ -133,6 +143,32 @@ def tree() -> Fragment:
   assert(!props.items.some((item) => String(item.label.label ?? item.label) === "maxwidth"));
   const nativeProps = await vscode.commands.executeCommand("vscode.executeCompletionItemProvider", doc.uri, position(doc, 'type="text"', 2));
   assert(nativeProps.items.some((item) => String(item.label.label ?? item.label) === "type"));
+
+  const aliasDoc = await vscode.workspace.openTextDocument(path.join(root, "aliases.py"));
+  await vscode.window.showTextDocument(aliasDoc);
+  await eventually(async () => Boolean(await extension.exports.refresh(aliasDoc)), "saved lowercase alias snapshot");
+  assert(!vscode.languages.getDiagnostics(aliasDoc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("lower")), "saved lowercase tag import retained");
+  const aliasTag = position(aliasDoc, "lower(title={'outer'})", 2);
+  const aliasDefinitions = await eventually(async () => {
+    const values = await vscode.commands.executeCommand("vscode.executeDefinitionProvider", aliasDoc.uri, aliasTag);
+    return values?.some(item => (item.uri ?? item.targetUri).fsPath === producer.fileName) ? values : null;
+  }, "third-sibling lowercase alias definition");
+  assert(aliasDefinitions.length);
+  const localTag = position(aliasDoc, "lower(title={7})", 2);
+  const localDefinitions = await eventually(async () => {
+    const values = await vscode.commands.executeCommand("vscode.executeDefinitionProvider", aliasDoc.uri, localTag);
+    return values?.some(item => (item.uri ?? item.targetUri).fsPath === aliasDoc.fileName) ? values : null;
+  }, "second-sibling shadowed local definition");
+  assert(localDefinitions.every(item => (item.uri ?? item.targetUri).fsPath !== producer.fileName));
+  await replace(aliasDoc, "'alias'", "'unsaved alias'");
+  await eventually(async () => Boolean(await extension.exports.refresh(aliasDoc)), "unsaved lowercase alias snapshot");
+  const aliasReferences = await eventually(async () => {
+    const values = await vscode.commands.executeCommand("vscode.executeReferenceProvider", aliasDoc.uri, position(aliasDoc, "lower(title={'outer'})", 2));
+    return values?.some(item => item.uri.fsPath === aliasDoc.fileName && aliasDoc.getText(item.range) === "lower") ? values : null;
+  }, "unsaved third-sibling alias references");
+  assert(aliasReferences.some(item => item.uri.fsPath === aliasDoc.fileName && aliasDoc.getText(item.range) === "lower"));
+  assert(!vscode.languages.getDiagnostics(aliasDoc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("lower")), "unsaved lowercase tag import retained");
+  await vscode.window.showTextDocument(doc);
 
   const actions = await vscode.commands.executeCommand("vscode.executeCodeActionProvider", doc.uri, new vscode.Range(0, 0, 0, 0), "source.organizeImports.pysx");
   const action = actions.find((item) => item.command?.command === "pysx.applyImports"); assert(action);
@@ -189,6 +225,9 @@ def tree() -> Fragment:
   assert(doc.getText().includes("😀 Panel quoted text"));
   const closed = await vscode.workspace.openTextDocument(path.join(root, "closed.py"));
   assert(closed.getText().includes("CardPanel(title="));
+  assert(aliasDoc.getText().includes("from producer import CardPanel as lower"));
+  assert(aliasDoc.getText().includes("def lower(*, title: int)"));
+  assert(aliasDoc.getText().includes("lower(title={7})"));
   if (process.env.PYSX_EDITOR_PERFORMANCE === "1") {
     const checkout = process.env.PYSX_EDITOR_CHECKOUT;
     const result = spawnSync(process.env.PYSX_EDITOR_PYTHON, ["-c",

@@ -579,6 +579,21 @@ def _legacy_diagnostics(
         try:
             skeleton = parse(fragments)
         except PysxSyntaxError as exc:
+            if exc.position is not None:
+                try:
+                    syntax_location = mapper.template(node).location(exc.position)
+                except ValueError:
+                    pass
+                else:
+                    syntax_start = positions.editor_position(syntax_location.start)
+                    syntax_end = positions.editor_position(syntax_location.end)
+                    item = _d(
+                        syntax_start.line, syntax_start.character, syntax_end.character, str(exc)
+                    )
+                    item["endLine"] = syntax_end.line
+                    out.append(item)
+
+                    continue
             line = lines[node.lineno - 1]
             col = _utf16_from_bytes(line, node.col_offset)
             out.append(_d(node.lineno - 1, col, col + 4, str(exc)))

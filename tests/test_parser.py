@@ -275,3 +275,33 @@ def test_text_containing_braces_and_nul_is_not_a_hole() -> None:
     assert isinstance(page, Element)
     assert page.children[0] == "a{b}c\x00\x00d", page.children[0]
     assert sk.holes == ((0, HoleKind.TEXT, None),)
+
+
+@pytest.mark.parametrize("tag", ["br", "div", "Break", "lowercase", "_custom", "my-element"])
+def test_bare_childless_name(tag: str) -> None:
+    node = parse((tag,)).root[0]
+    assert isinstance(node, Element)
+    assert node.tag == tag
+    assert node.children == ()
+    assert node.namespace == "html"
+
+
+@pytest.mark.parametrize("separator", ["", "\n", "  ;;;\n", ";\n", "    ;;\n"])
+def test_bare_childless_forbids_body_across_empty_rows(separator: str) -> None:
+    strings = (f"\nCard:\n  div\n{separator}    span: 'child'",)
+
+    with pytest.raises(PysxSyntaxError, match="add a colon: div:") as caught:
+        parse(strings)
+    position = caught.value.position
+    assert position is not None
+    assert strings[position.fragment][position.offset :].startswith("span")
+
+
+def test_bare_childless_dedent_resolves_forbidden_body() -> None:
+    skeleton = parse(("\nCard:\n  br\n  div:\n    span: 'child'",))
+    card = skeleton.root[0]
+    assert isinstance(card, Element)
+    assert len(card.children) == 2
+    div = card.children[1]
+    assert isinstance(div, Element)
+    assert len(div.children) == 1
