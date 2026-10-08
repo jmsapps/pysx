@@ -3,7 +3,7 @@
 import json
 from typing import cast
 
-from pysx import Fragment, component, derived, html, native, signal
+from pysx import Fragment, component, derived, html, signal
 
 from .components import (
     Card,
@@ -35,9 +35,6 @@ def app() -> Fragment:
     visible = signal(True)
     owned = signal("owned")
     field_css = "\n".join(Field.declarations)
-    form_css = "\n".join(Form.declarations)
-    submit_css = "\n".join(Submit.declarations)
-    secondary_css = "\n".join(SecondaryAction.declarations)
 
     def normalize(_value: object) -> None:
         corrected.set(corrected().upper())
@@ -62,110 +59,6 @@ def app() -> Fragment:
     def toggle(_value: object) -> None:
         visible.set(not visible())
 
-    controls = native.Form(
-        native.Label("Required text", html_for="text"),
-        native.Input(
-            id="text",
-            name="text",
-            required=True,
-            bind_value=text,
-            on_invalid=invalid,
-            css=field_css,
-        ),
-        native.Label("Notes", html_for="note"),
-        native.Textarea(id="note", name="note", bind_value=note, css=field_css),
-        native.Label("Enable updates", html_for="check"),
-        native.Input(id="check", name="check", type="checkbox", value="yes", bind_checked=checked),
-        native.Label("Single choice", html_for="single"),
-        native.Select(
-            native.Option("A", value="a"),
-            native.Option("B", value="b"),
-            id="single",
-            name="single",
-            bind_value=single,
-            css=field_css,
-        ),
-        native.Label("Multiple choices", html_for="multi"),
-        native.Select(
-            native.Option("A", value="a"),
-            native.Option("B", value="b"),
-            id="multi",
-            name="color",
-            multiple=True,
-            size=2,
-            bind_selected=selected,
-            css=field_css,
-        ),
-        native.Label("Radio A", html_for="radio-a"),
-        native.Input(id="radio-a", type="radio", name="radio", value="a", bind_value=radio),
-        native.Label("Radio B", html_for="radio-b"),
-        native.Input(id="radio-b", type="radio", name="radio", value="b", bind_value=radio),
-        native.Label("Disabled field", html_for="disabled"),
-        native.Input(
-            id="disabled",
-            name="disabled",
-            disabled=True,
-            value="omitted",
-            css=field_css,
-        ),
-        native.Button(
-            "Submit",
-            id="submit",
-            type="submit",
-            name="action",
-            value="save",
-            css=submit_css,
-        ),
-        native.Button(
-            "Reset to initial values",
-            id="reset",
-            type="reset",
-            css=secondary_css,
-        ),
-        id="form",
-        on_submit=submitted,
-        on_reset=reset,
-        css=form_css,
-    )
-    correction = native.Div(
-        native.Label("Uppercase correction", html_for="corrected"),
-        native.Input(id="corrected", bind_value=corrected, on_input=normalize, css=field_css),
-    )
-    actions = native.Div(
-        native.Button("Apply server values", id="program", on_click=programmatic, css=submit_css),
-        native.Button(
-            "Show or hide optional field",
-            id="toggle",
-            on_click=toggle,
-            css=secondary_css,
-        ),
-    )
-    conditional = html(t"""
-        if {visible}:
-            label(htmlFor="owned"): "Optional field"
-            input(id="owned" bindValue={owned} css={field_css})
-    """)
-    readings = native.Dl(
-        native.Dt("Text"),
-        native.Dd(text, id="text-state"),
-        native.Dt("Notes"),
-        native.Dd(note, id="note-state"),
-        native.Dt("Checked"),
-        native.Dd(checked, id="check-state"),
-        native.Dt("Single choice"),
-        native.Dd(single, id="single-state"),
-        native.Dt("Multiple choices"),
-        native.Dd(selected_text, id="multi-state"),
-        native.Dt("Radio choice"),
-        native.Dd(radio, id="radio-state"),
-        native.Dt("Corrected text"),
-        native.Dd(corrected, id="corrected-state"),
-        native.Dt("Resets"),
-        native.Dd(resets, id="reset-state"),
-        native.Dt("Invalid submissions"),
-        native.Dd(invalids, id="invalid-state"),
-    )
-
     return html(
         t"""
         Page(id="live-forms"):
@@ -176,16 +69,68 @@ def app() -> Fragment:
             Card:
                 h2: "Native controls"
                 Description: "Submit collects enabled fields. Reset restores the initial values."
-                {controls}
+                Form(id="form" onSubmit={submitted} onReset={reset}):
+                    label(htmlFor="text"): "Required text"
+                    Field(
+                        id="text" name="text" required={True}
+                        bindValue={text} onInvalid={invalid}
+                    )
+                    label(htmlFor="note"): "Notes"
+                    textarea(id="note" name="note" bindValue={note} css={field_css})
+                    label(htmlFor="check"): "Enable updates"
+                    input(id="check" name="check" type="checkbox" value="yes" bindChecked={checked})
+                    label(htmlFor="single"): "Single choice"
+                    select(id="single" name="single" bindValue={single} css={field_css}):
+                        option(value="a"): "A"
+                        option(value="b"): "B"
+                    label(htmlFor="multi"): "Multiple choices"
+                    select(
+                        id="multi" name="color" multiple={True} size={2}
+                        bindSelected={selected} css={field_css}
+                    ):
+                        option(value="a"): "A"
+                        option(value="b"): "B"
+                    label(htmlFor="radio-a"): "Radio A"
+                    input(id="radio-a" type="radio" name="radio" value="a" bindValue={radio})
+                    label(htmlFor="radio-b"): "Radio B"
+                    input(id="radio-b" type="radio" name="radio" value="b" bindValue={radio})
+                    label(htmlFor="disabled"): "Disabled field"
+                    Field(id="disabled" name="disabled" disabled={True} value="omitted")
+                    Submit(id="submit" type="submit" name="action" value="save"): "Submit"
+                    SecondaryAction(id="reset" type="reset"): "Reset to initial values"
             Card:
                 h2: "Server corrections"
                 Description: "This field converts edits to uppercase while keeping your caret."
-                {correction}
-                {actions}
-                {conditional}
+                div:
+                    label(htmlFor="corrected"): "Uppercase correction"
+                    Field(id="corrected" bindValue={corrected} onInput={normalize})
+                div:
+                    Submit(id="program" onClick={programmatic}): "Apply server values"
+                    SecondaryAction(id="toggle" onClick={toggle}): "Show or hide optional field"
+                if {visible}:
+                    label(htmlFor="owned"): "Optional field"
+                    Field(id="owned" bindValue={owned})
             Card:
                 h2: "Live values"
-                {readings}
+                dl:
+                    dt: "Text"
+                    dd(id="text-state"): {text}
+                    dt: "Notes"
+                    dd(id="note-state"): {note}
+                    dt: "Checked"
+                    dd(id="check-state"): {checked}
+                    dt: "Single choice"
+                    dd(id="single-state"): {single}
+                    dt: "Multiple choices"
+                    dd(id="multi-state"): {selected_text}
+                    dt: "Radio choice"
+                    dd(id="radio-state"): {radio}
+                    dt: "Corrected text"
+                    dd(id="corrected-state"): {corrected}
+                    dt: "Resets"
+                    dd(id="reset-state"): {resets}
+                    dt: "Invalid submissions"
+                    dd(id="invalid-state"): {invalids}
                 h3: "Last submission"
                 pre(id="status"): {status}
     """
