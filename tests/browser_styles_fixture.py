@@ -1,6 +1,6 @@
 """Session theme/variable/rule changes exercised by three browser engines."""
 
-from pysx import Fragment, Themes, html, signal
+from pysx import Fragment, Themes, pysx, signal
 
 
 def app() -> Fragment:
@@ -25,7 +25,7 @@ def app() -> Fragment:
     def clear(_event: object) -> None:
         themes.clear()
 
-    return html(
+    return pysx(
         t"""
         div(id="sample" css={css} class={classes} styleVars={ ({"local": variable}) }): "Sample"
         if {visible}:

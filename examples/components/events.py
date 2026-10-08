@@ -1,6 +1,6 @@
 """Reusable combobox and roving-focus controls using public browser capabilities."""
 
-from pysx import BrowserEvent, Dom, Fragment, derived, html, native, on_event, signal, styled
+from pysx import BrowserEvent, Dom, Fragment, derived, native, on_event, pysx, signal, styled
 
 from .controls import Action, Actions
 from .forms import Field, SecondaryAction
@@ -135,7 +135,7 @@ def event_controls() -> Fragment:
         role="status",
     )
 
-    return html(t"""
+    return pysx(t"""
         div(id="keyboard-fixture" style="display: grid; gap: 16px;")
             label(for="combo"): "Choose a color"
             {field}

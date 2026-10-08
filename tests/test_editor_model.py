@@ -12,11 +12,11 @@ from pysx.editor_types import diagnostics
 
 
 def test_callable_prop_spelling_does_not_make_it_a_native_site() -> None:
-    source = """from pysx import Fragment, html
+    source = """from pysx import Fragment, pysx
 def Panel(*, title: str, maxWidth: int = 0) -> Fragment:
-    return html(t'p: {title}')
-view = html(t'Panel(title={"x"})')
-native = html(t'input(title="x")')
+    return pysx(t'p: {title}')
+view = pysx(t'Panel(title={"x"})')
+native = pysx(t'input(title="x")')
 """
     model = projection_for_source(source, "/private/tmp/prop_sites.py")
     props = [site for site in model["sites"] if site["role"] == "prop"]
@@ -29,13 +29,13 @@ def test_project_handoff_retains_genuine_unused_function_diagnostics(tmp_path: P
     (tmp_path / "pyproject.toml").write_text(
         '[tool.pyright]\ntypeCheckingMode = "strict"\nreportUnusedFunction = false\n'
     )
-    (tmp_path / "view.py").write_text("""from pysx import Fragment, html
+    (tmp_path / "view.py").write_text("""from pysx import Fragment, pysx
 def app() -> Fragment:
     def branch() -> Fragment:
-        return html(t'p: "used"')
+        return pysx(t'p: "used"')
     def dead() -> Fragment:
-        return html(t'p: "unused"')
-    return html(t'branch:')
+        return pysx(t'p: "unused"')
+    return pysx(t'branch:')
 """)
     revision = "_pysx_revision_functions"
     models = workspace_model({"root": str(tmp_path), "revision": revision, "buffers": {}})
@@ -63,13 +63,13 @@ if TYPE_CHECKING:
 def test_model_cache_rebases_utf16_and_refreshes_versions(tmp_path: Path) -> None:
     producer = tmp_path / "components.py"
     producer.write_text(
-        "from pysx import Fragment, html\ndef Panel(*, title: str) -> Fragment: "
-        'return html(t"p: {title}")\n'
+        "from pysx import Fragment, pysx\ndef Panel(*, title: str) -> Fragment: "
+        'return pysx(t"p: {title}")\n'
     )
     consumer = tmp_path / "view.py"
     source = (
-        "from components import Panel\nfrom pysx import html\n"
-        "view = html(t\"Panel(title={'😀'})\")\n"
+        "from components import Panel\nfrom pysx import pysx\n"
+        "view = pysx(t\"Panel(title={'😀'})\")\n"
     )
     consumer.write_text(source)
     previous = workspace_model(
@@ -102,21 +102,21 @@ def test_model_cache_rebases_utf16_and_refreshes_versions(tmp_path: Path) -> Non
 def test_model_cache_invalidates_imported_signature_and_ruff_config(tmp_path: Path) -> None:
     producer = tmp_path / "components.py"
     producer.write_text(
-        "from pysx import Children, Fragment, html\n"
+        "from pysx import Children, Fragment, pysx\n"
         "def Panel(*, children: Children | None = None) -> Fragment:\n"
-        '    return html(t"p: {children}")\n'
+        '    return pysx(t"p: {children}")\n'
     )
     consumer = tmp_path / "view.py"
     consumer.write_text(
-        "import math\nfrom components import Panel\nfrom pysx import html\n"
-        "view = html(t\"Panel: 'child'\")\n"
+        "import math\nfrom components import Panel\nfrom pysx import pysx\n"
+        "view = pysx(t\"Panel: 'child'\")\n"
     )
     previous = workspace_model(
         {"root": str(tmp_path), "revision": "_pysx_revision_first", "buffers": {}}
     )
     producer.write_text(
-        "from pysx import Fragment, html\n"
-        'def Panel(*children: object) -> Fragment: return html(t"p: {children}")\n'
+        "from pysx import Fragment, pysx\n"
+        'def Panel(*children: object) -> Fragment: return pysx(t"p: {children}")\n'
     )
     current = workspace_model(
         {
@@ -159,15 +159,15 @@ def test_model_cache_invalidates_imported_signature_and_ruff_config(tmp_path: Pa
 def test_editor_model_coherent_unsaved_graph_and_original_edits(tmp_path: Path) -> None:
     producer = tmp_path / "producer.py"
     producer.write_text(
-        "from pysx import Fragment, html\n"
-        'def Panel(*, title: str) -> Fragment: return html(t"p: {title}")\n',
+        "from pysx import Fragment, pysx\n"
+        'def Panel(*, title: str) -> Fragment: return pysx(t"p: {title}")\n',
         encoding="utf-8",
     )
     consumer = tmp_path / "consumer.py"
     consumer.write_text("raise RuntimeError('never execute applications')\n", encoding="utf-8")
     current = (
-        "from pysx import html\nfrom producer import Panel\nimport math\n"
-        "view = html(t\"Panel(title={'😀 current'})\")\n"
+        "from pysx import pysx\nfrom producer import Panel\nimport math\n"
+        "view = pysx(t\"Panel(title={'😀 current'})\")\n"
     )
     models = workspace_model(
         {
@@ -215,7 +215,7 @@ def test_editor_model_dotted_import_identity_and_src_layout(tmp_path: Path) -> N
 
 
 def test_editor_model_incomplete_markup_blocks_import_cleanup(tmp_path: Path) -> None:
-    source = 'from pysx import html\nimport math\nview = html(t"p(title=")\n'
+    source = 'from pysx import pysx\nimport math\nview = pysx(t"p(title=")\n'
     (tmp_path / "view.py").write_text(source, encoding="utf-8")
     model = workspace_model(
         {
@@ -246,11 +246,11 @@ def test_editor_owned_types_check_snapshot_and_clean_configuration(tmp_path: Pat
         "raise RuntimeError('never import original applications')\n", encoding="utf-8"
     )
     typed = (
-        "from pysx import Fragment, html\n"
-        'def Panel(*, title: str) -> Fragment: return html(t"p: {title}")\n'
+        "from pysx import Fragment, pysx\n"
+        'def Panel(*, title: str) -> Fragment: return pysx(t"p: {title}")\n'
     )
     (tmp_path / "consumer.py").write_text(
-        'from pysx import html\nfrom producer import Panel\nview = html(t"Panel(title={42})")\n',
+        'from pysx import pysx\nfrom producer import Panel\nview = pysx(t"Panel(title={42})")\n',
         encoding="utf-8",
     )
     revision = "_pysx_revision_test"

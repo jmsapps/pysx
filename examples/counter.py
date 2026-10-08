@@ -1,4 +1,4 @@
-from pysx import Fragment, component, html, signal
+from pysx import Fragment, component, pysx, signal
 
 from .components import (
     Action,
@@ -21,7 +21,7 @@ def app() -> Fragment:
     def increment(_e: object) -> None:
         count.set(count() + 1)
 
-    return html(
+    return pysx(
         t"""
         Page(id="container"):
             header:

@@ -1,6 +1,6 @@
 """Production styled cascade and callable roots for browser assertions."""
 
-from pysx import Children, Fragment, div, html, signal, styled
+from pysx import Children, Fragment, div, pysx, signal, styled
 
 
 def app() -> Fragment:
@@ -17,7 +17,7 @@ def app() -> Fragment:
 
     def base(*, children: Children, title: str) -> Fragment:
 
-        return html(
+        return pysx(
             t'\nfragment:\n  div(id="callable"): {title}; {children}\n  span(id="second"): "second"'
         )
 
@@ -27,7 +27,7 @@ def app() -> Fragment:
     def change(_event: object) -> None:
         classes.set("dynamic")
 
-    return html(
+    return pysx(
         t"""
         RedBlue(id="red-blue" class={classes}): "A"
         BlueRed(id="blue-red"): "B"

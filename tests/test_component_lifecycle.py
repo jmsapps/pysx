@@ -16,7 +16,6 @@ from pysx import (
     Fragment,
     Signal,
     each,
-    html,
     local_state,
     on_cleanup,
     on_mount,
@@ -25,6 +24,7 @@ from pysx import (
     own_subscription,
     own_task,
     own_timer,
+    pysx,
     signal,
 )
 from pysx.render import ListWatcher
@@ -52,10 +52,10 @@ def test_stable_component_reorder_removal_and_remount() -> None:
         def increment(_: object) -> None:
             count.set(count() + 1)
 
-        return html(t"\nli:\n  button(onClick={increment}): {count}")
+        return pysx(t"\nli:\n  button(onClick={increment}): {count}")
 
     def app() -> Fragment:
-        return html(t"\nul: {each(rows, row, key=str)}")
+        return pysx(t"\nul: {each(rows, row, key=str)}")
 
     session = Session(app)
     first = counts["a"]
@@ -100,13 +100,13 @@ def test_stable_component_identity_follows_definitions_not_objects() -> None:
             return t"\nspan: {states[f'panel:{label}']}"
 
     def row(key: str) -> Fragment:
-        return html(
+        return pysx(
             t"\nli:\n  Card(label={key}):\n  Panel(label={key}):",
             namespace={"Card": Card(), "Panel": Panel().view},
         )
 
     def app() -> Fragment:
-        return html(t"\nul: {each(rows, row, key=str)}")
+        return pysx(t"\nul: {each(rows, row, key=str)}")
 
     session = Session(app)
     card, panel = states["card:a"], states["panel:a"]
@@ -130,7 +130,7 @@ def test_stable_component_branch_mount_ack_and_cleanup_errors() -> None:
         return t'\nspan: "child"'
 
     def app() -> Fragment:
-        return html(t"\nif {visible}:\n  Child:", namespace={"Child": child})
+        return pysx(t"\nif {visible}:\n  Child:", namespace={"Child": child})
 
     session = Session(app)
     tokens = session.rendered.scopes.pending_mounts()
@@ -207,16 +207,16 @@ def test_stable_component_nested_branches_keys_and_watchers() -> None:
         return t"\nspan: {count}"
 
     def leaf(value: str) -> Fragment:
-        return html(t"\nli: {value}")
+        return pysx(t"\nli: {value}")
 
     def row(key: str) -> Fragment:
-        return html(
+        return pysx(
             t"\nli:\n  if {True}:\n    Child(label={key}):\n  ul: {each(nested, leaf, key=str)}",
             namespace={"Child": child},
         )
 
     def app() -> Fragment:
-        return html(t"\nul: {each(rows, row, key=str)}")
+        return pysx(t"\nul: {each(rows, row, key=str)}")
 
     session = Session(app)
     first = states["a"]
@@ -289,7 +289,7 @@ def test_stable_component_setup_write_corrects_an_earlier_hole() -> None:
         return t'\nspan: "child"'
 
     def app() -> Fragment:
-        return html(t"\np: {ready}\nChild:", namespace={"Child": child})
+        return pysx(t"\np: {ready}\nChild:", namespace={"Child": child})
 
     session = Session(app)
 

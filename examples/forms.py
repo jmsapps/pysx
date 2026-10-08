@@ -3,7 +3,7 @@
 import json
 from typing import cast
 
-from pysx import Fragment, component, derived, html, signal
+from pysx import Fragment, component, derived, pysx, signal
 
 from .components import (
     Card,
@@ -59,7 +59,7 @@ def app() -> Fragment:
     def toggle(_value: object) -> None:
         visible.set(not visible())
 
-    return html(
+    return pysx(
         t"""
         Page(id="live-forms"):
             header:

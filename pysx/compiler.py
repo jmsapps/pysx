@@ -562,7 +562,7 @@ def analyze(
             continue
         scope = scopes.nodes[node]
 
-        if resolver.identity(scope.identity(node.func)) not in {"pysx.html", "pysx.render.html"}:
+        if resolver.identity(scope.identity(node.func)) not in {"pysx.pysx", "pysx.render.pysx"}:
             marker_name = (
                 node.func.id
                 if isinstance(node.func, ast.Name)
@@ -577,7 +577,7 @@ def analyze(
 
                 if len(history) > 1 and any(
                     isinstance(value, str)
-                    and value in {"pysx.html", "pysx.render.html", "pysx", "pysx.render"}
+                    and value in {"pysx.pysx", "pysx.render.pysx", "pysx", "pysx.render"}
                     for value in history
                 ):
                     diagnostics.append(
@@ -605,7 +605,7 @@ def analyze(
         if argument is None:
             diagnostics.append(
                 CompilerDiagnostic(
-                    "html requires a template", positions.ast_span(node), "template-source"
+                    "pysx requires a template", positions.ast_span(node), "template-source"
                 )
             )
 

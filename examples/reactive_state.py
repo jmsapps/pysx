@@ -9,9 +9,9 @@ from pysx import (
     concat,
     contains,
     derived,
-    html,
     length,
     not_,
+    pysx,
     signal,
 )
 
@@ -68,7 +68,7 @@ def app() -> Fragment:
     def reset_count(_event: object) -> None:
         count.set(1)
 
-    return html(
+    return pysx(
         t"""
         Page:
             header:

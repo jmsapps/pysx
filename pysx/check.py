@@ -95,7 +95,7 @@ def _bound_names(tree: ast.AST) -> set[str]:
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
-            and node.func.id in {"html", "render"}
+            and node.func.id in {"pysx", "render"}
         ):
             for keyword in node.keywords:
                 if keyword.arg == "namespace" and isinstance(keyword.value, ast.Dict):
@@ -425,7 +425,7 @@ def _templates(tree: ast.AST) -> Iterator[ast.TemplateStr | ast.JoinedStr]:
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
-            and node.func.id == "html"
+            and node.func.id == "pysx"
             and node.args
         ):
             arg = resolve(node.args[0])
@@ -568,7 +568,7 @@ def _legacy_diagnostics(
                     node.lineno - 1,
                     col,
                     col + 4,
-                    'html() needs a t-string; f"""..."""  interpolates eagerly and is not reactive',
+                    'pysx() needs a t-string; f"""..."""  interpolates eagerly and is not reactive',
                 )
             )
 

@@ -19,14 +19,14 @@ back to the page.
 Templates use Python 3.14+ t-strings to keep markup and live values together:
 
 ```python
-from pysx import component, html, signal
+from pysx import component, pysx, signal
 
 
 @component
 def app():
     count = signal(0)
 
-    return html(t"""
+    return pysx(t"""
         div:
             p: "Count: " {count}
             button(onClick={(lambda event: count.set(count() + 1))}): "Increment"

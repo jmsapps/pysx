@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pysx import html, render, signal
+from pysx import pysx, render, signal
 from pysx.template import dedent_fragments
 
 
@@ -10,7 +10,7 @@ def test_positioned_multiline_snapshot_conversion_format_and_adjacent_holes() ->
     number = 1.25
     text = "é<&"
     template = t"\np: {number:.2f}{text!a:>16}"
-    result = render(lambda: html(template))
+    result = render(lambda: pysx(template))
     assert "1.25" in result.body
     assert "\\xe9&lt;&amp;" in result.body
     assert result.watchers == []
@@ -19,7 +19,7 @@ def test_positioned_multiline_snapshot_conversion_format_and_adjacent_holes() ->
 def test_positioned_multiline_live_conversion_format_and_attr_updates() -> None:
     number = signal(1.25)
     template = t"\np(title={number:.2f}): {number!s:>8}"
-    result = render(lambda: html(template))
+    result = render(lambda: pysx(template))
     assert 'title="1.25"' in result.body
     number.set(2.5)
     ops = [op for watcher in result.watchers for op in watcher.refresh()]
@@ -38,7 +38,7 @@ def test_positioned_multiline_raw_quoted_crlf_assigned_and_assembled() -> None:
     """
     second = Template('\r\nspan(id="assembled"):\r\n  "second"\r\n')
     template = first + second
-    result = render(lambda: html(template))
+    result = render(lambda: pysx(template))
     assert 'title="a&#x27;b"' in result.body
     assert "a&quot;b\\c\n{literal}😀" in result.body
     assert '<span id="assembled">second</span>' in result.body
@@ -57,7 +57,7 @@ def test_positioned_multiline_incompatible_metadata_is_positioned(template: Temp
     from pysx.parser import InterpolationError
 
     with pytest.raises(InterpolationError, match="metadata") as caught:
-        render(lambda: html(template))
+        render(lambda: pysx(template))
     assert caught.value.position is not None
 
 

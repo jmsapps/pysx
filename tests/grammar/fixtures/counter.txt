@@ -1,8 +1,8 @@
-from pysx import component, html
+from pysx import component, pysx
 
 @component
 def app():
-    return html(
+    return pysx(
         t"""
         Page(id="container"):
             "Count: "; {count}

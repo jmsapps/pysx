@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from pysx import Fragment, bounded_while, each, each_indexed, eq, html, signal, styled, when
+from pysx import Fragment, bounded_while, each, each_indexed, eq, pysx, signal, styled, when
 
 from .components.controls import Action, Actions, Description, Eyebrow, Title
 from .components.templates import GroupHeading, GroupPanel, TemplatePage, snapshot_label
@@ -57,7 +57,7 @@ def app() -> Fragment:
         def child_row(child: str) -> Fragment:
             tooltip = "Build something" if child == "build" else None
 
-            return html(t"""
+            return pysx(t"""
                 Action(
                   data-pick={f"{group[0]}:{child}"},
                   title={tooltip},
@@ -66,7 +66,7 @@ def app() -> Fragment:
                 ): {child}
             """)
 
-        return html(t"""
+        return pysx(t"""
             GroupPanel(data-group={group[0]}):
               local_heading: {heading}
               Actions:
@@ -77,10 +77,10 @@ def app() -> Fragment:
     frozen_rows = each(initial, lambda group: snapshot_label(group[0]), key=lambda group: group[0])
     lazy_branch = when(
         conditions=[
-            (eq(mode, "full"), lambda: html(t'p(id="branch"): "Full details"')),
-            (eq(mode, "compact"), lambda: html(t'p(id="branch"): "Compact details"')),
+            (eq(mode, "full"), lambda: pysx(t'p(id="branch"): "Full details"')),
+            (eq(mode, "compact"), lambda: pysx(t'p(id="branch"): "Compact details"')),
         ],
-        default=lambda: html(t'p(id="branch"): "Quiet details"'),
+        default=lambda: pysx(t'p(id="branch"): "Quiet details"'),
     )
     step = 0
 
@@ -92,7 +92,7 @@ def app() -> Fragment:
 
     ordinary = bounded_while(lambda: step < 2, build_step, limit=2)
 
-    return html(
+    return pysx(
         t"""
         TemplatePage(id="templates-example"):
           Eyebrow: "Template language"

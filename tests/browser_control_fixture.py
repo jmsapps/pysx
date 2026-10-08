@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from pysx import Binding, Fragment, defer, eq, html, signal
+from pysx import Binding, Fragment, defer, eq, pysx, signal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -30,7 +30,7 @@ def app() -> Fragment:
 
         return click
 
-    return html(
+    return pysx(
         t"""
         button(id="reverse", onClick={reverse}): "Reverse"
         button(id="remove", onClick={remove}): "Remove"

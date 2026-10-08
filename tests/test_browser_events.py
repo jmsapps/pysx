@@ -4,7 +4,7 @@ from dataclasses import asdict
 
 import pytest
 
-from pysx import BrowserEvent, Fragment, html, native, on_event, signal
+from pysx import BrowserEvent, Fragment, native, on_event, pysx, signal
 from pysx.events import FIELD_LIMIT, VALUE_LIMIT, decode_event
 from pysx.forms import PayloadError
 from pysx.server import Session
@@ -86,7 +86,7 @@ def test_events_immediate_policy_and_owned_removal() -> None:
     handler = on_event(lambda _event: None, prevent_default=True, stop_propagation=True)
 
     def app() -> Fragment:
-        return html(t"""
+        return pysx(t"""
             if {visible}:
                 input(onKeyDown={handler})
         """)

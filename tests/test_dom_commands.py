@@ -13,9 +13,9 @@ from pysx import (
     DomNode,
     DomRef,
     Fragment,
-    html,
     native,
     on_event,
+    pysx,
     signal,
 )
 from pysx.server import Session
@@ -107,7 +107,7 @@ def test_owned_dom_replacement_rejects_old_handle() -> None:
             ref = Dom().ref()
             refs.append(ref)
 
-            return html(t"""
+            return pysx(t"""
                 if {visible}:
                     input(ref={ref})
             """)

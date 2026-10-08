@@ -1,6 +1,6 @@
 """Callable composition, recursive keyboard controls and owned component state."""
 
-from pysx import Fragment, html
+from pysx import Fragment, pysx
 
 from .components import Description, Eyebrow, Page, Title
 from .components.composition import tree_controls
@@ -8,7 +8,7 @@ from .components.composition import tree_controls
 
 def app() -> Fragment:
 
-    return html(
+    return pysx(
         t"""
             Page(id="composition-example"):
               Eyebrow: "Component ownership"

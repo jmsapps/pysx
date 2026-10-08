@@ -7,7 +7,7 @@ From the repository root:
 ./scripts/uninstall-extension.sh
 ```
 
-The extension provides syntax highlighting for markup inside `html(t"""...""")`
+The extension provides syntax highlighting for markup inside `pysx(t"""...""")`
 and advisory diagnostics for unknown component tags, unparenthesised lambdas,
 and called signals where a bare signal was intended.
 

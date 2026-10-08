@@ -1,6 +1,6 @@
 """Browser command fixture with reactive and imperative ownership boundaries."""
 
-from pysx import BrowserEvent, Dom, DomError, DomNode, Fragment, html, on_event, signal
+from pysx import BrowserEvent, Dom, DomError, DomNode, Fragment, on_event, pysx, signal
 
 
 def app() -> Fragment:
@@ -90,7 +90,7 @@ def app() -> Fragment:
         await field.handle().focus()
         status.set("mount-passed")
 
-    return html(t"""
+    return pysx(t"""
         div(id="dom-fixture" ref={boundary})
             if {visible}:
                 input(id="field" ref={field} value="abcdef")

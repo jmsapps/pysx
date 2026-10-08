@@ -1,6 +1,6 @@
 """Typed keyboard snapshots, immediate browser policies and owned focus."""
 
-from pysx import Fragment, component, html
+from pysx import Fragment, component, pysx
 
 from .components import (
     Card,
@@ -16,7 +16,7 @@ from .components.events import event_controls
 def app() -> Fragment:
     controls = event_controls()
 
-    return html(
+    return pysx(
         t"""
         Page(id="events-example")
             Eyebrow: "Browser capabilities"

@@ -122,6 +122,28 @@ try {
       continue;
     }
     if (fixture === "styling") {
+      const valueScope = "support.constant.property-value.css.pysx";
+      for (const value of ["wrap", "baseline", "ui-monospace", "SFMono-Regular", "Menlo", "monospace", "sans-serif", "NovelFont", "balance", "grab", "contents", "FutureFont", "OtherFont", "InlineFont", "rebeccapurple"]) {
+        check(result.some(token => token.text === value && token.scopes.includes(valueScope)), `${value}: declaration value`);
+      }
+      for (const [value, scope] of [
+        ["Times New Roman", "string.quoted.double.css"],
+        ["Fira Code", "string.quoted.single.css"],
+        [".5ch", "constant.numeric.css"],
+        ["#123abc", "constant.other.color.rgb-value.css"],
+        ["NovelFont", valueScope],
+        ["VALUE_COMMENT", "comment.block.css"],
+      ]) check(result.some(token => token.text.includes(value) && token.scopes.includes(scope)), `${value}: specialized CSS scope`);
+      for (const value of ["family", "spacing"]) {
+        check(result.some(token => token.text === value && token.scopes.includes("meta.embedded.inline.python") && !token.scopes.includes(valueScope)), `${value}: CSS hole stays Python`);
+      }
+      for (const marker of [".baseline:", "span:hover:", "@supports"]) {
+        const row = lines.findIndex(line => line.includes(marker));
+        check(!result.some(token => token.line === row && token.scopes.includes(valueScope)), `${marker}: selector/at-rule is not a declaration value`);
+      }
+      const selectorRow = lines.findIndex(line => line.includes("a:hover {"));
+      check(!result.some(token => token.line === selectorRow && /\b(?:a|hover)\b/.test(token.text) && token.scopes.includes(valueScope)), "CSS block selector is not a declaration value");
+      check(result.some(token => token.text === "scope-check" && !token.scopes.some(scope => scope.includes("css"))), "inline CSS does not consume the following markup attribute");
       for (const [value, scope] of [
         ["color", "support.type.property-name.css"],
         ["margin", "support.type.property-name.css"],

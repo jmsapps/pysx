@@ -46,7 +46,7 @@ exports.run = async function () {
 
   await vscode.workspace.getConfiguration("pysx").update("pythonPath", process.env.PYSX_EDITOR_PYTHON, vscode.ConfigurationTarget.Workspace);
   const filename = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "diagnostics.py");
-  fs.writeFileSync(filename, 'from pysx import html\nvalue = html(t"""\n    div: "valid"\n""")\n');
+  fs.writeFileSync(filename, 'from pysx import pysx\nvalue = pysx(t"""\n    div: "valid"\n""")\n');
   const document = await vscode.workspace.openTextDocument(filename);
   await vscode.languages.setTextDocumentLanguage(document, "python");
   await vscode.window.showTextDocument(document);

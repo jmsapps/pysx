@@ -89,7 +89,7 @@ def main() -> None:
                 dict(r.headers)
             body = r.read().decode()
             assert "<!doctype html>" in body.lower(), body[:200]
-        print("  ok  GET / -> 200 text/html (not text/plain)")
+        print("  ok  GET / -> 200 text/pysx (not text/plain)")
 
         with urllib.request.urlopen(BASE + "/client.js", timeout=5) as r:
             assert r.status == 200

@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 import pytest
 
-from pysx import Fragment, derived, html, native, signal
+from pysx import Fragment, derived, native, pysx, signal
 from pysx.forms import PayloadError, form_edits
 from pysx.server import Session
 
@@ -193,7 +193,7 @@ def test_bindings_form_conditional_cleanup_and_control_identity() -> None:
         visible.set(not visible())
 
     def view() -> Fragment:
-        return html(t"""
+        return pysx(t"""
             if {visible}:
                 input(bindValue={text})
             button(onClick={toggle_visible}): "Toggle"

@@ -1,8 +1,8 @@
-from pysx import component, html
+from pysx import component, pysx
 
 @component
 def bad():
-    return html(t"""
+    return pysx(t"""
         Page:
             "unterminated
             Action: "ok"

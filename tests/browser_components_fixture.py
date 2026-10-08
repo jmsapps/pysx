@@ -1,6 +1,6 @@
 """Lifecycle controls for the three-engine acceptance suite."""
 
-from pysx import Fragment, each, html, local_state, on_cleanup, on_mount, on_setup, signal
+from pysx import Fragment, each, local_state, on_cleanup, on_mount, on_setup, pysx, signal
 
 
 def app() -> Fragment:
@@ -18,7 +18,7 @@ def app() -> Fragment:
         def increment(_: object) -> None:
             count.set(count() + 1)
 
-        return html(t"""
+        return pysx(t"""
             li(id={key}):
               button(onClick={increment}): {count}
         """)
@@ -32,7 +32,7 @@ def app() -> Fragment:
     def restore(_: object) -> None:
         rows.set(["a", "b"])
 
-    return html(t"""
+    return pysx(t"""
         main:
           ul: {each(rows, row, key=str)}
           p(id="setups"): {setups}
