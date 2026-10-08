@@ -1,7 +1,7 @@
-from pysx import html
+from pysx import pysx
 
 def branch(node, children):
-    return html(
+    return pysx(
         t"""
         Panel:
             Branch(node={node}):

@@ -1,4 +1,4 @@
-from pysx import css, div, global_style, html, styled
+from pysx import css, div, global_style, pysx, styled
 
 Panel = styled.div(t"""
     /* CSS_COMMENT */
@@ -19,8 +19,39 @@ Parent = styled(Panel)(
         width: calc(100% - 8px);
     """
 )
-fragment = html(t"""
+fragment = pysx(t"""
     Panel(css="border-width: 1px"):
         {snapshot}
+""")
+Reading = styled.p(t"""
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+""")
+Fonts = styled.p(t"""
+    font-family: "Times New Roman", 'Fira Code', "{family}", sans-serif;
+    width: calc(.5ch + 2px);
+    gap: {spacing};
+    color: #123abc;
+    --font: NovelFont;
+    /* VALUE_COMMENT */
+    .baseline:
+      text-wrap: balance;
+    span:hover:
+      cursor: grab;
+    @supports (display: grid):
+      display: contents;
+""")
+inline = css(t"font-family: FutureFont")
+single = css(t'font-family: OtherFont')
+markup = pysx(t'''Panel(css="font-family: InlineFont", id="scope-check"): "Content"''')
+global_style("""
+    a:hover { color: rebeccapurple; }
 """)
 AFTER_SENTINEL = "python"

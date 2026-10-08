@@ -14,7 +14,7 @@ from pysx import (
     dict_key,
     div,
     each,
-    html,
+    pysx,
     render,
     signal,
     structured,
@@ -30,11 +30,11 @@ def test_render_snapshot_templates_fragments_namespaces_and_escaping() -> None:
     left = styled.section(t"color: red")
     right = styled.aside(t"color: blue")
     entries = [
-        html(t'\nCard: "left"', namespace={"Card": left}),
-        (html(t'\nCard: "right"', namespace={"Card": right}), t'\np: "raw"'),
+        pysx(t'\nCard: "left"', namespace={"Card": left}),
+        (pysx(t'\nCard: "right"', namespace={"Card": right}), t'\np: "raw"'),
         "<unsafe>&",
     ]
-    output = render(lambda: html(t"\ndiv: {entries}"))
+    output = render(lambda: pysx(t"\ndiv: {entries}"))
     assert "<section" in output.body
     assert "<aside" in output.body
     assert "<p>raw</p>" in output.body
@@ -48,12 +48,12 @@ def test_render_snapshot_templates_fragments_namespaces_and_escaping() -> None:
 
 def test_render_snapshot_nested_signals_freeze_and_live_source_updates() -> None:
     value = signal("initial")
-    snapshots = [html(t"\np: {value}"), value]
+    snapshots = [pysx(t"\np: {value}"), value]
     live = signal(["a", "b"])
 
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             section: {snapshots}
             aside: {live}
         """)
@@ -78,9 +78,9 @@ def test_render_snapshot_structured_live_templates_and_captured_handlers() -> No
 
         return lambda _event: calls.append(label)
 
-    source = signal([html(t'\nbutton(onClick={click("first")}): "first"')])
-    session = Session(lambda: html(t"\ndiv: {source}"))
-    source.set([html(t'\nbutton(onClick={click("second")}): "second"')])
+    source = signal([pysx(t'\nbutton(onClick={click("first")}): "first"')])
+    session = Session(lambda: pysx(t"\ndiv: {source}"))
+    source.set([pysx(t'\nbutton(onClick={click("second")}): "second"')])
     assert any("second" in str(op) for op in session.pending)
     assert len(session.rendered.handlers) == 1
     next(iter(session.rendered.handlers.values()))(None)
@@ -96,7 +96,7 @@ def test_serialization_live_boolean_classes_and_properties() -> None:
 
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             input(checked={hidden} ariaChecked={hidden} value={value})
             div(className="base active" class={classes})
         """)
@@ -120,11 +120,11 @@ def test_serialization_live_key_and_class_escaping() -> None:
 
     def row(value: str) -> Fragment:
 
-        return html(t"""\n        div(class={value}): {value}\n        """)
+        return pysx(t"""\n        div(class={value}): {value}\n        """)
 
     def view() -> Fragment:
 
-        return html(t"""\n        div: {each(rows, row, key=lambda value: value)}\n        """)
+        return pysx(t"""\n        div: {each(rows, row, key=lambda value: value)}\n        """)
 
     markup = render(view).body
     assert 'data-pysx-key="key&quot;:&lt;&amp;"' in markup
@@ -138,7 +138,7 @@ def test_structured_state_selective_patches_and_event_batch() -> None:
 
     def app_fn() -> Fragment:
 
-        return html(t"""\n        p: {left}\n        """)
+        return pysx(t"""\n        p: {left}\n        """)
 
     session = Session(app_fn)
     dict_key(root, "right").set(3)
@@ -161,7 +161,7 @@ def test_template_ergonomics_operator_text_branch_isolation_and_disposal() -> No
 
     def app_fn() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             div: {doubled}
             if {visible}:
                 p: "visible"
@@ -189,7 +189,7 @@ def test_template_ergonomics_branch_removal_releases_operator_sources() -> None:
 
     def app_fn() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             if {visible}:
                 p: {doubled}
         """)
@@ -217,7 +217,7 @@ def test_batching_transactions_event_patches() -> None:
 
     def app_fn() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
         button(onClick={click}): "change"
         p: {count}
         """)
@@ -301,7 +301,7 @@ def test_sessions_do_not_share_state() -> None:
 
 
 def test_hole_value_is_escaped() -> None:
-    from pysx import component, div, html, styled
+    from pysx import component, div, pysx, styled
 
     Box = styled(div)(t"""color: red;""")  # noqa: N806 - DSL component name
     payload = signal("<script>alert(1)</script>")
@@ -311,7 +311,7 @@ def test_hole_value_is_escaped() -> None:
     @component
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             Box:
                 {payload}
         """)
@@ -338,7 +338,7 @@ def test_reactive_attribute_gets_element_id_and_emits_attr_op() -> None:
     @mk
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             Box(class={cls}):
                 "x"
         """)
@@ -363,7 +363,7 @@ def test_class_patch_keeps_the_scoped_class() -> None:
     @mk
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             Box(class={active}):
                 "x"
         """)
@@ -391,7 +391,7 @@ def test_boolean_attribute_present_then_removed() -> None:
     @mk
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             Box(hidden={on}):
                 "x"
         """)
@@ -411,7 +411,7 @@ def test_conditional_swaps_branch_html() -> None:
     @mk
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             Box:
                 if {flag}:
                     span: "yes"
@@ -433,7 +433,7 @@ def test_conditional_with_plain_flag_keeps_nested_watchers() -> None:
     @mk
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             Box:
                 if {shown}:
                     span: {count}
@@ -456,14 +456,14 @@ def _list_view(items: Signal[list[Row]]) -> Callable[[], Fragment]:
     @component
     def item(row: Row) -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             li: {row.text}
         """)
 
     @mk
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             Box:
                 {each(items, item, key=(lambda r: r.id))}
         """)
@@ -513,7 +513,7 @@ def test_bind_value_renders_value_and_input_hook() -> None:
     @mk
     def view() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             Box:
                 input(bindValue={draft})
         """)

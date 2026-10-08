@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pysx import Fragment, Signal, each, each_indexed, html, local_state, on_cleanup, signal, when
+from pysx import Fragment, Signal, each, each_indexed, local_state, on_cleanup, pysx, signal, when
 from pysx.compiler import analyze
 from pysx.render import ListWatcher
 from pysx.server import Session
@@ -16,9 +16,9 @@ if TYPE_CHECKING:
 def test_iterable_is_frozen_without_subscriptions() -> None:
     values = [1, 2]
     count = signal(3)
-    rows = each(values, lambda value: html(t"p: {value} {count}"), key=str)
+    rows = each(values, lambda value: pysx(t"p: {value} {count}"), key=str)
     values.append(4)
-    session = Session(lambda: html(t"div: {rows}"))
+    session = Session(lambda: pysx(t"div: {rows}"))
     assert 'data-pysx-key="4"' not in session.rendered.body
     assert session.rendered.watchers == []
     assert count.observers == {}
@@ -37,7 +37,7 @@ def test_iterators_are_bounded_before_building() -> None:
             index += 1
 
     with pytest.raises(ValueError, match="10000"):
-        each(infinite(), lambda value: html(t"p: {value}"), key=str)
+        each(infinite(), lambda value: pysx(t"p: {value}"), key=str)
     assert len(visited) == 10001
 
 
@@ -47,18 +47,18 @@ def test_live_source_bounds_precede_builders() -> None:
     def row(value: int) -> Fragment:
         built.append(value)
 
-        return html(t"p: {value}")
+        return pysx(t"p: {value}")
 
     with pytest.raises(ValueError, match="10000"):
-        Session(lambda: html(t"div: {each(lambda: range(10001), row, key=str)}"))
+        Session(lambda: pysx(t"div: {each(lambda: range(10001), row, key=str)}"))
     assert built == []
 
 
 def test_indexed_snapshot_and_lazy_snapshot_branch() -> None:
     source = signal(1)
-    rows = each_indexed(["a"], lambda index, value: html(t"p: {index} {value}"), key=str)
-    branch = when(conditions=[(True, lambda: html(t"p: {source}"))])
-    session = Session(lambda: html(t"div: {[rows, branch]}"))
+    rows = each_indexed(["a"], lambda index, value: pysx(t"p: {index} {value}"), key=str)
+    branch = when(conditions=[(True, lambda: pysx(t"p: {source}"))])
+    session = Session(lambda: pysx(t"div: {[rows, branch]}"))
     assert source.observers == {}
     assert session.rendered.watchers == []
     assert ">0</pysx-slot>" in session.rendered.body
@@ -72,10 +72,10 @@ def test_invalid_keys_fail_before_building(key: object) -> None:
     def row(value: int) -> Fragment:
         built.append(value)
 
-        return html(t"p: {value}")
+        return pysx(t"p: {value}")
 
     with pytest.raises(TypeError, match="keys"):
-        Session(lambda: html(t"div: {each([1], row, key=lambda _: cast('str', key))}"))
+        Session(lambda: pysx(t"div: {each([1], row, key=lambda _: cast('str', key))}"))
     assert built == []
 
 
@@ -87,9 +87,9 @@ def test_duplicate_refresh_preserves_current_handlers_and_owners() -> None:
 
             return value
 
-        return html(t"button(onClick={click}): {value}")
+        return pysx(t"button(onClick={click}): {value}")
 
-    session = Session(lambda: html(t"div: {each(rows, row, key=str)}"))
+    session = Session(lambda: pysx(t"div: {each(rows, row, key=str)}"))
     handlers = dict(session.rendered.handlers)
     owners = dict(session.rendered.scopes.owners)
 
@@ -105,7 +105,7 @@ def test_mixed_wire_keys_collide() -> None:
     keys: list[str | int] = [1, "1"]
 
     with pytest.raises(ValueError, match="duplicate list key"):
-        Session(lambda: html(t"div: {each(keys, lambda _: html(t'p: x'), key=lambda x: x)}"))
+        Session(lambda: pysx(t"div: {each(keys, lambda _: pysx(t'p: x'), key=lambda x: x)}"))
 
 
 def test_keyed_state_index_and_captured_handlers_refresh() -> None:
@@ -120,9 +120,9 @@ def test_keyed_state_index_and_captured_handlers_refresh() -> None:
         def click(_: object) -> None:
             captured.append(item[1])
 
-        return html(t"button(onClick={click}): {index} {item[1]} {state}")
+        return pysx(t"button(onClick={click}): {index} {item[1]} {state}")
 
-    session = Session(lambda: html(t"div: {each_indexed(rows, row, key=lambda item: item[0])}"))
+    session = Session(lambda: pysx(t"div: {each_indexed(rows, row, key=lambda item: item[0])}"))
     original = states["a"]
     original.set(7)
     rows.set([("b", "second"), ("a", "new")])
@@ -144,9 +144,9 @@ def test_nested_readable_children_are_live_through_parent() -> None:
 
     def row(parent: str) -> Fragment:
 
-        return html(t"div: {each(children, lambda child: html(t'p: {parent} {child}'), key=str)}")
+        return pysx(t"div: {each(children, lambda child: pysx(t'p: {parent} {child}'), key=str)}")
 
-    session = Session(lambda: html(t"div: {each(parents, row, key=str)}"))
+    session = Session(lambda: pysx(t"div: {each(parents, row, key=str)}"))
     children.set(["second"])
     assert any("second" in str(op) for op in session.pending)
     assert children.observers
@@ -168,13 +168,13 @@ def test_when_first_match_laziness_default_state_and_cleanup() -> None:
         states[name] = local_state("count", 0)
         on_cleanup(lambda: cleanups.append(name))
 
-        return html(t"p: {name} {states[name]}")
+        return pysx(t"p: {name} {states[name]}")
 
     choice = when(
         conditions=[(first, lambda: branch("first")), (second, lambda: branch("second"))],
         default=lambda: branch("default"),
     )
-    session = Session(lambda: html(t"div: {choice}"))
+    session = Session(lambda: pysx(t"div: {choice}"))
     assert set(built) == {"first"}
     assert second.observers == {}
     original = states["first"]
@@ -197,26 +197,26 @@ def test_when_first_match_laziness_default_state_and_cleanup() -> None:
 
 
 def test_when_no_match_and_invalid_condition() -> None:
-    session = Session(lambda: html(t"div: {when(conditions=[(False, lambda: html(t'p: no'))])}"))
+    session = Session(lambda: pysx(t"div: {when(conditions=[(False, lambda: pysx(t'p: no'))])}"))
     assert "data-pysx-key" not in session.rendered.body
     session.dispose()
 
     with pytest.raises(TypeError, match="conditions"):
         Session(
-            lambda: html(t"div: {when(conditions=[(cast('bool', 1), lambda: html(t'p: no'))])}")
+            lambda: pysx(t"div: {when(conditions=[(cast('bool', 1), lambda: pysx(t'p: no'))])}")
         )
 
 
 def test_delayed_builders_keep_local_component_bindings() -> None:
-    source = '''from pysx import each, html, signal, styled, when
+    source = '''from pysx import each, pysx, signal, styled, when
 rows = signal(["first"])
 flag = signal(True)
 def app():
     Card = styled.article(t"color: red")
-    return html(t"""
+    return pysx(t"""
     div:
-      {each(rows, lambda value: html(t'Card: {value}'), key=str)}
-      {when(conditions=[(flag, lambda: html(t'Card: "selected"'))])}
+      {each(rows, lambda value: pysx(t'Card: {value}'), key=str)}
+      {when(conditions=[(flag, lambda: pysx(t'Card: "selected"'))])}
     """)
 '''
     compilation = analyze(source)

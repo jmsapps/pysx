@@ -188,9 +188,9 @@ shared template-aware tooling for import cleanup and typing. See [authoring](AUT
 
 ### Deprecated explicit bindings
 
-`html(template, use=(Card, Panel))` names the components a template uses: each entry is an
+`pysx(template, use=(Card, Panel))` names the components a template uses: each entry is an
 ordinary Python reference, and an entry carrying a `__name__` also binds under it, which
-covers components defined inside the calling function. `html(template, namespace={...})`
+covers components defined inside the calling function. `pysx(template, namespace={...})`
 remains available for a binding whose markup name differs from the object's own, and
 `render(app, namespace={...})` provides explicit root bindings.
 These mappings are copied; execution frames are never retained. Partials and callable
@@ -257,4 +257,4 @@ colon is interpreted as the start of a t-string format specification.
   capitalized `on[A-Z]…` names retain the open event convention. Event attributes
   require interpolated callables. Holes cannot appear in attribute-name position.
 - **Multiline templates must begin with a newline.** Single-line templates may put
-  markup immediately after the opening quote: `html(t'''Panel: "Hello"''')`.
+  markup immediately after the opening quote: `pysx(t'''Panel: "Hello"''')`.

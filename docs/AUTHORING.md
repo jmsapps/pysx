@@ -4,12 +4,17 @@ Applications stay in ordinary `.py` files. Import components normally and name t
 in markup; the compiler records real lexical references before Python compiles the
 module. The defining binding is captured when the fragment is constructed.
 
+`pysx(template, *, use=(), namespace=None, themes=None)` constructs a `Fragment`.
+It replaces the former `html()` helper; update imports and calls to `pysx()`.
+There is no compatibility alias. `render(component_fn, *, namespace=None)` remains
+the root rendering operation.
+
 ```python
-from pysx import html
+from pysx import pysx
 from .components import Panel
 
 def app():
-    return html(t'''Panel(title="Hello"): "Content"''')
+    return pysx(t'''Panel(title="Hello"): "Content"''')
 ```
 
 The server installs the scoped loader before importing the module specified by
@@ -52,21 +57,21 @@ is advisory rather than silently inventing bindings.
 Use ordinary Python callbacks inside interpolations:
 
 ```python
-from pysx import each, each_indexed, html, when
+from pysx import each, each_indexed, pysx, when
 
-rows = each(tasks, lambda task: html(t'li: {task.title}'), key=lambda task: task.id)
+rows = each(tasks, lambda task: pysx(t'li: {task.title}'), key=lambda task: task.id)
 numbered = each_indexed(
-    tasks, lambda index, task: html(t'li: {index + 1}. {task.title}'),
+    tasks, lambda index, task: pysx(t'li: {index + 1}. {task.title}'),
     key=lambda task: task.id,
 )
 panel = when(
     conditions=[
-        (is_full, lambda: html(t'p: "Full"')),
-        (is_compact, lambda: html(t'p: "Compact"')),
+        (is_full, lambda: pysx(t'p: "Full"')),
+        (is_compact, lambda: pysx(t'p: "Compact"')),
     ],
-    default=lambda: html(t'p: "Default"'),
+    default=lambda: pysx(t'p: "Default"'),
 )
-view = html(t'div: {rows} {numbered} {panel}')
+view = pysx(t'div: {rows} {numbered} {panel}')
 ```
 
 `each` and `each_indexed` accept a readable iterable, such as a signal, or an ordinary
@@ -91,7 +96,7 @@ no deferred-expression API. Markup `if` and `match` still receive eagerly evalua
 
 ## Compatibility and deprecation
 
-`html(..., use=...)`, explicit template `namespace=...`, `Binding`, `defer`, `defer2`,
+`pysx(..., use=...)`, explicit template `namespace=...`, `Binding`, `defer`, `defer2`,
 and markup `for`/`let`/`set`/`discard` are deprecated for new authoring. Their existing
 behavior, grammar highlighting and exports remain available throughout the current 0.x
 compatibility period. This is a documented deprecation; runtime and checker warnings are

@@ -1,6 +1,6 @@
 """Per-session native control fixture for browser verification."""
 
-from pysx import Fragment, html, signal
+from pysx import Fragment, pysx, signal
 
 
 def app() -> Fragment:
@@ -17,7 +17,7 @@ def app() -> Fragment:
         hidden.set(True)
         classes.set('first second "quoted"')
 
-    return html(t"""
+    return pysx(t"""
         div(id="serialization")
             label(htmlFor="text" className="label"): "Text"
             input(id="text" value={value} maxLength={20} tabIndex={2} readOnly={False})

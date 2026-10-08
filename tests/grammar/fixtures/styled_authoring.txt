@@ -1,4 +1,4 @@
-from pysx import html, styled
+from pysx import pysx, styled
 from shared import Card
 
 Panel = styled.section(t"""
@@ -27,7 +27,7 @@ Action = styled.button(
         opacity: 0.5;
     """},
 )
-view = html(t"""
+view = pysx(t"""
     TreePanel(id="preview"):
       Card(label="Imported"):
         span: "Child"

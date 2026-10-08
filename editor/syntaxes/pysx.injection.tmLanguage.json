@@ -139,6 +139,9 @@
     "css-body": {
       "patterns": [
         {
+          "include": "#css-declaration"
+        },
+        {
           "match": "@[A-Za-z-]+",
           "name": "keyword.control.at-rule.css"
         },
@@ -164,10 +167,6 @@
           "name": "support.function.css.pysx"
         },
         {
-          "match": "\\b(?:solid|dashed|dotted|double|groove|ridge|inset|outset|none|hidden|auto|inherit|initial|unset|revert|revert-layer|block|inline|inline-block|flex|inline-flex|grid|inline-grid|relative|absolute|fixed|sticky|static|normal|bold|italic|transparent|currentColor)\\b",
-          "name": "support.constant.property-value.css.pysx"
-        },
-        {
           "match": "#[A-Fa-f0-9]{3,8}\\b",
           "name": "constant.other.color.rgb-value.css"
         },
@@ -179,6 +178,43 @@
           "match": "[:;{}()]",
           "name": "punctuation.separator.css"
         }
+      ]
+    },
+    "css-declaration": {
+      "comment": "Scope identifiers inside declarations, excluding indentation selectors and CSS selector blocks.",
+      "begin": "(?:^|\\G|(?<=[;{]))\\s*(?:(--[A-Za-z_][A-Za-z0-9_-]*)|([A-Za-z][A-Za-z0-9-]*))\\s*(:)(?![^;\\n]*:\\s*$|[A-Za-z-]+\\s*\\{)",
+      "beginCaptures": {
+        "1": { "name": "variable.other.custom-property.css" },
+        "2": { "name": "support.type.property-name.css" },
+        "3": { "name": "punctuation.separator.css" }
+      },
+      "end": ";|(?=$|[}\\\"'])",
+      "endCaptures": {
+        "0": { "name": "punctuation.separator.css" }
+      },
+      "applyEndPatternLast": true,
+      "patterns": [
+        { "include": "#hole" },
+        { "begin": "/\\*", "end": "\\*/", "name": "comment.block.css" },
+        {
+          "begin": "\"(?!\"\"|\\s*[,)]|\\s*$)(?=[^\"\\n]*\")",
+          "end": "\"|(?=$)",
+          "name": "string.quoted.double.css",
+          "patterns": [{ "include": "#hole" }, { "match": "\\\\.", "name": "constant.character.escape.css" }]
+        },
+        {
+          "begin": "'(?!''|\\s*[,)]|\\s*$)(?=[^'\\n]*')",
+          "end": "'|(?=$)",
+          "name": "string.quoted.single.css",
+          "patterns": [{ "include": "#hole" }, { "match": "\\\\.", "name": "constant.character.escape.css" }]
+        },
+        { "match": "--[A-Za-z_][A-Za-z0-9_-]*", "name": "variable.other.custom-property.css" },
+        { "match": "\\b[A-Za-z][A-Za-z0-9-]*(?=\\()", "name": "support.function.css.pysx" },
+        { "match": "#[A-Fa-f0-9]{3,8}\\b", "name": "constant.other.color.rgb-value.css" },
+        { "match": "(?<![A-Za-z0-9_-])-?(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:[A-Za-z]+|%)?", "name": "constant.numeric.css" },
+        { "match": "[A-Za-z_][A-Za-z0-9_-]*", "name": "support.constant.property-value.css.pysx" },
+        { "match": "[,()]", "name": "punctuation.separator.css" },
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
       ]
     },
     "css-attribute": {
@@ -208,9 +244,9 @@
       ]
     },
     "pysx-call": {
-      "comment": "Keep call context across lines so formatter-expanded html arguments retain markup highlighting.",
+      "comment": "Keep call context across lines so formatter-expanded pysx arguments retain markup highlighting.",
       "name": "meta.function-call.python",
-      "begin": "\\b(html)\\s*(\\()",
+      "begin": "\\b(pysx)\\s*(\\()",
       "end": "\\)",
       "beginCaptures": {
         "1": {

@@ -1,6 +1,6 @@
 """Live fixture for immediate policies and typed dispatch."""
 
-from pysx import BrowserEvent, Fragment, html, native, on_event, signal
+from pysx import BrowserEvent, Fragment, native, on_event, pysx, signal
 
 
 def app() -> Fragment:
@@ -39,7 +39,7 @@ def app() -> Fragment:
         on_input=on_event(record, phase="capture", stop_propagation=True),
     )
 
-    return html(t"""
+    return pysx(t"""
         div(id="events-fixture")
             {native.Input(id="keys", on_keydown=key)}
             {bound}

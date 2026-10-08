@@ -14,7 +14,7 @@ from pysx.source_map import EditorPosition, LiteralMapper, Positions, SourceSpan
         r'''rt"Panel: '\t{{text}}' {value}"''',
         '''t"Panel: " t"'text' {value}"''',
         r'''t"\n  Panel: " t"{value}\n"''',
-        '''t"{html(t'Panel: {value}')}"''',
+        '''t"{pysx(t'Panel: {value}')}"''',
         '''t"{value}{other}"''',
         '''t"{value=}"''',
         '''t"""\r\n\tPanel: {value}\r\n"""''',

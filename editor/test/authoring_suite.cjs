@@ -32,22 +32,22 @@ exports.run = async function () {
   await vscode.workspace.getConfiguration("python").update("defaultInterpreterPath", process.env.PYSX_EDITOR_PYTHON, vscode.ConfigurationTarget.Workspace);
   await vscode.workspace.getConfiguration("python").update("analysis.typeCheckingMode", "strict", vscode.ConfigurationTarget.Workspace);
   fs.writeFileSync(path.join(root, "pyproject.toml"), '[tool.pyright]\ntypeCheckingMode = "strict"\n');
-  fs.writeFileSync(path.join(root, "producer.py"), `from pysx import Children, Fragment, html
+  fs.writeFileSync(path.join(root, "producer.py"), `from pysx import Children, Fragment, pysx
 def Panel(*, title: str, maxWidth: int = 0, children: Children | None = None) -> Fragment:
-    return html(t"section: {title}; {children}")
+    return pysx(t"section: {title}; {children}")
 def UnusedWidget() -> Fragment:
-    return html(t"p: 'unused'")
+    return pysx(t"p: 'unused'")
 `);
   fs.mkdirSync(path.join(root, "pkg"));
   fs.writeFileSync(path.join(root, "pkg/__init__.py"), "");
   fs.writeFileSync(path.join(root, "pkg/exports.py"), "from producer import Panel as Panel\n");
-  fs.writeFileSync(path.join(root, "closed.py"), `from pysx import Fragment, html
+  fs.writeFileSync(path.join(root, "closed.py"), `from pysx import Fragment, pysx
 from producer import Panel
 def app() -> Fragment:
-    return html(t"Panel(title={'closed'})")
+    return pysx(t"Panel(title={'closed'})")
 `);
   fs.writeFileSync(path.join(root, "consumer.py"), `from dataclasses import dataclass
-from pysx import Fragment, each, html, signal
+from pysx import Fragment, each, pysx, signal
 from producer import Panel, UnusedWidget
 import pkg.exports
 @dataclass
@@ -56,18 +56,18 @@ class Row:
     title: str
 rows = signal([Row(1, 'row')])
 def app() -> Fragment:
-    return html(t"""
+    return pysx(t"""
 Panel(title={'Hello'}): "😀 Panel quoted text"
 input(type="text")
-{each(rows, lambda row: html(t'Panel(title={row.title})'), key=lambda row: row.id)}
+{each(rows, lambda row: pysx(t'Panel(title={row.title})'), key=lambda row: row.id)}
 """)
 ordinary = pkg.exports.Panel(title='ordinary')
 def tree() -> Fragment:
     def branch(*, node: Row) -> Fragment:
-        return html(t'Panel(title={node.title})')
+        return pysx(t'Panel(title={node.title})')
     def abandoned() -> Fragment:
-        return html(t'p: "unused"')
-    return html(t'branch(node={rows()[0]}):')
+        return pysx(t'p: "unused"')
+    return pysx(t'branch(node={rows()[0]}):')
 `);
   const pylance = vscode.extensions.getExtension("ms-python.vscode-pylance");
   await pylance.activate();
@@ -203,7 +203,7 @@ def tree() -> Fragment:
     }
     fs.copyFileSync(path.join(checkout, "pyproject.toml"), path.join(root, "pyproject.toml"));
     const filename = path.join(root, "production_probe.py");
-    fs.writeFileSync(filename, "from pysx import html\nfrom examples.components.controls import Action\nview = html(t\"Action(id={'performance'}): 'Run'\")\n");
+    fs.writeFileSync(filename, "from pysx import pysx\nfrom examples.components.controls import Action\nview = pysx(t\"Action(id={'performance'}): 'Run'\")\n");
     const large = await vscode.workspace.openTextDocument(filename);
     await vscode.window.showTextDocument(large);
     await new Promise((resolve) => setTimeout(resolve, 500));

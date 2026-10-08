@@ -147,7 +147,7 @@ def _used(components: tuple[Used, ...]) -> dict[str, object]:
     return found
 
 
-def html(
+def pysx(
     template: Template,
     *,
     use: tuple[Used, ...] = (),
@@ -156,7 +156,7 @@ def html(
 ) -> Fragment:
     if not isinstance(template, Template):  # pyright: ignore[reportUnnecessaryIsInstance]
 
-        raise TypeError('html() takes a t-string; did you write f""" instead of t"""?')
+        raise TypeError('pysx() takes a t-string; did you write f""" instead of t"""?')
     bindings = _used(use)
 
     if namespace is not None:
@@ -1076,7 +1076,7 @@ class _Emitter:
         def item(pair: object) -> Fragment:
             children = Children(node.children, self.values, self.ns, row_environment(pair))
 
-            return html(Template("\n", Interpolation(children, "children")))
+            return pysx(Template("\n", Interpolation(children, "children")))
 
         def key(pair: object) -> str | int:
             if node.key is None:

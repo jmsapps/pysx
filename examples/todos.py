@@ -7,7 +7,7 @@ from pysx import (
     component,
     derived,
     each,
-    html,
+    pysx,
     signal,
 )
 
@@ -106,7 +106,7 @@ def app() -> Fragment:
         def remove_item(_e: object) -> None:
             remove(todo.id)
 
-        return html(
+        return pysx(
         t"""
             Item(class={"is-done" if todo.done else ""}, data-done={str(todo.done).lower()}):
                 Row:
@@ -117,7 +117,7 @@ def app() -> Fragment:
         """,
     )
 
-    return html(
+    return pysx(
         t"""
         CompactPage:
             header:

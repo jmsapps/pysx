@@ -19,7 +19,7 @@ Action = styled.button(t"min-height: 44px;", variants={
     "primary": t"background: var(--accent); color: white;",
     "ghost": t"background: transparent; color: var(--muted);",
 })
-view = html(t"""
+view = pysx(t"""
     TreePanel(id="preview"):
       Action(variant="primary"): "Save"
 """, use=(TreePanel, Action))
@@ -75,7 +75,7 @@ declarations are preserved and reactive updates read both sources.
 
 Create `themes = Themes()` inside the app, register immutable definitions with
 `themes.register("dark", {"ink": "white", "canvas": "black"})`, select a name or Theme
-with `themes.select(...)`, and return `html(template, themes=themes)`. The root render
+with `themes.select(...)`, and return `pysx(template, themes=themes)`. The root render
 owns this explicit theme state; each websocket app invocation creates its own instance.
 `themes.read(name)` retrieves a definition, `themes.current()` reads the active theme,
 and `themes.clear()` resets it. `register_vars(...)` can reserve additional variable names.
@@ -85,8 +85,14 @@ The stylesheet snapshot reflects the active theme at render and after every upda
 ## Editor feedback
 
 Direct literal arguments to `styled()`, `css()` and `global_style()` receive CSS
-highlighting, including properties, comments and custom variables. Template regions and
-Python interpolation/call scopes remain distinct. TextMate does not follow variables,
+highlighting, including properties, comments and custom variables. Declaration values
+receive CSS scopes without a keyword whitelist: layout values such as `wrap` and
+`baseline`, unquoted font names and other identifiers are highlighted. Quoted font
+names, functions, colors, numbers/units and custom properties retain distinct scopes.
+Value regions end at semicolons, line boundaries or enclosing delimiters; selectors
+and surrounding Python remain separate. Colors depend on the selected editor theme.
+Template regions and Python interpolation/call scopes remain distinct, including holes
+inside quoted CSS values. TextMate does not follow variables,
 aliases or arbitrary CSS factories; those require semantic analysis. The checker reports
 constant invalid bases and unsupported CSS interpolation/format metadata using raw source
 ranges, including UTF-16 columns and multiline ends. It never executes application code.

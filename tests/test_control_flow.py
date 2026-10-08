@@ -11,9 +11,9 @@ from pysx import (
     bounded_while,
     defer,
     defer2,
-    html,
     local_state,
     on_cleanup,
+    pysx,
     render,
     signal,
 )
@@ -26,10 +26,10 @@ if TYPE_CHECKING:
 
 def test_render_snapshot_comprehension_and_while_builders() -> None:
     count = signal(2)
-    fragments = [html(t"\nspan: {index}") for index in range(count())]
+    fragments = [pysx(t"\nspan: {index}") for index in range(count())]
     predicate = iter([True, False])
     ordinary = bounded_while(lambda: next(predicate), lambda: t'\nstrong: "while"')
-    session = Session(lambda: html(t"\ndiv: {fragments}; {ordinary}"))
+    session = Session(lambda: pysx(t"\ndiv: {fragments}; {ordinary}"))
     assert session.rendered.body.count("<span>") == 2
     assert "<strong>while</strong>" in session.rendered.body
     assert session.rendered.watchers == []
@@ -40,15 +40,15 @@ def test_render_snapshot_comprehension_and_while_builders() -> None:
 
 def test_render_snapshot_bounds() -> None:
     with pytest.raises(ValueError, match="10000"):
-        render(lambda: html(t"\ndiv: {list(range(10001))}"))
+        render(lambda: pysx(t"\ndiv: {list(range(10001))}"))
     nested: list[object] = []
     nested.append(nested)
     with pytest.raises(ValueError, match="128"):
-        render(lambda: html(t"\ndiv: {nested}"))
+        render(lambda: pysx(t"\ndiv: {nested}"))
     wrapped: list[object] = []
-    wrapped.append(html(t"\nif {True}:\n  div: {wrapped}"))
+    wrapped.append(pysx(t"\nif {True}:\n  div: {wrapped}"))
     with pytest.raises(ValueError, match="128"):
-        render(lambda: html(t"\ndiv: {wrapped}"))
+        render(lambda: pysx(t"\ndiv: {wrapped}"))
 
 
 def test_branches_loops_chain_and_match_lifetimes() -> None:
@@ -59,7 +59,7 @@ def test_branches_loops_chain_and_match_lifetimes() -> None:
 
     def app() -> Fragment:
 
-        return html(t"""
+        return pysx(t"""
             if {first}:
               p: {text}
             elif {second}:
@@ -104,7 +104,7 @@ def test_branches_loops_keyed_capture_destructure_and_locals() -> None:
 
     def app() -> Fragment:
 
-        return html(
+        return pysx(
             t"""
             for (index, row) in {rows} key={index}:
               let label = {defer(row, str.upper)}
@@ -132,7 +132,7 @@ def test_branches_loops_keyed_capture_destructure_and_locals() -> None:
 
 def test_branches_loops_nested_shadow_and_snapshot_watchers() -> None:
     row = Binding[int]("row")
-    fragment = html(
+    fragment = pysx(
         t"""
         for row in {[1, 2]}:
           p: {row}
@@ -166,7 +166,7 @@ def test_branches_loops_invalid_structure_has_position(text: str) -> None:
 def test_branches_loops_invalid_chain_and_keys() -> None:
     with pytest.raises(PysxSyntaxError, match="contiguous"):
         render(
-            lambda: html(t"""
+            lambda: pysx(t"""
             if {True}:
               p: "yes"
             span: "gap"
@@ -177,7 +177,7 @@ def test_branches_loops_invalid_chain_and_keys() -> None:
     row = Binding[int]("row")
     with pytest.raises(ValueError, match="duplicate"):
         render(
-            lambda: html(
+            lambda: pysx(
                 t"""
             for row in {[1, 1]} key={row}:
               p: {row}
@@ -187,14 +187,14 @@ def test_branches_loops_invalid_chain_and_keys() -> None:
         )
     with pytest.raises(InterpolationError, match="missing lexical"):
         render(
-            lambda: html(t"""
+            lambda: pysx(t"""
             for missing in {[1]}:
               p: {row}
         """)
         )
     with pytest.raises(InterpolationError, match="string or integer"):
         render(
-            lambda: html(
+            lambda: pysx(
                 t"""
             for row in {[1]} key={None}:
               p: {row}
@@ -225,7 +225,7 @@ def test_branches_loops_owner_identity_and_cleanup(keyed: bool) -> None:
         observed[value] = state
         on_cleanup(lambda: cleaned.append(value))
 
-        return html(t"\nspan: {state}")
+        return pysx(t"\nspan: {state}")
 
     def app() -> Fragment:
         if keyed:
@@ -239,7 +239,7 @@ def test_branches_loops_owner_identity_and_cleanup(keyed: bool) -> None:
                   row_component(value={row}):
             """
 
-        return html(template, use=(row_component,), namespace={"row": row})
+        return pysx(template, use=(row_component,), namespace={"row": row})
 
     session = Session(app)
     a, b = observed["a"], observed["b"]
@@ -257,7 +257,7 @@ def test_branches_loops_owner_identity_and_cleanup(keyed: bool) -> None:
 def test_branches_loops_conditional_attributes_and_metadata() -> None:
     row = Binding[int]("row")
     output = render(
-        lambda: html(
+        lambda: pysx(
             t"""
         for row in {[0, 1]}:
           p(title={defer(row, lambda n: "yes" if n else None)}): {row:02d}
@@ -270,7 +270,7 @@ def test_branches_loops_conditional_attributes_and_metadata() -> None:
     assert ">01</pysx-slot>" in output.body
     with pytest.raises(InterpolationError) as error:
         render(
-            lambda: html(
+            lambda: pysx(
                 t"""
             for row in {[1]!r}:
               p: {row}
@@ -285,7 +285,7 @@ def test_branches_loops_unbound_assignment_and_limits_have_diagnostics() -> None
     row = Binding[int]("row")
     with pytest.raises(InterpolationError) as error:
         render(
-            lambda: html(
+            lambda: pysx(
                 t"""
             set row = {1}
             p: {row}
@@ -297,7 +297,7 @@ def test_branches_loops_unbound_assignment_and_limits_have_diagnostics() -> None
     assert "unbound lexical" in str(error.value)
     with pytest.raises(ValueError, match="10000"):
         render(
-            lambda: html(
+            lambda: pysx(
                 t"""
             for row in {range(10001)}:
               p: {row}
@@ -307,7 +307,7 @@ def test_branches_loops_unbound_assignment_and_limits_have_diagnostics() -> None
         )
     with pytest.raises(PysxSyntaxError, match="indented body"):
         render(
-            lambda: html(
+            lambda: pysx(
                 t"""
             for row in {[1]}:
         """,

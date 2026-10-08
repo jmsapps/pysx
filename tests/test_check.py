@@ -5,7 +5,7 @@ import pytest
 
 from pysx.check import Diagnostic, diagnostics, diagnostics_for_source
 
-HEADER = "from pysx import component, div, html, signal, styled\n\n"
+HEADER = "from pysx import component, div, pysx, signal, styled\n\n"
 
 
 @pytest.mark.parametrize(
@@ -20,7 +20,7 @@ HEADER = "from pysx import component, div, html, signal, styled\n\n"
 def test_render_snapshot_freeze_warnings(expression: str) -> None:
     results, _lines = check(
         "value = signal(2)\nparts = [str(n) for n in range(value())]\nalias = parts\n"
-        + "html(t'\\ndiv: {"
+        + "pysx(t'\\ndiv: {"
         + expression
         + "}')\n"
     )
@@ -33,8 +33,8 @@ def test_render_snapshot_clean_constants_and_deferred_callbacks() -> None:
     results, _lines = check(
         "from pysx import Binding, defer\n"
         "value = signal(2)\nrow = Binding[int]('row')\n"
-        "html(t'\\ndiv: {[1, 2]}')\n"
-        "html(t'\\ndiv: {defer(row, lambda n: [value() + n])}')\n"
+        "pysx(t'\\ndiv: {[1, 2]}')\n"
+        "pysx(t'\\ndiv: {defer(row, lambda n: [value() + n])}')\n"
     )
     assert results == []
 
@@ -43,7 +43,7 @@ def test_positioned_multiline_checker_normalizes_adjacent_empty_fragments() -> N
     results, _lines = check(
         'number = signal(1.25)\nlabel = "é"\n'
         "view = t'\\np(title={number:.2f}): {number!s}{label!a}'\n"
-        "html(view)\n"
+        "pysx(view)\n"
     )
     assert results == []
 
@@ -51,7 +51,7 @@ def test_positioned_multiline_checker_normalizes_adjacent_empty_fragments() -> N
 def test_positioned_multiline_checker_assembled_templates_and_metadata() -> None:
     results, _lines = check(
         "head = t'\\nbutton(\\n  onClick={(lambda: None)!r}\\n):'\n"
-        "tail = t' \"😀\"\\n'\nhtml(head + tail)\n"
+        "tail = t' \"😀\"\\n'\npysx(head + tail)\n"
     )
     assert len(results) == 1
     assert "EVENT interpolation" in results[0]["message"]
@@ -72,7 +72,7 @@ def test_positioned_multiline_ast_fragments_match_runtime_strings() -> None:
 def test_styled_authoring_constant_variant_and_removed_call() -> None:
     results, _lines = check(
         'Action = styled.button(t"color: red", variants={"primary": t"color: blue"})\n'
-        'html(t\'\\n{Action}(variant="missing"): "click"\')\n'
+        'pysx(t\'\\n{Action}(variant="missing"): "click"\')\n'
         'Old = styled(div, t"color: red")\n'
     )
     assert len(results) == 2
@@ -86,14 +86,14 @@ def test_variant_inheritance_uses_workspace_scopes_and_imports(tmp_path: Path) -
         'Heading = styled.h1(t"color: red", variants={"big": t"font-size: 2em"})\n'
     )
     (tmp_path / "exports.py").write_text("from base import Heading as Header\n")
-    source = """from pysx import styled, html
+    source = """from pysx import styled, pysx
 from exports import Header
 Local = styled(Header)(t"color: blue", variants={"small": t"font-size: 1em"})
-view = html(t'Local(variant="big"): "valid"')
-invalid = html(t'Local(variant="wrong"): "bad"')
+view = pysx(t'Local(variant="big"): "valid"')
+invalid = pysx(t'Local(variant="wrong"): "bad"')
 def local():
     Local = styled.p(t"color: green", variants={"other": t"color: black"})
-    return html(t'Local(variant="other"): "valid"')
+    return pysx(t'Local(variant="other"): "valid"')
 """
     findings = diagnostics_for_source(
         source, str(tmp_path / "view.py"), workspace_roots=(tmp_path,)
@@ -105,10 +105,10 @@ def local():
 
 
 def test_dynamic_variant_base_does_not_claim_an_empty_variant_set() -> None:
-    source = """from pysx import html, styled
+    source = """from pysx import pysx, styled
 def decorate(base):
     Local = styled(base)(t"color: red")
-    return html(t'Local(variant="big"): "valid if inherited"')
+    return pysx(t'Local(variant="big"): "valid if inherited"')
 """
     assert not any("unknown variant" in item["message"] for item in diagnostics_for_source(source))
 
@@ -116,10 +116,10 @@ def decorate(base):
 @pytest.mark.parametrize("module", ["pysx", "pysx.styled"])
 def test_variant_metadata_recognizes_styled_import_aliases(module: str) -> None:
     source = f'''from {module} import styled as style
-from pysx import html
+from pysx import pysx
 Base = style.h1(t"color: red", variants={{"big": t"font-size: 2em"}})
 Local = style(Base)(t"color: blue")
-view = html(t'Local(variant="missing"): "bad"')
+view = pysx(t'Local(variant="missing"): "bad"')
 '''
     findings = [
         item for item in diagnostics_for_source(source) if "unknown variant" in item["message"]
@@ -130,9 +130,9 @@ view = html(t'Local(variant="missing"): "bad"')
 
 @pytest.mark.parametrize("literal", ['"wrong"', '"wr\\u006fng"'])
 def test_literal_variant_error_maps_only_its_raw_value(literal: str) -> None:
-    source = f"""from pysx import styled, html
+    source = f"""from pysx import styled, pysx
 Heading = styled.h1(t"color: red", variants={{"big": t"font-size: 2em"}})
-view = html(t\"\"\"
+view = pysx(t\"\"\"
     Heading(title="😀", variant={literal}): "hello"
 \"\"\")
 """
@@ -151,7 +151,7 @@ view = html(t\"\"\"
 
 @pytest.mark.parametrize("value", ["42", "None", '"div"', "[]"])
 def test_component_tags_constant_unsupported_diagnostics(value: str) -> None:
-    results, _lines = check("html(t'\\n{" + value + '}: "child"\')\n')
+    results, _lines = check("pysx(t'\\n{" + value + '}: "child"\')\n')
     assert len(results) == 1
     assert "component tag" in results[0]["message"]
 
@@ -207,7 +207,7 @@ def test_styling_diagnostics_css_regions_clean_and_global_type() -> None:
 
 def test_styling_diagnostics_css_attribute_metadata() -> None:
     results, lines = check(
-        'rules = signal("color:red")\nresult = html(t"""\n    div(css={rules!s}): "sample"\n""")\n'
+        'rules = signal("color:red")\nresult = pysx(t"""\n    div(css={rules!s}): "sample"\n""")\n'
     )
     assert len(results) == 1
     result = results[0]
@@ -240,7 +240,7 @@ def test_styling_diagnostics_raw_escapes_and_doubled_braces() -> None:
 def test_template_ergonomics_exact_coercion_diagnostics(expression: str, message: str) -> None:
     results, lines = check(
         "a = signal(1)\nb = signal(2)\nrows = signal([1])\n"
-        f'result = html(t"""\n    p: {{{expression}}}\n""")\n'
+        f'result = pysx(t"""\n    p: {{{expression}}}\n""")\n'
     )
     assert len(results) == 1
     warning = results[0]
@@ -255,7 +255,7 @@ def test_template_ergonomics_supported_and_deferred_forms_clean() -> None:
     results, _ = check(
         "from pysx import all_of, contains, length, eq\n"
         "a = signal(1)\nrows = signal([1])\n"
-        'result = html(t"""\n'
+        'result = pysx(t"""\n'
         "    p: {a * 2} {a < 3} {length(rows)} {contains(rows, a)}\n"
         "    p: {all_of(a > 0, a < 3)} {eq(a, 1)} {(lambda: a())}\n"
         '""")\n'
@@ -266,7 +266,7 @@ def test_template_ergonomics_supported_and_deferred_forms_clean() -> None:
 def test_template_ergonomics_projection_alias_snapshot() -> None:
     results, _ = check(
         'state = signal({"a": [1]})\nitem = state["a"][0]\n'
-        'result = html(t"""\n    p: {item()}\n""")\n'
+        'result = pysx(t"""\n    p: {item()}\n""")\n'
     )
     assert len(results) == 1
     assert "frozen" in results[0]["message"]
@@ -295,7 +295,7 @@ def test_unknown_tag_after_non_ascii_line() -> None:
         "\n"
         "@component\n"
         "def app():\n"
-        '    return html(t"""\n'
+        '    return pysx(t"""\n'
         "        Pge:\n"
         '            "hi"\n'
         '    """)\n'
@@ -315,7 +315,7 @@ def test_called_signal_column_is_utf16_on_a_non_ascii_line() -> None:
         "@component\n"
         "def app():\n"
         "    count = signal(0)\n"
-        '    return html(t"""\n'
+        '    return pysx(t"""\n'
         "        Page:\n"
         '            "café ☕ — total: "; {count()}\n'
         '    """)\n'
@@ -344,7 +344,7 @@ def test_bare_lambda_reports_the_parenthesis_fix() -> None:
         "\n"
         "@component\n"
         "def app():\n"
-        '    return html(t"""\n'
+        '    return pysx(t"""\n'
         "        Page(onClick={lambda _e: None}):\n"
         '            "hi"\n'
         '    """)\n'
@@ -360,7 +360,7 @@ def test_fstring_instead_of_tstring() -> None:
         "\n"
         "@component\n"
         "def app():\n"
-        '    return html(f"""\n'
+        '    return pysx(f"""\n'
         "        Page:\n"
         '            "hi"\n'
         '    """)\n'
@@ -376,7 +376,7 @@ def test_parser_error_is_reported() -> None:
         "\n"
         "@component\n"
         "def app():\n"
-        '    return html(t"""\n'
+        '    return pysx(t"""\n'
         "        Page:\n"
         "            else:\n"
         '                Page: "hi"\n'

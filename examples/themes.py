@@ -1,6 +1,6 @@
 """Inherited styles, live CSS variables and independent named themes."""
 
-from pysx import Fragment, Themes, derived, html, signal
+from pysx import Fragment, Themes, derived, pysx, signal
 
 from .components.controls import Actions, Description, Eyebrow, Title
 from .components.themes import Preview, ThemeAction, ThemePage
@@ -75,7 +75,7 @@ def app() -> Fragment:
         classes.set("preview")
         mode.set("primary")
 
-    return html(
+    return pysx(
         t"""
         ThemePage(id="themes-example"):
             Eyebrow: "Scoped styles"

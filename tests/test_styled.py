@@ -10,7 +10,7 @@ from string.templatelib import Template
 
 import pytest
 
-from pysx import Fragment, StyledTag, div, html, render, styled, stylesheet
+from pysx import Fragment, StyledTag, div, pysx, render, styled, stylesheet
 
 
 def test_styled_authoring_nesting_inheritance_deduplication() -> None:
@@ -36,7 +36,7 @@ def test_styled_authoring_nesting_inheritance_deduplication() -> None:
           color: purple;
     """)
     assert child.css_class == repeated.css_class
-    result = render(lambda: html(t'\n{child}(id="panel"):\n  span: "child"'))
+    result = render(lambda: pysx(t'\n{child}(id="panel"):\n  span: "child"'))
     css = result.styles.snapshot()
     assert f'.{child.css_class}[data-look="active"]' in css
     assert f".{child.css_class} span" in css
@@ -51,7 +51,7 @@ def test_styled_authoring_selector_lists_preserve_attribute_and_pseudo_syntax() 
         &[data-value~="a,b&c"], &:is(:hover, :focus):
           color: red;
     """)
-    result = render(lambda: html(t"\n{component}:"))
+    result = render(lambda: pysx(t"\n{component}:"))
     css = result.styles.snapshot()
     assert f'.{component.css_class}[data-value~="a,b&c"]' in css
     assert f".{component.css_class}:is(:hover, :focus)" in css
@@ -90,7 +90,7 @@ def test_styled_authoring_variants_live_owned_and_not_forwarded(callable_base: b
     def component(*, label: str, children: Children) -> Fragment:
         observed.append(label)
 
-        return html(t"\nfragment:\n  section: {children}\n  aside: {label}")
+        return pysx(t"\nfragment:\n  section: {children}\n  aside: {label}")
 
     mode = signal("primary")
     variants = {"primary": t"color: red", "ghost": t"color: blue"}
@@ -105,7 +105,7 @@ def test_styled_authoring_variants_live_owned_and_not_forwarded(callable_base: b
         if callable_base
         else t'\n{child}(variant={mode}):\n  span: "child"'
     )
-    result = render(lambda: html(template))
+    result = render(lambda: pysx(template))
     original = result.body
     assert "variant=" not in original
     assert "<span>child</span>" in original
@@ -139,7 +139,7 @@ def test_styled_bases_flattened_opposing_lineages() -> None:
 def test_styled_bases_callable_signature_and_roots() -> None:
     def base(label: str) -> Fragment:
 
-        return html(t'\nfragment:\n  div: {label}\n  span: "other"')
+        return pysx(t'\nfragment:\n  div: {label}\n  span: "other"')
 
     first = styled(base)(t"color: red")
     second = styled(first)(t"color: blue")
@@ -193,7 +193,7 @@ def test_styled_bases_typed_native_callable_children() -> None:
 
     def app() -> Fragment:
 
-        return html(t'\nBase:\n  span: "child"', namespace={"Base": base})
+        return pysx(t'\nBase:\n  span: "child"', namespace={"Base": base})
 
     result = render(app)
     assert "children=" not in result.body
@@ -206,24 +206,24 @@ def test_styled_bases_transparent_fragment_and_keyed_roots() -> None:
 
     def container(*, children: object) -> Fragment:
 
-        return html(t"\nfragment: {children}")
+        return pysx(t"\nfragment: {children}")
 
     transparent = styled(container)(t"color: orange")
     rows = signal(["one", "two"])
 
     def item(label: str) -> Fragment:
 
-        return html(t"\nspan: {label}")
+        return pysx(t"\nspan: {label}")
 
     def base() -> Fragment:
 
-        return html(t"\n{each(rows, item, key=lambda row: row)}")
+        return pysx(t"\n{each(rows, item, key=lambda row: row)}")
 
     keyed = styled(base)(t"padding: 3px")
 
     def app() -> Fragment:
 
-        return html(
+        return pysx(
             t'\nTransparent:\n  span: "one"\n  span: "two"\nKeyed:',
             namespace={"Transparent": transparent, "Keyed": keyed},
         )
@@ -246,7 +246,7 @@ def test_styling_diagnostics_literal_css_and_signal_rejection() -> None:
 
     def app() -> Fragment:
 
-        return html(t'\ndiv(css={"color:red"!s}): "metadata"')
+        return pysx(t'\ndiv(css={"color:red"!s}): "metadata"')
 
     with pytest.raises(ValueError, match="metadata"):
         render(app)
@@ -264,7 +264,7 @@ def test_styling_diagnostics_styled_effect_parity() -> None:
 
     def app() -> Fragment:
 
-        return html(
+        return pysx(
             t'\nChild(styleVars={ ({"accent": variable}) }): "Effect"', namespace={"Child": child}
         )
 

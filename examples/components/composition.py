@@ -9,13 +9,13 @@ from pysx import (
     Fragment,
     batch,
     each,
-    html,
     local_state,
     native,
     on_cleanup,
     on_event,
     on_mount,
     on_setup,
+    pysx,
     signal,
     styled,
 )
@@ -157,7 +157,7 @@ def tree_controls() -> Fragment:
         aria_expanded = opened if node.children else None
         keys = ("ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " ")
 
-        group = html(t"""
+        group = pysx(t"""
             if {opened}:
                 ul(role="group"): {children}
         """)
@@ -176,12 +176,12 @@ def tree_controls() -> Fragment:
 
     def row(node: Entry) -> Fragment:
 
-        return html(t"\nbranch(node={node}):")
+        return pysx(t"\nbranch(node={node}):")
 
     def reverse(_event: BrowserEvent) -> None:
         roots.set(list(reversed(roots())))
 
-    return html(
+    return pysx(
         t"""
             TreePanel:
                 ul(id="composition-tree",role="tree",aria-label="Component library",ref={root_ref}):

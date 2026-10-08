@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from pysx import Dom, Fragment, Signal, each, html, on_mount, on_setup, signal
+from pysx import Dom, Fragment, Signal, each, on_mount, on_setup, pysx, signal
 
 if TYPE_CHECKING:
     from string.templatelib import Template
@@ -23,13 +23,13 @@ def app() -> Fragment:
     def row(key: str) -> Fragment:
         on_mount(lambda: mounts.set(mounts() + 1))
 
-        return html(t"\nli(id={key}): {key}")
+        return pysx(t"\nli(id={key}): {key}")
 
     async def reveal(_: object) -> None:
         rows.set(["a"])
         await unattached.handle().focus()
 
-    return html(
+    return pysx(
         t"""
             main:
               p(id="status"): {status}

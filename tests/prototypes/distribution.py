@@ -72,10 +72,10 @@ def main():
     serve()
 '''
 
-DEMO_SOURCE = """from pysx import html
+DEMO_SOURCE = """from pysx import pysx
 
 def app():
-    return html(t"div: installed artifact proof")
+    return pysx(t"div: installed artifact proof")
 """
 
 EXTENSION_SOURCE = r"""const vscode = require("vscode");
@@ -614,16 +614,16 @@ def qualify(workspace: Path) -> dict[str, str]:
     consumer = workspace / "consumer"
     consumer.mkdir()
     script = """import importlib.metadata, importlib.resources, json, sys
-import pysx, examples
+import pysx as pysx_package, examples
 from pathlib import Path
-from pysx import Signal, signal, html
+from pysx import Signal, signal, pysx
 assert signal(1).get() == 1
 assert Signal(2).get() == 2
-assert html(t"div: installed") is not None
+assert pysx(t"div: installed") is not None
 assert importlib.resources.files("pysx").joinpath("py.typed").is_file()
 assert importlib.resources.files("pysx").joinpath("static/client.js").is_file()
 assert "counter" in examples.examples
-print(json.dumps({"package": str(Path(pysx.__file__).resolve()),
+print(json.dumps({"package": str(Path(pysx_package.__file__).resolve()),
                   "paths": sys.path, "version": importlib.metadata.version("pysx")}))
 """
     for python in (core, extra):

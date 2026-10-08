@@ -53,12 +53,12 @@ def test_import_closures_and_cross_module_origin(app_root: Path) -> None:
     _write(
         app_root,
         "producer.py",
-        """from pysx import html, styled
+        """from pysx import pysx, styled
 Panel = styled.section(t"color: red")
-fragment = html(t"Panel: 'Producer'")
+fragment = pysx(t"Panel: 'Producer'")
 def factory():
     Local = styled.strong(t"color: blue")
-    return lambda: html(t"Local: 'Closed'")
+    return lambda: pysx(t"Local: 'Closed'")
 row = factory()
 Panel = styled.aside(t"color: green")
 """,
@@ -66,11 +66,11 @@ Panel = styled.aside(t"color: green")
     path = _write(
         app_root,
         "view.py",
-        """from pysx import html, styled
+        """from pysx import pysx, styled
 from .producer import fragment, row
 Panel = styled.div(t"color: purple")
 def app():
-    return html(t"main: {fragment}; {row()}")
+    return pysx(t"main: {fragment}; {row()}")
 """,
     )
     module = import_app("author_app.view")
@@ -90,9 +90,9 @@ def test_caller_children_and_styled_wrapper_preserve_origin(app_root: Path) -> N
     _write(
         app_root,
         "components.py",
-        """from pysx import html, styled
+        """from pysx import pysx, styled
 def wrapper(*, children):
-    return html(t"article: {children}")
+    return pysx(t"article: {children}")
 Wrapper = styled(wrapper)(t"color: red")
 Panel = styled.aside(t"color: blue")
 """,
@@ -100,11 +100,11 @@ Panel = styled.aside(t"color: blue")
     _write(
         app_root,
         "view.py",
-        """from pysx import html, styled
+        """from pysx import pysx, styled
 from .components import Wrapper
 Panel = styled.strong(t"color: green")
 def app():
-    return html(t"\\nWrapper:\\n  Panel: 'Caller'")
+    return pysx(t"\\nWrapper:\\n  Panel: 'Caller'")
 """,
     )
     result = render(_app(import_app("author_app.view")))
@@ -117,10 +117,10 @@ def test_absent_inactive_component_fails_only_when_selected(app_root: Path) -> N
     _write(
         app_root,
         "view.py",
-        """from pysx import html
+        """from pysx import pysx
 enabled = False
 def app():
-    return html(t"\\nif {enabled}:\\n  Missing: 'Absent'\\nelse:\\n  p: 'Present'")
+    return pysx(t"\\nif {enabled}:\\n  Missing: 'Absent'\\nelse:\\n  p: 'Present'")
 """,
     )
     module = import_app("author_app.view")
@@ -131,7 +131,7 @@ def app():
 
 
 def test_source_scope_and_repeat_install(app_root: Path) -> None:
-    _write(app_root, "view.py", "from pysx import html\ndef app(): return html(t\"p: 'Hi'\")\n")
+    _write(app_root, "view.py", "from pysx import pysx\ndef app(): return pysx(t\"p: 'Hi'\")\n")
     finder = install_loader(packages=("author_app",))
     assert install_loader(packages=("author_app",)) is finder
     assert not finder.covers("pysx.render", Path("/work/pysx/render.py"))
@@ -145,29 +145,29 @@ def test_source_scope_and_repeat_install(app_root: Path) -> None:
 
 
 def test_late_install_is_reported(app_root: Path) -> None:
-    _write(app_root, "view.py", "from pysx import html\ndef app(): return html(t\"p: 'Hi'\")\n")
+    _write(app_root, "view.py", "from pysx import pysx\ndef app(): return pysx(t\"p: 'Hi'\")\n")
     importlib.import_module("author_app.view")
     with pytest.raises(RuntimeError, match=r"before importing author_app\.view"):
         install_loader(packages=("author_app",))
 
 
 def test_dependency_change_invalidates_cached_marker(app_root: Path) -> None:
-    marker = _write(app_root, "marker.py", "from unrelated import html\n")
+    marker = _write(app_root, "marker.py", "from unrelated import pysx\n")
     view = _write(
         app_root,
         "view.py",
-        "from .marker import html\nPanel = object()\nview = html(t\"Panel: 'Hi'\")\n",
+        "from .marker import pysx\nPanel = object()\nview = pysx(t\"Panel: 'Hi'\")\n",
     )
     cache = CodeCache(entries=2)
     source = view.read_text(encoding="utf-8")
     first = cache.compile(source, str(view), "author_app", (app_root,))
     assert cache.compile(source, str(view), "author_app", (app_root,)) is first
-    marker.write_text("from pysx import html\n", encoding="utf-8")
+    marker.write_text("from pysx import pysx\n", encoding="utf-8")
     second = cache.compile(source, str(view), "author_app", (app_root,))
     assert second is not first
     namespace: dict[str, object] = {}
     # Execute without importing the deliberately fake marker package.
-    source = "from pysx import html\nPanel = object()\nview = html(t\"Panel: 'Hi'\")\n"
+    source = "from pysx import pysx\nPanel = object()\nview = pysx(t\"Panel: 'Hi'\")\n"
     exec(cache.compile(source, str(view), "author_app", (app_root,)), namespace)
     assert isinstance(namespace["view"], Fragment)
     assert namespace["view"].bound
@@ -177,10 +177,10 @@ def test_build_source_free_parity_and_original_metadata(app_root: Path, tmp_path
     _write(
         app_root,
         "view.py",
-        """from pysx import html, styled
+        """from pysx import pysx, styled
 Panel = styled.section(t"color: red")
 def app():
-    return html(t"Panel: {html(t'p: {42!r}')} {43:>5}")
+    return pysx(t"Panel: {pysx(t'p: {42!r}')} {43:>5}")
 def broken():
     raise RuntimeError("original line")
 """,
@@ -200,7 +200,7 @@ from pysx import render
 fragment = app()
 assert fragment.bound
 nested = fragment.template.interpolations[0]
-assert nested.expression == "html(t'p: {42!r}')"
+assert nested.expression == "pysx(t'p: {42!r}')"
 assert nested.value.bound
 assert nested.value.template.interpolations[0].conversion == 'r'
 assert fragment.template.interpolations[1].format_spec == '>5'
@@ -226,10 +226,10 @@ def test_original_loader_traceback(app_root: Path) -> None:
     path = _write(
         app_root,
         "view.py",
-        """from pysx import html
+        """from pysx import pysx
 def app():
     value = 1 / 0
-    return html(t"p: {value}")
+    return pysx(t"p: {value}")
 """,
     )
     module = import_app("author_app.view")
@@ -244,10 +244,10 @@ def test_installed_wheel_runs_sourceless_app(app_root: Path, tmp_path: Path) -> 
     _write(
         app_root,
         "view.py",
-        """from pysx import html, styled
+        """from pysx import pysx, styled
 Panel = styled.section(t"color: red")
 def app():
-    return html(t"Panel: 'Installed'")
+    return pysx(t"Panel: 'Installed'")
 """,
     )
     bundle = tmp_path / "deployment"
@@ -304,7 +304,7 @@ assert 'Installed' in pysx.render(app).body
 def test_finder_uses_namespace_package_paths(app_root: Path) -> None:
     (app_root / "author_app" / "__init__.py").unlink()
     _write(
-        app_root, "view.py", "from pysx import html\ndef app(): return html(t\"p: 'Namespace'\")\n"
+        app_root, "view.py", "from pysx import pysx\ndef app(): return pysx(t\"p: 'Namespace'\")\n"
     )
     module = import_app("author_app.view")
     assert isinstance(module.__loader__, SourceLoader)

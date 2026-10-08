@@ -1,8 +1,8 @@
-from pysx import Binding, defer, html
+from pysx import Binding, defer, pysx
 
 def view():
     row = Binding[int]("row")
-    return html(rt"""
+    return pysx(rt"""
         if {visible}:
           p: "first"
         elif {other}:
@@ -22,10 +22,10 @@ def view():
             title={label}
             data-row={row},
           ): "literal {{braces}}"
-          {tuple(html(t'\nspan: {n}') for n in range(2))}
+          {tuple(pysx(t'\nspan: {n}') for n in range(2))}
     """, use=(Card,), namespace={"row": row})
 
-single = html(t'''
+single = pysx(t'''
     section: 'single quoted'
 ''')
 AFTER_SENTINEL = 1

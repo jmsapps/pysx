@@ -5,7 +5,7 @@ from string.templatelib import Template
 
 import pytest
 
-from pysx import Fragment, Themes, batch, div, each, global_style, html, render, signal, styled
+from pysx import Fragment, Themes, batch, div, each, global_style, pysx, render, signal, styled
 from pysx.server import Session
 from pysx.styles import css_name, variable_name, variable_values
 
@@ -33,7 +33,7 @@ def test_reactive_css_sessions_themes_and_styles() -> None:
             css.set("color: var(--ink); padding-left: 7px")
             classes.set("second")
 
-        return html(
+        return pysx(
             t"""
                 div(id="styled" css={css} class={classes} styleVars={ ({"local": color}) }): "hello"
                 button(id="change" onClick={change}): "Change"
@@ -71,7 +71,7 @@ def test_reactive_css_branch_cleanup_and_shared_rule_counts() -> None:
 
     def app() -> Fragment:
 
-        return html(
+        return pysx(
             t"""
                 div(css="color: red"): "retained"
                 if {visible}:
@@ -106,11 +106,11 @@ def test_reactive_css_rows_cleanup_and_order() -> None:
 
     def item(color: str) -> Fragment:
 
-        return html(t"\ndiv(css={'color: ' + color}): {color}")
+        return pysx(t"\ndiv(css={'color: ' + color}): {color}")
 
     def app() -> Fragment:
 
-        return html(t"\nsection: {each(rows, item, key=lambda row: row)}")
+        return pysx(t"\nsection: {each(rows, item, key=lambda row: row)}")
 
     session = Session(app)
 
@@ -133,13 +133,13 @@ def test_reactive_css_runtime_definitions_do_not_enter_shared_registry() -> None
         local = styled(div)(Template("color: rgb(12, 34, 56)"))
         global_style("body { background: rgb(65, 43, 21) }")
 
-        return html(t'\nLocal: "private"', namespace={"Local": local})
+        return pysx(t'\nLocal: "private"', namespace={"Local": local})
 
     first = Session(app)
 
     def other_app() -> Fragment:
 
-        return html(t'\ndiv: "other"')
+        return pysx(t'\ndiv: "other"')
 
     other = Session(other_app)
 
@@ -179,7 +179,7 @@ def test_reactive_css_style_merge_and_literal_deduplication() -> None:
 
     def app() -> Fragment:
 
-        return html(
+        return pysx(
             t"""
                 div(css={t"padding: 1px"} style={style} styleVars={ ({"gap": value}) }): "one"
                 div(css="padding: 1px"): "two"
@@ -208,7 +208,7 @@ def test_reactive_css_stylesheet_precedes_class_in_reverse_update_order() -> Non
 
     def app() -> Fragment:
 
-        return html(t'\ndiv(class={classes} css={css}): "ordered"')
+        return pysx(t'\ndiv(class={classes} css={css}): "ordered"')
 
     session = Session(app)
 
@@ -226,14 +226,14 @@ def test_reactive_css_stylesheet_precedes_class_in_reverse_update_order() -> Non
 def test_reactive_css_preconstructed_callable_fragment_retains_its_rule() -> None:
     def base() -> Fragment:
 
-        return html(t'\ndiv: "prebuilt"')
+        return pysx(t'\ndiv: "prebuilt"')
 
     styled_base = styled(base)(t"color: rgb(13, 24, 35)")
     prebuilt = styled_base()
 
     def app() -> Fragment:
 
-        return html(t"\nsection: {prebuilt}")
+        return pysx(t"\nsection: {prebuilt}")
 
     session = Session(app)
 
@@ -270,7 +270,7 @@ def test_runtime_css_outranks_the_styled_class_on_the_same_element() -> None:
 
     def app() -> Fragment:
 
-        return html(t'\nCard(css="padding: 11px"): "x"', namespace={"Card": card})
+        return pysx(t'\nCard(css="padding: 11px"): "x"', namespace={"Card": card})
 
     result = render(app)
     runtime = css_name("padding: 11px")

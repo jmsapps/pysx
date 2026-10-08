@@ -12,9 +12,9 @@ from pysx.quality import type_project
 if TYPE_CHECKING:
     from pathlib import Path
 
-SOURCE = """from pysx import html
+SOURCE = """from pysx import pysx
 from pysx.native import Strong, Em
-view = html(t"Strong: 'Hello'")
+view = pysx(t"Strong: 'Hello'")
 """
 
 
@@ -50,12 +50,12 @@ def test_template_import_usage_removed_or_incomplete(tmp_path: Path, replacement
 
 
 def test_template_import_usage_unicode_and_lexical_scope(tmp_path: Path) -> None:
-    source = """from pysx import html, Fragment
+    source = """from pysx import pysx, Fragment
 def producer():
-    def Panel() -> Fragment: return html(t"p: 'one'")
-    return html(t"Panel: '😀'")
+    def Panel() -> Fragment: return pysx(t"p: 'one'")
+    return pysx(t"Panel: '😀'")
 def consumer():
-    return html(t"Panel: 'missing'")
+    return pysx(t"Panel: 'missing'")
 """
     path = str(tmp_path / "view.py")
     diagnostics = diagnostics_for_source(source, path)
@@ -89,11 +89,11 @@ pythonVersion = "3.14"
         encoding="utf-8",
     )
     path = tmp_path / "view.py"
-    source = """from pysx import Fragment, html
+    source = """from pysx import Fragment, pysx
 def Panel(*, title: str) -> Fragment:
-    return html(t"p: {title}")
+    return pysx(t"p: {title}")
 def app() -> Fragment:
-    return html(t"Panel(title={'valid'})")
+    return pysx(t"Panel(title={'valid'})")
 """
     path.write_text(source, encoding="utf-8")
     assert type_project(tmp_path, backend) == 0

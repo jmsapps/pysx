@@ -3,7 +3,7 @@
 import json
 from typing import cast
 
-from pysx import Fragment, html, native, signal
+from pysx import Fragment, native, pysx, signal
 
 
 def app() -> Fragment:
@@ -44,7 +44,7 @@ def app() -> Fragment:
     def toggle(_value: object) -> None:
         visible.set(not visible())
 
-    conditional = html(t"""
+    conditional = pysx(t"""
         if {visible}:
             input(id="owned" bindValue={owned})
     """)
@@ -90,7 +90,7 @@ def app() -> Fragment:
         native.Div(note, id="note-state"),
         native.Div(checked, id="check-state"),
         native.Div(single, id="single-state"),
-        native.Div(html(t"\n{selected!r}"), id="multi-state"),
+        native.Div(pysx(t"\n{selected!r}"), id="multi-state"),
         native.Div(radio, id="radio-state"),
         native.Div(corrected, id="corrected-state"),
         native.Div(resets, id="reset-state"),

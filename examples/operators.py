@@ -13,7 +13,6 @@ from pysx import (
     eq,
     ge,
     gt,
-    html,
     inclusive_range,
     le,
     length,
@@ -21,6 +20,7 @@ from pysx import (
     lt,
     ne,
     not_,
+    pysx,
     signal,
     structured,
 )
@@ -111,7 +111,7 @@ def app() -> Fragment:
             profile.set({"scores": {"first": 10}})
             tags.set(["alpha", "beta"])
 
-    return html(
+    return pysx(
         t"""
         Page(id="container"):
             header:

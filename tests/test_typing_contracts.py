@@ -13,11 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.mark.parametrize("valid", [True, False])
 def test_inline_helper_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = (
-        "from pysx import Each, Fragment, each, each_indexed, html, signal, when\n"
+        "from pysx import Each, Fragment, each, each_indexed, pysx, signal, when\n"
         "from typing import assert_type\n"
-        "def row(value: int) -> Fragment:\n    return html(t'p: {value}')\n"
+        "def row(value: int) -> Fragment:\n    return pysx(t'p: {value}')\n"
         "def indexed(index: int, value: int) -> Fragment:\n"
-        "    return html(t'p: {index} {value}')\n"
+        "    return pysx(t'p: {index} {value}')\n"
         "values = signal([1, 2])\n"
     )
 
@@ -93,16 +93,16 @@ def test_branches_loops_types(tmp_path: Path, checker: str, valid: bool) -> None
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
 def test_positioned_multiline_types(tmp_path: Path, checker: str, valid: bool) -> None:
-    source = "from pysx import html, render, signal\n"
+    source = "from pysx import pysx, render, signal\n"
 
     if valid:
         source += (
             "value = signal(1.25)\n"
             "view = t'\\np(\\n title={value:.2f}\\n): {value!s:>8}'\n"
-            "render(lambda: html(view))\n"
+            "render(lambda: pysx(view))\n"
         )
     else:
-        source += "html(f'\\np: {signal(1.25)}')\n"
+        source += "pysx(f'\\np: {signal(1.25)}')\n"
     fixture = tmp_path / "positioned.py"
     fixture.write_text(source)
     args = [sys.executable, "-m", checker]
@@ -143,21 +143,21 @@ def test_styled_authoring_import_usage_real_tools(tmp_path: Path) -> None:
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
 def test_styled_authoring_bases_types(tmp_path: Path, checker: str, valid: bool) -> None:
-    source = "from pysx import styled, div, Fragment, html\n"
+    source = "from pysx import styled, div, Fragment, pysx\n"
 
     if valid:
         source += "from typing import assert_type\n"
-        source += "def base(label: str) -> Fragment:\n    return html(t'\\nspan: {label}')\n"
+        source += "def base(label: str) -> Fragment:\n    return pysx(t'\\nspan: {label}')\n"
         source += "tag = styled(styled(div)(t'color: red'))(t'color: blue')\n"
         source += "fn = styled(styled(base)(t'color: red'))(t'color: blue')\n"
         source += "assert_type(fn('hello'), Fragment)\nassert_type(tag.tag, str)\n"
         source += "button = styled.button(t'color: red', variants={'primary': t'color: blue'})\n"
         source += "extended = styled(button)(t'padding: 3px')\n"
         source += "assert_type(extended('go', disabled=True, variant='primary'), Fragment)\n"
-        source += 'html(t\'\\n{extended}(variant="primary"): \\"hello\\"\')\n'
+        source += 'pysx(t\'\\n{extended}(variant="primary"): \\"hello\\"\')\n'
     else:
-        source = "from pysx import styled, Fragment, html\n"
-        source += "def base(label: str) -> Fragment:\n    return html(t'\\nspan: {label}')\n"
+        source = "from pysx import styled, Fragment, pysx\n"
+        source += "def base(label: str) -> Fragment:\n    return pysx(t'\\nspan: {label}')\n"
         source += "styled('div')(t'color: red')\nfn = styled(base)(t'color: red')\nfn(42)\n"
         source += (
             "button = styled.button(t'color: red')\nbutton(href='wrong')\nbutton(variant=42)\n"
@@ -182,11 +182,11 @@ def test_styled_authoring_bases_types(tmp_path: Path, checker: str, valid: bool)
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
 def test_callable_return_callable_dispatch_types(tmp_path: Path, checker: str, valid: bool) -> None:
-    source = "from string.templatelib import Template\nfrom pysx import Component, html, render\n"
+    source = "from string.templatelib import Template\nfrom pysx import Component, pysx, render\n"
 
     if valid:
         source += "def app() -> Template:\n    return t'\\nspan: \\\"ok\\\"'\n"
-        source += "fn: Component = app\nrender(app)\nhtml(t'\\nspan:', namespace={'Alias': fn})\n"
+        source += "fn: Component = app\nrender(app)\npysx(t'\\nspan:', namespace={'Alias': fn})\n"
         source += "def card(*, title: str, suffix: str = '!') -> Template:\n"
         source += "    return t'\\nspan: {title}; {suffix}'\ncard(title='ok')\n"
     else:
@@ -341,7 +341,7 @@ def test_schema_native_types(tmp_path: Path, checker: str, valid: bool) -> None:
 
 
 POSITIVE = '''from typing import assert_type
-from pysx import Each, Fragment, Signal, component, derived, each, html, signal
+from pysx import Each, Fragment, Signal, component, derived, each, pysx, signal
 from pysx.wire import Op, PatchMessage
 
 count = signal(1)
@@ -353,7 +353,7 @@ rows = signal([1, 2])
 
 @component
 def item(value: int) -> Fragment:
-    return html(t"""\n    div: {value}\n""")
+    return pysx(t"""\n    div: {value}\n""")
 
 assert_type(item(1), Fragment)
 spec = each(rows, item, key=lambda value: value)

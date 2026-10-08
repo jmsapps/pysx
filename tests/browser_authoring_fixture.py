@@ -1,6 +1,6 @@
 """Scoped nesting and bounded reactive variant acceptance fixture."""
 
-from pysx import Fragment, Themes, html, signal, styled
+from pysx import Fragment, Themes, pysx, signal, styled
 
 Action = styled.button(
     t"""
@@ -37,7 +37,7 @@ def app() -> Fragment:
         mode.set("ghost" if mode() == "primary" else "primary")
         themes.select("dark")
 
-    return html(
+    return pysx(
         t"""
         Panel:
           span: "Scoped descendant"
