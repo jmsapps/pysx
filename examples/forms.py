@@ -34,6 +34,10 @@ def app() -> Fragment:
     invalids = signal(0)
     visible = signal(True)
     owned = signal("owned")
+    field_css = "\n".join(Field.declarations)
+    form_css = "\n".join(Form.declarations)
+    submit_css = "\n".join(Submit.declarations)
+    secondary_css = "\n".join(SecondaryAction.declarations)
 
     def normalize(_value: object) -> None:
         corrected.set(corrected().upper())
@@ -66,10 +70,10 @@ def app() -> Fragment:
             required=True,
             bind_value=text,
             on_invalid=invalid,
-            class_name=Field.css_class,
+            css=field_css,
         ),
         native.Label("Notes", html_for="note"),
-        native.Textarea(id="note", name="note", bind_value=note, class_name=Field.css_class),
+        native.Textarea(id="note", name="note", bind_value=note, css=field_css),
         native.Label("Enable updates", html_for="check"),
         native.Input(id="check", name="check", type="checkbox", value="yes", bind_checked=checked),
         native.Label("Single choice", html_for="single"),
@@ -79,7 +83,7 @@ def app() -> Fragment:
             id="single",
             name="single",
             bind_value=single,
-            class_name=Field.css_class,
+            css=field_css,
         ),
         native.Label("Multiple choices", html_for="multi"),
         native.Select(
@@ -90,7 +94,7 @@ def app() -> Fragment:
             multiple=True,
             size=2,
             bind_selected=selected,
-            class_name=Field.css_class,
+            css=field_css,
         ),
         native.Label("Radio A", html_for="radio-a"),
         native.Input(id="radio-a", type="radio", name="radio", value="a", bind_value=radio),
@@ -102,7 +106,7 @@ def app() -> Fragment:
             name="disabled",
             disabled=True,
             value="omitted",
-            class_name=Field.css_class,
+            css=field_css,
         ),
         native.Button(
             "Submit",
@@ -110,40 +114,36 @@ def app() -> Fragment:
             type="submit",
             name="action",
             value="save",
-            class_name=Submit.css_class,
+            css=submit_css,
         ),
         native.Button(
             "Reset to initial values",
             id="reset",
             type="reset",
-            class_name=SecondaryAction.css_class,
+            css=secondary_css,
         ),
         id="form",
         on_submit=submitted,
         on_reset=reset,
-        class_name=Form.css_class,
+        css=form_css,
     )
     correction = native.Div(
         native.Label("Uppercase correction", html_for="corrected"),
-        native.Input(
-            id="corrected", bind_value=corrected, on_input=normalize, class_name=Field.css_class
-        ),
+        native.Input(id="corrected", bind_value=corrected, on_input=normalize, css=field_css),
     )
     actions = native.Div(
-        native.Button(
-            "Apply server values", id="program", on_click=programmatic, class_name=Submit.css_class
-        ),
+        native.Button("Apply server values", id="program", on_click=programmatic, css=submit_css),
         native.Button(
             "Show or hide optional field",
             id="toggle",
             on_click=toggle,
-            class_name=SecondaryAction.css_class,
+            css=secondary_css,
         ),
     )
     conditional = html(t"""
         if {visible}:
             label(htmlFor="owned"): "Optional field"
-            input(id="owned" bindValue={owned} class={Field.css_class})
+            input(id="owned" bindValue={owned} css={field_css})
     """)
     readings = native.Dl(
         native.Dt("Text"),
@@ -188,4 +188,5 @@ def app() -> Fragment:
                 {readings}
                 h3: "Last submission"
                 pre(id="status"): {status}
-    """)
+    """
+    )

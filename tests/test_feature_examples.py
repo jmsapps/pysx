@@ -199,6 +199,28 @@ def test_forms_example_interactions_isolation_and_cleanup() -> None:
         return match[1]
 
     try:
+        stylesheet = session.rendered.styles.snapshot()
+
+        for element in (
+            "form",
+            "text",
+            "note",
+            "single",
+            "multi",
+            "disabled",
+            "submit",
+            "reset",
+            "corrected",
+            "program",
+            "toggle",
+            "owned",
+        ):
+            tag = re.search(rf'<[^>]*id="{element}"[^>]*>', session.rendered.body)
+            assert tag is not None
+            classes = re.search(r'class="([^"]+)"', tag[0])
+            assert classes is not None
+            assert any(f".{name} {{" in stylesheet for name in classes[1].split())
+
         text = binding("text")
         check = binding("check")
         single = binding("single")
