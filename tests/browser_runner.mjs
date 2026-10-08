@@ -16,6 +16,15 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "navigation_example", cases: [
+    [0, "navigation", "browser_navigation_example.mjs", "NAVIGATION EXAMPLE BROWSER PASSED"],
+  ] },
+  { suite: "fragment_scrolling", cases: [
+    [0, "fragments_fixture", "browser_fragments.mjs", "FRAGMENT BROWSER PASSED"],
+  ] },
+  { suite: "navigation_native", cases: [
+    [0, "routing_fixture", "browser_navigation.mjs", "NAVIGATION BROWSER PASSED"],
+  ] },
   { suite: "templates_example", cases: [
     [0, "templates", "browser_templates.mjs", "TEMPLATES BROWSER PASSED"],
   ] },
@@ -170,6 +179,10 @@ try {
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
     const server = name ? start(interpreter, name === "keyboard_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_keyboard_fixture:app", "--port", String(port)] :
+      name === "routing_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_routing_fixture:app", "--port", String(port)] :
+      name === "fragments_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_fragments_fixture:app", "--port", String(port)] :
       name === "components_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_components_fixture:app", "--port", String(port)] :
       name === "tree_fixture" ?

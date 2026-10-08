@@ -57,6 +57,16 @@ from .render import (
     render,
     when,
 )
+from .routing import (
+    Link,
+    Location,
+    NavigationEvent,
+    Route,
+    Router,
+    RouteResponse,
+    RouteState,
+    match_route,
+)
 from .structured import Projection, Structured, dict_key, list_index, project, structured
 from .styled import StyledCallable, StyledTag, global_style, styled, stylesheet
 from .styles import Theme, Themes, css
@@ -75,10 +85,17 @@ __all__ = [
     "Each",
     "EventHandler",
     "Fragment",
+    "Link",
+    "Location",
+    "NavigationEvent",
     "Projection",
     "PysxSyntaxError",
     "Rect",
     "Rendered",
+    "Route",
+    "RouteResponse",
+    "RouteState",
+    "Router",
     "Signal",
     "Structured",
     "StyledCallable",
@@ -119,6 +136,7 @@ __all__ = [
     "list_index",
     "local_state",
     "lt",
+    "match_route",
     "nav",
     "ne",
     "not_",

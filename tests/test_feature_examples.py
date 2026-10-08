@@ -1,5 +1,6 @@
 """Runnable feature example acceptance using public handlers and the real launcher."""
 
+import asyncio
 import re
 import signal
 import urllib.request
@@ -11,12 +12,112 @@ from acceptance_support import ready_server
 from examples.composition import app as composition_app
 from examples.events import app as events_app
 from examples.forms import app as forms_app
+from examples.navigation import app as navigation_app
 from examples.reactive_state import app
 from examples.templates import app as templates_app
 from examples.themes import app as themes_app
 from pysx import BrowserEvent
 from pysx.check import diagnostics
 from pysx.server import Session
+
+
+def test_pysx_12_st_4_navigation_interactions_isolation_and_cleanup() -> None:
+    session, other = Session(navigation_app), Session(navigation_app)
+    router = session.routes.routers[0]
+    markup = [session.rendered.body]
+
+    def click(identifier: str, destination: str = "", *, navigation: bool = True) -> None:
+        found = re.search(
+            rf'id="{identifier}"[^>]*data-pysx-click="([^"]+)"', "\n".join(reversed(markup))
+        )
+        assert found is not None
+        handler = found[1]
+        event = asdict(BrowserEvent("click", handler, value=destination))
+        ops = asyncio.run(session.dispatch_async(handler, None, event=event, navigation=navigation))
+
+        for op in ops:
+            if op["op"] == "list":
+                markup.extend(op["html"].values())
+            elif op["op"] == "html":
+                markup.append(op["v"])
+
+    try:
+        click("user-one", "/users/1")
+        assert router.params() == {"id": "1"}
+        count = next(
+            owner.values["count"]
+            for owner in session.rendered.scopes.owners.values()
+            if "count" in owner.values
+        )
+        click("user-two", "/users/2?tab=activity")
+        assert router.params() == {"id": "2"}
+        assert router.search() == "?tab=activity"
+        assert any(
+            owner.values.get("count") is count for owner in session.rendered.scopes.owners.values()
+        )
+        click("cancel", "/blocked")
+        assert router.location().url == "/users/2?tab=activity"
+        assert other.routes.routers[0].location().url == "/"
+        assert other.pending == []
+        router.navigate("./activity")
+        assert router.params() == {"id": "2"}
+        assert router.path() == "/users/2/activity"
+        router.navigate("../")
+        assert router.path() == "/users/2/"
+        router.navigate("/files/docs/start#chapter")
+        assert router.params() == {}
+        assert router.hash() == "#chapter"
+        session.routes.commands.clear()
+        click("require-login", navigation=False)
+        assert router.location().url == "/login"
+        assert [(command["mode"], command["url"]) for command in session.routes.commands] == [
+            ("replace", "/login")
+        ]
+        assert other.routes.routers[0].location().url == "/"
+        assert other.pending == []
+        session.routes.commands.clear()
+        click("home", "/")
+        assert router.path() == "/login"
+        assert [(command["mode"], command["url"]) for command in session.routes.commands] == [
+            ("push", "/"),
+            ("replace", "/login"),
+        ]
+        session.routes.commands.clear()
+        click("require-login", navigation=False)
+        assert session.routes.commands == []
+        click("login-continue", navigation=False)
+        assert router.path() == "/"
+        assert [(command["mode"], command["url"]) for command in session.routes.commands] == [
+            ("push", "/")
+        ]
+    finally:
+        session.dispose()
+        other.dispose()
+    assert session.rendered.scopes.owners == {}
+    assert session.rendered.handlers == {}
+    assert router.location.observers == {}
+    assert router.path.observers == {}
+
+
+def test_pysx_12_st_4_navigation_checker_clean_and_registered() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["navigation"] == "examples.navigation:app"
+    assert diagnostics(Path("examples/navigation.py")) == []
+    assert diagnostics(Path("examples/components/navigation.py")) == []
+
+
+@pytest.mark.acceptance
+def test_pysx_12_st_4_navigation_cli_startup_and_ctrl_c_exit() -> None:
+    command = ["uv", "run", "--project", ".", "example", "run", "navigation", "--port", "8768"]
+    with ready_server(command) as server:
+        with urllib.request.urlopen("http://127.0.0.1:8768/", timeout=5) as response:
+            assert response.status == 200
+            assert b"client.js" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
 
 
 def test_templates_interactions_isolation_and_cleanup() -> None:

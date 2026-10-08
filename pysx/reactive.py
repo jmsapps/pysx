@@ -98,6 +98,7 @@ def _execution_owner() -> tuple[int, int]:
 def batch() -> Generator[None]:
     """Coalesce a synchronous write turn; committed writes are never rolled back."""
     _scheduler.check_owner()
+    previous_owner = _scheduler.owner
     _scheduler.owner = _execution_owner()
     _scheduler.depth += 1
     body_error: BaseException | None = None
@@ -111,8 +112,8 @@ def batch() -> Generator[None]:
     finally:
         _scheduler.depth -= 1
 
-        if not _scheduler.depth:
-            _scheduler.owner = None
+        # Effect evaluation also holds depth; ownership follows batch lifetime.
+        _scheduler.owner = previous_owner
 
         try:
             _scheduler.flush()

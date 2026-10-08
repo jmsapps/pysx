@@ -134,6 +134,26 @@ The counters distinguish server setup, acknowledged browser mount and cleanup.
 Open a second tab to check session isolation. Press Ctrl+C to stop the server.
 See [component ownership](../docs/GRAMMAR.md#component-ownership) for state and resource hooks.
 
+## Routing and navigation
+
+Run `uv run --project . example run navigation`. Open User 1 and increment its
+counter, then switch to User 2: the route keeps its local count as the parameter
+changes. Activity (`./activity`) descends into a nested route; Parent (`../`) returns
+to its user, and User 3 (`../3`) selects a sibling. Plain child names also append to
+the current pathname; `/` selects the root and `../../` climbs two levels. Files
+demonstrates a wildcard.
+
+Replace query changes the query without adding a history entry. Jump to details
+scrolls and focuses the user section; browser Back and Forward restore known scroll
+positions and focus. Cancel navigation leaves the current URL and view open. Another
+tab starts its own session. The standalone example opens at `/`; HTTP deep-link
+rendering is described by the [routing host contract](../docs/ROUTING.md).
+
+Require sign-in changes a signal. An `effect()` observes that state and redirects to
+`/login` with `router.navigate(..., replace=True)`, keeping history length unchanged.
+Its path guard prevents repeated redirects. Continue clears the requirement and
+navigates home; another tab keeps its own state. The effect is disposed with the app.
+
 ## Adding an example
 
 Add `examples/<name>.py` with an `app` attribute; the registry discovers it

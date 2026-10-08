@@ -13,6 +13,7 @@ import json
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
+from urllib.parse import parse_qs, urlsplit
 
 from websockets.asyncio.server import ServerConnection, serve
 
@@ -22,6 +23,7 @@ from .forms import PayloadError, form_edits
 from .loader import import_app
 from .reactive import Effect, batch
 from .render import Fragment, Watcher, render
+from .routing import Location, RouteHost, route_host
 from .styles import style_context
 
 if TYPE_CHECKING:
@@ -38,11 +40,17 @@ STATIC = Path(__file__).parent / "static"
 class Session:
     """Holds one client's signal graph and the ops it has produced."""
 
-    def __init__(self, app_fn: Callable[[], Template | Fragment]) -> None:
+    def __init__(self, app_fn: Callable[[], Template | Fragment], *, location: str = "/") -> None:
         self.pending: list[Op] = []
         self._awaitables: list[Awaitable[object]] = []
         self._live = False
-        self.rendered = render(app_fn)
+        self.routes = RouteHost(location)
+        route_token = route_host.set(self.routes)
+
+        try:
+            self.rendered = render(app_fn)
+        finally:
+            route_host.reset(route_token)
         # The first run of each effect registers its subscription; watchers were
         # seeded with the rendered value, so it produces ops only where setup
         # wrote a signal after its hole had already been emitted.
@@ -107,13 +115,15 @@ class Session:
         after: str | None = None,
         edits: list[tuple[str, object, int | None]] | None = None,
         event: object = None,
+        navigation: bool = False,
     ) -> list[Op]:
-        ops = self.dispatch(handler_id, value, revision, after=after, edits=edits, event=event)
-        self.pending.extend(ops)
-
+        self.routes.intercepting = navigation
         style_token = style_context.set(self.rendered.styles)
 
         try:
+            ops = self.dispatch(handler_id, value, revision, after=after, edits=edits, event=event)
+            self.pending.extend(ops)
+
             while self._awaitables:
                 await self._awaitables.pop(0)
                 self._sync_styles()
@@ -123,6 +133,7 @@ class Session:
             raise
         finally:
             style_context.reset(style_token)
+            self.routes.intercepting = False
         ops = self.pending
         self.pending = []
 
@@ -145,7 +156,6 @@ class Session:
             fn = cast("Callable[[object], object]", listener[0].callback)
 
         if fn is None and not edits:
-
             return []
         typed = self.rendered.event_handlers.get(handler_id)
 
@@ -197,7 +207,6 @@ class Session:
             target = self.rendered.bindings.get(hid)
 
             if target is None:
-
                 continue
             equal = target.signal() == payload
             own = [
@@ -244,7 +253,6 @@ class Session:
             errors.append(error)
 
         if errors:
-
             raise ExceptionGroup("session cleanup failed", errors)
 
 
@@ -261,7 +269,6 @@ async def close_session(
         session.dispose()
     except Exception as cleanup_error:
         if error is None:
-
             raise
         error.add_note(f"session cleanup also failed: {cleanup_error}")
 
@@ -281,7 +288,6 @@ def _load_app(spec: str) -> Callable[[], Template | Fragment]:
     app: object = getattr(import_app(module_name), attr or "app")
 
     if not callable(app):
-
         raise TypeError("app must be callable")
 
     return cast("Callable[[], Template | Fragment]", app)
@@ -296,22 +302,30 @@ def main() -> None:
     app_fn = _load_app(args.app)
 
     async def process_request(connection: ServerConnection, request: Request) -> Response | None:
-        if request.path in ("/", "/index.html"):
-
+        if urlsplit(request.path).path in ("/", "/index.html"):
             return _static(connection, "index.html", "text/html; charset=utf-8")
 
         if request.path == "/client.js":
-
             return _static(connection, "client.js", "text/javascript; charset=utf-8")
 
-        if request.path == "/ws":
-
+        if urlsplit(request.path).path == "/ws":
             return None
 
         return connection.respond(HTTPStatus.NOT_FOUND, "not found\n")
 
     async def handler(connection: ServerConnection) -> None:
-        session = Session(app_fn)
+        request = connection.request
+        supplied = (
+            parse_qs(urlsplit(request.path).query).get("location", ["/"]) if request else ["/"]
+        )
+
+        try:
+            Location.parse(supplied[0])
+        except ValueError:
+            await connection.close(code=1008, reason="invalid initial location")
+
+            return
+        session = Session(app_fn, location=supplied[0])
         queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=64)
 
         async def send_mounts() -> None:
@@ -321,6 +335,12 @@ def main() -> None:
                 await connection.send(
                     json.dumps({"t": "mount", "ids": tokens[start : start + 1024]})
                 )
+
+        async def send_navigation() -> None:
+            commands, session.routes.commands = session.routes.commands, []
+
+            for command in commands:
+                await connection.send(json.dumps(command))
 
         async def send_patch() -> None:
             if session.pending:
@@ -339,21 +359,39 @@ def main() -> None:
                 handler_id = message.get("h", "")
 
                 if not isinstance(handler_id, str):
-
                     continue
                 revision = message.get("rev")
                 after = message.get("after")
 
                 if revision is not None and (type(revision) is not int or revision < 0):
-
                     continue
 
                 if after is not None and not isinstance(after, str):
-
                     continue
 
                 try:
-                    if message.get("t") == "mounted":
+                    if message.get("t") == "location":
+                        url = message.get("url")
+
+                        if not isinstance(url, str) or not session.routes.accept_revision(
+                            message.get("rev")
+                        ):
+                            continue
+                        try:
+                            session.routes.observe(url)
+                        except ValueError as error:
+
+                            raise PayloadError("invalid location observation") from error
+                        session.routes.commands.append(
+                            {
+                                "t": "navigation",
+                                "url": session.routes.location.url,
+                                "rev": session.routes.revision,
+                                "mode": "observe",
+                            }
+                        )
+                        ops, session.pending = session.pending, []
+                    elif message.get("t") == "mounted":
                         tokens = message.get("ids")
 
                         if isinstance(tokens, list):
@@ -366,6 +404,12 @@ def main() -> None:
                         ops = session.pending
                         session.pending = []
                     else:
+                        nav_revision = message.get("nav_rev")
+
+                        if nav_revision is not None and not session.routes.accept_revision(
+                            nav_revision
+                        ):
+                            continue
                         ops = await session.dispatch_async(
                             handler_id,
                             message.get("v"),
@@ -373,6 +417,7 @@ def main() -> None:
                             after=after,
                             edits=form_edits(message.get("edits")),
                             event=message.get("event"),
+                            navigation=message.get("navigation") is True,
                         )
                 except PayloadError, DomError:
                     await send_patch()
@@ -387,6 +432,7 @@ def main() -> None:
                 if ops:
                     patch: PatchMessage = {"t": "patch", "ops": ops}
                     await connection.send(json.dumps(patch))
+                await send_navigation()
                 await send_mounts()
 
         worker: asyncio.Task[None] | None = None
@@ -396,9 +442,11 @@ def main() -> None:
                 "t": "init",
                 "html": session.rendered.body,
                 "css": session.rendered.css,
+                "routing": bool(session.routes.routers),
             }
             await connection.send(json.dumps(initial))
             await send_patch()
+            await send_navigation()
             await send_mounts()
             worker = asyncio.create_task(event_worker())
 
@@ -406,17 +454,15 @@ def main() -> None:
                 try:
                     decoded: object = json.loads(raw)
                 except TypeError, ValueError:
-
                     continue
 
                 if not isinstance(decoded, dict):
-
                     continue
                 message = cast("dict[str, object]", decoded)
 
                 if message.get("t") == "dom_reply":
                     session.rendered.dom.reply(message)
-                elif message.get("t") in ("event", "mounted"):
+                elif message.get("t") in ("event", "mounted", "location"):
                     try:
                         queue.put_nowait(message)
                     except asyncio.QueueFull:
@@ -435,7 +481,6 @@ def main() -> None:
     try:
         asyncio.run(run())
     except OSError as exc:
-
         raise SystemExit(f"cannot bind {args.host}:{args.port}: {exc}") from exc
     except KeyboardInterrupt:
         pass

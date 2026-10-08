@@ -1,6 +1,129 @@
 const root = document.getElementById("pysx-root");
 const style = document.getElementById("pysx-style");
-const socket = new WebSocket(`ws://${location.host}/ws`);
+const browserLocation = () => location.pathname + location.search + location.hash;
+const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?location=${encodeURIComponent(browserLocation())}`);
+let routing = false;
+let navigationRevision = 0;
+let observedLocation = browserLocation();
+let committedLocation = observedLocation;
+let historyEntry = null;
+let restorePosition = null;
+let previousRestoration = null;
+const historyPositions = new Map();
+let pendingScroll = null;
+let scrollTimer = null;
+
+function rememberPosition() {
+  if (!routing || !historyEntry) return;
+  const focus = root.contains(document.activeElement) ? document.activeElement.id : "";
+  historyPositions.set(historyEntry, {x: scrollX, y: scrollY, focus, url: observedLocation});
+  while (historyPositions.size > 128) historyPositions.delete(historyPositions.keys().next().value);
+}
+
+function newHistoryEntry() {
+  const key = crypto.randomUUID();
+  return {key, state: {...history.state, pysxEntry: key}};
+}
+
+function focusRoute(target) {
+  if (!target || !root.contains(target)) return;
+  if (!target.hasAttribute("tabindex")) {
+    target.setAttribute("tabindex", "-1");
+    target.addEventListener("blur", () => {
+      if (target.getAttribute("tabindex") === "-1") target.removeAttribute("tabindex");
+    }, {once: true});
+  }
+  target.focus({preventScroll: true});
+}
+
+function cancelRouteScroll() {
+  clearTimeout(scrollTimer);
+  scrollTimer = null;
+  pendingScroll = null;
+}
+
+function attemptRouteScroll() {
+  clearTimeout(scrollTimer);
+  const plan = pendingScroll;
+  if (!plan || plan.rev !== navigationRevision || browserLocation() !== plan.url) {
+    cancelRouteScroll();
+    return;
+  }
+  if (plan.restore) {
+    window.scrollTo({left: plan.restore.x, top: plan.restore.y, behavior: "instant"});
+    const focus = plan.restore.focus && root.querySelector(`#${CSS.escape(plan.restore.focus)}`);
+    focusRoute(focus || root.querySelector("main") || root);
+    cancelRouteScroll();
+    return;
+  }
+  let id = "";
+  try { id = decodeURIComponent(new URL(plan.url, location.origin).hash.slice(1)); }
+  catch { /* Invalid observations are rejected by the server; no target is selected. */ }
+  const target = id && (root.querySelector(`#${CSS.escape(id)}`) ?? root.querySelector(`[name="${CSS.escape(id)}"]`));
+  if (target && root.contains(target)) {
+    target.scrollIntoView({block: "start", behavior: "instant"});
+    focusRoute(target);
+    cancelRouteScroll();
+    return;
+  }
+  if (!plan.fallback && (!id || plan.crossRoute)) {
+    window.scrollTo({left: 0, top: 0, behavior: "instant"});
+    focusRoute(root.querySelector("main") ?? root);
+    plan.fallback = true;
+  }
+  if (!id || performance.now() >= plan.deadline) {
+    cancelRouteScroll();
+    return;
+  }
+  scrollTimer = setTimeout(attemptRouteScroll, 50);
+}
+
+function queueRouteScroll(url, restore = null, crossRoute = false) {
+  cancelRouteScroll();
+  pendingScroll = {url, rev: navigationRevision, restore, crossRoute,
+    fallback: false, deadline: performance.now() + 2000};
+  scrollTimer = setTimeout(attemptRouteScroll, 0);
+}
+
+function commitNavigation(message) {
+  if (message.rev !== navigationRevision) return;
+  if (message.mode === "external") {
+    location.assign(message.url);
+    return;
+  }
+  const crossRoute = new URL(committedLocation, location.origin).pathname !==
+    new URL(message.url, location.origin).pathname;
+  if (message.mode === "push" || message.mode === "replace") {
+    const entry = newHistoryEntry();
+    history[message.mode === "push" ? "pushState" : "replaceState"](entry.state, "", message.url);
+    historyEntry = entry.key;
+    restorePosition = null;
+  }
+  observedLocation = browserLocation();
+  committedLocation = observedLocation;
+  queueRouteScroll(observedLocation, restorePosition, crossRoute);
+  restorePosition = null;
+}
+
+function observeLocation() {
+  const url = browserLocation();
+  if (!routing || (url === observedLocation && history.state?.pysxEntry === historyEntry)) return;
+  rememberPosition();
+  let key = history.state?.pysxEntry;
+  if (!key || key === historyEntry) {
+    const entry = newHistoryEntry();
+    history.replaceState(entry.state, "", location.href);
+    key = entry.key;
+  }
+  historyEntry = key;
+  const saved = historyPositions.get(key);
+  restorePosition = saved?.url === url ? saved : null;
+  observedLocation = url;
+  navigationRevision += 1;
+  send({t: "location", url, rev: navigationRevision});
+}
+window.addEventListener("popstate", observeLocation);
+window.addEventListener("hashchange", observeLocation);
 
 const EVENTS = [
   "abort", "afterprint", "animationend", "animationiteration", "animationstart", "auxclick",
@@ -208,7 +331,16 @@ function typedEvents(event, phase, composed) {
     if (!encoded) continue;
     const policy = JSON.parse(encoded);
     if (policy.phase !== phase || !eligible(event, target, policy)) continue;
-    if (policy.prevent || event.type === "submit") event.preventDefault();
+    const navigation = policy.navigation && eligible(event, target, {...policy, link: true});
+    const anchor = target.closest("a[href]");
+    if (policy.navigation && !navigation && !event.defaultPrevented && event.button === 0 &&
+        !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey &&
+        !anchor.hasAttribute("download") && (!anchor.target || anchor.target === "_self") &&
+        anchor.getAttribute("href") === location.hash && location.hash) {
+      queueMicrotask(() => queueRouteScroll(browserLocation()));
+    }
+    if (navigation) navigationRevision += 1;
+    if (policy.prevent || event.type === "submit" || navigation) event.preventDefault();
     if (policy.stop) event.stopPropagation();
     const handler = target.getAttribute(`data-pysx-${event.type}`);
     if (event.type === "reset") {
@@ -226,6 +358,10 @@ function typedEvents(event, phase, composed) {
       }
     } else {
       const payload = { t: "event", h: handler, event: snapshot(event, handler) };
+      if (policy.navigation) {
+        payload.navigation = !!navigation;
+        payload.event.value = target.closest("a[href]")?.getAttribute("href") ?? "";
+      }
       if (event.type === "submit") {
         if (!target.checkValidity() && !target.noValidate && !event.submitter?.formNoValidate) return;
         payload.v = submitPayload(target, event.submitter);
@@ -312,21 +448,38 @@ function hydrate(scope) {
 socket.onmessage = (event) => {
   const message = JSON.parse(event.data);
   if (message.t === "init") {
+    routing = !!message.routing;
+    if (routing) {
+      previousRestoration = history.scrollRestoration;
+      history.scrollRestoration = "manual";
+      const entry = newHistoryEntry();
+      history.replaceState(entry.state, "", location.href);
+      historyEntry = entry.key;
+    }
     style.textContent = message.css;
     root.innerHTML = message.html;
     hydrate(root);
     syncDom();
+    if (routing) queueRouteScroll(browserLocation());
   } else if (message.t === "patch") {
     for (const op of message.ops) apply(op);
     syncDom();
+    if (pendingScroll) attemptRouteScroll();
   } else if (message.t === "dom") {
     domCommand(message);
   } else if (message.t === "mount") {
     socket.send(JSON.stringify({t: "mounted", ids: message.ids}));
+  } else if (message.t === "navigation") {
+    commitNavigation(message);
   }
 };
 
 socket.addEventListener("close", () => {
+  cancelRouteScroll();
+  if (previousRestoration !== null) history.scrollRestoration = previousRestoration;
+  historyPositions.clear();
+  window.removeEventListener("popstate", observeLocation);
+  window.removeEventListener("hashchange", observeLocation);
   for (const listener of domListeners.values()) listener.target.removeEventListener(listener.type, listener.fn, listener.capture);
   domListeners.clear(); domNodes.clear();
   for (const [type, listeners] of registeredEvents) {
@@ -440,6 +593,8 @@ function edit(el) {
 }
 
 function send(payload) {
+  if (routing && payload.t === "event") rememberPosition();
+  if (routing && payload.t === "event") payload.nav_rev = navigationRevision;
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
 }
 

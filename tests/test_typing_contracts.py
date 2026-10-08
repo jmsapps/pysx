@@ -11,6 +11,53 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
+def test_pysx_12_st_1_route_state_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = (
+        "from collections.abc import Mapping\n"
+        "from typing import assert_type\n"
+        "from pysx import (Children, Fragment, Link, Location, NavigationEvent,\n"
+        "    Route, Router, RouteState, pysx)\n"
+        "def page(state: RouteState) -> Fragment:\n"
+        "    assert_type(state.params(), Mapping[str, str])\n"
+        "    assert_type(state.location(), Location)\n"
+        "    return pysx(t'p: {state.params}')\n"
+    )
+
+    if valid:
+        source += (
+            "router = Router([Route('/users/:id', page)])\n"
+            "assert_type(router.view(), Fragment)\n"
+            "assert_type(router.path(), str)\n"
+            "assert_type(router.query(), tuple[tuple[str, str], ...])\n"
+            "def cancel(event: NavigationEvent) -> None:\n    event.cancel_navigation()\n"
+            "assert_type(Link('Next', router=router, href='/next', on_navigate=cancel), Fragment)\n"
+            "def panel(children: Children) -> Fragment:\n"
+            "    return Link(router=router, href='/next', children=children)\n"
+        )
+    else:
+        source += (
+            "def wrong(state: RouteState) -> int:\n    return 1\n"
+            "Route('/bad', wrong)\nRouter([], initial=123)\n"
+        )
+    fixture = tmp_path / "route_state.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "int" in output
+        assert "str" in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
 def test_inline_helper_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = (
         "from pysx import Each, Fragment, each, each_indexed, pysx, signal, when\n"

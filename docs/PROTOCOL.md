@@ -11,6 +11,31 @@ text by index.
 
 ## Messages
 
+### Navigation
+
+The WebSocket URL may carry `location`, an encoded local path/search/hash used to
+construct the initial session. Invalid locations close with code 1008. `init` adds
+an optional boolean `routing` to enable location observation. Browser history/hash
+changes send `{"t":"location","url":"/path?query#hash","rev":1}`. Duplicate
+popstate/hashchange URLs are suppressed. Routed events include `nav_rev`; a held
+Link click also includes boolean `navigation` and its href in the event snapshot's
+`value`. Native clicks leave `navigation` false.
+
+Location messages enter the same bounded queue as events. Revisions must be
+nonnegative integers and never decrease. Accepted URL changes update session-owned
+signals. Resulting patches precede `{"t":"navigation","url":"/path","rev":1,
+"mode":"push"}`. Modes are `push`, `replace`, `observe` and `external`; `observe`
+acknowledges browser history without mutating it, and `external` assigns an HTTP(S)
+URL. The client ignores navigation messages whose revision no longer matches its
+latest intention. Link callbacks run before committing navigation and may explicitly
+cancel it. This contract covers the current serialized connection, without resume.
+
+Navigation acknowledgement is also the scroll/focus commit boundary. Entry keys,
+up to 128 saved positions/focus IDs, and bounded two-second fragment retries stay in
+the browser. Later DOM patches can satisfy the current retry; URL/revision checks
+cancel work for departed routes. The server exposes `RouteResponse` location,
+pattern and status metadata for future HTTP rendering hosts.
+
 ### Component mount acknowledgement
 
 After `init` or a `patch` commits an owner's markup, the server may send
