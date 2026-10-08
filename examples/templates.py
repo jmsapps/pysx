@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from pysx import Fragment, bounded_while, each, each_indexed, eq, pysx, signal, styled, when
 
 from .components.controls import Action, Actions, Description, Eyebrow, Title
-from .components.templates import GroupHeading, GroupPanel, TemplatePage, snapshot_label
+from .components.templates import Break, GroupHeading, GroupPanel, TemplatePage, snapshot_label
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -20,7 +20,13 @@ def app() -> Fragment:
     mode = signal("full")
     selected = signal("none")
     serial = signal(0)
+    live_heading = signal("Live values")
     local_heading = styled(GroupHeading)(t"letter-spacing: 0.02em")
+
+    def advance_heading(_event: object) -> None:
+        live_heading.update(
+            lambda value: "Live values updated" if value == "Live values" else "Live values"
+        )
 
     def reverse(_event: object) -> None:
         groups.set(list(reversed(groups())))
@@ -98,6 +104,12 @@ def app() -> Fragment:
           Eyebrow: "Template language"
           Title: "Live rows and snapshots"
           Description: "Reorder groups or pick a row. Snapshots stay fixed."
+
+          GroupPanel(id="inline-siblings"):
+            GroupHeading(id="live-heading"): {live_heading}; Break; Break; Action(
+              id="advance-heading",
+              onClick={advance_heading},
+            ): "Update heading"
 
           Actions:
             Action(id="reverse", onClick={reverse}): "Reverse groups"

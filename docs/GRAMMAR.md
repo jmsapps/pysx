@@ -24,21 +24,78 @@ root must be empty in markup and owns its explicitly created descendants.
 
 ```
 template   := NEWLINE line*
-line       := INDENT (element | conditional | alternative | loop | match | case | local | content)
-element    := (NAME | HOLE) [ "(" attrs ")" ] ":" [ content ]
+line       := INDENT (row | conditional | alternative | loop | match | case | local)
+row        := ";"* [segment (";"+ segment)*] ";"*
+segment    := element | content
+element    := NAME [ "(" attrs ")" ] [ ":" [content] ]
+           | HOLE "(" attrs ")" [ ":" [content] ] | HOLE ":" [content]
 conditional:= "if" HOLE ":"
 alternative:= "elif" HOLE ":" | "else" ":"
 loop       := "for" (NAME | "(" NAME ("," NAME)* ")") "in" HOLE ["key=" HOLE] ":"
 match      := "match" HOLE ":"
 case       := "case" ("_" | (STRING | NUMBER | "True" | "False" | "None" | HOLE) ("|" pattern)*) ":"
 local      := ("let" | "set") NAME "=" HOLE | "discard" HOLE
-content    := item (";" item)*
+content    := (item | ";")*
 item       := STRING | HOLE
-attrs      := attr ("," attr)* [","]
+attrs      := [attr ([","] attr)* [","]]
 attr       := NAME "=" (STRING | HOLE)
 STRING     := double-quoted or single-quoted text with quoted escapes
 HOLE       := a gap between two t-string fragments
 ```
+
+## Childless invocations and inline siblings
+
+A literal name without a colon invokes an element with no caller-supplied content:
+`br`, `div`, `Break`, and `Icon(name="search")`. Native, styled and ordinary callable
+components follow the same syntax. A callable may render its own content. HTML voidness
+is independent: bare `div` renders `<div></div>` and bare `br` renders `<br>`.
+
+At a top-level semicolon, a literal element name or an explicit tag hole starts a
+sibling under the row's enclosing indentation parent:
+
+```text
+Card:
+    h2: "Live values"; Break; Break;
+    p: "Hello "; {name}; Break; span: "Next"; {suffix}
+```
+
+The first row has three sibling elements. In the second, greeting/name belong to `p`,
+and suffix belongs to `span`. Content-only segments continue the current colon element.
+A childless invocation clears that content owner: `br; "tail"; {value}` places all three
+nodes at the enclosing parent. Content can precede the first element, as in
+`"prefix"; br; "tail"; span: "next"`. Content never returns to an earlier element.
+
+Quoted semicolons, escaped quotes, attribute parentheses, and interpolation values cannot
+create boundaries. Adjacent content without separators remains valid, including
+`p: "Hello " {name}{suffix}`. A quoted `"br"` is text. `br br`, `p: "x" br`, and
+`p: {value}{Component}()` remain errors. Leading, repeated and trailing separators are
+allowed; empty segments create no nodes, including separator-only rows.
+
+`{Component}()` and `{Component}: "text"` identify explicit tag holes at the beginning
+of a row or after a top-level separator. An unadorned `{value}` stays content, regardless
+of its runtime value. Parser lookahead never evaluates values or changes hole kinds.
+
+Only a standalone block-capable element may own an indented continuation:
+
+| Row | May own an indented body? |
+| --- | --- |
+| `div` or `Card` | No; add `:` to introduce a body. |
+| `div()`, `Card(props={props})`, `{Component}()` | Yes; retained parenthesized syntax. |
+| `Card:`, `Card:;`, `Card: "text"; {value}` | Yes; all content belongs to one element. |
+| `Card();` | Yes; trailing separators preserve body eligibility. |
+| `h2: "x"; br`, `br; "tail"`, `"prefix"; Card()` | No; put the intended parent on its own row with `:`. |
+
+Blank and separator-only rows cannot hide a forbidden indented continuation, including
+by popping its enclosing parent on a dedented separator row. Legacy separator-row stack,
+branch and ancestor-span behavior is preserved. A content-free colon header is invalid
+in any mixed/sibling row: `br; Card:`, `Card:; br`, and `p:;; br`. Use `Card` or `Card()`.
+An empty quoted string or content hole counts as supplied content: `Card: ""; br` is valid.
+
+Logical rows use the existing multiline quote/attribute continuation rules. Siblings
+after a closing multiline attribute list still share the original row's enclosing parent.
+New sibling spans cover their own invocation/content and exclude adjacent separators.
+Control and local statements remain line-based, with no inline headers or new trailing
+separators. Their keywords cannot be bare element names, even at the beginning of a row.
 
 ## Hole kinds
 
@@ -50,7 +107,7 @@ Decided by **position and attribute name**, never by the value's Python type.
 | attribute | `bindValue`, `bindChecked`, `bindSelected` | `BIND` | typed control binding + `data-pysx-binding="hN"` |
 | attribute | other | `ATTR` | element gets `data-pysx-el="eN"` |
 | `if` header | — | `COND` | `<pysx-slot id="N">branch</pysx-slot>` |
-| opening markup line, followed by `(` and/or `:` | — | `TAG` | supplied native/styled/callable component |
+| row/semicolon statement start, followed by `(` and/or `:` | — | `TAG` | supplied native/styled/callable component |
 | content | — | `TEXT` | `<pysx-slot id="N">value</pysx-slot>` |
 | loop source / explicit key | — | `SOURCE` / `KEY` | bounded rows with keyed or positional identity |
 | local statement | — | `LOCAL` | lexical declaration, assignment or discarded expression |
@@ -83,8 +140,8 @@ DSL loop or `each()` for keyed row reconciliation. The checker warns conservativ
 about known Signal-dependent sequence/comprehension expressions and assigned aliases;
 it does not evaluate code or inspect deferred lambda bodies.
 
-A hole opening a markup line becomes a component tag only when followed by an
-attribute list and/or `:`. `{Card}(id="preview"):` and `{shared.Card}:` use real
+A hole opening a markup row or following a top-level separator becomes a component tag
+only when followed by an attribute list and/or `:`. `{Card}(id="preview"):` and `{shared.Card}:` use real
 Python references, including local bindings, imported aliases and partial callables.
 `{native.Input}()` is a childless tag. In all other positions holes retain their
 content meaning. Unsupported tag values raise a TypeError naming the received type.

@@ -9,6 +9,26 @@ HEADER = "from pysx import component, div, pysx, signal, styled\n\n"
 
 
 @pytest.mark.parametrize(
+    ("row", "message", "selected"),
+    [
+        (r"p: '😀 {{brace}} \t'; br; Missing", "unknown component", "Missing"),
+        (r"p: '😀 {{brace}} \t'; br; input(title=bad)", "expected a string", "b"),
+        (r"p: '😀 {{brace}} \t'; br; Card:", "content-free", "C"),
+    ],
+)
+def test_inline_sibling_diagnostic_raw_utf16_ranges(row: str, message: str, selected: str) -> None:
+    source = 'from pysx import pysx\nview = pysx(t"' + row + '")\n'
+    findings = [item for item in diagnostics_for_source(source) if message in item["message"]]
+    assert len(findings) == 1
+    finding = findings[0]
+    line = source.splitlines()[finding["line"]]
+    raw = line.encode("utf-16-le")[
+        finding["startChar"] * 2 : finding["endChar"] * 2
+    ].decode("utf-16-le")
+    assert raw == selected
+
+
+@pytest.mark.parametrize(
     "expression",
     [
         "[value]",

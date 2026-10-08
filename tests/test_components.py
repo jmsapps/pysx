@@ -24,6 +24,33 @@ def sample(*, title: str, children: Children | None = None) -> Template:
     return t"\nsection: {title}; {children if children is not None else ''}"
 
 
+@pytest.mark.parametrize(
+    ("invocation", "expected"),
+    [
+        ("br", "<br>"),
+        ("div", "<div></div>"),
+        ("Break", "<br"),
+        ("Empty", "</div>"),
+        ('Icon(title="own content")', "own content"),
+        ('Decorated(title="styled content")', "styled content"),
+    ],
+)
+def test_inline_childless_native_styled_and_callable(invocation: str, expected: str) -> None:
+    from pysx import styled
+
+    namespace = {
+        "Break": styled.br(t""),
+        "Empty": styled.div(t"color: red"),
+        "Icon": sample,
+        "Decorated": styled(sample)(t"color: blue"),
+    }
+    template = Template(f"{invocation}; span: 'sibling'; br")
+    result = render(lambda: pysx(template, namespace=namespace))
+    assert expected in result.body
+    assert result.body.endswith("<span>sibling</span><br>")
+    result.dispose()
+
+
 @pytest.mark.parametrize("form", ["function", "alias", "nested", "partial", "instance"])
 def test_callable_return_callable_dispatch_forms(form: str) -> None:
     def nested(*, title: str, children: Children | None = None) -> Fragment:

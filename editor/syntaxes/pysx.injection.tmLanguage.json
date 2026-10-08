@@ -349,8 +349,8 @@
       ]
     },
     "element": {
-      "comment": "Capitalised tag name at the head of an indented line",
-      "match": "^\\s*([A-Z][A-Za-z0-9_]*)\\b",
+      "comment": "Capitalised tag at a row, template-content or inline statement start.",
+      "match": "(?:^|\\G|(?<=;))\\s*([A-Z][A-Za-z0-9_]*)\\b",
       "captures": {
         "1": {
           "name": "support.class.component.pysx"
@@ -424,7 +424,7 @@
     "punctuation": {
       "patterns": [
         {
-          "match": ":\\s*$",
+          "match": ":",
           "name": "punctuation.section.block.pysx"
         },
         {
@@ -471,8 +471,8 @@
       }
     },
     "element-html": {
-      "comment": "Lowercase tag at the head of an indented line. Deliberately generic: render.py passes any lowercase tag straight through without validation, so the grammar must not claim a fixed set.",
-      "match": "^\\s*(?!if\\b|elif\\b|else\\b|for\\b|match\\b|case\\b|let\\b|set\\b|discard\\b)([a-z][A-Za-z0-9_-]*)\\b",
+      "comment": "Native or lowercase callable name at a row, template-content or inline statement start; keyword exclusions retain line-based controls.",
+      "match": "(?:^|\\G|(?<=;))\\s*(?!if\\b|elif\\b|else\\b|for\\b|match\\b|case\\b|let\\b|set\\b|discard\\b)([a-z_][A-Za-z0-9_-]*)\\b",
       "captures": {
         "1": {
           "name": "entity.name.tag.pysx"

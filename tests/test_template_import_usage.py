@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 SOURCE = """from pysx import pysx
 from pysx.native import Strong, Em
-view = pysx(t"Strong: 'Hello'")
+view = pysx(t"br; Strong: 'Hello'")
 """
 
 
@@ -93,7 +93,7 @@ pythonVersion = "3.14"
 def Panel(*, title: str) -> Fragment:
     return pysx(t"p: {title}")
 def app() -> Fragment:
-    return pysx(t"Panel(title={'valid'})")
+    return pysx(t"br; Panel(title={'valid'}); br")
 """
     path.write_text(source, encoding="utf-8")
     assert type_project(tmp_path, backend) == 0
@@ -104,3 +104,33 @@ def app() -> Fragment:
 def test_template_import_usage_nonempty_coverage(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="no Python sources"):
         type_project(tmp_path, "pyright")
+
+
+@pytest.mark.parametrize("backend", ["mypy", "pyright"])
+@pytest.mark.parametrize(
+    ("tag", "prop", "good", "bad"),
+    [
+        ("input", "disabled", "False", "'wrong'"),
+        ("Empty", "id", "'valid'", "42"),
+        ("panel", "title", "'valid'", "42"),
+        ("Styled", "title", "'valid'", "42"),
+    ],
+)
+def test_inline_sibling_each_surface_strict_props(
+    tmp_path: Path, backend: str, tag: str, prop: str, good: str, bad: str
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.mypy]\nstrict=true\npython_version="3.14"\n'
+        '[tool.pyright]\ntypeCheckingMode="strict"\npythonVersion="3.14"\n'
+    )
+    path = tmp_path / "view.py"
+    source = '''from pysx import Fragment, pysx, styled
+def panel(*, title: str) -> Fragment:
+    return pysx(t"p: {title}")
+Styled = styled(panel)(t"color: red")
+Empty = styled.div(t"")
+'''
+
+    for value, expected in [(good, 0), (bad, 1)]:
+        path.write_text(source + f'view = pysx(t"br; {tag}({prop}={{{value}}}); br")\n')
+        assert type_project(tmp_path, backend) == expected

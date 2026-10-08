@@ -1,0 +1,17 @@
+from pysx import pysx
+view = pysx(t"""
+    Card:
+        h2: "Live"; Break; Break;
+        br;; br;
+        Icon(name="a;b"); span: "Search"
+        "Label"; br; "tail"; span: {value}
+        p: {value}; {Component}(); {other}; {Component}: "next"
+        div(
+            title="quoted; br",
+            onClick={handler}
+        ); br
+        p: "br; Card:; escaped \" quote"; br
+        _lower; lower
+""")
+inline = pysx(t"br; Break; br")
+AFTER_SENTINEL = "plain Python"

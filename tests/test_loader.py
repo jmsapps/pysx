@@ -222,6 +222,45 @@ print(json.dumps({'file': app.__code__.co_filename, 'bound': fragment.bound}))
     assert json.loads(result.stdout) == {"file": "author_app/view.py", "bound": True}
 
 
+def test_inline_siblings_source_loader_and_portable_build(app_root: Path, tmp_path: Path) -> None:
+    _write(
+        app_root,
+        "components.py",
+        '''from pysx import styled
+Break = styled.br(t"")
+''',
+    )
+    _write(
+        app_root,
+        "view.py",
+        '''from pysx import pysx
+from .components import Break as lower
+def app():
+    return pysx(t"h2: 'Live'; lower; lower;")
+''',
+    )
+    result = render(_app(import_app("author_app.view")))
+    assert result.body.startswith("<h2>Live</h2>")
+    assert result.body.count("<br") == 2
+    result.dispose()
+    output = tmp_path / "bundle" / "author_app"
+    build_tree(app_root / "author_app", output)
+    shutil.rmtree(app_root)
+    script = '''import sys
+sys.path.insert(0, sys.argv[1])
+from author_app.view import app
+from pysx import render
+fragment = app()
+assert fragment.bound
+assert 'lower' in fragment.namespace
+result = render(app)
+assert result.body.startswith('<h2>Live</h2>')
+assert result.body.count('<br') == 2
+result.dispose()
+'''
+    subprocess.run([sys.executable, "-c", script, str(output.parent)], check=True, timeout=30)
+
+
 def test_original_loader_traceback(app_root: Path) -> None:
     path = _write(
         app_root,

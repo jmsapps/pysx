@@ -5,12 +5,15 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from pysx.compiler import analyze
 from pysx.render import Fragment
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def test_runtime_local_component_is_a_real_closure() -> None:
@@ -32,6 +35,64 @@ def app():
     assert isinstance(result, Fragment)
     assert result.namespace is not None
     assert "Local" in result.namespace
+
+
+def test_inline_sibling_lowering_lexical_shadowing_and_exact_projection() -> None:
+    source = r'''from pysx import pysx, styled
+from pysx.native import Strong as lower
+def app():
+    Local = styled.section(t"color: red")
+    def row():
+        return pysx(t"p: '😀 {{brace}} \t'; lower; Local: 'closed'")
+    return row
+def shadow(lower):
+    return pysx(t"br; lower; div")
+'''
+    compilation = analyze(source)
+    assert compilation.complete
+    references = sorted(compilation.references, key=lambda reference: reference.span.start)
+    assert [reference.name for reference in references] == ["lower", "Local", "lower"]
+    projection = compilation.projection()
+
+    for reference in references:
+        assert source[reference.span.start : reference.span.end] == reference.name
+        generated = projection.text.index(f"'{reference.name}': {reference.name}")
+        generated += len(f"'{reference.name}': ")
+        assert projection.span(generated, generated + len(reference.name)) == next(
+            ref.span for ref in references if ref.name == reference.name
+        )
+    namespace: dict[str, object] = {}
+    exec(compilation.code(), namespace)
+    app = namespace["app"]
+    assert callable(app)
+    row = app()
+    assert callable(row)
+    assert "Local" in row.__code__.co_freevars
+    from pysx import render
+
+    result = render(cast("Callable[[], Fragment]", row))
+    assert "<strong></strong>" in result.body
+    assert "closed</section>" in result.body
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_inline_sibling_raw_assembled_source_map(raw: bool) -> None:
+    prefix = "rt" if raw else "t"
+    source = (
+        "from pysx import pysx\nfrom pysx.native import Strong as Lower\n"
+        f"head = {prefix}\"p: '😀 {{{{brace}}}} \\t'; \"\n"
+        'tail = t"Lower(title={\'valid\'}); br"\n'
+        "view = pysx(head + tail)\n"
+    )
+    compilation = analyze(source)
+    assert compilation.complete
+    assert len(compilation.references) == 1
+    tag = compilation.references[0]
+    assert source[tag.span.start : tag.span.end] == "Lower"
+    projection = compilation.projection()
+    prop = projection.text.rindex("title=")
+    span = projection.span(prop, prop + 5)
+    assert source[span.start : span.end] == "title"
 
 
 @pytest.mark.parametrize(
@@ -443,7 +504,7 @@ def test_factory_native_children_projection(tmp_path: Path, checker: str, invali
     value = "42" if invalid else "'panel'"
     compilation = analyze(
         "from pysx import pysx\nfrom surfaces import Shell\n"
-        f"view = pysx(t\"Shell(id={{{value}}}): 'child'\")\n",
+        f"view = pysx(t\"br; Shell(id={{{value}}}): 'child'; br\")\n",
         str(tmp_path / "view.py"),
         workspace_roots=(tmp_path,),
     )
@@ -487,10 +548,10 @@ Panel = partial(panel)
 Styled = styled(panel)(t"color: red")
 rows = signal([Row(1, "one")])
 view = each(rows,
-    lambda row: pysx(t"Panel(title={{{expression}}}): 'Content'"),
+    lambda row: pysx(t"br; Panel(title={{{expression}}}): 'Content'; br"),
     key=lambda row: row.id)
-native = pysx(t"input(bindValue={{signal('value')}}, disabled={{False}})")
-decorated = pysx(t"Styled(title={{'hello'}}, variant={{None}}): 'child'")
+native = pysx(t"br; input(bindValue={{signal('value')}}, disabled={{False}}); br")
+decorated = pysx(t"br; Styled(title={{'hello'}}, variant={{None}}): 'child'; br")
 """
     compilation = analyze(source)
     assert compilation.complete
