@@ -18,5 +18,4 @@ SnapshotLabel = styled.p(t"margin: 0; color: var(--muted);")
 
 
 def snapshot_label(name: str) -> Fragment:
-
     return pysx(t"SnapshotLabel: {name}")

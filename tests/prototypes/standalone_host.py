@@ -61,15 +61,19 @@ def principal(cookie_header: str) -> str:
     cookie = SimpleCookie()
     cookie.load(cookie_header)
     value = cookie.get("proof_principal")
+
     return value.value if value is not None else "anonymous"
 
 
 def response(connection: ServerConnection, result: HTTPResult) -> Response:
     result_response = connection.respond(HTTPStatus(result.status), result.body.decode("utf-8"))
+
     if "Content-Type" in result_response.headers:
         del result_response.headers["Content-Type"]
+
     for name, value in result.headers:
         result_response.headers[name] = value
+
     return result_response
 
 
@@ -78,27 +82,37 @@ class Standalone:
         self.engine = engine
 
     async def process_request(
-        self, connection: ServerConnection, request: Request,
+        self,
+        connection: ServerConnection,
+        request: Request,
     ) -> Response | None:
         if request.path == "/":
             result = await self.engine.http(principal(request.headers.get("Cookie", "")))
+
             return response(connection, result)
+
         if request.path == "/client.js":
             result = HTTPResult(
                 200, (("content-type", "text/javascript; charset=utf-8"),), CLIENT.encode("utf-8")
             )
+
             return response(connection, result)
+
         if request.path == "/ws":
             return None
+
         return connection.respond(HTTPStatus.NOT_FOUND, "not found")
 
     async def handler(self, connection: ServerConnection) -> None:
         request = connection.request
+
         if request is None:
             await connection.close(1011, "missing connection request")
+
             return
         actor = principal(request.headers.get("Cookie", ""))
         session: Session | None = None
+
         try:
             async for raw in connection:
                 try:
@@ -106,9 +120,10 @@ class Standalone:
                         raise ValueError("text JSON frames required")
                     session, reply = await self.engine.message(raw, actor, session)
                     await connection.send(json.dumps(reply))
-                except (ValueError, OSError):
+                except ValueError, OSError:
                     await connection.send(json.dumps({"t": "error", "code": "rejected"}))
                     await connection.close(1008, "proof message rejected")
+
                     break
         finally:
             if session is not None:
@@ -118,10 +133,15 @@ class Standalone:
 async def run(port: int) -> None:
     engine = Engine()
     host = Standalone(engine)
+
     try:
         async with serve(
-            host.handler, "127.0.0.1", port, process_request=host.process_request,
-            max_size=4096, max_queue=8,
+            host.handler,
+            "127.0.0.1",
+            port,
+            process_request=host.process_request,
+            max_size=4096,
+            max_queue=8,
         ):
             sys.stdout.write(f"pysx ready -> http://127.0.0.1:{port}\n")
             sys.stdout.flush()

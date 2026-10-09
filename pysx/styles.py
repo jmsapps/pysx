@@ -19,24 +19,20 @@ def css_text(value: object) -> str:
 
     if isinstance(value, Template):
         if value.interpolations:
-
             raise ValueError("CSS interpolations are unsupported; use styleVars or runtime css")
         value = "".join(value.strings)
 
     if not isinstance(value, str):
-
         raise TypeError("css requires a string, literal t-string or string signal")
     body = value.strip()
 
     if "{" in body or "}" in body:
-
         raise ValueError("css requires flat declarations without braces")
 
     return body
 
 
 def css_name(body: str) -> str:
-
     return "pysx-" + hashlib.sha256(body.encode()).hexdigest()[:16] if body else ""
 
 
@@ -44,7 +40,6 @@ def css(value: str | Template) -> str:
     """Validate a literal or snapshot flat CSS body; reactive values use the css attribute."""
 
     if not isinstance(value, (str, Template)):  # pyright: ignore[reportUnnecessaryIsInstance]
-
         raise TypeError("css() requires literal/snapshot CSS; use a css attribute for signals")
 
     return css_text(value)
@@ -54,16 +49,13 @@ def variable_name(raw: str) -> str:
     name = raw.strip()
 
     if not name:
-
         return ""
 
     if name.startswith("---"):
-
         raise ValueError("CSS variables cannot have more than two leading hyphens")
     name = "--" + name.lstrip("-")
 
     if not re.fullmatch(r"--[A-Za-z_][A-Za-z0-9_-]*", name):
-
         raise ValueError(f"invalid CSS variable name {raw!r}")
 
     return name
@@ -73,23 +65,19 @@ def variable_values(source: object) -> dict[str, str]:
     source = cast("Signal[object]", source)() if isinstance(source, Signal) else source
 
     if not isinstance(source, Mapping):
-
         raise TypeError("styleVars requires a mapping")
     result: dict[str, str] = {}
 
     for raw, value in cast("Mapping[object, object]", source).items():
         if not isinstance(raw, str):
-
             raise TypeError("CSS variable names must be strings")
         name = variable_name(raw)
         value = cast("Signal[object]", value)() if isinstance(value, Signal) else value
 
         if not isinstance(value, str):
-
             raise TypeError("CSS variable values must be strings or string signals")
 
         if any(char in value for char in ";{}\0"):
-
             raise ValueError("CSS variable values must contain one property value")
 
         if name and value:
@@ -117,7 +105,6 @@ class Themes:
         name = name.strip()
 
         if not name:
-
             raise ValueError("theme names cannot be empty")
         theme = Theme(name, tuple(sorted(variable_values(variables).items())))
         self.definitions[name] = theme
@@ -133,7 +120,6 @@ class Themes:
             self.revision.set(self.revision() + 1)
 
     def read(self, name: str) -> Theme:
-
         return self.definitions[name.strip()]
 
     def select(self, theme: str | Theme | None) -> None:
@@ -171,10 +157,10 @@ class StyleRegistry:
         for name in names:
             self.order.setdefault(name, None)
 
-    def release(self, prefix: str) -> None:
+    def release(self, prefix: str, preserved: tuple[str, ...] = ()) -> None:
         for collection in (self.rules, self.globals):
             for owner in tuple(collection):
-                if owner.startswith(prefix):
+                if owner.startswith(prefix) and not owner.startswith(preserved):
                     del collection[owner]
         live = {name for owned in self.rules.values() for name in owned}
         self.order = {name: None for name in self.order if name in live}
@@ -204,7 +190,6 @@ class CssClass:
     source: object
 
     def __call__(self) -> str:
-
         return css_name(css_text(self.source))
 
 

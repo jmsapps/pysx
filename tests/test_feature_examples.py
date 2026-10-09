@@ -12,6 +12,7 @@ from acceptance_support import ready_server
 from examples.composition import app as composition_app
 from examples.events import app as events_app
 from examples.forms import app as forms_app
+from examples.keyed_rows import app as keyed_rows_app
 from examples.navigation import app as navigation_app
 from examples.reactive_state import app
 from examples.templates import app as templates_app
@@ -192,8 +193,13 @@ def test_components_example_interactions_isolation_and_cleanup() -> None:
         assert session.rendered.scopes.pending_mounts() == []
         opened = session.dispatch(handler, None, event=asdict(BrowserEvent("click", handler)))
         assert any(
-            op["op"] == "list"
-            and any('id="tree-components"' in body for body in op["html"].values())
+            (
+                op["op"] == "list"
+                and any('id="tree-components"' in body for body in op["html"].values())
+            )
+            or (
+                (op["op"] == "html" or op["op"] == "children") and 'id="tree-components"' in op["v"]
+            )
             for op in opened
         )
         assert len(session.rendered.scopes.owners) > initial
@@ -474,3 +480,84 @@ def test_operators_example_cli_startup_cleanup() -> None:
         assert b"client.js" in response.read()
 
     assert server.poll() is not None
+
+
+def test_keyed_rows_interactions_isolation_and_cleanup() -> None:
+    session, other = Session(keyed_rows_app), Session(keyed_rows_app)
+
+    def handler(
+        attribute: str, value: str, *, binding: bool = False, markup: str | None = None
+    ) -> str:
+        marker = "binding" if binding else "click"
+        found = re.search(
+            rf'{attribute}="{value}"[^>]*data-pysx-{marker}="([^"]+)"',
+            markup or session.rendered.body,
+        )
+        assert found is not None
+
+        return found[1]
+
+    draft_id = handler("id", "draft-alpha", binding=True)
+    draft = session.rendered.bindings[draft_id].signal
+    pick = handler("data-pick", "alpha")
+    child = handler("data-child", "alpha:one")
+
+    try:
+        edited = session.dispatch(draft_id, "private draft")
+        assert any(op["op"] == "text" and op["v"] == "private draft" for op in edited)
+        assert all(op["op"] not in {"list", "children"} for op in edited)
+        count = session.dispatch(handler("data-count", "alpha"), None)
+        assert any(op["op"] == "text" and op["v"] == "1" for op in count)
+        reversed_ops = session.dispatch(handler("id", "keyed-reverse"), None)
+        assert len(reversed_ops) == 1
+        assert reversed_ops[0]["op"] == "list"
+        assert reversed_ops[0]["keys"] == ["beta", "alpha"]
+        assert reversed_ops[0]["html"] == {}
+        renamed = session.dispatch(handler("id", "keyed-rename"), None)
+        assert all(op["op"] != "list" for op in renamed)
+        assert session.rendered.bindings[draft_id].signal is draft
+        assert draft() == "private draft"
+        assert any(
+            op["op"] == "text" and op["v"] == "Alpha renamed" for op in session.dispatch(pick, None)
+        )
+        assert any(
+            op["op"] == "text" and op["v"] == "Alpha renamed / one"
+            for op in session.dispatch(child, None)
+        )
+        added = session.dispatch(handler("data-add", "alpha"), None)
+        assert any(op["op"] == "list" and len(op["html"]) == 1 for op in added)
+        assert other.rendered.bindings[draft_id].signal() == "Alpha"
+        assert other.pending == []
+        session.dispatch(handler("id", "keyed-remove"), None)
+        assert draft.observers == {}
+        assert pick not in session.rendered.handlers
+        restored = session.dispatch(handler("id", "keyed-restore"), None)
+        markup = next(op["html"]["alpha"] for op in restored if op["op"] == "list")
+        fresh_id = handler("id", "draft-alpha", binding=True, markup=markup)
+        assert session.rendered.bindings[fresh_id].signal() == "Alpha restored"
+        assert fresh_id != draft_id
+        assert session.dispatch(pick, None) == []
+    finally:
+        session.dispose()
+        other.dispose()
+    assert session.rendered.handlers == {}
+    assert session.rendered.dom.mounts == {}
+    assert session.rendered.lists == {}
+    assert session.rendered.scopes.owners == {}
+
+
+def test_keyed_rows_checker_clean() -> None:
+    from pathlib import Path
+
+    assert diagnostics(Path("examples/keyed_rows.py")) == []
+
+
+@pytest.mark.acceptance
+def test_keyed_rows_cli_startup_and_ctrl_c_exit() -> None:
+    command = ["uv", "run", "--project", ".", "example", "run", "keyed_rows", "--port", "8764"]
+    with ready_server(command) as server:
+        with urllib.request.urlopen("http://127.0.0.1:8764/", timeout=5) as response:
+            assert response.status == 200
+            assert b"client.js" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0

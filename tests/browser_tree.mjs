@@ -10,12 +10,15 @@ try {
   const focused = async id => {
     try {
       await page.waitForFunction(id => document.activeElement?.id === id, id);
+      // Firefox updates native keyboard targeting during the next rendering
+      // frame after a focused ancestor loses descendants.
+      await page.evaluate(() => new Promise(requestAnimationFrame));
     } catch (error) {
       const state = await page.evaluate(() => ({
         active: document.activeElement?.id || document.activeElement?.tagName,
         tabs: [...document.querySelectorAll('#composition-tree [tabindex]')]
           .map(node => [node.id, node.getAttribute("tabindex")]),
-        roots: [...document.querySelectorAll('#composition-tree > pysx-list > li')]
+        roots: [...document.querySelectorAll('#composition-tree > li')]
           .map(node => node.id),
       }));
       throw new Error(`expected focus on ${id}: ${JSON.stringify(state)}`, { cause: error });
@@ -56,7 +59,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#tree-notes").textContent.includes("activations: 1"));
   const original = await page.locator("#tree-notes").elementHandle();
   await page.locator("#tree-reverse").click();
-  await page.waitForFunction(() => document.querySelector('#composition-tree > pysx-list > li').id === "tree-notes");
+  await page.waitForFunction(() => document.querySelector('#composition-tree > li').id === "tree-notes");
   assert.equal(await original.evaluate(node => node === document.querySelector("#tree-notes")), true);
   assert.ok((await page.locator("#tree-notes").textContent()).includes("activations: 1"));
   console.log("  ok  root reorder preserves component state, handlers and untouched DOM");

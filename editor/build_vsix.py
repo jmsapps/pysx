@@ -13,7 +13,6 @@ HERE = Path(__file__).parent
 raw_package: object = json.loads((HERE / "package.json").read_text())
 
 if not isinstance(raw_package, dict):
-
     raise TypeError("extension manifest must be an object")
 PKG: dict[str, str] = {}
 package = cast("dict[str, object]", raw_package)
@@ -22,7 +21,6 @@ for key in ("name", "version", "publisher", "displayName", "description"):
     value = package.get(key)
 
     if not isinstance(value, str):
-
         raise TypeError(f"extension manifest {key!r} must be a string")
     PKG[key] = value
 

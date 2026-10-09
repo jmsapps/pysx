@@ -112,6 +112,7 @@ class DomController:
                         "args": args,
                     }
                 )
+
                 return await future
         except TimeoutError as exc:
             raise DomError("DOM command deadline exceeded") from exc
@@ -194,6 +195,7 @@ class DomRef:
 
     def handle(self) -> DomNode:
         """Capture this mount. Retained handles never follow replacement elements."""
+
         if self.token not in self.controller.mounts:
             raise DomError("ref is not mounted")
 

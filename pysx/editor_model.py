@@ -73,7 +73,6 @@ def _configuration(root: Path, files: tuple[Path, ...]) -> str:
         path = pending.pop().resolve()
 
         if path in seen:
-
             continue
         seen.add(path)
 
@@ -92,7 +91,6 @@ def _configuration(root: Path, files: tuple[Path, ...]) -> str:
                 pending.append(target)
 
                 if len(paths) > 1024:
-
                     raise ValueError("editor configuration graph exceeds 1024 files")
 
     for path in sorted(seen):
@@ -108,11 +106,9 @@ def _dependency_digest(path: str, buffers: dict[str, str]) -> str | None:
     if source is None:
         try:
             if Path(path).stat().st_size > MAX_MODULE_BYTES:
-
                 return None
             source = read_source(Path(path))
         except OSError, UnicodeError:
-
             return None
 
     return hashlib.sha256(source.encode()).hexdigest()
@@ -129,7 +125,6 @@ def _rebase(model: Model, revision: str) -> Model:
 
     for start, end in changes:
         if any(value is not None for value in model["map"][start:end]):
-
             raise ValueError("cached revision overlaps original source")
         mapping.extend(model["map"][cursor:start])
         mapping.extend([None] * len(revision))
@@ -138,7 +133,6 @@ def _rebase(model: Model, revision: str) -> Model:
     delta = len(revision) - len(previous)
 
     def shifted(position: int) -> int:
-
         return position + sum(delta for _, end in changes if end <= position)
 
     result = model.copy()
@@ -174,14 +168,12 @@ def normalize_imports(mapped: MappedText, revision: str, modules: frozenset[str]
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.split(".")[0] not in modules:
-
                     continue
                 start = positions.ast_offset(alias.lineno, alias.col_offset)
                 prefix = revision + "."
                 patches.append((start, prefix, (None,) * len(prefix)))
 
                 if alias.asname is not None:
-
                     continue
                 name = alias.name.split(".")[0]
                 end = positions.ast_span(node).end
@@ -207,13 +199,11 @@ def workspace_model(request: Request) -> list[Model]:
     revision = request["revision"]
 
     if not revision.startswith("_pysx_revision_") or not revision.isidentifier():
-
         raise ValueError("invalid projection revision")
     roots = (root, root / "src") if (root / "src").is_dir() else (root,)
     files = source_files(root)
 
     if not files or len(files) > MAX_FILES:
-
         raise ValueError("workspace must contain between 1 and 512 Python sources")
     overlays = request["buffers"]
     buffers = {
@@ -222,7 +212,6 @@ def workspace_model(request: Request) -> list[Model]:
     }
 
     if sum(len(source.encode()) for source in buffers.values()) > MAX_BYTES:
-
         raise ValueError("workspace Python source exceeds 8 MiB")
     relative: dict[Path, Path] = {}
 
@@ -231,13 +220,11 @@ def workspace_model(request: Request) -> list[Model]:
         name = path.relative_to(base)
 
         if name in relative.values():
-
             raise ValueError(f"ambiguous source roots: {name}")
         relative[path] = name
     modules = frozenset(path.parts[0].removesuffix(".py") for path in relative.values())
 
     if any(re.search(rf"\b{re.escape(revision)}\b", source) for source in buffers.values()):
-
         raise ValueError("projection revision conflicts with an original name")
     output: list[Model] = []
     configuration = _configuration(root, files)
@@ -290,7 +277,6 @@ def workspace_model(request: Request) -> list[Model]:
                 "F841",
                 "F811",
             } and not item.code.startswith("TC"):
-
                 continue
             start, end = (
                 positions.editor_position(item.span.start),

@@ -33,7 +33,6 @@ def _digest(path: Path) -> str | None:
 
         return hashlib.sha256(source.encode()).hexdigest()
     except OSError, UnicodeError, SyntaxError:
-
         return None
 
 
@@ -105,7 +104,6 @@ class SourceFinder(importlib.abc.MetaPathFinder):
             or name.startswith("pysx.")
             or any(part.startswith(".") or part in _EXCLUDED for part in path.parts)
         ):
-
             return False
 
         return any(
@@ -125,7 +123,6 @@ class SourceFinder(importlib.abc.MetaPathFinder):
             or spec.origin is None
             or not self.covers(fullname, Path(spec.origin))
         ):
-
             return None
         spec.loader = SourceLoader(fullname, spec.origin, self)
 
@@ -137,11 +134,9 @@ def install_loader(*, packages: tuple[str, ...] = (), roots: tuple[Path, ...] = 
     normalized = tuple(root.resolve() for root in roots)
 
     if not packages and not normalized:
-
         raise ValueError("specify application packages or source roots")
 
     if any(not all(part.isidentifier() for part in name.split(".")) for name in packages):
-
         raise ValueError("invalid application package name")
 
     for finder in sys.meta_path:
@@ -150,7 +145,6 @@ def install_loader(*, packages: tuple[str, ...] = (), roots: tuple[Path, ...] = 
             and finder.packages == packages
             and finder.roots == normalized
         ):
-
             return finder
     finder = SourceFinder(packages, normalized)
 
@@ -162,12 +156,10 @@ def install_loader(*, packages: tuple[str, ...] = (), roots: tuple[Path, ...] = 
             or not filename.endswith(".py")
             or not finder.covers(name, Path(filename))
         ):
-
             continue
         loader = getattr(module, "__loader__", None)
 
         if isinstance(loader, SourceLoader):
-
             continue
 
         try:
@@ -176,11 +168,9 @@ def install_loader(*, packages: tuple[str, ...] = (), roots: tuple[Path, ...] = 
                     stream.read(), filename, workspace_roots=normalized
                 )
         except OSError, UnicodeError, SyntaxError:
-
             continue
 
         if compilation.calls:
-
             raise RuntimeError(
                 f"install pysx loader before importing {name}; restart the application"
             )
@@ -195,7 +185,6 @@ def import_app(name: str) -> ModuleType:
     spec = importlib.machinery.PathFinder.find_spec(top)
 
     if spec is None:
-
         raise ModuleNotFoundError(name)
     roots = () if spec.origin is None else (Path(spec.origin).parent,)
     install_loader(packages=(top,), roots=roots)

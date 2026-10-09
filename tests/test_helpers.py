@@ -84,7 +84,6 @@ def test_duplicate_refresh_preserves_current_handlers_and_owners() -> None:
 
     def row(value: int) -> Fragment:
         def click(_: object) -> int:
-
             return value
 
         return pysx(t"button(onClick={click}): {value}")
@@ -143,7 +142,6 @@ def test_nested_readable_children_are_live_through_parent() -> None:
     children = signal(["first"])
 
     def row(parent: str) -> Fragment:
-
         return pysx(t"div: {each(children, lambda child: pysx(t'p: {parent} {child}'), key=str)}")
 
     session = Session(lambda: pysx(t"div: {each(parents, row, key=str)}"))

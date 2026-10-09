@@ -59,14 +59,14 @@ def test_stable_component_reorder_removal_and_remount() -> None:
 
     session = Session(app)
     first = counts["a"]
-    session.dispatch("h0:a:0", None)
+    incremented = session.dispatch("h0:a:g1:0", None)
     rows.set(["b", "a"])
     assert counts["a"] is first
     assert setup == ["a", "b"]
     assert len(source.observers) == 2
     watcher = session.rendered.watchers[0]
     assert isinstance(watcher, ListWatcher)
-    assert "1" in watcher.markup["a"]
+    assert any(op["op"] == "text" and op["v"] == "1" for op in incremented)
     rows.set(["b"])
     assert cleanup == ["a"]
     assert len(source.observers) == 1
@@ -228,7 +228,7 @@ def test_stable_component_nested_branches_keys_and_watchers() -> None:
     assert states["a"] is first
     assert setups == ["a", "a:c1"]
     assert len(session.rendered.watchers) == 1
-    assert len(nested.observers) == 1
+    assert len(nested.observers) == 2
     session.dispose()
     assert nested.observers == {}
 
@@ -263,8 +263,13 @@ def test_composition_recursive_dispatch_isolation_and_owned_cleanup() -> None:
     try:
         opened = session.dispatch(handler, None, event=asdict(BrowserEvent("click", handler)))
         assert any(
-            op["op"] == "list"
-            and any('id="tree-components"' in html for html in op["html"].values())
+            (
+                op["op"] == "list"
+                and any('id="tree-components"' in html for html in op["html"].values())
+            )
+            or (
+                (op["op"] == "html" or op["op"] == "children") and 'id="tree-components"' in op["v"]
+            )
             for op in opened
         )
         assert len(session.rendered.scopes.owners) > initial
@@ -324,8 +329,13 @@ def test_stable_component_connection_cleanup_keeps_the_original_error() -> None:
 def test_stable_component_setup_patch_and_mount_follow_a_failed_event() -> None:
     port = 8761
     command = [
-        sys.executable, "-m", "pysx.server",
-        "--app", "tests.mount_protocol_fixture:app", "--port", str(port),
+        sys.executable,
+        "-m",
+        "pysx.server",
+        "--app",
+        "tests.mount_protocol_fixture:app",
+        "--port",
+        str(port),
     ]
 
     async def exercise() -> None:

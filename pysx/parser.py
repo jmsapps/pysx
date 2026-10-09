@@ -63,11 +63,9 @@ class LiteralText(str):
 
     @property
     def span(self) -> Span:
-
         return self._span
 
     def __setattr__(self, name: str, value: object) -> None:
-
         raise AttributeError("literal syntax nodes are immutable")
 
 
@@ -274,7 +272,6 @@ def _logical_lines(lines: list[Line]) -> list[Line]:
             and isinstance(line[0], Text)
             and "\t" in line[0].s[: len(line[0].s) - len(line[0].s.lstrip())]
         ):
-
             raise PysxSyntaxError("markup indentation uses spaces, not tabs", line[0].position)
 
         if pending:
@@ -296,7 +293,6 @@ def _logical_lines(lines: list[Line]) -> list[Line]:
 
         for piece in line:
             if isinstance(piece, Hole):
-
                 continue
 
             for char in piece.s:
@@ -326,7 +322,6 @@ def _logical_lines(lines: list[Line]) -> list[Line]:
 
 
 def _is_blank(line: Line) -> bool:
-
     return all(isinstance(p, Text) and not p.s.strip() for p in line)
 
 
@@ -338,17 +333,14 @@ def _indent_of(line: Line) -> int:
 
 
 def _is_event(name: str) -> bool:
-
     return is_event(name) or (len(name) > 2 and name.startswith("on") and name[2].isupper())
 
 
 def attr_kind(name: str) -> HoleKind:
     if _is_event(name):
-
         return HoleKind.EVENT
 
     if name in {"bindValue", "bindChecked", "bindSelected"}:
-
         return HoleKind.BIND
 
     return HoleKind.ATTR
@@ -380,7 +372,6 @@ class _Scan:
             p = self.line[self.pi]
 
             if isinstance(p, Hole) or self.ci < len(p.s):
-
                 return
             self.pi += 1
             self.ci = 0
@@ -392,7 +383,6 @@ class _Scan:
 
     def peek(self) -> str | Hole | None:
         if self.eof():
-
             return None
         p = self.line[self.pi]
 
@@ -436,11 +426,9 @@ def _take_string(sc: _Scan) -> str:
         c = sc.peek()
 
         if c is None:
-
             raise PysxSyntaxError("unterminated string literal")
 
         if isinstance(c, Hole):
-
             raise PysxSyntaxError("interpolation inside a string literal is not supported")
 
         if c == quote:
@@ -453,7 +441,6 @@ def _take_string(sc: _Scan) -> str:
             escaped = sc.peek()
 
             if not isinstance(escaped, str):
-
                 raise PysxSyntaxError("incomplete quoted escape")
             sc.advance()
             out.append(
@@ -479,18 +466,15 @@ def _parse_attrs(sc: _Scan, holes: HoleTable) -> list[tuple[str, str | Hole]]:
             return attrs
 
         if c is None:
-
             raise PysxSyntaxError("unclosed '(' in attribute list")
         start = sc.position()
         name = LiteralText(_take_name(sc), Span(start, sc.position()))
 
         if not name:
-
             raise PysxSyntaxError(f"expected an attribute name, found {c!r}")
         sc.skip_ws()
 
         if sc.peek() != "=":
-
             raise PysxSyntaxError(f"expected '=' after attribute {name!r}")
         sc.advance()
         sc.skip_ws()
@@ -503,7 +487,6 @@ def _parse_attrs(sc: _Scan, holes: HoleTable) -> list[tuple[str, str | Hole]]:
         elif v in {'"', "'"}:
             attrs.append((name, _take_string(sc)))
         else:
-
             raise PysxSyntaxError(f"expected a string or interpolation for {name!r}")
         sc.skip_ws()
 
@@ -516,11 +499,9 @@ def _starts_element(sc: _Scan) -> bool:
     c = sc.peek()
 
     if isinstance(c, str):
-
         return c.isalpha() or c == "_"
 
     if not isinstance(c, Hole):
-
         return False
     saved = sc.pi, sc.ci
     sc.advance()
@@ -539,7 +520,6 @@ def _parse_content(sc: _Scan, holes: HoleTable) -> list[str | Hole]:
         c = sc.peek()
 
         if c is None:
-
             return items
 
         if c == ";":
@@ -578,7 +558,6 @@ def _hole(sc: _Scan, holes: HoleTable, kind: HoleKind) -> Hole:
     value = sc.peek()
 
     if not isinstance(value, Hole):
-
         raise PysxSyntaxError(f"{kind.value.lower()} requires an interpolation")
     sc.advance()
     holes[value.index] = (value.index, kind, None)
@@ -590,13 +569,11 @@ def _colon(sc: _Scan) -> None:
     sc.skip_ws()
 
     if sc.peek() != ":":
-
         raise PysxSyntaxError("expected ':' after control header")
     sc.advance()
     sc.skip_ws()
 
     if not sc.eof():
-
         raise PysxSyntaxError("control headers require an indented body")
 
 
@@ -623,11 +600,9 @@ def _parse_line(
                 sc.skip_ws()
 
                 if sc.eof() or sc.peek() == ";":
-
                     return _Element(c, attrs)
 
             if sc.peek() != ":":
-
                 raise PysxSyntaxError("expected ':' after component reference")
             sc.advance()
             sc.statement_end = sc.position()
@@ -641,9 +616,16 @@ def _parse_line(
         sc.statement_end = sc.position()
 
         if not allow_controls and tag in {
-            "if", "elif", "else", "for", "match", "case", "let", "set", "discard"
+            "if",
+            "elif",
+            "else",
+            "for",
+            "match",
+            "case",
+            "let",
+            "set",
+            "discard",
         }:
-
             raise PysxSyntaxError("control and local statements remain line-based", tag_start)
 
         if tag == "for":
@@ -659,7 +641,6 @@ def _parse_line(
                 name = _take_name(sc)
 
                 if not name or name in names:
-
                     raise PysxSyntaxError("loop requires distinct binding names")
                 names.append(name)
                 sc.skip_ws()
@@ -671,13 +652,11 @@ def _parse_line(
                     break
 
                 if sc.peek() != ",":
-
                     raise PysxSyntaxError("expected ',' in destructured loop bindings")
                 sc.advance()
             sc.skip_ws()
 
             if _take_name(sc) != "in":
-
                 raise PysxSyntaxError("expected 'in' after loop bindings")
             source = _hole(sc, holes, HoleKind.SOURCE)
             sc.skip_ws()
@@ -685,12 +664,10 @@ def _parse_line(
 
             if sc.peek() != ":":
                 if _take_name(sc) != "key":
-
                     raise PysxSyntaxError("explicitly keyed loops require key={...}")
                 sc.skip_ws()
 
                 if sc.peek() != "=":
-
                     raise PysxSyntaxError("expected '=' after loop key")
                 sc.advance()
                 key = _hole(sc, holes, HoleKind.KEY)
@@ -707,14 +684,12 @@ def _parse_line(
                 sc.skip_ws()
 
                 if not local_name or sc.peek() != "=":
-
                     raise PysxSyntaxError("local bindings require name = {value}")
                 sc.advance()
             local_value = _hole(sc, holes, HoleKind.LOCAL)
             sc.skip_ws()
 
             if not sc.eof():
-
                 raise PysxSyntaxError("unexpected text after local binding")
 
             return _Local(tag, local_name, local_value)
@@ -755,14 +730,12 @@ def _parse_line(
                             try:
                                 patterns.append(float(literal) if "." in literal else int(literal))
                             except ValueError as exc:
-
                                 raise PysxSyntaxError(
                                     "case requires literal alternatives or interpolations"
                                 ) from exc
                     sc.skip_ws()
 
                     if sc.peek() != "|":
-
                         break
                     sc.advance()
             _colon(sc)
@@ -774,7 +747,6 @@ def _parse_line(
             cond = sc.peek()
 
             if not isinstance(cond, Hole):
-
                 raise PysxSyntaxError("'if' needs an interpolated condition: if {expr}:")
             sc.advance()
             holes[cond.index] = (cond.index, HoleKind.COND, None)
@@ -801,7 +773,6 @@ def _parse_line(
 
         if sc.peek() != ":":
             if sc.eof() or sc.peek() == ";":
-
                 return _Element(tag, attrs, [], body_eligible=had_parens)
 
             raise PysxSyntaxError(f"expected ':' after element {tag!r}")
@@ -828,7 +799,6 @@ def _parse_row(
             sc.skip_ws()
 
         if sc.eof():
-
             break
         start = sc.position()
         sc.statement_end = None
@@ -840,14 +810,12 @@ def _parse_row(
         elif isinstance(node, list):
             nodes.extend(node)
         else:
-
             return node
         allow_controls = False
 
     if len(nodes) > 1:
         for item in nodes:
             if isinstance(item, _Element) and item.colon_header and not item.children:
-
                 raise PysxSyntaxError(
                     "content-free colon header in a sibling row; use a bare name or ()",
                     item.span.start if item.span else None,
@@ -859,14 +827,12 @@ def _parse_row(
 @lru_cache(maxsize=256)
 def parse(strings: tuple[str, ...]) -> Skeleton:
     if sum(len(value.encode("utf-8")) for value in strings) > 1_048_576 or len(strings) > 16385:
-
         raise PysxSyntaxError("template exceeds 1 MiB or 16384 holes", Position(0, 0))
     _logical_lines(_split_lines(strings, strings))  # Validate original indentation before dedent.
     fragments = dedent_fragments(strings)
     lines = _logical_lines(_split_lines(fragments, strings))
 
     if lines and not _is_blank(lines[0]) and any("\n" in text for text in strings):
-
         raise PysxSyntaxError(
             "template must begin with a newline: text on the opening quote line "
             "has no recoverable indent",
@@ -883,7 +849,6 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
 
     for line in lines:
         if _is_blank(line):
-
             continue
         indent = _indent_of(line)
 
@@ -897,7 +862,6 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
         try:
             row = _parse_row(scanner, holes)
         except PysxSyntaxError as exc:
-
             raise PysxSyntaxError(exc.msg, exc.position or scanner.position()) from exc
 
         node: _Element | _Conditional | _Loop | _Local | _Match | _Case | _Else | _Elif | _Row = row
@@ -910,7 +874,6 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
                 indent > forbidden_body[0]
                 or (indent == forbidden_body[0] and id(parent) != forbidden_body[2])
             ):
-
                 raise PysxSyntaxError(forbidden_body[1], start)
             forbidden_body = None
 
@@ -928,7 +891,6 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
                 )
 
         if len(stack) > 128:
-
             raise PysxSyntaxError("template nesting exceeds 128 levels", start)
 
         if isinstance(node, (_Element, _Conditional, _Loop, _Local, _Match, _Case)):
@@ -939,7 +901,6 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
 
         if isinstance(node, (_Element, _Loop, _Match, _Case)):
             if isinstance(node, _Case) and not isinstance(owners.get(id(parent)), _Match):
-
                 raise PysxSyntaxError("case must be directly inside match", start)
             parent.append(node)
             owners[id(node.children)] = node
@@ -956,7 +917,6 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
             chain = open_conditionals.get((id(parent), indent))
 
             if chain is None or not parent or parent[-1] is not chain[0] or chain[2]:
-
                 raise PysxSyntaxError(
                     "branch without a matching contiguous if at the same indent", start
                 )
@@ -986,7 +946,6 @@ def parse(strings: tuple[str, ...]) -> Skeleton:
     missing = [i for i in range(len(fragments) - 1) if i not in holes]
 
     if missing:
-
         raise PysxSyntaxError(f"interpolation(s) {missing} are not in a usable position")
 
     return Skeleton(_freeze(root), tuple(holes[i] for i in range(len(fragments) - 1)), strings)
@@ -1023,7 +982,6 @@ def _freeze(nodes: list[_Builder], namespace: str = "html") -> tuple[Node, ...]:
             )
         elif isinstance(node, _Loop):
             if not node.children:
-
                 raise PysxSyntaxError(
                     "loop requires an indented body", node.span.start if node.span else None
                 )
@@ -1039,13 +997,11 @@ def _freeze(nodes: list[_Builder], namespace: str = "html") -> tuple[Node, ...]:
 
             for child in node.children:
                 if not isinstance(child, _Case):
-
                     raise PysxSyntaxError(
                         "match requires case blocks", node.span.start if node.span else None
                     )
 
                 if cases and cases[-1].wildcard:
-
                     raise PysxSyntaxError(
                         "wildcard case must be last", child.span.start if child.span else None
                     )
@@ -1059,13 +1015,11 @@ def _freeze(nodes: list[_Builder], namespace: str = "html") -> tuple[Node, ...]:
                 )
 
             if not cases:
-
                 raise PysxSyntaxError(
                     "match requires case blocks", node.span.start if node.span else None
                 )
             frozen.append(Match(node.value, tuple(cases), node.span))
         elif isinstance(node, _Case):
-
             raise PysxSyntaxError(
                 "case must be directly inside match", node.span.start if node.span else None
             )

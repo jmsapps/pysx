@@ -79,19 +79,16 @@ def _ruff(source: str, filename: str) -> list[RuffMessage]:
     )
 
     if result.returncode not in {0, 1}:
-
         raise RuntimeError(result.stderr.strip() or "Ruff analysis failed")
     payload: object = json.loads(result.stdout)
 
     if not isinstance(payload, list):
-
         raise ValueError("Ruff did not return diagnostics")
 
     return cast("list[RuffMessage]", payload)
 
 
 def _span(positions: Positions, start: Location, end: Location) -> SourceSpan:
-
     return SourceSpan(
         positions.text_offset(start["row"], start["column"] - 1),
         positions.text_offset(end["row"], end["column"] - 1),
@@ -104,7 +101,6 @@ def _import_ranges(source: str) -> tuple[SourceSpan, ...]:
 
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, (ast.Import, ast.ImportFrom)):
-
             continue
         span = positions.ast_span(node)
         start = source.rfind("\n", 0, span.start) + 1
@@ -123,7 +119,6 @@ def _import_ranges(source: str) -> tuple[SourceSpan, ...]:
 
 
 def _projected(message: RuffMessage) -> bool:
-
     return message["code"] in LEXICAL_CODES or message["code"].startswith("TC")
 
 
@@ -139,12 +134,10 @@ def lint_source(
     compilation = compilation or analyze(source, filename, workspace_roots=roots, buffers=buffers)
 
     if compilation.source != source or compilation.filename != filename:
-
         raise ValueError("lint compilation does not match source")
     original = MappedText(source, tuple(SourceSpan(i, i + 1) for i in range(len(source))))
 
     if compilation.tree is None:
-
         return tuple(
             Finding(
                 item["code"],
@@ -165,14 +158,12 @@ def lint_source(
 
         for item in messages:
             if _projected(item) != (mapped is projection):
-
                 continue
             generated = _span(positions, item["location"], item["end_location"])
 
             try:
                 span = mapped.span(generated.start, generated.end)
             except ValueError:
-
                 continue
             edits: list[Edit] = []
             fix = item["fix"]

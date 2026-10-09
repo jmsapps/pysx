@@ -35,17 +35,29 @@ def test_missing_banner() -> None:
 
 
 def test_ready_server_cleanup() -> None:
-    with ready_server([
-        sys.executable, "-c", "import time; print('pysx ready', flush=True); time.sleep(30)",
-    ]) as proc:
+    with ready_server(
+        [
+            sys.executable,
+            "-c",
+            "import time; print('pysx ready', flush=True); time.sleep(30)",
+        ]
+    ) as proc:
         assert proc.poll() is None
     assert proc.poll() is not None
 
 
 def test_ready_server_timeout() -> None:
-    with pytest.raises(RuntimeError, match="within deadline"), ready_server([
-        sys.executable, "-c", "import time; time.sleep(30)",
-    ], timeout=0.1):
+    with (
+        pytest.raises(RuntimeError, match="within deadline"),
+        ready_server(
+            [
+                sys.executable,
+                "-c",
+                "import time; time.sleep(30)",
+            ],
+            timeout=0.1,
+        ),
+    ):
         pytest.fail("unready child yielded")
 
 
@@ -59,7 +71,7 @@ def test_nested_server_cleanup(tmp_path: Path, failure: str) -> None:
         "sys.path.insert(0, 'tests')\n"
         "from acceptance_support import ready_server\n"
         "with ready_server([sys.executable, '-c', "
-        '"import time; print(\'pysx ready\', flush=True); time.sleep(30)"]'
+        "\"import time; print('pysx ready', flush=True); time.sleep(30)\"]"
         ") as server:\n"
         f"    Path({str(pid_file)!r}).write_text(str(server.pid))\n"
         + ("    raise SystemExit(3)\n" if failure == "exit" else "    time.sleep(30)\n")
@@ -69,10 +81,12 @@ def test_nested_server_cleanup(tmp_path: Path, failure: str) -> None:
         run_suite([sys.executable, "-c", source], "PASSED", timeout=1)
     pid = int(pid_file.read_text())
     command = (
-        ["ps", "-o", "stat=", "-p", str(pid)] if os.name == "posix"
+        ["ps", "-o", "stat=", "-p", str(pid)]
+        if os.name == "posix"
         else ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV"]
     )
     result = subprocess.run(command, capture_output=True, text=True, timeout=5, check=False)
+
     if os.name == "posix":
         assert not result.stdout.strip() or result.stdout.strip().startswith("Z"), result.stdout
     else:
@@ -84,7 +98,8 @@ def test_nested_server_cleanup(tmp_path: Path, failure: str) -> None:
 @pytest.mark.parametrize("entry", ["console", "root-script"])
 def test_example_commands(example: str, entry: str) -> None:
     command = (
-        [sys.executable, "run_example.py"] if entry == "root-script"
+        [sys.executable, "run_example.py"]
+        if entry == "root-script"
         else [str(Path(sys.executable).with_name("example.exe" if os.name == "nt" else "example"))]
     )
     # Keep the smoke port separate from headless suites and the development server.

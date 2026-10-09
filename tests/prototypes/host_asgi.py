@@ -39,17 +39,22 @@ class ASGI:
         self.engine = engine
 
     async def __call__(
-        self, scope: Scope, receive: Callable[[], Awaitable[Event]],
+        self,
+        scope: Scope,
+        receive: Callable[[], Awaitable[Event]],
         send: Callable[[Event], Awaitable[None]],
     ) -> None:
         cookie = "; ".join(
             value.decode("latin-1") for name, value in scope["headers"] if name.lower() == b"cookie"
         )
         actor = principal(cookie)
+
         if scope["type"] == "http":
             request = await receive()
+
             if request.get("type") != "http.request" or request.get("more_body", False):
                 raise ValueError("proof handles completed GET requests")
+
             if scope["path"] == "/":
                 result = await self.engine.http(actor)
             elif scope["path"] == "/client.js":
@@ -60,26 +65,35 @@ class ASGI:
                 )
             else:
                 result = HTTPResult(404, (), b"not found")
-            await send({
-                "type": "http.response.start", "status": result.status,
-                "headers": [
-                    (name.encode("ascii"), value.encode("latin-1"))
-                    for name, value in result.headers
-                ],
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": result.status,
+                    "headers": [
+                        (name.encode("ascii"), value.encode("latin-1"))
+                        for name, value in result.headers
+                    ],
+                }
+            )
             await send({"type": "http.response.body", "body": result.body, "more_body": False})
+
             return
+
         if scope["type"] != "websocket" or scope["path"] != "/ws":
             raise ValueError("unsupported proof scope")
+
         if (await receive()).get("type") != "websocket.connect":
             raise ValueError("expected websocket.connect")
         await send({"type": "websocket.accept"})
         session: Session | None = None
+
         try:
             while True:
                 event = await receive()
+
                 if event.get("type") == "websocket.disconnect":
                     return
+
                 if event.get("type") != "websocket.receive" or "text" not in event:
                     raise ValueError("proof receives text frames")
                 session, reply = await self.engine.message(event["text"], actor, session)

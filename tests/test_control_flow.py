@@ -58,7 +58,6 @@ def test_branches_loops_chain_and_match_lifetimes() -> None:
     text = signal("live")
 
     def app() -> Fragment:
-
         return pysx(t"""
             if {first}:
               p: {text}
@@ -99,11 +98,9 @@ def test_branches_loops_keyed_capture_destructure_and_locals() -> None:
     discarded: list[str] = []
 
     def capture(value: str) -> Callable[[object], None]:
-
         return lambda _event: clicked.append(value)
 
     def app() -> Fragment:
-
         return pysx(
             t"""
             for (index, row) in {rows} key={index}:

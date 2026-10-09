@@ -1,0 +1,20 @@
+from pysx import each, pysx
+
+def page():
+    return pysx(t"""
+        table:
+          tbody:
+            for row in {rows} key={row.key}:
+              tr:
+                td: {row.label}
+                td:
+                  input(ref={field}, bindValue={draft})
+                  for child in {children} key={child.key}:
+                    span: {child.label}
+        select:
+          option(value={value}): {label}
+        svg:
+          text: {label}
+    """)
+
+AFTER_SENTINEL = 1

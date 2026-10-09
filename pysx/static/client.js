@@ -442,10 +442,14 @@ function within(scope, selector) {
   return found;
 }
 
-function hydrate(scope) {
+function registerTyped(scope) {
   for (const el of within(scope, "[data-pysx-typed]")) {
     for (const type of el.dataset.pysxTyped.split(" ")) if (type) registerEvent(type);
   }
+}
+
+function hydrate(scope) {
+  registerTyped(scope);
   for (const el of within(scope, "select[value], textarea[value]")) {
     el.value = el.getAttribute("value");
     if (el.tagName === "SELECT") setSelected(el, [el.value], true);
@@ -496,11 +500,30 @@ socket.addEventListener("close", () => {
 
 function apply(op) {
   if (op.op === "css") { style.textContent = op.v; return; }
+  if (op.op === "children") {
+    const range = op.range ? ownedRange(op.kind, op.id) : null;
+    const element = op.range ? null : root.querySelector(`[data-pysx-el="${CSS.escape(op.id)}"], pysx-slot[id="${CSS.escape(op.id)}"]`);
+    if (!range && !element) return;
+    const parser = document.createRange();
+    if (range) parser.setStartBefore(range.end);
+    else parser.selectNodeContents(element);
+    const fresh = parser.createContextualFragment(op.v);
+    preserveInteraction(() => morphChildren(range ? range.start.parentNode : element, range ? rangeNodes(range) : [...element.childNodes], [...fresh.childNodes], range?.end ?? null));
+    hydrate(range ? range.start.parentElement : element);
+    return;
+  }
   if (op.op === "text" || op.op === "html") {
     const slot = root.querySelector(`pysx-slot[id="${CSS.escape(op.id)}"]`);
-    if (!slot) return;
-    if (op.op === "text") slot.textContent = op.v;
-    else { slot.innerHTML = op.v; hydrate(slot); }
+    if (slot) {
+      if (op.op === "text") slot.textContent = op.v;
+      else { slot.innerHTML = op.v; hydrate(slot); }
+    } else {
+      const range = ownedRange("slot", op.id);
+      if (!range) return;
+      clearRange(range);
+      range.end.before(op.op === "text" ? document.createTextNode(op.v) : contextual(range, op.v));
+      hydrate(range.start.parentElement);
+    }
     return;
   }
   if (op.op === "attr" || op.op === "prop") {
@@ -516,48 +539,190 @@ function apply(op) {
       else el[op.name] = op.v !== null;
     } else if (op.v === null) el.removeAttribute(op.name);
     else el.setAttribute(op.name, op.v);
+    if (op.name.startsWith("data-pysx-")) registerTyped(el);
     return;
   }
   if (op.op === "list") reconcile(op);
 }
 
-function reconcile(op) {
-  const list = root.querySelector(`pysx-list[id="${CSS.escape(op.id)}"]`);
-  if (!list) return;
+function hex(value) {
+  return [...new TextEncoder().encode(value)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
 
-  const nodes = new Map();
-  for (const node of [...list.children]) nodes.set(node.dataset.pysxKey, node);
+function rowPath(slot, key) {
+  const segment = /^[a-zA-Z0-9_]+$/.test(key) ? key : "~" + hex(key);
+  return `${slot}:${segment}:`;
+}
 
-  // Replace or create only the items the server actually sent.
-  for (const [key, markup] of Object.entries(op.html)) {
-    const template = document.createElement("template");
-    template.innerHTML = markup.trim();
-    const fresh = template.content.firstElementChild;
-    if (!fresh) continue;
-    const existing = nodes.get(key);
-    if (existing) existing.replaceWith(fresh);
-    nodes.set(key, fresh);
-    hydrate(fresh);
+function ownedRange(kind, id) {
+  const token = `pysx:${kind}:${hex(id)}:`;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+  let start = null;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.data === token + "start") start = node;
+    else if (start && node.data === token + "end") return {start, end: node};
   }
+  return null;
+}
 
+function rangeNodes(range, inclusive = false) {
+  const nodes = [];
+  for (let node = inclusive ? range.start : range.start.nextSibling;
+       node && node !== range.end; node = node.nextSibling) nodes.push(node);
+  if (inclusive) nodes.push(range.end);
+  return nodes;
+}
+
+function clearRange(range) { for (const node of rangeNodes(range)) node.remove(); }
+
+function contextual(range, markup) {
+  const parser = document.createRange();
+  parser.setStartBefore(range.end);
+  return parser.createContextualFragment(markup);
+}
+
+function nodeGroups(nodes) {
+  const groups = [];
+  for (let index = 0; index < nodes.length; index++) {
+    const node = nodes[index];
+    const match = node.nodeType === Node.COMMENT_NODE && /^pysx:(slot|list|row):([a-f0-9]+):start$/.exec(node.data);
+    if (match) {
+      const end = `pysx:${match[1]}:${match[2]}:end`;
+      const members = [node];
+      while (++index < nodes.length) {
+        members.push(nodes[index]);
+        if (nodes[index].nodeType === Node.COMMENT_NODE && nodes[index].data === end) break;
+      }
+      groups.push({key: `range:${match[1]}:${match[2]}`, kind: match[1], nodes: members});
+    } else {
+      const id = node.nodeType === Node.ELEMENT_NODE && (node.getAttribute("data-pysx-el") || (node.tagName.toLowerCase() === "pysx-slot" && node.id));
+      groups.push({key: id ? `element:${id}` : null, nodes: [node]});
+    }
+  }
+  return groups;
+}
+
+function compatible(old, fresh) {
+  if (old.nodeType !== fresh.nodeType) return false;
+  if (old.nodeType !== Node.ELEMENT_NODE) return true;
+  if (old.localName !== fresh.localName || old.namespaceURI !== fresh.namespaceURI) return false;
+  const token = old.getAttribute("data-pysx-ref");
+  const nextToken = fresh.getAttribute("data-pysx-ref");
+  return token === nextToken;
+}
+
+function morphNode(old, fresh) {
+  if (old.nodeType !== Node.ELEMENT_NODE) {
+    if (old.data !== fresh.data) old.data = fresh.data;
+    return;
+  }
+  const incoming = new Map([...fresh.attributes].map(attr => [attr.name, attr.value]));
+  const controlled = new Set([...old.attributes].filter(attr => PROPERTIES.has(attr.name)).map(attr => attr.name));
+  for (const attr of [...old.attributes]) if (!incoming.has(attr.name) && !PROPERTIES.has(attr.name)) old.removeAttribute(attr.name);
+  for (const [name, value] of incoming) {
+    if (PROPERTIES.has(name)) {
+      if (name === "value") setValue(old, value);
+      else old[name] = true;
+    } else if (old.getAttribute(name) !== value) old.setAttribute(name, value);
+  }
+  for (const name of controlled) if (!incoming.has(name)) {
+    if (name === "value") setValue(old, "");
+    else old[name] = false;
+  }
+  if (!old.hasAttribute("data-pysx-imperative")) morphChildren(old, [...old.childNodes], [...fresh.childNodes]);
+}
+
+function morphChildren(parent, previousNodes, nextNodes, boundary = null) {
+  const oldGroups = nodeGroups(previousNodes);
+  const freshGroups = nodeGroups(nextNodes);
+  const keyed = new Map(oldGroups.filter(group => group.key).map(group => [group.key, group]));
+  const used = new Set();
+  const resulting = [];
+  for (let index = 0; index < freshGroups.length; index++) {
+    const fresh = freshGroups[index];
+    let old = fresh.key ? keyed.get(fresh.key) : oldGroups[index];
+    if (old && (used.has(old) || old.key !== fresh.key || !compatible(old.nodes[0], fresh.nodes[0]))) old = null;
+    if (old) {
+      used.add(old);
+      if (old.kind) {
+        if (old.kind !== "list") morphChildren(parent, old.nodes.slice(1, -1), fresh.nodes.slice(1, -1), old.nodes.at(-1));
+        // Nested reconciliation may have changed the live range's length.
+        const members = [];
+        for (let node = old.nodes[0]; node; node = node.nextSibling) {
+          members.push(node);
+          if (node === old.nodes.at(-1)) break;
+        }
+        resulting.push(...members);
+      } else { morphNode(old.nodes[0], fresh.nodes[0]); resulting.push(old.nodes[0]); }
+    } else resulting.push(...fresh.nodes);
+  }
+  for (const old of oldGroups) if (!used.has(old)) for (const node of old.nodes) node.remove();
+  let target = boundary;
+  for (let index = resulting.length - 1; index >= 0; index--) {
+    const node = resulting[index];
+    if (node.nextSibling !== target || node.parentNode !== parent) parent.insertBefore(node, target);
+    target = node;
+  }
+}
+
+function reconcile(op) {
+  preserveInteraction(() => reconcileRanges(op));
+}
+
+function preserveInteraction(change) {
+  const active = document.activeElement;
+  const caret = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
+  const selection = window.getSelection();
+  const selected = selection?.rangeCount ? [selection.anchorNode, selection.anchorOffset, selection.focusNode, selection.focusOffset] : null;
+  const scroll = [];
+  for (let node = active; node instanceof Element; node = node.parentElement) scroll.push([node, node.scrollLeft, node.scrollTop]);
+  change();
+  if (active?.isConnected && document.activeElement !== active) active.focus({preventScroll: true});
+  if (caret && active.isConnected) active.setSelectionRange(...caret);
+  if (!caret && selected && selected[0]?.isConnected && selected[2]?.isConnected) selection.setBaseAndExtent(...selected);
+  for (const [node, left, top] of scroll) if (node.isConnected) { node.scrollLeft = left; node.scrollTop = top; }
+}
+
+function reconcileRanges(op) {
+  const list = ownedRange("list", op.id);
+  if (!list) return;
+  const nodes = new Map();
+  const walker = document.createTreeWalker(list.start.parentNode, NodeFilter.SHOW_COMMENT);
+  const prefix = `pysx:row:${hex(op.id + ":")}`;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.data.startsWith(prefix) && node.data.endsWith(":start")) {
+      const token = node.data.slice("pysx:row:".length, -":start".length);
+      const path = new TextDecoder().decode(Uint8Array.from(token.match(/../g), byte => parseInt(byte, 16)));
+      // Only rows directly owned by this list belong in this reconciliation.
+      const segment = path.slice(op.id.length + 1, -1);
+      if (segment.includes(":")) continue;
+      const key = segment.startsWith("~") ? new TextDecoder().decode(Uint8Array.from(segment.slice(1).match(/../g) ?? [], byte => parseInt(byte, 16))) : segment;
+      nodes.set(key, ownedRange("row", path));
+    }
+  }
+  for (const [key, markup] of Object.entries(op.html)) {
+    const existing = nodes.get(key);
+    if (existing) for (const node of rangeNodes(existing, true)) node.remove();
+    list.end.before(contextual(list, markup));
+    nodes.set(key, ownedRange("row", rowPath(op.id, key)));
+  }
   const keep = new Set(op.keys);
-  for (const [key, node] of [...nodes]) {
+  for (const [key, range] of nodes) {
     if (!keep.has(key)) {
-      node.remove();
+      for (const node of rangeNodes(range, true)) node.remove();
       nodes.delete(key);
     }
   }
-
-  // Move surviving nodes rather than recreating them, so an untouched item
-  // keeps its DOM identity (focus, selection, scroll).
-  let previous = null;
+  let target = list.start.nextSibling;
   for (const key of op.keys) {
-    const node = nodes.get(key);
-    if (!node) continue;
-    const target = previous ? previous.nextSibling : list.firstChild;
-    if (node !== target) list.insertBefore(node, target);
-    previous = node;
+    const range = nodes.get(key);
+    if (!range) continue;
+    if (range.start !== target) {
+      for (const node of rangeNodes(range, true)) target.before(node);
+    }
+    target = range.end.nextSibling;
   }
+  hydrate(list.start.parentElement);
 }
 
 function resyncBindings(form) {

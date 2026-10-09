@@ -33,9 +33,11 @@ class Signal[T]:
 
     def get(self) -> T:
         observer = _current.get()
+
         if observer is not None:
             observer.dependencies[id(self)] = self
             self.attach(observer)
+
         return self.value
 
     __call__ = get
@@ -43,9 +45,11 @@ class Signal[T]:
     def set(self, value: T) -> None:
         if isinstance(value, Signal):
             raise TypeError("nested Signals are not payloads")
+
         if value == self.value:
             return
         self.value = value
+
         for observer in tuple(self.observers.values()):
             observer.run()
 
@@ -63,9 +67,7 @@ class Signal[T]:
         return self is other
 
     def __bool__(self) -> bool:
-        raise TypeError(
-            "Use all_of/any_of/not_ and eq/ne; read get() for a snapshot"
-        )
+        raise TypeError("Use all_of/any_of/not_ and eq/ne; read get() for a snapshot")
 
     @overload
     def __lt__(
@@ -120,7 +122,6 @@ class Signal[T]:
         return derived(lambda: _order(self.get(), _read(other), "ge"))
 
 
-
 class Observer:
     def __init__(self, callback: Callable[[], None]) -> None:
         self.callback = callback
@@ -135,6 +136,7 @@ class Observer:
     def run(self) -> None:
         self.dispose()
         token = _current.set(self)
+
         try:
             self.callback()
         finally:
@@ -145,6 +147,7 @@ def derived[T](callback: Callable[[], T]) -> Signal[T]:
     # The provisional value is inaccessible until the synchronous observer initializes it.
     result = Signal(cast("T", None))
     result.keeper = Observer(lambda: result.set(callback()))
+
     return result
 
 
@@ -156,19 +159,27 @@ def _order(left: object, right: object, kind: str) -> bool:
     if isinstance(left, (int, float)) and isinstance(right, (int, float)):
         if kind == "lt":
             return left < right
+
         if kind == "le":
             return left <= right
+
         if kind == "gt":
             return left > right
+
         return left >= right
+
     if isinstance(left, str) and isinstance(right, str):
         if kind == "lt":
             return left < right
+
         if kind == "le":
             return left <= right
+
         if kind == "gt":
             return left > right
+
         return left >= right
+
     raise TypeError("Ordering requires numeric pairs or string pairs")
 
 
@@ -263,8 +274,10 @@ def _bool_values(values: tuple[bool | Signal[bool], ...]) -> tuple[bool, ...]:
 
 def _read_bool(value: bool | Signal[bool]) -> bool:
     result = _read(value)
+
     if not isinstance(result, bool):
         raise TypeError("Boolean composition requires bool payloads")
+
     return result
 
 
@@ -279,8 +292,10 @@ def length(value: Sized) -> Signal[int]: ...
 def length(value: object) -> Signal[int]:
     def calculate() -> int:
         result = _read(value)
+
         if not isinstance(result, Sized):
             raise TypeError("length requires a sized payload")
+
         return len(result)
 
     return derived(calculate)
@@ -313,8 +328,10 @@ def contains(container: range, item: Signal[int]) -> Signal[bool]: ...
 def contains(container: object, item: object) -> Signal[bool]:
     def calculate() -> bool:
         result = _read(container)
+
         if not isinstance(result, Container):
             raise TypeError("contains requires a container payload")
+
         return _read(item) in result
 
     return derived(calculate)
@@ -330,16 +347,21 @@ def inclusive_range(start: object, stop: object) -> range | tuple[str, ...]:
     Python range payloads otherwise remain half-open. Python Enum ordinal slices use
     inclusive_enum_range, with definition order as the explicit ordinal adaptation.
     """
+
     if isinstance(start, int) and isinstance(stop, int):
         return range(start, stop + 1)
+
     if isinstance(start, str) and isinstance(stop, str) and len(start) == len(stop) == 1:
         return tuple(chr(value) for value in range(ord(start), ord(stop) + 1))
+
     raise TypeError("Inclusive range needs integer or single-character endpoints")
 
 
 def inclusive_enum_range[E: Enum](start: E, stop: E) -> tuple[E, ...]:
     """Python Enum declaration order stands for Nim ordinal ordering."""
+
     if type(start) is not type(stop):
         raise TypeError("Enum endpoints must share a type")
     values = list(type(start))
+
     return tuple(values[values.index(start) : values.index(stop) + 1])

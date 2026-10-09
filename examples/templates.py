@@ -39,7 +39,6 @@ def app() -> Fragment:
 
     def add_child(_event: object) -> None:
         if not groups():
-
             return
         source = child_sources[groups()[0][0]]
         source.set((*source(), f"child-{len(source()) + 1}"))

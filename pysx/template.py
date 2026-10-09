@@ -47,13 +47,11 @@ def template_values(template: Template) -> tuple[object, ...]:
             return format(converted, spec)
 
         if isinstance(value, (Deferred, Binding)):
-
             def deferred_format(
                 environment: Environment,
                 original: object = value,
                 formatter: Callable[[object], str] = formatted,
             ) -> str:
-
                 return formatter(resolve(original, environment))
 
             values.append(Deferred(deferred_format))
@@ -74,14 +72,12 @@ def _common_margin(lines: list[str]) -> str:
         stripped = line.lstrip()
 
         if not stripped:
-
             continue
         indent = line[: len(line) - len(stripped)]
 
         if margin is None:
             margin = indent
         elif indent.startswith(margin):
-
             continue
         elif margin.startswith(indent):
             margin = indent
@@ -90,13 +86,11 @@ def _common_margin(lines: list[str]) -> str:
 
             for a, b in zip(margin, indent, strict=False):
                 if a != b:
-
                     break
                 cut += 1
             margin = margin[:cut]
 
         if not margin:
-
             break
 
     return margin or ""
@@ -128,7 +122,6 @@ def dedent_fragments(strings: Fragments) -> Fragments:
     margin = _common_margin(_line_starts(strings))
 
     if not margin:
-
         return strings
 
     width = len(margin)

@@ -60,13 +60,11 @@ class WorkspaceResolver:
 
     def module(self, name: str) -> ModuleSource | None:
         if name in self.modules:
-
             return self.modules[name]
 
         if len(self.modules) >= MAX_MODULES or not all(
             part.isidentifier() for part in name.split(".")
         ):
-
             return None
         self.modules[name] = None
 
@@ -80,7 +78,6 @@ class WorkspaceResolver:
                 if buffered is None and (
                     not path.is_file() or path.stat().st_size > MAX_MODULE_BYTES
                 ):
-
                     continue
 
                 try:
@@ -91,11 +88,9 @@ class WorkspaceResolver:
                             source = stream.read()
 
                     if len(source.encode()) > MAX_MODULE_BYTES:
-
                         return None
                     tree = ast.parse(source, filename=str(path))
                 except OSError, UnicodeError, SyntaxError:
-
                     return None
                 package = name if path.name == "__init__.py" else name.rpartition(".")[0]
                 index = ScopeIndex(tree, package=package)
@@ -112,54 +107,45 @@ class WorkspaceResolver:
         self, identity: str, seen: frozenset[str] = frozenset()
     ) -> tuple[ModuleSource, Binding] | None:
         if identity in seen or identity.startswith("pysx."):
-
             return None
         name, _, symbol = identity.rpartition(".")
         module = self.module(name)
 
         if module is None:
-
             return None
         binding = module.scope.binding(symbol)
 
         if isinstance(binding, str):
-
             return self.resolve(binding, seen | {identity})
 
         if isinstance(binding, ast.Name):
             alias = module.scope.identity(binding)
 
             if alias is not None:
-
                 return self.resolve(alias, seen | {identity})
 
         return module, binding
 
     def identity(self, identity: str | None, seen: frozenset[str] = frozenset()) -> str | None:
         if identity is None or identity in seen:
-
             return None
 
         if identity.startswith("pysx."):
-
             return identity
         name, _, symbol = identity.rpartition(".")
         module = self.module(name)
 
         if module is None:
-
             return identity
         binding = module.scope.binding(symbol)
 
         if isinstance(binding, str):
-
             return self.identity(binding, seen | {identity})
 
         if isinstance(binding, ast.expr):
             alias = module.scope.identity(binding)
 
             if alias is not None:
-
                 return self.identity(alias, seen | {identity})
 
         return identity

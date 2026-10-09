@@ -42,7 +42,6 @@ def source_files(root: Path) -> tuple[Path, ...]:
 
 def read_source(path: Path) -> str:
     with tokenize.open(path) as stream:
-
         return stream.read()
 
 
@@ -56,7 +55,6 @@ def lint_project(root: Path, *, fix_imports: bool = False) -> int:
     files = source_files(root)
 
     if not files:
-
         raise ValueError("no Python sources discovered")
     errors = 0
     buffers = {str(path): read_source(path) for path in files}
@@ -70,7 +68,6 @@ def lint_project(root: Path, *, fix_imports: bool = False) -> int:
             ordered = sorted(edits, key=lambda item: item.span.start, reverse=True)
 
             if any(left.span.start < right.span.end for left, right in pairwise(ordered)):
-
                 raise ValueError(f"conflicting import fixes for {path}")
 
             for edit in ordered:
@@ -78,7 +75,6 @@ def lint_project(root: Path, *, fix_imports: bool = False) -> int:
 
             if source != buffers[str(path)]:
                 if read_source(path) != buffers[str(path)]:
-
                     raise ValueError(f"source changed before import fixes: {path}")
                 path.write_text(source, encoding="utf-8")
                 findings = lint_source(
@@ -102,7 +98,6 @@ def _mapped_range(
     first, last = positions.editor_offset(start), positions.editor_offset(end)
 
     try:
-
         return mapped.span(first, last)
     except ValueError:
         # Call diagnostics can cover scaffolding plus an actual tag/prop. Keep the
@@ -110,7 +105,6 @@ def _mapped_range(
         origins = [span for span in mapped.origins[first:last] if span is not None]
 
         if origins:
-
             return min(origins, key=lambda span: span.end - span.start)
 
         return _validation_origin(mapped, first)
@@ -125,12 +119,10 @@ def _validation_origin(mapped: MappedText, offset: int) -> SourceSpan | None:
             or not isinstance(node.func, ast.Attribute)
             or node.func.attr != "component_result"
         ):
-
             continue
         span = positions.ast_span(node)
 
         if span.start <= offset < span.end:
-
             return next(
                 (origin for origin in mapped.origins[span.start : span.end] if origin is not None),
                 None,
@@ -143,7 +135,6 @@ def type_project(root: Path, backend: str) -> int:
     files = source_files(root)
 
     if not files:
-
         raise ValueError("no Python sources discovered")
     buffers = {str(path): read_source(path) for path in files}
     with tempfile.TemporaryDirectory(prefix="pysx-quality-") as directory:
@@ -197,7 +188,6 @@ def type_project(root: Path, backend: str) -> int:
         )
 
         if result.returncode not in {0, 1}:
-
             raise RuntimeError(result.stdout + "\n" + result.stderr[-1500:])
         messages: list[dict[str, object]] = []
 
@@ -205,7 +195,6 @@ def type_project(root: Path, backend: str) -> int:
             found = set(re.findall(r"Found source:\s+BuildSource\(path='([^']+)'", result.stderr))
 
             if not set(targets) <= found:
-
                 raise RuntimeError("mypy did not report all requested projection inputs")
             messages = [
                 cast("dict[str, object]", json.loads(line))
@@ -217,7 +206,6 @@ def type_project(root: Path, backend: str) -> int:
             summary = cast("Mapping[str, int]", payload["summary"])
 
             if summary["filesAnalyzed"] < len(files):
-
                 raise RuntimeError("Pyright skipped requested projection inputs")
             messages = cast("list[dict[str, object]]", payload["generalDiagnostics"])
         seen: set[tuple[Path, SourceSpan, str]] = set()
@@ -225,13 +213,11 @@ def type_project(root: Path, backend: str) -> int:
 
         for message in messages:
             if message.get("severity") != "error":
-
                 continue
             reported = Path(str(message["file"]))
             model = models.get((reported if reported.is_absolute() else tree / reported).resolve())
 
             if model is None:
-
                 raise RuntimeError(f"unmapped analyzer error: {message}")
             path, source, mapped = model
 
@@ -257,7 +243,6 @@ def type_project(root: Path, backend: str) -> int:
                 )
 
             if span is None:
-
                 raise RuntimeError(f"analyzer error in generated scaffolding: {message['message']}")
             key = (path, span, str(message["message"]))
 
@@ -286,5 +271,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-
     raise SystemExit(main())

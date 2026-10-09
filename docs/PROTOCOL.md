@@ -95,11 +95,9 @@ uses ordinary rendering; commands cannot move nodes across owners or modify reac
 properties. Script-bearing elements/attributes, runtime metadata writes, executable
 URLs and CSS URL/expression values are rejected. No command executes JavaScript.
 DOM allocation and property results are bounded capabilities, not a blanket browser API.
-List-item rerenders currently remount ref tokens. Because the token is part of the item
-markup, every item of a list that holds refs differs on each render, so a single list
-change replaces all of its rows and loses their focus, selection, scroll and edit
-revisions. Finer retained ownership is a later rendering concern. Use fresh handles
-after a remount.
+Retained keyed elements keep ref tokens across value changes and reorder. Genuine
+remounts invalidate captured handles; use fresh handles afterwards. Ancestor structural
+patches leave the contents of retained imperative zones under their command owner.
 
 Typed handlers created with `on_event` receive an immutable `BrowserEvent` snapshot.
 The event message adds `event`, containing `type`, `handler`, target ID/value/checked,
@@ -158,6 +156,7 @@ had already been rendered, so the first frames always agree with the session's s
 | `attr` | `{"op":"attr","id":"e2","name":"class","v":"x"}` | set, or **remove when `v` is null** |
 | `prop` | `{"op":"prop","id":"e2","name":"selectedValues","v":["a","b"]}` | update the selected properties of a multiple select's options |
 | `list` | `{"op":"list","id":"6","keys":[…],"html":{…}}` | keyed reconcile (below) |
+| `children` | `{"op":"children","id":"e2","range":false,"kind":"row","v":"<input …>"}` | reconcile changed children while retaining compatible descendants |
 
 A patch carries only what changed. An empty op list is not sent.
 
@@ -186,19 +185,47 @@ non-object values, other message kinds, and non-string handler IDs are ignored.
 | ATTR | the owning element gets `data-pysx-el="eN"` |
 | EVENT | `data-pysx-{type}="hN"`, type from the attribute name (`onSubmit` -> `submit`) |
 | EVENT (typed) | additionally `data-pysx-policy-{type}` and `data-pysx-typed="{types}"` |
-| LIST | `<pysx-list id="N">` wrapping items, each item carrying `data-pysx-key` |
+| LIST | paired `<!--pysx:list:T:start-->` / `<!--pysx:list:T:end-->` comments |
+
+`T` is the lowercase hexadecimal UTF-8 encoding of the owner path. Rows use
+the same pair with kind `row`; their path is `{list}:{key-segment}:`. ASCII
+alphanumeric/underscore keys retain their spelling; every other key uses `~`
+followed by lowercase hexadecimal UTF-8. This encoding is injective and keeps
+delimiters, quotes and comment terminators out of paths. Keys are strings on
+the wire; integer and string keys with the same spelling are duplicates.
+
+Rows may contain zero, one or multiple roots, including text and void elements.
+`data-pysx-key` on the first element is diagnostic metadata, never a boundary.
+Slots inside tables, selects, SVG and MathML use comment pairs with kind `slot`
+instead of custom elements. The client parses replacement markup using
+`Range.createContextualFragment` at the actual parent, preserving constrained
+HTML and foreign-content namespaces. Comment anchors contribute no elements
+to CSS child selectors or accessibility trees.
 
 ## Keyed reconciliation
 
-The server keeps, per list slot, the previous key order and the previous HTML
-per key. On change it sends the **new key order** plus HTML **only** for keys
-that are new or whose HTML differs.
+The server keeps retained row records, independently tracked builder dependencies,
+child watchers and structural snapshots. Equal surviving values skip their builders.
+Snapshots follow live child patches, so later value/shape changes compare against
+the current DOM. Structural mounting precedes corrections to newly inserted descendants.
+Readable text/properties/classes/styles and nested lists own independent effects;
+their writes do not subscribe or reconstruct the enclosing row/list. Eager reads
+inside a builder can rebuild that row, including same-route parameter changes.
+
+Membership/order changes send the new key order and HTML only for newly mounted
+rows. Same-key value changes rebind handlers/subscriptions and send affected
+`text`/`attr`/`prop` operations, with no whole-row replacement. Structural changes
+use `children`, addressed by `data-pysx-el` or a comment range (`range:true` and
+`kind` equal to `row`, `slot` or `list`). The client preserves compatible nodes by
+their owned marker identities, replaces changed tags/namespaces/ref generations,
+and parses new children in their actual parent context. Nested live list ranges
+reconcile independently. Ordinary iterable helpers and snapshots remain frozen.
 
 The client then, in order:
 
-1. removes nodes whose key is absent from `keys`,
-2. creates or replaces nodes present in `html`,
-3. reorders to match `keys`, moving existing nodes rather than recreating them.
+1. creates or replaces ranges present in `html`,
+2. removes complete ranges whose key is absent from `keys`,
+3. reorders to match `keys`, moving all existing range nodes in order.
 
 An unchanged item sends zero bytes and its DOM node is never touched, so focus,
 selection and scroll survive a list update. This is the property keyed
@@ -206,11 +233,21 @@ reconciliation exists for, and it is what the acceptance test asserts.
 
 ## Handler identity inside lists
 
-Handler ids are derived, not allocated: `h{list}:{key}:{n}` where `n` counts
-handlers within one item. The same item therefore keeps the same handler ids
-across every re-render, so a click that arrives after a patch still resolves.
-The server rebuilds a list's handler sub-table on each list render; ids for
-surviving items are regenerated identically.
+Handler ids are derived: `h{list}:{key-segment}:g{generation}:{n}` where `n` counts
+handlers within one item. Retained targets keep their handler ids when their closures
+change. Replaced native targets add a fresh mount suffix, and replaced branches
+receive fresh path generations.
+Rows retain their generation across reorder and same-key value changes; re-mounting
+a removed key allocates a fresh generation, so removed IDs cannot address the new
+owner. Same-key builders rebind their current closures. Removed rows dispose their
+builder/child effects, handlers, styles, scopes, refs and resources.
+
+Ref mount identity is stored beside markup by native element path and ancestor/tag,
+namespace and component signature. Retained elements keep their UUID token even if rebuilding creates a new
+ref object. Removed elements or changed structure revoke that token and mint a new
+one, so previously captured handles stay stale after a genuine remount. Reordering
+never revokes refs. Range moves restore focus, input caret/direction, DOM selection
+and scroll only for surviving nodes.
 
 ## Echo suppression
 
@@ -247,6 +284,6 @@ hidden conditional bindings remove their server handlers and subscriptions.
 
 ## Deliberate limits
 
-- Item-internal changes re-send that item's HTML rather than patching its
-  individual slots. Keyed identity is preserved; sub-item slot granularity is not.
+- Structural snapshots contain current mount markup; browser-edited properties
+  remain authoritative until a live watcher sends a correction.
 - One event produces at most one patch frame.

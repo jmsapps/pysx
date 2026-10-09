@@ -67,17 +67,14 @@ class Compilation:
 
     @property
     def complete(self) -> bool:
-
         return self.tree is not None and not self.diagnostics
 
     @property
     def references(self) -> tuple[Reference, ...]:
-
         return tuple(reference for call in self.calls for reference in call.references)
 
     def runtime_ast(self) -> ast.Module:
         if self.tree is None:
-
             raise SyntaxError("cannot compile incomplete Python source")
         tree = copy.deepcopy(self.tree)
         selected = {(call.node.lineno, call.node.col_offset): call for call in self.calls}
@@ -128,7 +125,6 @@ class Compilation:
                 call = selected.get(original)
 
                 if call is None:
-
                     return node
                 references = _unique(call.references)
                 bindings = ast.Dict(
@@ -155,12 +151,10 @@ class Compilation:
         return ast.fix_missing_locations(tree)
 
     def code(self) -> CodeType:
-
         return compile(self.runtime_ast(), self.filename, "exec")
 
     def projection(self) -> MappedText:
         if not self.calls:
-
             return MappedText(
                 self.source, tuple(SourceSpan(i, i + 1) for i in range(len(self.source)))
             )
@@ -217,7 +211,6 @@ class Compilation:
         result = output.finish()
 
         if len(result.text.encode()) > MAX_PROJECTION_BYTES:
-
             raise ValueError("analysis projection exceeds 16 MiB")
         ast.parse(result.text, filename=self.filename)
 
@@ -251,12 +244,10 @@ class _Text:
         self.synthetic(")")
 
     def finish(self) -> MappedText:
-
         return MappedText("".join(self.parts), tuple(self.origins))
 
 
 def _synthetic(text: str) -> MappedText:
-
     return MappedText(text, (None,) * len(text))
 
 
@@ -286,7 +277,6 @@ def _elements(nodes: tuple[Node, ...]) -> Iterator[Element]:
 
 def _component_tag(tag: str, scope: Scope) -> bool:
     # Foreign/unbound lowercase markup names do not introduce Python loads.
-
     return (
         tag not in NATIVE_TAGS
         and "-" not in tag
@@ -307,25 +297,21 @@ def _native_base(
             tag = identity.rsplit(".", 1)[-1].rstrip("_")
 
             if tag in NATIVE_TAGS:
-
                 return tag, False
         elif identity.startswith("pysx.native."):
             tag = identity.rsplit(".", 1)[-1].lower()
 
             if tag in NATIVE_TAGS:
-
                 return tag, False
         elif identity.startswith("pysx.") and identity.count(".") == 1:
             tag = identity.split(".")[1]
 
             if tag in NATIVE_TAGS and tag != "html":
-
                 return tag, False
         elif identity not in seen:
             external = resolver.resolve(identity)
 
             if external is not None and isinstance(external[1], ast.expr):
-
                 return _native_base(external[1], external[0].scope, resolver, seen | {identity})
 
     if isinstance(expression, ast.Name) and expression.id not in seen:
@@ -333,7 +319,6 @@ def _native_base(
         owner = scope.owner(expression.id)
 
         if isinstance(value, ast.expr) and owner is not None:
-
             return _native_base(value, owner, resolver, seen | {expression.id})
 
     if isinstance(expression, ast.Call):
@@ -368,14 +353,12 @@ def _native_base(
                 tag = returned.removeprefix("pysx.styled_native.Styled").lower()
 
                 if tag in NATIVE_TAGS:
-
                     return tag, True
 
         if identity is not None and identity.startswith("pysx.styled."):
             tag = identity.rsplit(".", 1)[-1]
 
             if tag in NATIVE_TAGS:
-
                 return tag, True
 
         if (
@@ -386,7 +369,6 @@ def _native_base(
             base = _native_base(expression.func.args[0], scope, resolver, seen)
 
             if base is not None:
-
                 return base[0], True
 
     return None
@@ -396,7 +378,6 @@ def native_tag_for(tag: str, scope: Scope, resolver: WorkspaceResolver) -> str |
     """Shared native/styled schema query for editor sites."""
 
     if tag in NATIVE_TAGS:
-
         return tag
     base = _native_base(ast.Name(tag, ast.Load()), scope, resolver)
 
@@ -418,7 +399,6 @@ def import_index(tree: ast.Module) -> int:
         statement = tree.body[index]
 
         if not isinstance(statement, ast.ImportFrom) or statement.module != "__future__":
-
             break
         index += 1
 
@@ -435,7 +415,6 @@ def _unknown_partial(name: str, scope: Scope, resolver: WorkspaceResolver) -> bo
             scope, binding = external[0].scope, external[1]
 
     if not isinstance(binding, ast.Call) or scope.identity(binding.func) != "functools.partial":
-
         return False
 
     if (
@@ -443,7 +422,6 @@ def _unknown_partial(name: str, scope: Scope, resolver: WorkspaceResolver) -> bo
         or any(kw.arg is None for kw in binding.keywords)
         or any(isinstance(arg, ast.Starred) for arg in binding.args)
     ):
-
         return True
     target = binding.args[0]
 
@@ -451,7 +429,6 @@ def _unknown_partial(name: str, scope: Scope, resolver: WorkspaceResolver) -> bo
         base = scope.binding(target.id)
 
         if isinstance(base, ast.Call) and scope.identity(base.func) == "functools.partial":
-
             return True
 
     return False
@@ -461,11 +438,9 @@ def _assembly(
     node: ast.expr, scope: Scope, mapper: LiteralMapper, seen: frozenset[str] = frozenset()
 ) -> TemplateSource:
     if isinstance(node, ast.TemplateStr):
-
         return mapper.template(node)
 
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-
         return compose(
             _assembly(node.left, scope, mapper, seen), _assembly(node.right, scope, mapper, seen)
         )
@@ -477,7 +452,6 @@ def _assembly(
             isinstance(binding, ast.expr)
             and mapper.positions.ast_span(binding).end <= mapper.positions.ast_span(node).start
         ):
-
             return _assembly(binding, scope, mapper, seen | {node.id})
 
     raise ValueError(
@@ -494,7 +468,6 @@ def analyze(
     package: str | None = None,
 ) -> Compilation:
     if len(source.encode()) > MAX_SOURCE_BYTES:
-
         raise ValueError("Python source exceeds 4 MiB")
     positions = Positions(source)
     resolver = WorkspaceResolver(filename, roots=workspace_roots, buffers=buffers, package=package)
@@ -558,7 +531,6 @@ def analyze(
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
-
             continue
         scope = scopes.nodes[node]
 
@@ -594,7 +566,6 @@ def analyze(
         # names deliberately different from their markup spelling.
 
         if any(kw.arg in {"use", "namespace"} for kw in node.keywords):
-
             continue
         argument = (
             node.args[0]
@@ -629,11 +600,9 @@ def analyze(
                         )
 
                 if not isinstance(element.tag, str) or not _component_tag(element.tag, scope):
-
                     continue
 
                 if not element.tag.isidentifier() or keyword.iskeyword(element.tag):
-
                     raise ValueError(f"component tag {element.tag!r} is not a Python name")
 
                 if element.span is not None:
@@ -696,11 +665,9 @@ def _validate(
     tag = element.tag
 
     if isinstance(tag, str) and _unknown_partial(tag, call.scope, resolver):
-
         return
 
     if isinstance(tag, str) and tag not in NATIVE_TAGS and not _component_tag(tag, call.scope):
-
         return
     native = isinstance(tag, str) and tag in NATIVE_TAGS
     origin = (
@@ -762,7 +729,6 @@ def _validate(
             styled_callable = True
 
     if isinstance(tag, str) and "-" in tag:
-
         return
 
     text.synthetic(f"{helper}.component_result(")
@@ -821,11 +787,9 @@ def _validate(
 
     for name, value in properties:
         if (styled_callable or styled_native) and name == "variant":
-
             continue
 
         if element.children and name == "children":
-
             continue
 
         info = tag_info(tag) if isinstance(tag, str) and native else None

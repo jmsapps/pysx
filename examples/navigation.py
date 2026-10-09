@@ -24,7 +24,6 @@ def app() -> Fragment:
     needs_login = signal(False)
 
     def home(_: RouteState) -> Fragment:
-
         return pysx(t"""
             RouteCard:
               h2(id="route-title"): "Home"
@@ -53,7 +52,6 @@ def app() -> Fragment:
         """)
 
     def activity(state: RouteState) -> Fragment:
-
         return pysx(t"""
             RouteCard:
               h2(id="route-title"): "Activity for user " {state.params()["id"]}
@@ -61,7 +59,6 @@ def app() -> Fragment:
         """)
 
     def files(state: RouteState) -> Fragment:
-
         return pysx(t"""
             RouteCard:
               h2(id="route-title"): "Files"
@@ -70,7 +67,6 @@ def app() -> Fragment:
         """)
 
     def missing(_: RouteState) -> Fragment:
-
         return pysx(t"""
             RouteCard:
               h2(id="route-title"): "Not found"
@@ -78,7 +74,6 @@ def app() -> Fragment:
         """)
 
     def login(_: RouteState) -> Fragment:
-
         return pysx(t"""
             RouteCard:
               h2(id="route-title"): "Sign in"

@@ -38,7 +38,7 @@ def app():
 
 
 def test_inline_sibling_lowering_lexical_shadowing_and_exact_projection() -> None:
-    source = r'''from pysx import pysx, styled
+    source = r"""from pysx import pysx, styled
 from pysx.native import Strong as lower
 def app():
     Local = styled.section(t"color: red")
@@ -47,7 +47,7 @@ def app():
     return row
 def shadow(lower):
     return pysx(t"br; lower; div")
-'''
+"""
     compilation = analyze(source)
     assert compilation.complete
     references = sorted(compilation.references, key=lambda reference: reference.span.start)
@@ -81,7 +81,7 @@ def test_inline_sibling_raw_assembled_source_map(raw: bool) -> None:
     source = (
         "from pysx import pysx\nfrom pysx.native import Strong as Lower\n"
         f"head = {prefix}\"p: '😀 {{{{brace}}}} \\t'; \"\n"
-        'tail = t"Lower(title={\'valid\'}); br"\n'
+        "tail = t\"Lower(title={'valid'}); br\"\n"
         "view = pysx(head + tail)\n"
     )
     compilation = analyze(source)
@@ -215,7 +215,7 @@ view = pysx(t"Panel: 'hi'")
     "body",
     [
         'try:\n        raise ValueError("oops")\n'
-        '    except ValueError as _pysx_compiler:\n        return pysx(t"p: \'hello\'")',
+        "    except ValueError as _pysx_compiler:\n        return pysx(t\"p: 'hello'\")",
         "match 1:\n        case _pysx_compiler:\n            return pysx(t\"p: 'hello'\")",
         "match [1]:\n        case [*_pysx_compiler]:\n            return pysx(t\"p: 'hello'\")",
         "match {}:\n        case {**_pysx_compiler}:\n            return pysx(t\"p: 'hello'\")",

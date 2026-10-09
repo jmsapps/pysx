@@ -32,7 +32,6 @@ def _jsonc(source: str, *, trailing: bool = True) -> str:
     )
 
     if not trailing:
-
         return clean
 
     return re.sub(
@@ -44,19 +43,16 @@ def _jsonc(source: str, *, trailing: bool = True) -> str:
 
 def _paths(value: object) -> list[str]:
     if not isinstance(value, list):
-
         raise ValueError("Pyright ignore must be a list of paths")
     paths = cast("list[object]", value)
 
     if any(not isinstance(item, str) for item in paths):
-
         raise ValueError("Pyright ignore must be a list of paths")
 
     return cast("list[str]", value)
 
 
 def _ignore(value: object) -> list[str]:
-
     return list(dict.fromkeys([*_paths(value), MIRRORS]))
 
 
@@ -65,7 +61,6 @@ def _json_edit(source: str, inherited_ignore: list[str] | None = None) -> str:
     data = json.loads(clean)
 
     if not isinstance(data, dict):
-
         raise ValueError("Pyright configuration must be an object")
     settings = cast("dict[str, object]", data)
     updates: dict[str, object] = dict.fromkeys(RULES, False)
@@ -79,7 +74,6 @@ def _json_edit(source: str, inherited_ignore: list[str] | None = None) -> str:
         position += len(clean[position:]) - len(clean[position:].lstrip())
 
         if clean[position] == "}":
-
             break
         key, key_end = decoder.raw_decode(clean, position)
         position = clean.index(":", key_end) + 1
@@ -109,7 +103,6 @@ def _json_edit(source: str, inherited_ignore: list[str] | None = None) -> str:
         source = source[:start] + text + source[end:]
 
     if json.loads(_jsonc(source)) != settings | updates:
-
         raise ValueError("cannot safely edit Pyright configuration")
 
     return source
@@ -120,13 +113,11 @@ def _toml_edit(source: str) -> str | None:
     settings = data.get("tool", {}).get("pyright")
 
     if settings is None:
-
         return None
     headers = list(re.finditer(r"(?m)^[ \t]*\[([^\]\n]+)\][ \t]*(?:#[^\n]*)?$", source))
     sections = [index for index, match in enumerate(headers) if match[1].strip() == "tool.pyright"]
 
     if len(sections) != 1:
-
         raise ValueError("save Pyright settings in a single [tool.pyright] table before setup")
     index = sections[0]
     start = headers[index].end()
@@ -161,20 +152,17 @@ def _toml_edit(source: str) -> str | None:
 
                             break
                 else:
-
                     raise ValueError("cannot safely edit Pyright ignore")
             else:
                 value_end = match.start(2) + len(match[2].partition("#")[0].rstrip())
             section = section[: match.start(2)] + literal + section[value_end:]
         else:
-
             raise ValueError(f"cannot safely edit Pyright {key}")
     updated = source[:start] + section.rstrip() + "\n\n" + source[end:]
     expected = data.copy()
     expected["tool"] = dict(data["tool"], pyright=dict(settings, **updates))
 
     if tomllib.loads(updated) != expected:
-
         raise ValueError("cannot safely edit Pyright settings without changing other configuration")
 
     return updated
@@ -184,7 +172,6 @@ def _parent_ignore(filename: Path, seen: frozenset[Path] = frozenset()) -> list[
     filename = filename.resolve()
 
     if filename in seen or len(seen) >= 16 or filename.stat().st_size > 1_048_576:
-
         raise ValueError("Pyright configuration inheritance is cyclic or exceeds bounds")
     data = json.loads(_jsonc(filename.read_bytes().decode("utf-8-sig")))
 
@@ -195,7 +182,6 @@ def _parent_ignore(filename: Path, seen: frozenset[Path] = frozenset()) -> list[
     parent = data.get("extends")
 
     if isinstance(parent, str):
-
         return _parent_ignore(filename.parent / parent, seen | {filename})
 
     return []
@@ -209,11 +195,9 @@ def configuration_edit(root: Path) -> ConfigurationEdit | None:
         filename = root / "pyproject.toml"
 
     if not filename.is_file():
-
         return None
 
     if filename.stat().st_size > 1_048_576:
-
         raise ValueError("Pyright configuration exceeds 1 MiB")
     source = filename.read_bytes().decode("utf-8-sig")
     working = source.replace("\r\n", "\n")
@@ -233,7 +217,6 @@ def configuration_edit(root: Path) -> ConfigurationEdit | None:
         text = text.replace("\n", "\r\n")
 
     if text is None or text == source:
-
         return None
 
     return ConfigurationEdit(filename=str(filename), source=source, text=text)

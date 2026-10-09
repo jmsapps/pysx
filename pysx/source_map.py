@@ -39,7 +39,6 @@ class Positions:
         object.__setattr__(self, "starts", (0, *(m.end() for m in re.finditer("\n", self.source))))
 
     def text_offset(self, line: int, column: int) -> int:
-
         return self.starts[line - 1] + column
 
     def ast_offset(self, line: int, column: int) -> int:
@@ -51,7 +50,6 @@ class Positions:
 
     def ast_span(self, node: ast.expr | ast.stmt) -> SourceSpan:
         if node.end_lineno is None or node.end_col_offset is None:
-
             raise ValueError("AST has no end coordinates")
 
         return SourceSpan(
@@ -61,7 +59,6 @@ class Positions:
 
     def editor_position(self, offset: int) -> EditorPosition:
         if not 0 <= offset <= len(self.source):
-
             raise ValueError("offset outside source")
         row = bisect.bisect_right(self.starts, offset) - 1
         prefix = self.source[self.starts[row] : offset]
@@ -70,7 +67,6 @@ class Positions:
 
     def editor_offset(self, position: EditorPosition) -> int:
         if not 0 <= position.line < len(self.starts):
-
             raise ValueError("line outside source")
         start = self.starts[position.line]
         end = (
@@ -82,16 +78,13 @@ class Positions:
 
         for offset in range(start, end):
             if units == position.character:
-
                 return offset
             units += len(self.source[offset].encode("utf-16-le")) // 2
 
             if units > position.character:
-
                 raise ValueError("UTF-16 coordinate splits a surrogate pair")
 
         if units == position.character:
-
             return end
 
         raise ValueError("column outside source")
@@ -104,13 +97,11 @@ class MappedText:
 
     def spans(self, start: int, end: int) -> tuple[SourceSpan, ...]:
         if not 0 <= start < end <= len(self.text):
-
             raise ValueError("expected a nonempty mapped range")
         result: list[SourceSpan] = []
 
         for span in self.origins[start:end]:
             if span is None:
-
                 raise ValueError("range includes generated scaffolding")
 
             if result and result[-1].start <= span.start <= result[-1].end:
@@ -124,7 +115,6 @@ class MappedText:
         spans = self.spans(start, end)
 
         if len(spans) != 1:
-
             raise ValueError("range has disjoint origins")
 
         return spans[0]
@@ -153,14 +143,12 @@ def _decode(raw: str, origin: int, *, raw_literal: bool) -> MappedText:
             match = _ESCAPE.match(raw, cursor)
 
             if match is None:
-
                 raise ValueError("incomplete static escape")
             token = match.group()
             width = len(token)
             value = ast.literal_eval('"' + token + '"')
 
             if not isinstance(value, str):
-
                 raise TypeError("expected static text")
             character = value
         text.extend(character)
@@ -179,18 +167,15 @@ class TemplateSource:
 
     @property
     def strings(self) -> tuple[str, ...]:
-
         return tuple(fragment.text for fragment in self.fragments)
 
     def location(self, position: Position, width: int = 1) -> SourceSpan:
         fragment = self.fragments[position.fragment]
 
         if position.offset < len(fragment.text):
-
             return fragment.span(position.offset, min(position.offset + width, len(fragment.text)))
 
         if position.fragment < len(self.holes):
-
             return self.hole_spans[position.fragment]
 
         return SourceSpan(max(self.span.start, self.span.end - 1), self.span.end)
@@ -227,7 +212,6 @@ class LiteralMapper:
 
                 for window, raw in self.windows:
                     if window.start < outer.start or window.end > outer.end:
-
                         continue
                     start, end = max(span.start, window.start), min(span.end, window.end)
 
@@ -236,7 +220,6 @@ class LiteralMapper:
                 decoded = "".join(part.text for part in parts)
 
                 if decoded != value.value:
-
                     raise ValueError("literal source cannot be mapped safely")
                 text += decoded
                 origins += tuple(origin for part in parts for origin in part.origins)
@@ -245,7 +228,6 @@ class LiteralMapper:
                 text, origins = "", ()
                 holes.append(value)
             else:
-
                 raise ValueError("unsupported template constant")
         fragments.append(MappedText(text, origins))
 

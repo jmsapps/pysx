@@ -61,10 +61,13 @@ def app() -> Fragment:
 
     def visible() -> list[Todo]:
         items = todos()
+
         if mode() == "active":
             return [todo for todo in items if not todo.done]
+
         if mode() == "completed":
             return [todo for todo in items if todo.done]
+
         return items
 
     filtered = derived(visible)
@@ -74,6 +77,7 @@ def app() -> Fragment:
 
     def add(_e: object) -> None:
         text = draft().strip()
+
         if not text:
             return
         todos.set([*todos(), Todo(next_id(), text, False)])
@@ -82,10 +86,7 @@ def app() -> Fragment:
 
     def toggle(todo_id: int) -> None:
         todos.set(
-            [
-                replace(todo, done=not todo.done) if todo.id == todo_id else todo
-                for todo in todos()
-            ]
+            [replace(todo, done=not todo.done) if todo.id == todo_id else todo for todo in todos()]
         )
 
     def remove(todo_id: int) -> None:
@@ -97,6 +98,7 @@ def app() -> Fragment:
     def set_mode(name: Literal["all", "active", "completed"]) -> Callable[[object], None]:
         def handler(_e: object) -> None:
             mode.set(name)
+
         return handler
 
     def TodoItem(todo: Todo) -> Fragment:
@@ -107,7 +109,7 @@ def app() -> Fragment:
             remove(todo.id)
 
         return pysx(
-        t"""
+            t"""
             Item(class={"is-done" if todo.done else ""}, data-done={str(todo.done).lower()}):
                 Row:
                     Checkbox(type="checkbox", checked={todo.done}, onChange={toggle_item})
@@ -115,7 +117,7 @@ def app() -> Fragment:
                 Remove(type="button", onClick={remove_item}):
                     "Remove"
         """,
-    )
+        )
 
     return pysx(
         t"""

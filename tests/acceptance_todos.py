@@ -25,30 +25,38 @@ async def send(ws: ClientConnection, handler: str, value: str | bool | None = No
     await emit(ws, handler, value)
     message = await recv(ws)
     assert message["t"] == "patch"
+
     return message
 
 
 async def emit(ws: ClientConnection, handler: str, value: str | bool | None = None) -> None:
     msg: dict[str, str | bool] = {"t": "event", "h": handler}
+
     if value is not None:
         msg["v"] = value
     await ws.send(json.dumps(msg))
 
 
 async def silent(
-    ws: ClientConnection, handler: str, value: str | bool | None = None, seconds: float = 0.35,
+    ws: ClientConnection,
+    handler: str,
+    value: str | bool | None = None,
+    seconds: float = 0.35,
 ) -> None:
     """Send an event and assert the server sends nothing back."""
     await emit(ws, handler, value)
+
     try:
         frame = await asyncio.wait_for(ws.recv(), seconds)
     except TimeoutError:
         return
+
     raise AssertionError(f"expected no frame, got {frame!r}")
 
 
 async def idle(ws: ClientConnection, seconds: float = 0.35) -> list[ServerMessage]:
     out: list[ServerMessage] = []
+
     try:
         while True:
             out.append(await recv(ws, seconds))
@@ -73,8 +81,7 @@ def ops_of(patch: PatchMessage, kind: str) -> Sequence[Op]:
 
 
 async def run() -> None:
-    async with connect(f"ws://127.0.0.1:{PORT}/ws") as a, \
-               connect(f"ws://127.0.0.1:{PORT}/ws") as b:
+    async with connect(f"ws://127.0.0.1:{PORT}/ws") as a, connect(f"ws://127.0.0.1:{PORT}/ws") as b:
         init = await recv(a)
         await recv(b)
         assert init["t"] == "init"
@@ -88,18 +95,21 @@ async def run() -> None:
         assert len(handlers) == len(set(handlers)), f"duplicate handler ids: {handlers}"
         print("  ok  every handler id in the document is unique")
 
-        # toggle todo 1 -> only that item's html goes on the wire
-        patch = await send(a, "h10:1:0")
+        # Toggle patches the retained row's properties/classes and the summary.
+        toggle = next(hid for hid in handlers if re.fullmatch(r"h10:1:g\d+:0", hid))
+        patch = await send(a, toggle)
         lists = ops_of(patch, "list")
-        assert len(lists) == 1, patch
-        assert list(lists[0]["html"]) == ["1"], lists[0]["html"]
-        assert lists[0]["keys"] == ["1", "2", "3"], lists[0]
-        assert "is-done" in lists[0]["html"]["1"]
+        assert lists == [], patch
+        assert any(
+            op["op"] == "attr" and op["name"] == "class" and "is-done" in (op["v"] or "")
+            for op in patch["ops"]
+        )
         assert ops_of(patch, "text"), "remaining count should change"
-        print("  ok  toggle sends html for exactly 1 of 3 items")
+        print("  ok  toggle sends granular patches and zero row html")
 
         # remove todo 2 (handler :1; :0 is its checkbox) -> order shrinks, zero html
-        patch = await send(a, "h10:2:1")
+        remove = next(hid for hid in handlers if re.fullmatch(r"h10:2:g\d+:1", hid))
+        patch = await send(a, remove)
         lists = ops_of(patch, "list")
         assert lists[0]["keys"] == ["1", "3"], lists[0]
         assert lists[0]["html"] == {}, "a removal must send no html"
@@ -110,7 +120,7 @@ async def run() -> None:
         await silent(a, "h1", "Write the port")
         print("  ok  typing produces zero frames (no echo to the source input)")
 
-        patch = await send(a, "h0")                     # submit
+        patch = await send(a, "h0")  # submit
         lists = ops_of(patch, "list")
         assert lists[0]["keys"] == ["1", "3", "4"], lists[0]
         assert list(lists[0]["html"]) == ["4"], lists[0]["html"]
@@ -141,8 +151,9 @@ async def run() -> None:
         # is sent at all. Only the "Clear completed" branch disappears.
         patch = await send(a, "h12")
         assert ops_of(patch, "list") == [], patch
-        assert any(o["op"] == "html" and o["id"] == "11" and o["v"] == ""
-                   for o in patch["ops"]), patch
+        assert any(o["op"] == "html" and o["id"] == "11" and o["v"] == "" for o in patch["ops"]), (
+            patch
+        )
         print("  ok  clear completed sends only the branch removal, no list op")
 
         leaked = await idle(b)
@@ -158,9 +169,8 @@ async def run() -> None:
 
 def main() -> None:
     with ready_server(
-        [sys.executable, "-m", "pysx.server",
-         "--app", "examples.todos:app", "--port", str(PORT)],
-            ):
+        [sys.executable, "-m", "pysx.server", "--app", "examples.todos:app", "--port", str(PORT)],
+    ):
         asyncio.run(run())
         print("TODOS ACCEPTANCE PASSED")
 

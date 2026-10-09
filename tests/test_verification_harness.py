@@ -15,9 +15,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def browser_run(environment: dict[str, str], *arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["node", "tests/browser_runner.mjs", *arguments], cwd=ROOT,
-        env={**os.environ, **environment}, capture_output=True, text=True,
-        timeout=90, check=False,
+        ["node", "tests/browser_runner.mjs", *arguments],
+        cwd=ROOT,
+        env={**os.environ, **environment},
+        capture_output=True,
+        text=True,
+        timeout=90,
+        check=False,
     )
 
 
@@ -74,9 +78,13 @@ def test_browser_assertion_cleanup() -> None:
 
 def grammar_run(environment: dict[str, str], *arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["node", "tests/grammar/runner.mjs", *arguments], cwd=ROOT,
-        env={**os.environ, **environment}, capture_output=True, text=True,
-        timeout=30, check=False,
+        ["node", "tests/grammar/runner.mjs", *arguments],
+        cwd=ROOT,
+        env={**os.environ, **environment},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
     )
 
 
@@ -115,11 +123,15 @@ def test_grammar_empty_selection() -> None:
 
 def editor_run(environment: dict[str, str], *arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["node", "editor/test/runner.mjs", *arguments], cwd=ROOT,
-        env={**os.environ, **environment}, capture_output=True, text=True,
+        ["node", "editor/test/runner.mjs", *arguments],
+        cwd=ROOT,
+        env={**os.environ, **environment},
+        capture_output=True,
+        text=True,
         # Above the runner's own budget: three sequential 30s `uv run` steps
         # precede any deadline it enforces itself.
-        timeout=180, check=False,
+        timeout=180,
+        check=False,
     )
 
 
@@ -139,7 +151,7 @@ def test_editor_discovery_and_fresh_build() -> None:
 
 @pytest.mark.parametrize("candidate", ["executable", "directory"])
 def test_editor_explicit_interpreter_skips_environment_discovery(candidate: str) -> None:
-    script = r'''
+    script = r"""
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
@@ -168,11 +180,15 @@ select({ uri: {} }).then(result => {
   assert.equal(result, executable);
   assert.equal(discoveries, explicit === executable ? 0 : 1);
 }).catch(error => { console.error(error); process.exitCode = 1; });
-'''
+"""
     explicit = sys.executable if candidate == "executable" else str(Path(sys.executable).parent)
     result = subprocess.run(
-        ["node", "-e", script, sys.executable, explicit], cwd=ROOT,
-        capture_output=True, text=True, timeout=10, check=False,
+        ["node", "-e", script, sys.executable, explicit],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -187,9 +203,12 @@ def test_editor_missing_input(tmp_path: Path, missing: str) -> None:
 
 def test_editor_timeout_cleanup(tmp_path: Path) -> None:
     state_file = tmp_path / "state.json"
-    result = editor_run({
-        "PYSX_EDITOR_FORCE_TIMEOUT": "1", "PYSX_EDITOR_STATE_FILE": str(state_file),
-    })
+    result = editor_run(
+        {
+            "PYSX_EDITOR_FORCE_TIMEOUT": "1",
+            "PYSX_EDITOR_STATE_FILE": str(state_file),
+        }
+    )
     assert result.returncode != 0
     assert "editor deadline exceeded" in result.stderr
     decoded: object = json.loads(state_file.read_text())
@@ -199,10 +218,12 @@ def test_editor_timeout_cleanup(tmp_path: Path) -> None:
     assert not Path(state["workspace"]).exists()
     pid = str(state["pid"])
     command = (
-        ["ps", "-o", "stat=", "-p", pid] if os.name == "posix"
+        ["ps", "-o", "stat=", "-p", pid]
+        if os.name == "posix"
         else ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV"]
     )
     process = subprocess.run(command, capture_output=True, text=True, timeout=5, check=False)
+
     if os.name == "posix":
         assert not process.stdout.strip() or process.stdout.strip().startswith("Z")
     else:

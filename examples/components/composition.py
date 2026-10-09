@@ -175,7 +175,6 @@ def tree_controls() -> Fragment:
         )
 
     def row(node: Entry) -> Fragment:
-
         return pysx(t"\nbranch(node={node}):")
 
     def reverse(_event: BrowserEvent) -> None:

@@ -56,10 +56,13 @@ class Session:
         # seeded with the rendered value, so it produces ops only where setup
         # wrote a signal after its hole had already been emitted.
         self.effects: list[Effect] = []
+        self.rendered.context = self._context
+        self.rendered.sink = self._owned_ops
 
         try:
             for watcher in self.rendered.watchers:
                 self.effects.append(self._watch(watcher))
+            self.rendered.flush()
         except BaseException as error:
             try:
                 self.dispose()
@@ -72,6 +75,10 @@ class Session:
 
     def _watch(self, watcher: Watcher) -> Effect:
         return Effect(lambda: self._collect(watcher))
+
+    def _owned_ops(self, ops: list[Op]) -> None:
+        self._sync_styles()
+        self.pending.extend(ops)
 
     @contextmanager
     def _context(self) -> Generator[None]:
@@ -87,7 +94,7 @@ class Session:
 
     def _collect(self, watcher: Watcher) -> None:
         with self._context():
-            ops = watcher.refresh()
+            ops = self.rendered.refresh(watcher)
         self._sync_styles()
 
         if ops:

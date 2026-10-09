@@ -29,13 +29,11 @@ FIXTURE = Path(__file__).parent / "fixtures" / "template_syntax_compatibility.js
 
 def encode_syntax(value: object) -> object:
     if isinstance(value, LiteralText):
-
         return {"literal": str(value), "span": encode_syntax(value.span)}
 
     if isinstance(
         value, (Skeleton, Element, Conditional, Loop, Local, Match, Case, Hole, Position, Span)
     ):
-
         return {
             "type": type(value).__name__,
             **{
@@ -45,15 +43,12 @@ def encode_syntax(value: object) -> object:
         }
 
     if isinstance(value, Enum):
-
         return value.value
 
     if isinstance(value, (tuple, list)):
-
         return [encode_syntax(item) for item in cast("tuple[object, ...]", value)]
 
     if value is None or isinstance(value, (str, int, float, bool)):
-
         return value
 
     raise AssertionError(f"unrecognized syntax value: {type(value).__name__}")
@@ -78,7 +73,6 @@ def test_frozen_template_syntax(case: dict[str, object]) -> None:
 
     # Only these additions may change an old rejection into an acceptance.
     if "addition" in case:
-
         return
 
     with pytest.raises(PysxSyntaxError) as caught:

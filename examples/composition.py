@@ -7,7 +7,6 @@ from .components.composition import tree_controls
 
 
 def app() -> Fragment:
-
     return pysx(
         t"""
             Page(id="composition-example"):

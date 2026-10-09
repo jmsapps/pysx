@@ -17,7 +17,6 @@ class Block:
 
 def parse_css(body: str) -> Block:
     if "{" in body or "}" in body:
-
         raise ValueError("styled CSS requires declarations and indentation blocks without braces")
     root = Block("")
     stack = [(-1, root)]
@@ -29,11 +28,9 @@ def parse_css(body: str) -> Block:
         text = line.strip()
 
         if not text:
-
             continue
 
         if "\t" in line[: len(line) - len(line.lstrip())]:
-
             raise ValueError("styled CSS indentation uses spaces")
         indent = len(line) - len(line.lstrip())
 
@@ -44,23 +41,19 @@ def parse_css(body: str) -> Block:
             count += 1
 
             if len(stack) > MAX_DEPTH or count > MAX_BLOCKS:
-
                 raise ValueError("styled CSS exceeds 8 levels or 128 blocks")
             head = text[:-1].strip()
 
             if head.startswith("@"):
                 if not head.startswith(("@media ", "@supports ")):
-
                     raise ValueError("styled CSS supports only @media and @supports blocks")
             elif not head or ";" in head or ":global" in head:
-
                 raise ValueError("invalid scoped selector")
             child = Block(head)
             stack[-1][1].entries.append(child)
             stack.append((indent, child))
         else:
             if ":" not in text:
-
                 raise ValueError("styled CSS expects a declaration or a selector ending in ':'")
             stack[-1][1].entries.append(text.rstrip(";") + ";")
 
@@ -93,19 +86,16 @@ def _split_selectors(text: str) -> list[str]:
             depth -= 1
 
             if depth < 0:
-
                 raise ValueError("unbalanced scoped selector")
         elif char == "," and depth == 0:
             parts.append(text[start:index].strip())
             start = index + 1
 
     if depth or quote or escaped:
-
         raise ValueError("unbalanced scoped selector")
     parts.append(text[start:].strip())
 
     if not all(parts):
-
         raise ValueError("empty scoped selector")
 
     return parts
@@ -134,7 +124,6 @@ def _anchor(selector: str, base: str) -> str:
         elif char in ")]":
             depth -= 1
         elif char in "+~" and depth == 0:
-
             raise ValueError("nested selectors must stay within the component")
         elif char == "&":
             output.append(base)
@@ -154,12 +143,10 @@ def _selectors(parent: str, head: str) -> str:
 
             if "&" in selector:
                 if not selector.startswith("&"):
-
                     raise ValueError("nested selectors must stay within the component")
                 selector = _anchor(selector, base.strip())
             else:
                 if selector.startswith(("+", "~")):
-
                     raise ValueError("nested selectors must stay within the component")
                 selector = base.strip() + " " + selector
             result.append(selector)

@@ -31,10 +31,8 @@ def capture[T](name: str, reader: Callable[[], T]) -> T | MissingComponent:
     """Read a lexical binding once; an absent tag fails only when rendered."""
 
     try:
-
         return reader()
     except NameError:
-
         return MissingComponent(name)
 
 
@@ -44,7 +42,6 @@ def capture_class[T](
     """Class locals precede closure/global lookup; absent names remain deferred."""
 
     if name in namespace:
-
         return cast("T", namespace[name])
 
     return capture(name, reader)
@@ -66,17 +63,14 @@ def bind(
 
 
 def children() -> Children:
-
     return Children((), (), MappingProxyType({}))
 
 
 def component_result(result: Template | Fragment) -> object:
-
     return result
 
 
 def variant(value: str | Signal[str] | None) -> object:
-
     return value
 
 
@@ -89,7 +83,6 @@ def register_source(filename: str, source: str) -> None:
     cost = len(source.encode())
 
     if cost > _SOURCE_BUDGET:
-
         return
     _SOURCES.pop(filename, None)
 
