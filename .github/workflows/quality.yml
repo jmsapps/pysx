@@ -2,7 +2,6 @@ name: Python quality
 
 on:
   push:
-  pull_request:
 
 permissions:
   contents: read
