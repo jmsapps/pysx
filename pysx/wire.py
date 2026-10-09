@@ -62,6 +62,11 @@ class NavigationMessage(TypedDict):
     mode: Literal["push", "replace", "observe", "external"]
 
 
+class RoutingMessage(TypedDict):
+    t: Literal["routing"]
+    on: bool
+
+
 class PatchMessage(TypedDict):
     t: Literal["patch"]
     ops: list[Op]
@@ -121,5 +126,10 @@ class DomReplyMessage(TypedDict):
 
 
 type ServerMessage = (
-    InitMessage | PatchMessage | DomCommandMessage | MountMessage | NavigationMessage
+    InitMessage
+    | PatchMessage
+    | DomCommandMessage
+    | MountMessage
+    | NavigationMessage
+    | RoutingMessage
 )

@@ -28,13 +28,20 @@ signals. Resulting patches precede `{"t":"navigation","url":"/path","rev":1,
 acknowledges browser history without mutating it, and `external` assigns an HTTP(S)
 URL. The client ignores navigation messages whose revision no longer matches its
 latest intention. Link callbacks run before committing navigation and may explicitly
-cancel it. This contract covers the current serialized connection, without resume.
+cancel it. A router built after `init` was sent announces itself with
+`{"t":"routing","on":true}`, which enables observation exactly as the `init` flag
+does; enabling twice has no effect. Queued navigation is flushed before every DOM
+command and after a rejected payload or failed DOM command, so a turn that navigates
+and then fails still commits the navigation it decided on. This contract covers the
+current serialized connection, without resume.
 
 Navigation acknowledgement is also the scroll/focus commit boundary. Entry keys,
 up to 128 saved positions/focus IDs, and bounded two-second fragment retries stay in
 the browser. Later DOM patches can satisfy the current retry; URL/revision checks
 cancel work for departed routes. The server exposes `RouteResponse` location,
-pattern and status metadata for future HTTP rendering hosts.
+pattern and status metadata for future HTTP rendering hosts. The standalone host
+answers any non-asset path with the shell, so a reloaded route URL reconnects with
+its own `location`.
 
 ### Component mount acknowledgement
 

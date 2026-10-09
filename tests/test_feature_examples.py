@@ -70,7 +70,7 @@ def test_pysx_12_st_4_navigation_interactions_isolation_and_cleanup() -> None:
         session.routes.commands.clear()
         click("require-login", navigation=False)
         assert router.location().url == "/login"
-        assert [(command["mode"], command["url"]) for command in session.routes.commands] == [
+        assert [(command["mode"], command["url"]) for command in session.routes.navigations()] == [
             ("replace", "/login")
         ]
         assert other.routes.routers[0].location().url == "/"
@@ -78,7 +78,7 @@ def test_pysx_12_st_4_navigation_interactions_isolation_and_cleanup() -> None:
         session.routes.commands.clear()
         click("home", "/")
         assert router.path() == "/login"
-        assert [(command["mode"], command["url"]) for command in session.routes.commands] == [
+        assert [(command["mode"], command["url"]) for command in session.routes.navigations()] == [
             ("push", "/"),
             ("replace", "/login"),
         ]
@@ -87,7 +87,7 @@ def test_pysx_12_st_4_navigation_interactions_isolation_and_cleanup() -> None:
         assert session.routes.commands == []
         click("login-continue", navigation=False)
         assert router.path() == "/"
-        assert [(command["mode"], command["url"]) for command in session.routes.commands] == [
+        assert [(command["mode"], command["url"]) for command in session.routes.navigations()] == [
             ("push", "/")
         ]
     finally:

@@ -1,11 +1,17 @@
 """Route state, lifecycle and browser navigation contracts."""
 
 import asyncio
+import json
 import re
+import sys
 from dataclasses import asdict
 from typing import TYPE_CHECKING
+from urllib.error import HTTPError
+from urllib.request import urlopen
 
 import pytest
+from acceptance_support import ready_server
+from websockets.asyncio.client import connect
 
 from pysx import (
     BrowserEvent,
@@ -66,7 +72,6 @@ def test_pysx_12_st_1_route_state_invalid_url(url: str) -> None:
 
 def test_pysx_12_st_1_route_state_nested_fallback_query_and_base() -> None:
     def page(_: RouteState) -> Fragment:
-
         return pysx(t'p: "page"')
 
     router = Router(
@@ -130,11 +135,9 @@ def test_pysx_12_st_1_route_state_scope_identity_cleanup_and_isolation() -> None
 
 def test_pysx_12_st_1_route_state_grouping_first_match_and_last_fallback() -> None:
     def page(_: RouteState) -> Fragment:
-
         return pysx(t'p: "first"')
 
     def fallback(_: RouteState) -> Fragment:
-
         return pysx(t'p: "last fallback"')
 
     router = Router(
@@ -254,7 +257,7 @@ def test_pysx_12_st_2_navigation_native_async_composition_cancel_and_schema() ->
     asyncio.run(session.dispatch_async(handler, None, event=event, navigation=True))
     assert calls == ["click", "decision", "click", "decision"]
     assert routers[0].location().url == "/next"
-    assert session.routes.commands[-1]["mode"] == "push"
+    assert session.routes.navigations()[-1]["mode"] == "push"
     assert session.routes.accept_revision(2)
     assert not session.routes.accept_revision(1)
     assert not session.routes.accept_revision(True)
@@ -274,13 +277,129 @@ def test_pysx_12_st_3_fragment_scrolling_commit_and_response_metadata() -> None:
     assert all("Decoded target" not in str(op) for op in session.pending)
     assert router.response.status == 200
     assert router.response.location.hash == "#caf%C3%A9"
-    assert session.routes.commands[-1]["url"] == "/delayed#caf%C3%A9"
+    assert session.routes.navigations()[-1]["url"] == "/delayed#caf%C3%A9"
     session.pending.clear()
     session.rendered.scopes.acknowledge(session.rendered.scopes.pending_mounts())
     assert any("Decoded target" in str(op) for op in session.pending)
     router.navigate("/last#missing", replace=True)
-    assert session.routes.commands[-1]["mode"] == "replace"
+    assert session.routes.navigations()[-1]["mode"] == "replace"
     assert router.response.location.path == "/last"
     assert session.routes.accept_revision(5)
     assert not session.routes.accept_revision(4)
     session.dispose()
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"), [("/a#b\\c", "#b\\c"), ("/a?x=1#b\\c\\d", "#b\\c\\d"), ("/a#\\", "#\\")]
+)
+def test_pysx_12_st_1_route_state_backslash_is_fragment_only(url: str, expected: str) -> None:
+    assert Location.parse(url).hash == expected
+
+
+@pytest.mark.parametrize("url", ["/a\\b", "/a?x=\\", "/a\\b#c"])
+def test_pysx_12_st_1_route_state_backslash_outside_fragment_rejected(url: str) -> None:
+    with pytest.raises(ValueError, match="location"):
+        Location.parse(url)
+
+
+def test_pysx_12_st_1_route_state_late_router_binds_to_the_session_host() -> None:
+    from routing_regression_fixture import late_router_app
+
+    session = Session(late_router_app)
+    assert session.routes.routers == []
+    handler = re.search(r'id="reveal"[^>]*data-pysx-click="([^"]+)"', session.rendered.body)
+    assert handler is not None
+    asyncio.run(session.dispatch_async(handler[1], None))
+    router = session.routes.routers[0]
+    assert router.host is session.routes
+    assert {"t": "routing", "on": True} in session.routes.commands
+    session.routes.commands.clear()
+    session.routes.observe("/elsewhere")
+    assert session.routes.routers[0].location().path == "/elsewhere"
+    assert len(session.routes.routers) == 1
+    session.routes.observe("/again")
+    assert len(session.routes.routers) == 1
+    session.routes.routers[0].navigate("/from-late")
+    assert session.routes.navigations()[-1]["url"] == "/from-late"
+    assert session.routes.location.path == "/from-late"
+    session.dispose()
+
+
+def test_pysx_12_st_1_route_state_scoped_router_deregisters_with_its_scope() -> None:
+    from routing_regression_fixture import late_router_app
+
+    session = Session(late_router_app)
+    handler = re.search(r'id="reveal"[^>]*data-pysx-click="([^"]+)"', session.rendered.body)
+    assert handler is not None
+    asyncio.run(session.dispatch_async(handler[1], None))
+    assert len(session.routes.routers) == 1
+    session.dispose()
+    assert session.routes.routers == []
+
+
+@pytest.mark.parametrize(
+    ("destination", "expected"), [("#a\\b", "/users/1#a\\b"), ("edit#a\\b", "/users/1/edit#a\\b")]
+)
+def test_pysx_12_st_2_navigation_native_backslash_fragment(destination: str, expected: str) -> None:
+    assert resolve_navigation(Location.parse("/users/1"), destination) == expected
+
+
+@pytest.mark.acceptance
+def test_pysx_12_st_2_navigation_native_commits_after_a_failed_handler() -> None:
+    port = 8762
+    command = [
+        sys.executable,
+        "-m",
+        "pysx.server",
+        "--app",
+        "tests.routing_regression_fixture:failing_navigation_app",
+        "--port",
+        str(port),
+    ]
+
+    async def exercise() -> None:
+        async with connect(f"ws://127.0.0.1:{port}/ws") as ws:
+            initial = json.loads(await asyncio.wait_for(ws.recv(), 5))
+            assert initial["t"] == "init"
+            assert initial["routing"] is True
+            found = re.search(r'id="go"[^>]*data-pysx-click="([^"]+)"', initial["html"])
+            assert found is not None
+            await ws.send(json.dumps({"t": "event", "h": found[1], "navigation": True}))
+            seen: list[dict[str, object]] = []
+
+            while not any(message["t"] == "navigation" for message in seen):
+                seen.append(json.loads(await asyncio.wait_for(ws.recv(), 5)))
+            committed = next(message for message in seen if message["t"] == "navigation")
+            assert committed["url"] == "/arrived"
+            assert committed["mode"] == "push"
+
+    with ready_server(command):
+        asyncio.run(exercise())
+
+
+@pytest.mark.acceptance
+def test_pysx_12_st_2_navigation_native_deep_link_reload_serves_the_shell() -> None:
+    port = 8763
+    command = [
+        sys.executable,
+        "-m",
+        "pysx.server",
+        "--app",
+        "tests.routing_regression_fixture:failing_navigation_app",
+        "--port",
+        str(port),
+    ]
+
+    with ready_server(command):
+        for path in ("/", "/index.html", "/users/1", "/users/1?tab=a"):
+            with urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as shell:
+                assert shell.status == 200
+                assert "pysx-root" in shell.read().decode()
+
+        with urlopen(f"http://127.0.0.1:{port}/client.js?v=2", timeout=5) as runtime:
+            assert runtime.status == 200
+            assert runtime.headers["Content-Type"].startswith("text/javascript")
+
+        with pytest.raises(HTTPError) as missing:
+            urlopen(f"http://127.0.0.1:{port}/missing.png", timeout=5)
+        assert missing.value.code == 404

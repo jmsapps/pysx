@@ -96,5 +96,20 @@ try {
   assert.equal(page.url(), beforeNative);
   assert.deepEqual(errors, []);
   console.log("  ok  fragment observation deduplicates and download/target/external/modifier clicks stay native");
+
+  const reloaded = await browser.newPage();
+  const reloadErrors = [];
+  reloaded.on("pageerror", error => reloadErrors.push(error.message));
+  const deepResponse = await reloaded.goto(`http://127.0.0.1:${process.argv[2]}/users/7?tab=a#part`);
+  assert.equal(deepResponse.status(), 200);
+  await reloaded.waitForFunction(() => document.querySelector("#route-path")?.textContent === "/users/7");
+  await reloaded.waitForFunction(() => document.getElementById("param")?.textContent === "7");
+  await reloaded.waitForFunction(() => document.getElementById("search")?.textContent === "?tab=a");
+  assert.equal(new URL(reloaded.url()).pathname, "/users/7");
+  await reloaded.locator("#root").click();
+  await reloaded.waitForFunction(() => document.querySelector("#route-path")?.textContent === "/");
+  assert.deepEqual(reloadErrors, []);
+  await reloaded.close();
+  console.log("  ok  a reloaded deep link serves the shell and renders its route");
   console.log("NAVIGATION BROWSER PASSED");
 } finally { await browser.close(); }

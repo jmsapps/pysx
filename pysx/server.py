@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import inspect
 import json
+from contextlib import contextmanager
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -27,7 +28,7 @@ from .routing import Location, RouteHost, route_host
 from .styles import style_context
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Generator
     from string.templatelib import Template
 
     from websockets.http11 import Request, Response
@@ -67,18 +68,26 @@ class Session:
 
             raise
         self._live = True
+        self.routes.live = True
 
     def _watch(self, watcher: Watcher) -> Effect:
-
         return Effect(lambda: self._collect(watcher))
 
-    def _collect(self, watcher: Watcher) -> None:
-        token = style_context.set(self.rendered.styles)
+    @contextmanager
+    def _context(self) -> Generator[None]:
+        """Session-owned styles and route host, for every path that runs user code."""
+        style_token = style_context.set(self.rendered.styles)
+        route_token = route_host.set(self.routes)
 
         try:
-            ops = watcher.refresh()
+            yield
         finally:
-            style_context.reset(token)
+            route_host.reset(route_token)
+            style_context.reset(style_token)
+
+    def _collect(self, watcher: Watcher) -> None:
+        with self._context():
+            ops = watcher.refresh()
         self._sync_styles()
 
         if ops:
@@ -95,12 +104,8 @@ class Session:
                 self.pending.insert(0, {"op": "css", "v": css})
 
     def _invoke(self, callback: Callable[[object], object], value: object) -> None:
-        token = style_context.set(self.rendered.styles)
-
-        try:
+        with self._context():
             result = callback(value)
-        finally:
-            style_context.reset(token)
         self._sync_styles()
 
         if inspect.isawaitable(result):
@@ -118,21 +123,22 @@ class Session:
         navigation: bool = False,
     ) -> list[Op]:
         self.routes.intercepting = navigation
-        style_token = style_context.set(self.rendered.styles)
 
         try:
-            ops = self.dispatch(handler_id, value, revision, after=after, edits=edits, event=event)
-            self.pending.extend(ops)
+            with self._context():
+                ops = self.dispatch(
+                    handler_id, value, revision, after=after, edits=edits, event=event
+                )
+                self.pending.extend(ops)
 
-            while self._awaitables:
-                await self._awaitables.pop(0)
-                self._sync_styles()
+                while self._awaitables:
+                    await self._awaitables.pop(0)
+                    self._sync_styles()
         except BaseException:
             self.cancel_callbacks()
 
             raise
         finally:
-            style_context.reset(style_token)
             self.routes.intercepting = False
         ops = self.pending
         self.pending = []
@@ -302,14 +308,16 @@ def main() -> None:
     app_fn = _load_app(args.app)
 
     async def process_request(connection: ServerConnection, request: Request) -> Response | None:
-        if urlsplit(request.path).path in ("/", "/index.html"):
-            return _static(connection, "index.html", "text/html; charset=utf-8")
+        path = urlsplit(request.path).path
 
-        if request.path == "/client.js":
+        if path == "/ws":
+            return None
+
+        if path == "/client.js":
             return _static(connection, "client.js", "text/javascript; charset=utf-8")
 
-        if urlsplit(request.path).path == "/ws":
-            return None
+        if path == "/index.html" or "." not in path.rsplit("/", 1)[-1]:
+            return _static(connection, "index.html", "text/html; charset=utf-8")
 
         return connection.respond(HTTPStatus.NOT_FOUND, "not found\n")
 
@@ -349,6 +357,7 @@ def main() -> None:
 
         async def send_command(message: dict[str, JSONValue]) -> None:
             await send_patch()
+            await send_navigation()
             await connection.send(json.dumps(message))
 
         session.rendered.dom.sender = send_command
@@ -377,10 +386,10 @@ def main() -> None:
                             message.get("rev")
                         ):
                             continue
+
                         try:
                             session.routes.observe(url)
                         except ValueError as error:
-
                             raise PayloadError("invalid location observation") from error
                         session.routes.commands.append(
                             {
@@ -421,6 +430,7 @@ def main() -> None:
                         )
                 except PayloadError, DomError:
                     await send_patch()
+                    await send_navigation()
                     await send_mounts()
 
                     continue

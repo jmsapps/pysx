@@ -41,13 +41,17 @@ The browser-facing location remains absolute; patterns are relative to the base.
 Navigation destinations use browser-absolute paths: use `/app/...` or explicit
 relative operations to stay inside that base.
 Locations must be local absolute URLs with valid percent escapes and UTF-8, bounded
-to 8192 characters. Control characters, whitespace, backslashes and protocol-relative
-URLs are rejected. Invalid observations leave the previously accepted state intact.
+to 8192 characters. Control characters, whitespace and protocol-relative URLs are
+rejected. A backslash is rejected in the path and query but accepted in the fragment,
+which the URL parser keeps verbatim. Invalid observations leave the previously
+accepted state intact.
 
 `router.response` exposes the accepted location, matched pattern, and a suggested
 status (`200` for a match/fallback, `404` otherwise). HTTP hosts can use this seam
-for initial rendering and deep-link responses. The current standalone host serves
-its shell at `/`; HTTP deep-link rendering is a separate host integration concern.
+for initial rendering and deep-link responses. The standalone host serves its shell
+for any path that does not name a static asset, so reloading a route URL re-enters
+the application at that location; rendering route content over HTTP, rather than
+after the client connects, is a separate host integration concern.
 
 ## Navigation and links
 

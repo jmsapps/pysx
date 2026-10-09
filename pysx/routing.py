@@ -13,8 +13,9 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 
 from .composition import namespace_for
 from .events import BrowserEvent, EventHandler, on_event
+from .lifecycle import active_scope, on_cleanup
 from .native_support import element
-from .reactive import Signal, batch, derived, signal
+from .reactive import Signal, batch, derived, signal, untracked
 from .render import Fragment, each, pysx
 
 if TYPE_CHECKING:
@@ -23,7 +24,18 @@ if TYPE_CHECKING:
 
     from .composition import Children
     from .native import AAttrs
-    from .wire import NavigationMessage
+    from .wire import NavigationMessage, RoutingMessage
+
+FORBIDDEN_URL_CHARS = re.compile(r"[\x00-\x20\x7f\\]")
+FORBIDDEN_FRAGMENT_CHARS = re.compile(r"[\x00-\x20\x7f]")
+INVALID_ESCAPE = re.compile(r"%(?![0-9a-fA-F]{2})")
+
+
+def forbidden_characters(url: str) -> bool:
+    """A backslash is legal in a fragment, which the URL parser keeps verbatim."""
+    before, _, fragment = url.partition("#")
+
+    return bool(FORBIDDEN_URL_CHARS.search(before) or FORBIDDEN_FRAGMENT_CHARS.search(fragment))
 
 
 @dataclass(frozen=True)
@@ -34,12 +46,10 @@ class Location:
 
     @property
     def url(self) -> str:
-
         return self.path + self.search + self.hash
 
     @property
     def query(self) -> tuple[tuple[str, str], ...]:
-
         return tuple(parse_qsl(self.search.removeprefix("?"), keep_blank_values=True))
 
     @classmethod
@@ -48,10 +58,9 @@ class Location:
             not url.startswith("/")
             or url.startswith("//")
             or len(url) > 8192
-            or re.search(r"[\x00-\x20\x7f\\]", url)
-            or re.search(r"%(?![0-9a-fA-F]{2})", url)
+            or forbidden_characters(url)
+            or INVALID_ESCAPE.search(url)
         ):
-
             raise ValueError("location requires a bounded, local absolute URL")
         parts = urlsplit(url)
         # Validate encoding without decoding separators before matching.
@@ -96,18 +105,15 @@ def match_route(pattern: str, path: str) -> Mapping[str, str] | None:
 
     for index, segment in enumerate(expected):
         if segment == "*":
-
             return MappingProxyType(params)
 
         if index >= len(parts):
-
             return None
 
         if segment.startswith(":"):
             if len(segment) > 1:
                 params[segment[1:]] = unquote(parts[index], errors="strict")
         elif segment != parts[index]:
-
             return None
 
     return MappingProxyType(params) if len(parts) == len(expected) else None
@@ -119,7 +125,31 @@ class RouteHost:
         self.routers: list[Router] = []
         self.revision = 0
         self.intercepting = False
-        self.commands: list[NavigationMessage] = []
+        self.live = False
+        self.commands: list[NavigationMessage | RoutingMessage] = []
+
+    def register(self, router: Router) -> None:
+        """A re-rendered owner replaces its own router instead of adding another."""
+
+        if self.live and not self.routers:
+            self.commands.append({"t": "routing", "on": True})
+        existing = (
+            None
+            if router.owner is None
+            else next((r for r in self.routers if r.owner == router.owner), None)
+        )
+
+        if existing is not None:
+            self.routers[self.routers.index(existing)] = router
+        else:
+            self.routers.append(router)
+
+    def navigations(self) -> list[NavigationMessage]:
+        return [command for command in self.commands if command["t"] == "navigation"]
+
+    def unregister(self, router: Router) -> None:
+        if router in self.routers:
+            self.routers.remove(router)
 
     def observe(self, url: str) -> None:
         location = Location.parse(url)
@@ -145,7 +175,6 @@ class RouteHost:
 
     def accept_revision(self, value: object) -> bool:
         if type(value) is not int or value < self.revision:
-
             return False
         self.revision = value
 
@@ -162,7 +191,6 @@ class Router:
         base = Location.parse(base_path)
 
         if base.search or base.hash:
-
             raise ValueError("base_path cannot contain search or hash")
         self.base_path = base.path.rstrip("/")
         self._routes: list[tuple[str, Route]] = []
@@ -181,10 +209,19 @@ class Router:
         self.params: Signal[Mapping[str, str]] = signal({})
         self.state = RouteState(self.location, self.params)
         self._active: Signal[list[int]] = signal([])
-        self.response = RouteResponse(self.location(), None, 404)
-        self.update(self.location())
-        self.host = host if host is not None else RouteHost(self.location().url)
-        self.host.routers.append(self)
+        scope = active_scope()
+        self.owner = None if scope is None else scope.token
+        with untracked():
+            self.response = RouteResponse(self.location(), None, 404)
+            self.update(self.location())
+            self.host = host if host is not None else RouteHost(self.location().url)
+        self.host.register(self)
+
+        if scope is not None:
+            on_cleanup(self._release)
+
+    def _release(self) -> None:
+        self.host.unregister(self)
 
     def _flatten(self, routes: Sequence[Route], parent: str) -> None:
         for route in routes:
@@ -231,7 +268,6 @@ class Router:
         callback = entry[1].view
 
         if callback is None:
-
             return pysx(t"")
         result = callback(self.state)
 
@@ -244,11 +280,9 @@ class Router:
         return element("div", (fragment,), {"style": "display: contents"})
 
     def view(self) -> Fragment:
-
         return pysx(t"{each(self._active, self._view, key=str)}")
 
     def resolve(self, destination: str) -> str:
-
         return resolve_navigation(self.location(), destination)
 
     def navigate(self, destination: str, *, replace: bool = False) -> None:
@@ -256,14 +290,12 @@ class Router:
 
 
 def resolve_navigation(location: Location, destination: str) -> str:
-    if not destination or len(destination) > 8192 or re.search(r"[\x00-\x20\x7f\\]", destination):
-
+    if not destination or len(destination) > 8192 or forbidden_characters(destination):
         raise ValueError("navigation requires a bounded destination without whitespace")
     parts = urlsplit(destination)
 
     if parts.scheme or destination.startswith("//"):
         if parts.scheme.lower() not in {"", "http", "https"} or not parts.netloc:
-
             raise ValueError("server navigation supports only HTTP(S) external URLs")
 
         return destination
@@ -307,7 +339,6 @@ class NavigationEvent:
 
     @property
     def cancelled(self) -> bool:
-
         return self._decision[0]
 
 
@@ -323,7 +354,6 @@ def Link(  # noqa: N802 - public component constructor
     href = attrs.get("href")
 
     if href is None:
-
         raise TypeError("Link requires href")
     supplied = attrs.get("on_click")
     policy = supplied if isinstance(supplied, EventHandler) else on_event(lambda _event: None)
@@ -354,7 +384,6 @@ def Link(  # noqa: N802 - public component constructor
         value = str(href() if isinstance(href, Signal) else href)
 
         if not value or value.startswith("#") or urlsplit(value).scheme or value.startswith("//"):
-
             return value
 
         return router.resolve(value)

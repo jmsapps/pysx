@@ -25,6 +25,16 @@ function newHistoryEntry() {
   return {key, state: {...history.state, pysxEntry: key}};
 }
 
+function enableRouting() {
+  if (routing) return;
+  routing = true;
+  previousRestoration = history.scrollRestoration;
+  history.scrollRestoration = "manual";
+  const entry = newHistoryEntry();
+  history.replaceState(entry.state, "", location.href);
+  historyEntry = entry.key;
+}
+
 function focusRoute(target) {
   if (!target || !root.contains(target)) return;
   if (!target.hasAttribute("tabindex")) {
@@ -448,14 +458,7 @@ function hydrate(scope) {
 socket.onmessage = (event) => {
   const message = JSON.parse(event.data);
   if (message.t === "init") {
-    routing = !!message.routing;
-    if (routing) {
-      previousRestoration = history.scrollRestoration;
-      history.scrollRestoration = "manual";
-      const entry = newHistoryEntry();
-      history.replaceState(entry.state, "", location.href);
-      historyEntry = entry.key;
-    }
+    if (message.routing) enableRouting();
     style.textContent = message.css;
     root.innerHTML = message.html;
     hydrate(root);
@@ -471,6 +474,8 @@ socket.onmessage = (event) => {
     socket.send(JSON.stringify({t: "mounted", ids: message.ids}));
   } else if (message.t === "navigation") {
     commitNavigation(message);
+  } else if (message.t === "routing") {
+    if (message.on) enableRouting();
   }
 };
 
