@@ -96,6 +96,45 @@ def test_batching_transactions_async_boundary() -> None:
     assert source() == 0
 
 
+@pytest.mark.parametrize("fail", [False, True])
+def test_batching_transactions_effect_nested_batch_releases_owner(fail: bool) -> None:
+    source = signal(0)
+    target = signal(0)
+
+    def copy() -> None:
+        value = source()
+
+        if value:
+            with batch():
+                target.set(value)
+
+                if fail:
+
+                    raise ValueError("nested batch failed")
+
+    observer = effect(copy)
+
+    async def update() -> None:
+        with batch():
+            source.set(1)
+
+    async def next_turn() -> None:
+        with batch():
+            target.set(2)
+        assert target() == 2
+
+    try:
+        if fail:
+            with pytest.raises(ExceptionGroup, match="reactive transaction"):
+                asyncio.run(update())
+        else:
+            asyncio.run(update())
+        assert target() == 1
+        asyncio.run(next_turn())
+    finally:
+        observer.dispose()
+
+
 def test_batching_transactions_nested_reads() -> None:
     a = signal(1)
     b = signal(2)

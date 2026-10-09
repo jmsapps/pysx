@@ -63,6 +63,12 @@ class _OwnedSignal[T](Signal[T]):
         super().set(value)
 
 
+def active_scope() -> Scope | None:
+    owner = _scope.get()
+
+    return owner if owner is not None and owner.alive else None
+
+
 def current_scope() -> Scope:
     owner = _scope.get()
 
@@ -199,6 +205,7 @@ def local_state[T](key: str, initial: T) -> Signal[T]:
 
 def on_setup(callback: Callable[[], object]) -> None:
     """Run server setup once; register its resource cleanup with on_cleanup."""
+
     if not current_scope().ready:
         callback()
 

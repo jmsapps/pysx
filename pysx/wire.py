@@ -52,6 +52,19 @@ class InitMessage(TypedDict):
     t: Literal["init"]
     html: str
     css: str
+    routing: NotRequired[bool]
+
+
+class NavigationMessage(TypedDict):
+    t: Literal["navigation"]
+    url: str
+    rev: int
+    mode: Literal["push", "replace", "observe", "external"]
+
+
+class RoutingMessage(TypedDict):
+    t: Literal["routing"]
+    on: bool
 
 
 class PatchMessage(TypedDict):
@@ -77,6 +90,14 @@ class EventMessage(TypedDict):
     after: NotRequired[str]
     edits: NotRequired[list[BindingEdit]]
     event: NotRequired[dict[str, JSONValue]]
+    nav_rev: NotRequired[int]
+    navigation: NotRequired[bool]
+
+
+class LocationMessage(TypedDict):
+    t: Literal["location"]
+    url: str
+    rev: int
 
 
 class BindingEdit(TypedDict):
@@ -104,4 +125,11 @@ class DomReplyMessage(TypedDict):
     revoked: NotRequired[list[str]]
 
 
-type ServerMessage = InitMessage | PatchMessage | DomCommandMessage | MountMessage
+type ServerMessage = (
+    InitMessage
+    | PatchMessage
+    | DomCommandMessage
+    | MountMessage
+    | NavigationMessage
+    | RoutingMessage
+)

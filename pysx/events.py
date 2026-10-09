@@ -80,6 +80,7 @@ class EventHandler:
     phase: Literal["capture", "bubble"] = "bubble"
     eligible_link: bool = False
     event_type: str | None = None
+    navigation: bool = False
 
     def __post_init__(self) -> None:
         if self.phase not in {"capture", "bubble"}:
@@ -101,6 +102,7 @@ class EventHandler:
             "keys": self.keys,
             "phase": self.phase,
             "link": self.eligible_link,
+            "navigation": self.navigation,
         }
 
 

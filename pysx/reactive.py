@@ -95,9 +95,21 @@ def _execution_owner() -> tuple[int, int]:
 
 
 @contextmanager
+def untracked() -> Generator[None]:
+    """Read signals without subscribing whatever computation is currently running."""
+    token = _current.set(None)
+
+    try:
+        yield
+    finally:
+        _current.reset(token)
+
+
+@contextmanager
 def batch() -> Generator[None]:
     """Coalesce a synchronous write turn; committed writes are never rolled back."""
     _scheduler.check_owner()
+    previous_owner = _scheduler.owner
     _scheduler.owner = _execution_owner()
     _scheduler.depth += 1
     body_error: BaseException | None = None
@@ -111,8 +123,8 @@ def batch() -> Generator[None]:
     finally:
         _scheduler.depth -= 1
 
-        if not _scheduler.depth:
-            _scheduler.owner = None
+        # Effect evaluation also holds depth; ownership follows batch lifetime.
+        _scheduler.owner = previous_owner
 
         try:
             _scheduler.flush()
@@ -204,7 +216,6 @@ class Signal[T]:
         for eff in tuple(self.observers.values()):
             # The reader this evaluation is serving returns the fresh value from
             # get(); every other observer must still be invalidated, even mid-run.
-
             if eff is not self._reader:
                 eff.invalidate()
 
@@ -224,9 +235,7 @@ class Signal[T]:
         return self is other
 
     def __bool__(self) -> bool:
-        raise TypeError(
-            "Use all_of/any_of/not_ and eq/ne; read get() for a snapshot"
-        )
+        raise TypeError("Use all_of/any_of/not_ and eq/ne; read get() for a snapshot")
 
     @overload
     def __lt__(
