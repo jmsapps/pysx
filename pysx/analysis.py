@@ -113,22 +113,18 @@ def sites_for(compilation: Compilation, projection: MappedText) -> list[Site]:
             length = len(node.arg)
             role = "prop"
         else:
-
             continue
 
         try:
             origin = projection.span(start, start + length)
         except ValueError:
-
             continue
         target = targets.get(origin)
 
         if target is None or target[1] != role or origin in results:
-
             continue
 
         if isinstance(node, ast.Name) and node.id != target[0]:
-
             continue
         results[origin] = Site(
             start=source_offsets[origin.start],
@@ -143,13 +139,11 @@ def sites_for(compilation: Compilation, projection: MappedText) -> list[Site]:
     for call in compilation.calls:
         for element in call.elements:
             if not isinstance(element.tag, str):
-
                 continue
             native_tag = native_tag_for(element.tag, call.scope, compilation.resolver)
             info = tag_info(native_tag) if native_tag is not None else None
 
             if info is None:
-
                 continue
             props = sorted(
                 {python_attr(name) for name in info.attributes}

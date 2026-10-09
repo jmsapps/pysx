@@ -53,6 +53,7 @@ class Row:
 def _handler(output: Output) -> Callable[[object], str]:
     value = dict(output.attributes)["onClick"]
     assert callable(value)
+
     return cast("Callable[[object], str]", value)
 
 
@@ -72,28 +73,31 @@ def deferred_rows(_tmp_path: Path) -> None:
 
     def binding_text(row: Row) -> str:
         runs.append(row.identity)
+
         return row.label.upper()
 
-    template = t'''
+    template = t"""
 for (index,item) in {Live(lambda: list(enumerate(rows)))}
   let label = {defer(item, binding_text)}
   button title={defer2(index, label, lambda i, text: f"{i}:{text}")}
     span {defer(item, lambda row: row.identity)}{defer(label, lambda text: text)}
   button onClick={defer(item, _capture)}
-'''
+"""
     namespace = {"item": item, "index": index, "label": label}
     nodes = parse(template.strings, namespace)
     assert runs == []  # constructing/parsing holes never evaluates row expressions
     initial = evaluate(nodes, template, namespace)
     assert [dict(initial[index].attributes)["title"] for index in (0, 2)] == [
-        "0:ALPHA", "1:BETA",
+        "0:ALPHA",
+        "1:BETA",
     ]
     assert initial[0].children[0].text == "aALPHA"
     assert [_handler(initial[index])(None) for index in (1, 3)] == ["a:Alpha", "b:Beta"]
     rows.reverse()
     reordered = evaluate(nodes, template, namespace)
     assert [dict(reordered[index].attributes)["title"] for index in (0, 2)] == [
-        "0:BETA", "1:ALPHA",
+        "0:BETA",
+        "1:ALPHA",
     ]
     assert [_handler(reordered[index])(None) for index in (1, 3)] == ["b:Beta", "a:Alpha"]
     rows[0] = Row("b", "Replacement")
@@ -108,7 +112,7 @@ def nested_scopes_and_cases(_tmp_path: Path) -> None:
     item = Binding[Row]("item")
     label = Binding[str]("label")
     rows = [Row("parent", "Outer", children=(Row("child", "Inner", "waiting"),))]
-    template = t'''
+    template = t"""
 for item in {rows}
   let label = {defer(item, lambda row: row.label)}
   span {defer(label, lambda value: value)}
@@ -122,7 +126,7 @@ for item in {rows}
       case _
         button title={defer(label, lambda value: value + " fallback")}
   span {defer(item, lambda row: row.identity)}{defer(label, lambda value: value)}
-'''
+"""
     namespace = {"item": item, "label": label}
     nodes = parse(template.strings, namespace)
     output = evaluate(nodes, template, namespace)
@@ -153,6 +157,7 @@ def no_frames_and_bounded_cache(_tmp_path: Path) -> None:
         incidental = Ephemeral()
         binding = Binding[Row]("item")
         template = t"span {defer(binding, lambda row: row.label)}"
+
         return template, weakref.ref(incidental)
 
     template, incidental = factory()
@@ -212,7 +217,7 @@ def metadata_and_fragments(_tmp_path: Path) -> None:
     assert evaluate(parse(quoted.strings, {}), quoted, {})[0].text == "quoted {literal}"
     raw = rt'span "raw \t{{literal}}"'
     assert evaluate(parse(raw.strings, {}), raw, {})[0].text == r"raw \t{literal}"
-    adjacent = t"span {number}" t"{name}"
+    adjacent = t"span {number}{name}"
     assembled = t"span {number}" + t"{name}"
     assert adjacent.strings == assembled.strings
     assert evaluate(parse(assembled.strings, {}), assembled, {})[0].text == "7é😀"
@@ -230,20 +235,20 @@ def metadata_and_fragments(_tmp_path: Path) -> None:
         evaluate(parse(control.strings, {"row": row}), control, {"row": row})
     wrapped = t"span {defer(row, lambda _value: live)!r}"
     with pytest.raises(MetadataError, match="live"):
-        evaluate(
-            parse(wrapped.strings, {}), wrapped, {}, Scope().child((row,), (1,))
-        )
+        evaluate(parse(wrapped.strings, {}), wrapped, {}, Scope().child((row,), (1,)))
 
 
 def exact_unicode_maps(_tmp_path: Path) -> None:
     source = (
         'emoji = "😀"\nvalue = 7\ntext = t"""\n'
-        '    span \\t😀 {{brace}} {value!r:>4}{value}\n'
+        "    span \\t😀 {{brace}} {value!r:>4}{value}\n"
         '    button badAttr=\\"x\\"\n"""\n'
     )
     mapped = analyze(source)[0]
     assert [fragment.text for fragment in mapped.fragments] == [
-        "\n    span \t😀 {brace} ", "", '\n    button badAttr="x"\n',
+        "\n    span \t😀 {brace} ",
+        "",
+        '\n    button badAttr="x"\n',
     ]
     positions = Positions(source)
     hole = mapped.holes[0]
@@ -318,8 +323,7 @@ def crlf_tabs_multiline_and_assembly(tmp_path: Path) -> None:
     # Parse source containing application side effects without running them.
     marker = tmp_path / "analysis-must-not-execute"
     dangerous = (
-        f'from pathlib import Path\nPath({str(marker)!r}).touch()\n'
-        'text = t"span {unknown}"\n'
+        f'from pathlib import Path\nPath({str(marker)!r}).touch()\ntext = t"span {{unknown}}"\n'
     )
     assert len(analyze(dangerous)) == 1
     assert not marker.exists()
@@ -341,19 +345,18 @@ def adjacent_nested_and_positioned_tree(_tmp_path: Path) -> None:
     assert len(fragments.raw_spans(0, len(fragments.text))) == 2
     escaped_quotes = analyze('text = t"span \\"quoted\\""\n')[0]
     assert escaped_quotes.fragments[0].text == 'span "quoted"'
-    nested_source = 'text = t"span {t\'inner {value}\'}"\n'
+    nested_source = "text = t\"span {t'inner {value}'}\"\n"
     outer, inner = analyze(nested_source)
     assert outer.fragments[0].text == "span "
     assert inner.fragments[0].text == "inner "
     expression = outer.holes[0].expression_span
     assert nested_source[expression.start : expression.end] == "t'inner {value}'"
-    dictionary_source = 'text = t"span {mapping[\'key\']} {{x}}"\n'
+    dictionary_source = "text = t\"span {mapping['key']} {{x}}\"\n"
     dictionary = analyze(dictionary_source)[0]
     expression = dictionary.holes[0].expression_span
     assert dictionary_source[expression.start : expression.end] == "mapping['key']"
     source = (
-        'value = 1\nmarkup = t"""\n    div\n      span {value}\n'
-        '      button badAttr={value}\n"""\n'
+        'value = 1\nmarkup = t"""\n    div\n      span {value}\n      button badAttr={value}\n"""\n'
     )
     mapped = analyze(source)[0]
     normalized = dedent(mapped.fragments)
@@ -363,6 +366,7 @@ def adjacent_nested_and_positioned_tree(_tmp_path: Path) -> None:
     assert root.tag == "div"
     tags = [child.tag for child in root.children if isinstance(child, Element)]
     assert tags == ["span", "button"]
+
     for node in (root, *root.children):
         assert isinstance(node, Element)
         origin = normalized[node.span.start.fragment].origins[node.span.start.offset]

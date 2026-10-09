@@ -12,6 +12,7 @@ uv run --project . example run operators
 uv run --project . example run forms
 uv run --project . example run events
 uv run --project . example run templates
+uv run --project . example run keyed_rows
 uv run --project . example run
 ```
 
@@ -32,6 +33,17 @@ example run counter
 
 The command is installed into the environment's bin directory. A new terminal
 needs activation again, or you can keep using the `uv run --project .` prefix.
+
+## Keyed rows
+
+Run `uv run --project . example run keyed_rows`. Type a private draft, increase its
+count, then reverse the rows or rename Alpha: both edits stay with that row.
+**Focus draft and reverse** focuses its input using an owned ref before moving the
+row; keyboard focus and caret stay in the field. **Add and reverse children** moves
+the existing nested choices and adds one. Picking a child after renaming Alpha uses
+the current label. **Remove Alpha** removes both its card and draft preview;
+**Restore Alpha** starts fresh local state and refs. Each browser session owns its
+drafts, counters, choices and rows. No extra host setup is needed.
 
 ## Keyboard and focus
 

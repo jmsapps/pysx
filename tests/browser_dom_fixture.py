@@ -75,6 +75,7 @@ def app() -> Fragment:
                 await saved.focus()
             except DomError:
                 status.set("stale-passed")
+
                 return
             status.set("stale-failed")
 

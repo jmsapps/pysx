@@ -32,10 +32,10 @@ try {
     document.querySelector('li[data-pysx-key="1"]').className.includes("is-done"));
 
   const probes = await page.$$eval("#todo-list li", (els) => els.map((el) => el.__probe ?? null));
-  assert(probes[0] === null, "toggled item should have been replaced");
+  assert(probes[0] === "probe0", "toggled item must retain its DOM identity");
   assert(probes[1] === "probe1" && probes[2] === "probe2",
     `untouched items were rebuilt: ${JSON.stringify(probes)}`);
-  ok("keyed reconcile: only the toggled node is replaced, siblings keep DOM identity");
+  ok("keyed updates retain the toggled node and all sibling DOM identities");
 
   assert((await page.textContent("#todo-summary")).includes("1 item left"), "count did not update");
   ok("count and plural updated through their own slots");

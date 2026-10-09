@@ -52,7 +52,6 @@ def test_render_snapshot_nested_signals_freeze_and_live_source_updates() -> None
     live = signal(["a", "b"])
 
     def view() -> Fragment:
-
         return pysx(t"""
             section: {snapshots}
             aside: {live}
@@ -75,7 +74,6 @@ def test_render_snapshot_structured_live_templates_and_captured_handlers() -> No
     calls: list[str] = []
 
     def click(label: str) -> Callable[[object], None]:
-
         return lambda _event: calls.append(label)
 
     source = signal([pysx(t'\nbutton(onClick={click("first")}): "first"')])
@@ -95,7 +93,6 @@ def test_serialization_live_boolean_classes_and_properties() -> None:
     classes = signal({"active": True, "inactive": False})
 
     def view() -> Fragment:
-
         return pysx(t"""
             input(checked={hidden} ariaChecked={hidden} value={value})
             div(className="base active" class={classes})
@@ -119,17 +116,15 @@ def test_serialization_live_key_and_class_escaping() -> None:
     rows = signal(['key":<&'])
 
     def row(value: str) -> Fragment:
-
         return pysx(t"""\n        div(class={value}): {value}\n        """)
 
     def view() -> Fragment:
-
         return pysx(t"""\n        div: {each(rows, row, key=lambda value: value)}\n        """)
 
     markup = render(view).body
     assert 'data-pysx-key="key&quot;:&lt;&amp;"' in markup
     assert 'class="key&quot;:&lt;&amp;"' in markup
-    assert 'id="0:key&quot;:&lt;&amp;:1"' in markup
+    assert 'id="0:~6b6579223a3c26:g1:1"' in markup
 
 
 def test_structured_state_selective_patches_and_event_batch() -> None:
@@ -137,7 +132,6 @@ def test_structured_state_selective_patches_and_event_batch() -> None:
     left = dict_key(root, "left")
 
     def app_fn() -> Fragment:
-
         return pysx(t"""\n        p: {left}\n        """)
 
     session = Session(app_fn)
@@ -160,7 +154,6 @@ def test_template_ergonomics_operator_text_branch_isolation_and_disposal() -> No
     visible = score > 0
 
     def app_fn() -> Fragment:
-
         return pysx(t"""
             div: {doubled}
             if {visible}:
@@ -188,7 +181,6 @@ def test_template_ergonomics_branch_removal_releases_operator_sources() -> None:
     doubled = count * 2
 
     def app_fn() -> Fragment:
-
         return pysx(t"""
             if {visible}:
                 p: {doubled}
@@ -216,7 +208,6 @@ def test_batching_transactions_event_patches() -> None:
         count.set(2)
 
     def app_fn() -> Fragment:
-
         return pysx(t"""
         button(onClick={click}): "change"
         p: {count}
@@ -310,7 +301,6 @@ def test_hole_value_is_escaped() -> None:
 
     @component
     def view() -> Fragment:
-
         return pysx(t"""
             Box:
                 {payload}
@@ -337,7 +327,6 @@ def test_reactive_attribute_gets_element_id_and_emits_attr_op() -> None:
 
     @mk
     def view() -> Fragment:
-
         return pysx(t"""
             Box(class={cls}):
                 "x"
@@ -362,7 +351,6 @@ def test_class_patch_keeps_the_scoped_class() -> None:
 
     @mk
     def view() -> Fragment:
-
         return pysx(t"""
             Box(class={active}):
                 "x"
@@ -390,7 +378,6 @@ def test_boolean_attribute_present_then_removed() -> None:
 
     @mk
     def view() -> Fragment:
-
         return pysx(t"""
             Box(hidden={on}):
                 "x"
@@ -410,7 +397,6 @@ def test_conditional_swaps_branch_html() -> None:
 
     @mk
     def view() -> Fragment:
-
         return pysx(t"""
             Box:
                 if {flag}:
@@ -432,7 +418,6 @@ def test_conditional_with_plain_flag_keeps_nested_watchers() -> None:
 
     @mk
     def view() -> Fragment:
-
         return pysx(t"""
             Box:
                 if {shown}:
@@ -455,14 +440,12 @@ class Row:
 def _list_view(items: Signal[list[Row]]) -> Callable[[], Fragment]:
     @component
     def item(row: Row) -> Fragment:
-
         return pysx(t"""
             li: {row.text}
         """)
 
     @mk
     def view() -> Fragment:
-
         return pysx(t"""
             Box:
                 {each(items, item, key=(lambda r: r.id))}
@@ -474,7 +457,7 @@ def _list_view(items: Signal[list[Row]]) -> Callable[[], Fragment]:
 def test_keyed_list_renders_with_keys() -> None:
     items = signal([Row(1, "a"), Row(2, "b")])
     r = render(_list_view(items))
-    assert '<pysx-list id="0">' in r.body, r.body
+    assert "<!--pysx:list:30:start-->" in r.body, r.body
     assert 'data-pysx-key="1"' in r.body, r.body
     assert 'data-pysx-key="2"' in r.body, r.body
 
@@ -490,14 +473,12 @@ def test_unchanged_items_send_no_html() -> None:
     assert ops[0]["html"] == {}, "a pure reorder must send zero html"
 
 
-def test_only_the_changed_item_sends_html() -> None:
+def test_only_the_changed_item_sends_text() -> None:
     items = signal([Row(1, "a"), Row(2, "b")])
     r = render(_list_view(items))
     items.set([Row(1, "a"), Row(2, "CHANGED")])
     ops = r.watchers[0].refresh()
-    assert ops[0]["op"] == "list"
-    assert list(ops[0]["html"]) == ["2"], ops[0]["html"]
-    assert "CHANGED" in ops[0]["html"]["2"]
+    assert ops == [{"op": "text", "id": "0:2:g2:0", "v": "CHANGED"}]
 
 
 def test_no_change_emits_nothing() -> None:
@@ -512,7 +493,6 @@ def test_bind_value_renders_value_and_input_hook() -> None:
 
     @mk
     def view() -> Fragment:
-
         return pysx(t"""
             Box:
                 input(bindValue={draft})

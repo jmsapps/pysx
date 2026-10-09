@@ -45,7 +45,15 @@ class CssOp(TypedDict):
     v: str
 
 
-type Op = TextOp | HtmlOp | AttrOp | PropertyOp | ListOp | CssOp
+class ChildrenOp(TypedDict):
+    op: Literal["children"]
+    id: str
+    range: bool
+    kind: str
+    v: str
+
+
+type Op = TextOp | HtmlOp | AttrOp | PropertyOp | ListOp | CssOp | ChildrenOp
 
 
 class InitMessage(TypedDict):

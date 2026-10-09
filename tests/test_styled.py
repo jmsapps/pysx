@@ -138,7 +138,6 @@ def test_styled_bases_flattened_opposing_lineages() -> None:
 
 def test_styled_bases_callable_signature_and_roots() -> None:
     def base(label: str) -> Fragment:
-
         return pysx(t'\nfragment:\n  div: {label}\n  span: "other"')
 
     first = styled(base)(t"color: red")
@@ -192,7 +191,6 @@ def test_styled_bases_typed_native_callable_children() -> None:
     base = styled(native.Strong)(t"color: red")
 
     def app() -> Fragment:
-
         return pysx(t'\nBase:\n  span: "child"', namespace={"Base": base})
 
     result = render(app)
@@ -205,24 +203,20 @@ def test_styled_bases_transparent_fragment_and_keyed_roots() -> None:
     from pysx import each, signal
 
     def container(*, children: object) -> Fragment:
-
         return pysx(t"\nfragment: {children}")
 
     transparent = styled(container)(t"color: orange")
     rows = signal(["one", "two"])
 
     def item(label: str) -> Fragment:
-
         return pysx(t"\nspan: {label}")
 
     def base() -> Fragment:
-
         return pysx(t"\n{each(rows, item, key=lambda row: row)}")
 
     keyed = styled(base)(t"padding: 3px")
 
     def app() -> Fragment:
-
         return pysx(
             t'\nTransparent:\n  span: "one"\n  span: "two"\nKeyed:',
             namespace={"Transparent": transparent, "Keyed": keyed},
@@ -245,7 +239,6 @@ def test_styling_diagnostics_literal_css_and_signal_rejection() -> None:
         css(t"color: {'red'!r}")
 
     def app() -> Fragment:
-
         return pysx(t'\ndiv(css={"color:red"!s}): "metadata"')
 
     with pytest.raises(ValueError, match="metadata"):
@@ -263,7 +256,6 @@ def test_styling_diagnostics_styled_effect_parity() -> None:
     child = styled(base)(t"padding: 3px")
 
     def app() -> Fragment:
-
         return pysx(
             t'\nChild(styleVars={ ({"accent": variable}) }): "Effect"', namespace={"Child": child}
         )
@@ -307,9 +299,10 @@ def test_styling_diagnostics_fresh_vsix_contents(tmp_path: Path) -> None:
         grammar = "syntaxes/pysx.injection.tmLanguage.json"
         assert package.read("extension/" + grammar) == (root / "editor" / grammar).read_bytes()
         assert b"endLine" in package.read("extension/authoring.js")
-        assert package.read("extension/snippets/python.json") == (
-            root / "editor" / "snippets" / "python.json"
-        ).read_bytes()
+        assert (
+            package.read("extension/snippets/python.json")
+            == (root / "editor" / "snippets" / "python.json").read_bytes()
+        )
         assert b"support.type.property-name.css" in package.read("extension/" + grammar)
 
 
@@ -317,7 +310,6 @@ def test_styled_callable_wrapper_outranks_its_styled_base() -> None:
     base = styled(div)(t"padding: 4px")
 
     def body() -> Fragment:
-
         return Fragment(t'\nBase: "x"')
 
     wrapper = styled(body)(t"padding: 9px")

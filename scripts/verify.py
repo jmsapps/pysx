@@ -144,7 +144,6 @@ def main() -> int:
         failures.append((gate, output))
 
         if gate.tier == "setup":
-
             break
 
     if failures:
@@ -158,5 +157,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-
     raise SystemExit(main())

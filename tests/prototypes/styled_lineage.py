@@ -11,6 +11,7 @@ class Lineage:
     def extend(self, css: str) -> Lineage:
         if "{" in css or "}" in css:
             raise ValueError("lineage proof accepts flat property lists")
+
         return Lineage((*self.declarations, css))
 
     @property
@@ -31,9 +32,11 @@ def cascade_fixture() -> dict[str, object]:
     blue_red = blue.extend("color: red; padding-left: 13px")
     preregistered = Lineage((blue_red.css,))
     rules: dict[str, str] = {}
+
     for lineage in (preregistered, blue, red, red_blue, blue_red):
         previous = rules.setdefault(lineage.css_class, lineage.css)
         assert previous == lineage.css
+
     return {
         "css": "\n".join(f".{name}{{{css}}}" for name, css in rules.items()),
         "classes": {"red_blue": red_blue.css_class, "blue_red": blue_red.css_class},

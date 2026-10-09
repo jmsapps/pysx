@@ -117,6 +117,7 @@ def on_event(
     event_type: str | None = None,
 ) -> EventHandler:
     """Receive an event snapshot; policies execute before any server round trip."""
+
     return EventHandler(
         callback, prevent_default, stop_propagation, keys, phase, eligible_link, event_type
     )

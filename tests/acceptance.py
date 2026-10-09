@@ -23,6 +23,7 @@ BASE = f"http://127.0.0.1:{PORT}"
 async def _init(ws: ClientConnection) -> InitMessage:
     message = await receive(ws)
     assert message["t"] == "init", message
+
     return message
 
 
@@ -30,12 +31,14 @@ async def _click(ws: ClientConnection, handler_id: str = "h1") -> PatchMessage:
     await ws.send(json.dumps({"t": "event", "h": handler_id}))
     message = await receive(ws)
     assert message["t"] == "patch"
+
     return message
 
 
 async def _drain(ws: ClientConnection, seconds: float = 0.4) -> list[ServerMessage]:
     """Collect whatever arrives in a window; used to prove nothing arrives."""
     out: list[ServerMessage] = []
+
     try:
         while True:
             out.append(await receive(ws, seconds))
@@ -44,9 +47,7 @@ async def _drain(ws: ClientConnection, seconds: float = 0.4) -> list[ServerMessa
 
 
 async def run() -> None:
-    async with connect(f"ws://127.0.0.1:{PORT}/ws") as a, \
-               connect(f"ws://127.0.0.1:{PORT}/ws") as b:
-
+    async with connect(f"ws://127.0.0.1:{PORT}/ws") as a, connect(f"ws://127.0.0.1:{PORT}/ws") as b:
         init_a = await _init(a)
         await _init(b)
         assert "<button" in init_a["html"], init_a["html"]
@@ -62,6 +63,7 @@ async def run() -> None:
             [{"op": "text", "id": "0", "v": "2"}],
             [{"op": "text", "id": "0", "v": "3"}],
         ], patches
+
         for p in patches:
             assert set(p) == {"t", "ops"}, p
             assert "html" not in json.dumps(p), p
@@ -79,22 +81,18 @@ async def run() -> None:
 
 def main() -> None:
     with ready_server(
-        [sys.executable, "-m", "pysx.server",
-         "--app", "examples.counter:app", "--port", str(PORT)],
-            ):
-
+        [sys.executable, "-m", "pysx.server", "--app", "examples.counter:app", "--port", str(PORT)],
+    ):
         with urllib.request.urlopen(BASE + "/", timeout=5) as r:
             assert r.status == 200, r.status
-            assert r.headers["Content-Type"] == "text/html; charset=utf-8", \
-                dict(r.headers)
+            assert r.headers["Content-Type"] == "text/html; charset=utf-8", dict(r.headers)
             body = r.read().decode()
             assert "<!doctype html>" in body.lower(), body[:200]
         print("  ok  GET / -> 200 text/pysx (not text/plain)")
 
         with urllib.request.urlopen(BASE + "/client.js", timeout=5) as r:
             assert r.status == 200
-            assert (r.headers["Content-Type"] or "").startswith("text/javascript"), \
-                dict(r.headers)
+            assert (r.headers["Content-Type"] or "").startswith("text/javascript"), dict(r.headers)
         print("  ok  GET /client.js -> 200 text/javascript")
 
         asyncio.run(run())

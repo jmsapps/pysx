@@ -111,6 +111,7 @@ def comparisons(_scratch: Path) -> None:
     assert left == left
     assert left != right
     assert (three == left) is False
+
     for item in outputs:
         item.dispose()
     assert not left.observers
@@ -124,6 +125,7 @@ def identity_and_dependencies(_scratch: Path) -> None:
     def calculate() -> int:
         result = left.get() + right.get()
         visits.append(result)
+
         return result
 
     output = derived(calculate)
@@ -165,6 +167,7 @@ def boolean_and_protocols(_scratch: Path) -> None:
         any_of(True, left),
     ]
     assert [item.get() for item in outputs] == [False, True, True, False, True]
+
     for item in outputs:
         assert item.keeper is not None
     # All operands are tracked even when the first value settles the boolean result.
@@ -179,6 +182,7 @@ def boolean_and_protocols(_scratch: Path) -> None:
         _ = 0 < Signal(1) < 2
     assert all_of().get()
     assert not any_of().get()
+
     for item in outputs:
         item.dispose()
     assert not left.observers
@@ -237,6 +241,7 @@ def collections(_scratch: Path) -> None:
         len(cast("Sized", rows))
     with pytest.raises(TypeError):
         _ = 1 in cast("Container[int]", rows)
+
     for output in (result, size, has_text, combined):
         output.dispose()
     assert not rows.observers

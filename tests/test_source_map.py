@@ -27,7 +27,6 @@ def test_exact_source_literal_maps(literal: str) -> None:
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.TemplateStr):
-
             continue
         mapped = mapper.template(node)
         expected = [""]

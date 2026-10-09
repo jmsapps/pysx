@@ -33,15 +33,19 @@ class Scope:
         for declaration, value in self.values:
             if declaration is binding:
                 return cast("T", value)
+
         if self.parent is not None:
             return self.parent.get(binding)
+
         raise KeyError(f"unbound developer declaration {binding.name!r}")
 
     def child(self, bindings: tuple[object, ...], values: tuple[object, ...]) -> Scope:
         if len(bindings) != len(values):
             raise ValueError("destructured binding arity mismatch")
+
         if not all(isinstance(binding, Binding) for binding in bindings):
             raise TypeError("scope slots require explicit Binding identity")
+
         return Scope(tuple(zip(bindings, values, strict=True)), self)
 
 
@@ -122,35 +126,43 @@ def _lines(strings: tuple[str, ...]) -> list[tuple[int, tuple[Piece, ...], NodeS
     lines: list[list[Piece]] = [[]]
     starts = [TemplateCoordinate(0, 0)]
     ends = [TemplateCoordinate(0, 0)]
+
     for index, fragment in enumerate(strings):
         parts = fragment.split("\n")
         lines[-1].append(parts[0])
         ends[-1] = TemplateCoordinate(index, len(parts[0]))
         offset = len(parts[0])
+
         for part in parts[1:]:
             offset += 1
             lines.append([part])
             starts.append(TemplateCoordinate(index, offset))
             offset += len(part)
             ends.append(TemplateCoordinate(index, offset))
+
         if index < len(strings) - 1:
             lines[-1].append(HoleRef(index))
     result: list[tuple[int, tuple[Piece, ...], NodeSpan]] = []
+
     for line, start, end in zip(lines, starts, ends, strict=True):
         if all(isinstance(piece, str) and not piece.strip() for piece in line):
             continue
         head = line[0]
+
         if not isinstance(head, str):
             raise ValueError("line must have a static grammar prefix")
         indent = len(head) - len(head.lstrip(" "))
+
         if head[:indent].find("\t") >= 0 or head.startswith("\t"):
             raise ValueError("prototype control grammar requires spaces")
         result.append(
             (
-                indent, (head[indent:], *line[1:]),
+                indent,
+                (head[indent:], *line[1:]),
                 NodeSpan(TemplateCoordinate(start.fragment, start.offset + indent), end),
             )
         )
+
     return result
 
 
@@ -160,12 +172,14 @@ def parse(strings: tuple[str, ...], namespace: Mapping[str, object]) -> tuple[No
 
     def declared(name: str) -> None:
         declaration = namespace.get(name)
+
         if not isinstance(declaration, Binding) or declaration.name != name:
             raise ValueError(f"{name!r} must have an explicit Binding declaration")
 
     def block(start: int, indent: int) -> tuple[tuple[Node, ...], int]:
         result: list[Node] = []
         cursor = start
+
         while cursor < len(lines) and lines[cursor][0] == indent:
             _, pieces, header_span = lines[cursor]
             prefix = cast("str", pieces[0])
@@ -174,23 +188,29 @@ def parse(strings: tuple[str, ...], namespace: Mapping[str, object]) -> tuple[No
             children: tuple[Node, ...] = ()
             after = cursor + 1
             loop_match = re.fullmatch(r"for ([\w(), ]+) in\s*", static)
+
             if loop_match:
                 if len(holes) != 1:
                     raise ValueError("for source must be one hole")
                 names = tuple(re.findall(r"\b[A-Za-z_]\w*\b", loop_match.group(1)))
+
                 for name in names:
                     declared(name)
+
                 if after >= len(lines) or lines[after][0] <= indent:
                     raise ValueError("for requires an indented body")
                 children, after = block(after, lines[after][0])
                 result.append(
                     Loop(
-                        names, holes[0], children,
+                        names,
+                        holes[0],
+                        children,
                         NodeSpan(header_span.start, children[-1].span.end),
                     )
                 )
             elif static.startswith("let "):
                 let_match = re.fullmatch(r"let (\w+) =\s*", static)
+
                 if let_match is None or len(holes) != 1:
                     raise ValueError("let requires a declared name and one hole")
                 name = let_match.group(1)
@@ -200,37 +220,45 @@ def parse(strings: tuple[str, ...], namespace: Mapping[str, object]) -> tuple[No
                 if len(holes) != 1:
                     raise ValueError("match requires one discriminator")
                 cases: list[tuple[str, tuple[Node, ...]]] = []
+
                 while after < len(lines) and lines[after][0] > indent:
                     case_indent, case_pieces, _ = lines[after]
                     case_header = "".join(
                         piece for piece in case_pieces if isinstance(piece, str)
                     ).strip()
+
                     if not case_header.startswith("case "):
                         raise ValueError("match body requires case literals")
                     key = case_header[5:].strip().strip("\"'")
                     body_at = after + 1
+
                     if body_at >= len(lines) or lines[body_at][0] <= case_indent:
                         raise ValueError("case requires an indented body")
                     case_nodes, after = block(body_at, lines[body_at][0])
                     cases.append((key, case_nodes))
                 result.append(
                     Match(
-                        holes[0], tuple(cases),
+                        holes[0],
+                        tuple(cases),
                         NodeSpan(header_span.start, cases[-1][1][-1].span.end),
                     )
                 )
             else:
                 tag_match = re.match(r"([A-Za-z][\w-]*)(.*)", prefix)
+
                 if tag_match is None:
                     raise ValueError("element requires a static tag")
                 attrs: list[tuple[str, HoleRef]] = []
                 content: list[Piece] = []
                 pending = tag_match.group(2)
+
                 for piece in pieces[1:]:
                     if isinstance(piece, str):
                         pending += piece
+
                         continue
                     attr_match = re.fullmatch(r"\s*(\w+)\s*=\s*", pending)
+
                     if attr_match:
                         attrs.append((attr_match.group(1), piece))
                     else:
@@ -238,13 +266,18 @@ def parse(strings: tuple[str, ...], namespace: Mapping[str, object]) -> tuple[No
                             content.append(pending.strip().strip("\"'"))
                         content.append(piece)
                     pending = ""
+
                 if pending.strip():
                     content.append(pending.strip().strip("\"'"))
+
                 if after < len(lines) and lines[after][0] > indent:
                     children, after = block(after, lines[after][0])
                 result.append(
                     Element(
-                        tag_match.group(1), tuple(attrs), tuple(content), children,
+                        tag_match.group(1),
+                        tuple(attrs),
+                        tuple(content),
+                        children,
                         NodeSpan(
                             header_span.start,
                             children[-1].span.end if children else header_span.end,
@@ -252,27 +285,34 @@ def parse(strings: tuple[str, ...], namespace: Mapping[str, object]) -> tuple[No
                     )
                 )
             cursor = after
+
         if cursor < len(lines) and lines[cursor][0] > indent:
             raise ValueError("unexpected indentation")
+
         return tuple(result), cursor
 
     if not lines:
         return ()
     nodes, consumed = block(0, lines[0][0])
+
     if consumed != len(lines):
         raise ValueError("inconsistent root indentation")
+
     return nodes
 
 
 def _walk(nodes: tuple[Node, ...]) -> tuple[Node, ...]:
     result: list[Node] = []
+
     for node in nodes:
         result.append(node)
+
         if isinstance(node, (Element, Loop)):
             result.extend(_walk(node.children))
         elif isinstance(node, Match):
             for _, children in node.cases:
                 result.extend(_walk(children))
+
     return tuple(result)
 
 
@@ -294,29 +334,39 @@ class ParsedCache:
 
     def get(self, strings: tuple[str, ...], namespace: Mapping[str, object]) -> tuple[Node, ...]:
         existing = self._items.get(strings)
+
         if existing is not None:
             nodes = existing[0]
+
             for node in _walk(nodes):
                 names = (
-                    node.names if isinstance(node, Loop)
-                    else (node.name,) if isinstance(node, Let)
+                    node.names
+                    if isinstance(node, Loop)
+                    else (node.name,)
+                    if isinstance(node, Let)
                     else ()
                 )
+
                 for name in names:
                     declaration = namespace.get(name)
+
                     if not isinstance(declaration, Binding) or declaration.name != name:
                         raise ValueError(f"{name!r} must have an explicit Binding declaration")
             self._items.move_to_end(strings)
+
             return nodes
         nodes = parse(strings, namespace)
         cost = sum(len(fragment.encode("utf-8")) for fragment in strings) + len(_walk(nodes)) * 256
+
         if cost > self.budget:
             return nodes
+
         while self._items and (len(self._items) >= self.entries or self.used + cost > self.budget):
             _, (_, removed_cost) = self._items.popitem(last=False)
             self.used -= removed_cost
         self._items[strings] = (nodes, cost)
         self.used += cost
+
         return nodes
 
     @property
@@ -340,6 +390,7 @@ class Output:
 
 def _resolved(value: object, scope: Scope) -> tuple[object, bool]:
     live = False
+
     for _ in range(16):
         if isinstance(value, Deferred):
             value = cast("Deferred[object]", value).evaluate(scope)
@@ -348,12 +399,15 @@ def _resolved(value: object, scope: Scope) -> tuple[object, bool]:
             value = cast("Live[object]", value).read()
         else:
             return value, live
+
     raise ValueError("cyclic deferred/live resolution")
 
 
 def evaluate(
-    nodes: tuple[Node, ...], template: Template,
-    namespace: Mapping[str, object], scope: Scope | None = None,
+    nodes: tuple[Node, ...],
+    template: Template,
+    namespace: Mapping[str, object],
+    scope: Scope | None = None,
 ) -> tuple[Output, ...]:
     """Evaluate developer callables at runtime; static analysis never calls this."""
     holes = template.interpolations
@@ -362,23 +416,29 @@ def evaluate(
         interpolation = holes[hole.index]
         resolved, live = _resolved(interpolation.value, current)
         has_metadata = interpolation.conversion is not None or bool(interpolation.format_spec)
+
         if has_metadata and live:
             raise MetadataError(hole.index)
+
         if has_metadata and formatting is False:
             raise MetadataError(hole.index, "control-flow")
+
         if has_metadata and formatting is True:
             return format(convert(resolved, interpolation.conversion), interpolation.format_spec)
+
         return resolved
 
     def text(hole: HoleRef, current: Scope) -> str:
         interpolation: Interpolation[object] = holes[hole.index]
         resolved = value(hole, current, formatting=None)
         converted = convert(resolved, interpolation.conversion)
+
         return format(converted, interpolation.format_spec)
 
     def render(children: tuple[Node, ...], current: Scope) -> tuple[Output, ...]:
         result: list[Output] = []
         local = current
+
         for node in children:
             if isinstance(node, Let):
                 local = local.child(
@@ -386,9 +446,11 @@ def evaluate(
                 )
             elif isinstance(node, Loop):
                 source = value(node.source, local)
+
                 if not isinstance(source, (tuple, list)):
                     raise TypeError("loop source must be a bounded sequence snapshot")
                 items = cast("tuple[object, ...] | list[object]", source)
+
                 for item in items:
                     values = (
                         cast("tuple[object, ...]", item)
@@ -419,6 +481,7 @@ def evaluate(
                         render(node.children, local),
                     )
                 )
+
         return tuple(result)
 
     return render(nodes, scope or Scope())

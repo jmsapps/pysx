@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 
 
 def sample(*, title: str, children: Children | None = None) -> Template:
-
     return t"\nsection: {title}; {children if children is not None else ''}"
 
 
@@ -54,12 +53,10 @@ def test_inline_childless_native_styled_and_callable(invocation: str, expected: 
 @pytest.mark.parametrize("form", ["function", "alias", "nested", "partial", "instance"])
 def test_callable_return_callable_dispatch_forms(form: str) -> None:
     def nested(*, title: str, children: Children | None = None) -> Fragment:
-
         return pysx(sample(title=title, children=children))
 
     class Factory:
         def __call__(self, *, title: str, children: Children | None = None) -> Template:
-
             return sample(title=title, children=children)
 
     candidates = {
@@ -71,7 +68,6 @@ def test_callable_return_callable_dispatch_forms(form: str) -> None:
     }
 
     def app() -> Fragment:
-
         return pysx(
             t'\nWidget(title="hello"):\n  span: "child"', namespace={"Widget": candidates[form]}
         )
@@ -111,7 +107,6 @@ def test_callable_return_callable_dispatch_caller_children_structure_and_namespa
         return pysx(t"\narticle: {children}", namespace={"Caller": em})
 
     def app() -> Fragment:
-
         return pysx(t'\nChild:\n  Caller: "owned"', namespace={"Child": child, "Caller": strong})
 
     result = render(app)
@@ -126,11 +121,9 @@ def test_callable_return_callable_dispatch_caller_children_structure_and_namespa
 )
 def test_callable_return_callable_dispatch_root_exposure(body: str) -> None:
     def child() -> Template:
-
         return Template(body)
 
     def app() -> Fragment:
-
         return pysx(t"\nChild:", namespace={"Child": child})
 
     result = render(app)
@@ -140,7 +133,6 @@ def test_callable_return_callable_dispatch_root_exposure(body: str) -> None:
 
 def test_callable_return_callable_dispatch_invalid_return() -> None:
     def app() -> Fragment:
-
         return pysx(t"\nBad:", namespace={"Bad": lambda: "invalid"})
 
     with pytest.raises(TypeError, match="Template or Fragment"):
@@ -149,7 +141,6 @@ def test_callable_return_callable_dispatch_invalid_return() -> None:
 
 def test_callable_return_callable_dispatch_imported_alias() -> None:
     def app() -> Fragment:
-
         return pysx(t"\nImported:", namespace={"Imported": imported_app})
 
     result = render(app)
@@ -178,13 +169,11 @@ def test_callable_return_callable_dispatch_no_frame_retention() -> None:
 
 def test_callable_return_callable_dispatch_leaves_native_tags_unshadowed() -> None:
     def shadow() -> Fragment:
-
         return pysx(t'\nspan: "shadow"')
 
     reserved = ("div", "object", "template", "var", "math")
 
     def main() -> Fragment:
-
         return pysx(
             t"""
                 main:
@@ -206,7 +195,6 @@ def test_callable_return_callable_dispatch_leaves_native_tags_unshadowed() -> No
 
 def test_callable_return_lowercase_alias() -> None:
     def app() -> Fragment:
-
         return pysx(t'\ncard(title="lowercase"):', namespace={"card": sample})
 
     result = render(app)
@@ -231,7 +219,6 @@ def test_callable_return_props_and_escaped_strings() -> None:
         return t"\nspan: {value}; {label}; {onClick}"
 
     def app() -> Fragment:
-
         return pysx(
             t"\nChild(value={live}, onClick={'<script>unsafe</script>'})",
             namespace={"Child": child},
@@ -249,11 +236,9 @@ def test_callable_return_props_and_escaped_strings() -> None:
 @pytest.mark.parametrize("attrs", ["", '(label="extra")'])
 def test_callable_return_missing_or_unexpected_props(attrs: str) -> None:
     def child(*, title: str) -> Template:
-
         return t"\nspan: {title}"
 
     def app() -> Fragment:
-
         return pysx(Template(f"\nChild{attrs}:"), namespace={"Child": child})
 
     with pytest.raises(TypeError):
@@ -264,11 +249,9 @@ def test_component_tags_use_binds_and_validates() -> None:
     from typing import Any
 
     def card(*, label: str) -> Template:
-
         return t"\nstrong: {label}"
 
     def app() -> Fragment:
-
         return pysx(t'\ncard(label="local"):', use=(card,))
 
     body = render(app).body
@@ -397,7 +380,6 @@ def test_component_tags_direct_reference_forms_and_content() -> None:
     from pysx import native, styled
 
     def local(*, label: str, children: Children) -> Fragment:
-
         return pysx(t"\nsection:\n  {label}\n  {children}")
 
     alias = local

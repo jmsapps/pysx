@@ -11,7 +11,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
   suite = args[i + 1];
 }
-if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings"].includes(suite)) throw new Error("empty grammar selection");
+if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "identity_cleanup"].includes(suite)) throw new Error("empty grammar selection");
 const host = pylanceHost();
 const injectionPath = process.env.PYSX_INJECTION_GRAMMAR ??
   fileURLToPath(new URL("../../editor/syntaxes/pysx.injection.tmLanguage.json", import.meta.url));
@@ -36,14 +36,15 @@ try {
     if (!condition) throw new Error(`scope assertion failed: ${label}`);
     assertions++;
   };
-  const fixtures = suite === "templates_example" ? ["templates_example"] :
+  const fixtures = suite === "identity_cleanup" ? ["keyed_identity"] :
+    suite === "templates_example" ? ["templates_example"] :
     suite === "inline_siblings" ? ["inline_siblings"] :
     suite === "render_snapshot" ? ["render_snapshot"] :
     suite === "styled_authoring" ? ["styled_authoring"] :
     suite === "composition_recursive" ? ["composition"] :
     suite === "styling_diagnostics" ? ["styling"] :
     suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
-    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings"];
+    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity"];
   for (const fixture of fixtures) {
     const source = fixture === "templates_example" ? "../../examples/templates.py" : `fixtures/${fixture}.txt`;
     const lines = readFileSync(new URL(source, import.meta.url), "utf8").split("\n");
@@ -55,6 +56,16 @@ try {
       stack = current.ruleStack;
     }
     tokens += result.length;
+    if (fixture === "keyed_identity") {
+      for (const word of ["table", "tbody", "tr", "td", "input", "span", "select", "option", "svg", "text"]) check(result.some(token => token.text === word && token.scopes.includes("entity.name.tag.pysx")), `keyed native ${word}`);
+      for (const word of ["in", "key"]) check(result.some(token => token.text.trim() === word && token.scopes.includes("keyword.control.loop.pysx")), `keyed loop ${word}`);
+      check(result.some(token => token.text.trim() === "for" && token.scopes.includes("keyword.control.conditional.pysx")), "keyed for keyword");
+      for (const word of ["ref", "bindValue", "value"]) check(result.some(token => token.text === word && token.scopes.includes("entity.other.attribute-name.pysx")), `keyed attribute ${word}`);
+      for (const word of ["rows", "draft", "children", "field"]) check(result.some(token => token.text === word && token.scopes.includes("meta.embedded.inline.python")), `keyed Python ${word}`);
+      const sentinel = result.find(token => token.text.includes("AFTER_SENTINEL"));
+      check(sentinel && !sentinel.scopes.some(scope => scope.includes("pysx")), "keyed scopes do not leak");
+      continue;
+    }
     if (fixture === "inline_siblings") {
       const at = (marker, word, occurrence = 0) => {
         const row = lines.findIndex(line => line.includes(marker));

@@ -26,7 +26,6 @@ EVENTS_DECLARATION = re.compile(r"const EVENTS = \[[^\]]*\];")
 
 
 def spelling(attr: str) -> str:
-
     return python_attr(attr, event_alias=False)
 
 

@@ -16,7 +16,6 @@ def app() -> Fragment:
     third = styled(repeated)(t"padding-left: 17px")
 
     def base(*, children: Children, title: str) -> Fragment:
-
         return pysx(
             t'\nfragment:\n  div(id="callable"): {title}; {children}\n  span(id="second"): "second"'
         )

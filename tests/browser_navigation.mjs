@@ -12,7 +12,8 @@ try {
   }));
   await page.goto(`http://127.0.0.1:${process.argv[2]}/?initial=yes#native`);
   const route = async path => {
-    await page.waitForFunction(path => document.querySelector("#route-path")?.textContent === path, path);
+    // Rendering and committing browser history are separate ordered messages.
+    await page.waitForFunction(path => document.querySelector("#route-path")?.textContent === path && location.pathname === path, path);
     assert.equal(new URL(page.url()).pathname, path);
   };
   const text = async (id, value) => page.waitForFunction(

@@ -55,7 +55,8 @@ def test_locked_tools() -> None:
 
 def test_ci_configuration() -> None:
     workflow = (ROOT / ".github/workflows/quality.yml").read_text()
-    assert "on:\n  push:\n  pull_request:\n" in workflow
+    assert "on:\n  push:\n" in workflow
+    assert "pull_request:" not in workflow
     assert "publish" not in workflow
     assert "contents: read" in workflow
     steps = [match.group(1).strip() for match in RUN_STEP.finditer(workflow)]

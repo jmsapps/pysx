@@ -23,11 +23,9 @@ def build_tree(source: Path, output: Path) -> tuple[Path, ...]:
     source, output = source.resolve(), output.resolve()
 
     if not source.is_dir() or output == source or source.is_relative_to(output):
-
         raise ValueError("source must be a directory separate from output")
 
     if output.exists() and any(output.iterdir()):
-
         raise ValueError("output directory must be empty")
     paths = tuple(
         path

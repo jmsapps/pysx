@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 def _token(body: bytes) -> str:
     match = re.search(rb'data-adoption="([a-zA-Z0-9_-]+)"', body)
     assert match is not None
+
     return match.group(1).decode("ascii")
 
 
@@ -52,7 +53,9 @@ def http_adoption_graph(_tmp_path: Path) -> None:
         graph = original.graph
         assert engine.setup_count == 1
         session, acknowledgement = await engine.adopt(
-            rendered.token, "alice", "typed before socket",
+            rendered.token,
+            "alice",
+            "typed before socket",
         )
         assert session is original
         assert session.graph is graph
@@ -134,6 +137,7 @@ def explicit_codec_and_immutable_snapshot(_tmp_path: Path) -> None:
         ),
         ({"highwater": -1}, "highwater must be a nonnegative integer"),
     )
+
     for mutation, reason in mutations:
         bad = data | mutation
         with pytest.raises(ValueError, match=reason):
@@ -173,7 +177,9 @@ def reconstruction_epochs_checkpoint_order(_tmp_path: Path) -> None:
         before = store.records[recovered.snapshot.session].payload
         with pytest.raises(StaleOwnerError):
             store.commit(
-                original.lease, replace(original.snapshot, revision=3), expected_revision=2,
+                original.lease,
+                replace(original.snapshot, revision=3),
+                expected_revision=2,
             )
         assert store.records[recovered.snapshot.session].payload == before
         duplicate = await second.dispatch(recovered, epoch=2, event=1, name="increment", value="")
@@ -197,7 +203,11 @@ def reconstruction_epochs_checkpoint_order(_tmp_path: Path) -> None:
         assert duplicate["t"] == "duplicate"
         assert after_commit.graph.state.get().count == 2
         next_reply = await third.dispatch(
-            after_commit, epoch=3, event=3, name="increment", value="",
+            after_commit,
+            epoch=3,
+            event=3,
+            name="increment",
+            value="",
         )
         assert "ops" in next_reply
         assert next_reply["ops"][0]["value"] == "3"
@@ -213,7 +223,10 @@ def standalone_real_http_websocket(_tmp_path: Path) -> None:
         engine = Engine()
         host = Standalone(engine)
         async with serve(
-            host.handler, "127.0.0.1", 0, process_request=host.process_request,
+            host.handler,
+            "127.0.0.1",
+            0,
+            process_request=host.process_request,
         ) as server:
             address = cast("tuple[str, int]", server.sockets[0].getsockname())
             port = address[1]
@@ -233,7 +246,8 @@ def standalone_real_http_websocket(_tmp_path: Path) -> None:
             original = engine.pending[token]
             assert engine.setup_count == 1
             async with connect(
-                f"ws://127.0.0.1:{port}/ws", additional_headers={"Cookie": "proof_principal=alice"},
+                f"ws://127.0.0.1:{port}/ws",
+                additional_headers={"Cookie": "proof_principal=alice"},
             ) as websocket:
                 await websocket.send(
                     json.dumps({"t": "hello", "token": token, "edits": {"input": "typed"}}),
@@ -245,9 +259,11 @@ def standalone_real_http_websocket(_tmp_path: Path) -> None:
                 assert acknowledgement["setup_serial"] == 1
                 assert engine.active[original.snapshot.session] is original
                 assert original.graph.state.get().text == "typed"
-                await websocket.send(json.dumps(
-                    {"t": "event", "epoch": 1, "event": 1, "name": "increment", "value": ""},
-                ))
+                await websocket.send(
+                    json.dumps(
+                        {"t": "event", "epoch": 1, "event": 1, "name": "increment", "value": ""},
+                    )
+                )
                 raw_patch: object = json.loads(await websocket.recv())
                 assert isinstance(raw_patch, dict)
                 patch = cast("dict[str, object]", raw_patch)
@@ -275,7 +291,9 @@ def asgi_shared_http_websocket_engine(_tmp_path: Path) -> None:
             sent.append(event)
 
         scope: Scope = {
-            "type": "http", "path": "/", "headers": [(b"cookie", b"proof_principal=alice")],
+            "type": "http",
+            "path": "/",
+            "headers": [(b"cookie", b"proof_principal=alice")],
         }
         incoming.put_nowait({"type": "http.request", "body": b"", "more_body": False})
         await app(scope, receive, send)
@@ -292,19 +310,31 @@ def asgi_shared_http_websocket_engine(_tmp_path: Path) -> None:
         token = _token(body["body"])
         original = engine.pending[token]
         incoming.put_nowait({"type": "websocket.connect"})
-        incoming.put_nowait({"type": "websocket.receive", "text": json.dumps(
-            {"t": "hello", "token": token, "edits": {"input": "asgi edit"}},
-        )})
-        incoming.put_nowait({"type": "websocket.receive", "text": json.dumps(
-            {"t": "event", "epoch": 1, "event": 1, "name": "increment", "value": ""},
-        )})
+        incoming.put_nowait(
+            {
+                "type": "websocket.receive",
+                "text": json.dumps(
+                    {"t": "hello", "token": token, "edits": {"input": "asgi edit"}},
+                ),
+            }
+        )
+        incoming.put_nowait(
+            {
+                "type": "websocket.receive",
+                "text": json.dumps(
+                    {"t": "event", "epoch": 1, "event": 1, "name": "increment", "value": ""},
+                ),
+            }
+        )
         incoming.put_nowait({"type": "websocket.disconnect", "code": 1000})
         sent.clear()
         scope["type"] = "websocket"
         scope["path"] = "/ws"
         await app(scope, receive, send)
         assert [event["type"] for event in sent] == [
-            "websocket.accept", "websocket.send", "websocket.send",
+            "websocket.accept",
+            "websocket.send",
+            "websocket.send",
         ]
         ack_frame, patch_frame = sent[1], sent[2]
         assert "text" in ack_frame

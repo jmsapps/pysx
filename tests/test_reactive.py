@@ -1,7 +1,5 @@
 """Reactive graph regression tests."""
 
-
-
 import asyncio
 from typing import TYPE_CHECKING, cast
 
@@ -109,7 +107,6 @@ def test_batching_transactions_effect_nested_batch_releases_owner(fail: bool) ->
                 target.set(value)
 
                 if fail:
-
                     raise ValueError("nested batch failed")
 
     observer = effect(copy)
@@ -323,6 +320,7 @@ def test_basic_tracking() -> None:
 def test_set_equal_is_noop() -> None:
     a = signal(1)
     runs: list[int] = []
+
     def body() -> None:
         a()
         runs.append(1)
@@ -346,13 +344,13 @@ def test_dynamic_dependency_retracking() -> None:
     effect(body)
     assert runs == [10], runs
 
-    flag.set(False)                 # body no longer reads b
+    flag.set(False)  # body no longer reads b
     assert runs == [10, None], runs
 
-    b.set(99)                       # must NOT wake the effect
+    b.set(99)  # must NOT wake the effect
     assert runs == [10, None], f"stale subscription on b: {runs}"
 
-    flag.set(True)                  # re-subscribes to b
+    flag.set(True)  # re-subscribes to b
     assert runs == [10, None, 99], runs
     b.set(100)
     assert runs == [10, None, 99, 100], runs

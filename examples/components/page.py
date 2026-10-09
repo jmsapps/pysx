@@ -17,7 +17,6 @@ def page(css: Template | None = None) -> StyledDiv:
     """Flatten shared layout and overrides into one predictably ordered rule."""
 
     if css is not None and css.interpolations:
-
         raise ValueError("page styles cannot contain interpolations")
 
     overrides = "" if css is None else "".join(css.strings)

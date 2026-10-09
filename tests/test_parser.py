@@ -79,7 +79,6 @@ if TYPE_CHECKING:
 
 
 def counter(count: object, handler: object) -> Template:
-
     return t"""
         Page(id="container"):
             "Count: "; {count}

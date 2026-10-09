@@ -41,7 +41,6 @@ def _main() -> None:
 
 
 def _available() -> str:
-
     return "\n".join(f"  {name}" for name in examples)
 
 

@@ -70,7 +70,6 @@ def test_reactive_css_branch_cleanup_and_shared_rule_counts() -> None:
     variable = signal("4px")
 
     def app() -> Fragment:
-
         return pysx(
             t"""
                 div(css="color: red"): "retained"
@@ -105,11 +104,9 @@ def test_reactive_css_rows_cleanup_and_order() -> None:
     rows = signal(["red", "blue"])
 
     def item(color: str) -> Fragment:
-
         return pysx(t"\ndiv(css={'color: ' + color}): {color}")
 
     def app() -> Fragment:
-
         return pysx(t"\nsection: {each(rows, item, key=lambda row: row)}")
 
     session = Session(app)
@@ -138,7 +135,6 @@ def test_reactive_css_runtime_definitions_do_not_enter_shared_registry() -> None
     first = Session(app)
 
     def other_app() -> Fragment:
-
         return pysx(t'\ndiv: "other"')
 
     other = Session(other_app)
@@ -178,7 +174,6 @@ def test_reactive_css_style_merge_and_literal_deduplication() -> None:
     style = signal("color:red")
 
     def app() -> Fragment:
-
         return pysx(
             t"""
                 div(css={t"padding: 1px"} style={style} styleVars={ ({"gap": value}) }): "one"
@@ -207,7 +202,6 @@ def test_reactive_css_stylesheet_precedes_class_in_reverse_update_order() -> Non
     css = signal("color: red")
 
     def app() -> Fragment:
-
         return pysx(t'\ndiv(class={classes} css={css}): "ordered"')
 
     session = Session(app)
@@ -225,14 +219,12 @@ def test_reactive_css_stylesheet_precedes_class_in_reverse_update_order() -> Non
 
 def test_reactive_css_preconstructed_callable_fragment_retains_its_rule() -> None:
     def base() -> Fragment:
-
         return pysx(t'\ndiv: "prebuilt"')
 
     styled_base = styled(base)(t"color: rgb(13, 24, 35)")
     prebuilt = styled_base()
 
     def app() -> Fragment:
-
         return pysx(t"\nsection: {prebuilt}")
 
     session = Session(app)
@@ -250,7 +242,6 @@ def test_reactive_css_typed_native_authoring() -> None:
     value = signal("red")
 
     def app() -> Fragment:
-
         return native.Div("native", css=t"color: var(--ink)", style_vars={"ink": value})
 
     session = Session(app)
@@ -269,7 +260,6 @@ def test_runtime_css_outranks_the_styled_class_on_the_same_element() -> None:
     card = styled(div)(t"padding: 4px")
 
     def app() -> Fragment:
-
         return pysx(t'\nCard(css="padding: 11px"): "x"', namespace={"Card": card})
 
     result = render(app)

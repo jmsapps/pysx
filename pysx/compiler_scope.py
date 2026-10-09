@@ -39,7 +39,6 @@ class Scope:
 
         while scope is not None:
             if name in scope.bindings:
-
                 return scope
             scope = scope.parent
 
@@ -49,7 +48,6 @@ class Scope:
         owner = self.owner(name)
 
         if owner is None:
-
             return None
         values = owner.bindings.get(name, [])
 
@@ -60,7 +58,6 @@ class Scope:
         owner = self.owner(name)
 
         if owner is None or len(owner.bindings.get(name, [])) != 1:
-
             return None
         values = owner.annotation_bindings.get(name)
 
@@ -72,21 +69,17 @@ class Scope:
             value = self.binding(node.id)
 
             if owner is None or node.id in owner.type_only:
-
                 return None
 
             if isinstance(value, str):
-
                 return value
 
             if isinstance(value, ast.expr):
-
                 return owner.identity(value, seen | {node.id})
         elif isinstance(node, ast.Attribute):
             base = self.identity(node.value, seen)
 
             if base is not None:
-
                 return base + "." + node.attr
 
         return None

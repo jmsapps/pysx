@@ -24,26 +24,32 @@ ROOT = Path(__file__).resolve().parents[1]
 async def receive(ws: ClientConnection, seconds: float = 5) -> ServerMessage:
     """Narrow decoded server JSON at the test transport boundary."""
     decoded: object = json.loads(await asyncio.wait_for(ws.recv(), seconds))
+
     if not isinstance(decoded, dict):
         raise AssertionError(f"expected a server message object: {decoded!r}")
     message = cast("dict[str, object]", decoded)
     assert message.get("t") in ("init", "patch", "mount"), message
+
     # Detailed payload assertions remain in each acceptance case.
     return cast("ServerMessage", message)
 
 
 def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> None:
     """Stop the child and its server descendants, escalating after five seconds."""
+
     if os.name == "posix" and process_group:
         with suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGTERM)
     elif os.name == "nt" and proc.poll() is None:
         subprocess.run(
             ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-            capture_output=True, check=False, timeout=5,
+            capture_output=True,
+            check=False,
+            timeout=5,
         )
     elif proc.poll() is None:
         proc.terminate()
+
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -53,6 +59,7 @@ def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> 
         else:
             proc.kill()
         proc.wait(timeout=5)
+
     if proc.stdout is not None:
         proc.stdout.close()
 
@@ -62,8 +69,12 @@ def ready_server(command: Sequence[str], timeout: float = 10) -> Generator[subpr
     """Wait for the ready banner with a bounded reader and guaranteed cleanup."""
     owns_group = os.name == "posix" and os.environ.get("PYSX_ACCEPTANCE_GROUP") != "shared"
     proc = subprocess.Popen(
-        command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, start_new_session=owns_group,
+        command,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=owns_group,
     )
     lines: Queue[str | None] = Queue()
     assert proc.stdout is not None
@@ -79,12 +90,16 @@ def ready_server(command: Sequence[str], timeout: float = 10) -> Generator[subpr
     timer = threading.Timer(timeout, lambda: lines.put(None))
     timer.start()
     output: list[str] = []
+
     try:
         while (line := lines.get()) is not None:
             output.append(line)
+
             if "pysx ready" in line:
                 yield proc
+
                 return
+
         raise RuntimeError("server did not start within deadline: " + "".join(output))
     finally:
         timer.cancel()
@@ -97,15 +112,24 @@ def run_suite(command: Sequence[str], banner: str, timeout: float = 30) -> str:
     environment = dict(os.environ)
     environment["PYSX_ACCEPTANCE_GROUP"] = "shared"
     proc = subprocess.Popen(
-        command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, start_new_session=os.name == "posix", env=environment,
+        command,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=os.name == "posix",
+        env=environment,
     )
+
     try:
         output, _ = proc.communicate(timeout=timeout)
+
         if proc.returncode != 0:
             raise AssertionError(f"acceptance exited {proc.returncode}: {output}")
+
         if banner not in output:
             raise AssertionError(f"missing {banner!r}: {output}")
+
         return output
     finally:
         stop_process(proc)

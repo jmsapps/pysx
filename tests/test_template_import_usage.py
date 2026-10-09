@@ -124,12 +124,12 @@ def test_inline_sibling_each_surface_strict_props(
         '[tool.pyright]\ntypeCheckingMode="strict"\npythonVersion="3.14"\n'
     )
     path = tmp_path / "view.py"
-    source = '''from pysx import Fragment, pysx, styled
+    source = """from pysx import Fragment, pysx, styled
 def panel(*, title: str) -> Fragment:
     return pysx(t"p: {title}")
 Styled = styled(panel)(t"color: red")
 Empty = styled.div(t"")
-'''
+"""
 
     for value, expected in [(good, 0), (bad, 1)]:
         path.write_text(source + f'view = pysx(t"br; {tag}({prop}={{{value}}}); br")\n')

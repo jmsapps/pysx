@@ -16,6 +16,20 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "keyed_rows", cases: [
+    [0, "keyed_rows", "browser_keyed_rows.mjs", "KEYED ROWS EXAMPLE BROWSER PASSED"],
+  ] },
+  { suite: "identity_cleanup", cases: [
+    [0, "keyed_fixture", "browser_keyed.mjs", "KEYED BROWSER PASSED"],
+    [1, "composition", "browser_tree.mjs", "TREE BROWSER PASSED"],
+    [2, "keyed_snapshot_fixture", "browser_keyed_snapshot.mjs", "KEYED SNAPSHOT BROWSER PASSED"],
+  ] },
+  { suite: "granular_keyed", cases: [
+    [0, "keyed_fixture", "browser_keyed.mjs", "KEYED BROWSER PASSED"],
+  ] },
+  { suite: "stable_paths", cases: [
+    [0, "identity_fixture", "browser_identity.mjs", "IDENTITY BROWSER PASSED"],
+  ] },
   { suite: "navigation_example", cases: [
     [0, "navigation", "browser_navigation_example.mjs", "NAVIGATION EXAMPLE BROWSER PASSED"],
   ] },
@@ -177,7 +191,13 @@ try {
   let selectedAssertions = 0;
   for (const [index, name, script, banner] of cases) {
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
-    const server = name ? start(interpreter, name === "keyboard_fixture" ?
+    const server = name ? start(interpreter, name === "keyed_snapshot_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_keyed_snapshot_fixture:app", "--port", String(port)] :
+      name === "keyed_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_keyed_fixture:app", "--port", String(port)] :
+      name === "identity_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_identity_fixture:app", "--port", String(port)] :
+      name === "keyboard_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_keyboard_fixture:app", "--port", String(port)] :
       name === "routing_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_routing_fixture:app", "--port", String(port)] :

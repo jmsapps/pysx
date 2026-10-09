@@ -22,9 +22,9 @@ def test_inline_sibling_diagnostic_raw_utf16_ranges(row: str, message: str, sele
     assert len(findings) == 1
     finding = findings[0]
     line = source.splitlines()[finding["line"]]
-    raw = line.encode("utf-16-le")[
-        finding["startChar"] * 2 : finding["endChar"] * 2
-    ].decode("utf-16-le")
+    raw = line.encode("utf-16-le")[finding["startChar"] * 2 : finding["endChar"] * 2].decode(
+        "utf-16-le"
+    )
     assert raw == selected
 
 
@@ -102,7 +102,7 @@ def test_styled_authoring_constant_variant_and_removed_call() -> None:
 
 def test_variant_inheritance_uses_workspace_scopes_and_imports(tmp_path: Path) -> None:
     (tmp_path / "base.py").write_text(
-        'from pysx import styled\n'
+        "from pysx import styled\n"
         'Heading = styled.h1(t"color: red", variants={"big": t"font-size: 2em"})\n'
     )
     (tmp_path / "exports.py").write_text("from base import Heading as Header\n")
@@ -135,12 +135,12 @@ def decorate(base):
 
 @pytest.mark.parametrize("module", ["pysx", "pysx.styled"])
 def test_variant_metadata_recognizes_styled_import_aliases(module: str) -> None:
-    source = f'''from {module} import styled as style
+    source = f"""from {module} import styled as style
 from pysx import pysx
 Base = style.h1(t"color: red", variants={{"big": t"font-size: 2em"}})
 Local = style(Base)(t"color: blue")
 view = pysx(t'Local(variant="missing"): "bad"')
-'''
+"""
     findings = [
         item for item in diagnostics_for_source(source) if "unknown variant" in item["message"]
     ]

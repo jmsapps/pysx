@@ -56,7 +56,6 @@ class StyledCallable[**P]:
         result = self.base(*args, **kwargs)
 
         if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]
-
             raise TypeError("styled callable bases must return Template or Fragment")
         fragment = result if isinstance(result, Fragment) else Fragment(result)
         fragment = Fragment(
@@ -92,16 +91,13 @@ class VariantClass:
         name = cast("Signal[object]", source)() if isinstance(source, Signal) else source
 
         if name is None:
-
             return ""
 
         if not isinstance(name, str):
-
             raise TypeError("variant requires str, Signal[str] or None")
 
         for key, cls, _body in self.variants:
             if name == key:
-
                 return cls
 
         raise ValueError(
@@ -137,7 +133,6 @@ class Extender[T: Definition]:
     base: T
 
     def __call__(self, css: Template, *, variants: Mapping[str, Template] | None = None) -> T:
-
         return cast("T", build_styled(cast("StyledTag", self.base), css, variants))
 
 
@@ -148,7 +143,6 @@ class CallableExtender[**P]:
     def __call__(
         self, css: Template, *, variants: Mapping[str, Template] | None = None
     ) -> StyledCallable[P]:
-
         return cast("StyledCallable[P]", build_styled(self.base, css, variants))
 
 
@@ -163,17 +157,14 @@ class StyledFactory(NativeFactories):
     def __call__(self, base: object) -> object:
         if isinstance(base, ElementTag):
             if base.name == "fragment":
-
                 raise TypeError("styled.fragment has no element to carry a class")
 
             return Extender(StyledTag(base.name, ""))
 
         if isinstance(base, StyledTag):
-
             return Extender(base)
 
         if callable(base):
-
             return CallableExtender(cast("Callable[..., Template | Fragment]", base))
 
         raise TypeError("styled() requires an element, styled object or callable base")
@@ -188,15 +179,12 @@ def build_styled[**P](
     variants: Mapping[str, Template] | None = None,
 ) -> StyledTag | StyledCallable[P]:
     if not isinstance(tag, (ElementTag, StyledTag)) and not callable(tag):
-
         raise TypeError("styled() requires an element, styled object or callable base")
 
     if not isinstance(css, Template):  # pyright: ignore[reportUnnecessaryIsInstance]
-
         raise TypeError("styled() CSS must be a t-string")
 
     if css.interpolations:
-
         raise ValueError("styled() CSS cannot contain interpolations")
     body = textwrap.dedent("".join(css.strings)).strip()
 
@@ -210,11 +198,9 @@ def build_styled[**P](
 
     for name, template in (variants or {}).items():
         if not isinstance(name, str) or not name:  # pyright: ignore[reportUnnecessaryIsInstance]
-
             raise TypeError("variant names must be nonempty strings")
 
         if not isinstance(template, Template) or template.interpolations:  # pyright: ignore[reportUnnecessaryIsInstance]
-
             raise ValueError("variant CSS requires a literal t-string without interpolations")
         source = textwrap.dedent("".join(template.strings)).strip()
         variant_bodies[name] = (
@@ -241,7 +227,6 @@ def build_styled[**P](
             registry.add(style_owner.get(), variant_cls, source)
 
     if isinstance(tag, (ElementTag, StyledTag)):
-
         return StyledTag(
             str(tag) if isinstance(tag, ElementTag) else tag.tag, cls, declarations, declared
         )
@@ -254,14 +239,12 @@ _GLOBAL: list[str] = []
 
 
 def flatten(declarations: tuple[str, ...]) -> str:
-
     return "\n".join(
         part.strip().rstrip(";") + ";" for part in declarations if part.strip()
     ).rstrip(";")
 
 
 def global_rules() -> tuple[str, ...]:
-
     return tuple(_GLOBAL)
 
 
@@ -269,7 +252,6 @@ def global_style(css: str) -> None:
     """Document-level CSS with ordinary braces, supplied as a plain string."""
 
     if not isinstance(css, str):  # pyright: ignore[reportUnnecessaryIsInstance]
-
         raise TypeError("global_style() takes a plain string, not a t-string")
     body = textwrap.dedent(css).strip()
     registry = style_context.get()
@@ -288,7 +270,6 @@ def stylesheet() -> str:
     registry = style_context.get()
 
     if registry is not None:
-
         return registry.snapshot()
     out = list(_GLOBAL)
 

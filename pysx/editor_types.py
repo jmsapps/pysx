@@ -14,12 +14,10 @@ def diagnostics(directory: Path, root: Path) -> dict[str, object]:
     directory, root = directory.resolve(), root.resolve()
 
     if directory.parent != root or not directory.name.startswith("_pysx_revision_"):
-
         raise ValueError("diagnostics require an owned workspace revision")
     files = sorted(directory.rglob("*.py"))
 
     if not files or len(files) > 513:
-
         raise ValueError("invalid diagnostic input coverage")
     original_json = root / "pyrightconfig.json"
     original_toml = root / "pyproject.toml"
@@ -40,7 +38,6 @@ def diagnostics(directory: Path, root: Path) -> dict[str, object]:
     configuration = root / f"{directory.name}.json"
 
     if configuration.exists():
-
         raise ValueError("diagnostic configuration already exists")
 
     try:
@@ -66,13 +63,11 @@ def diagnostics(directory: Path, root: Path) -> dict[str, object]:
         )
 
         if result.returncode not in {0, 1}:
-
             raise RuntimeError(result.stderr or "Pyright editor analysis failed")
         payload = cast("dict[str, object]", json.loads(result.stdout))
         summary = cast("dict[str, int]", payload["summary"])
 
         if summary["filesAnalyzed"] < len(files):
-
             raise RuntimeError("Pyright skipped editor projection inputs")
 
         return payload

@@ -15,7 +15,10 @@ def test_reactive_state_example() -> None:
     assert [op["v"] for op in advanced if op["op"] == "text"] == ["3", "15", "True", "False"]
     first = session.dispatch(handlers[1], None)
     assert [op["v"] for op in first if op["op"] == "text"] == [
-        "11", "First score: 11", "False", "True",
+        "11",
+        "First score: 11",
+        "False",
+        "True",
     ]
     second = session.dispatch(handlers[2], None)
     assert [op["v"] for op in second if op["op"] == "text"] == ["21"]
