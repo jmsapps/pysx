@@ -120,7 +120,8 @@ def match_route(pattern: str, path: str) -> Mapping[str, str] | None:
 
 
 class RouteHost:
-    def __init__(self, url: str = "/") -> None:
+    def __init__(self, url: str = "/", *, base_path: str = "") -> None:
+        self.base_path = base_path
         self.location = Location.parse(url)
         self.routers: list[Router] = []
         self.revision = 0
@@ -186,9 +187,12 @@ route_host: ContextVar[RouteHost | None] = ContextVar("pysx_route_host", default
 
 class Router:
     def __init__(
-        self, routes: Sequence[Route], *, initial: str | None = None, base_path: str = "/"
+        self, routes: Sequence[Route], *, initial: str | None = None, base_path: str | None = None
     ) -> None:
-        base = Location.parse(base_path)
+        host = route_host.get()
+        base = Location.parse(
+            base_path if base_path is not None else (host.base_path or "/" if host else "/")
+        )
 
         if base.search or base.hash:
             raise ValueError("base_path cannot contain search or hash")

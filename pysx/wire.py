@@ -63,6 +63,11 @@ class InitMessage(TypedDict):
     routing: NotRequired[bool]
 
 
+class AdoptedMessage(TypedDict):
+    t: Literal["adopted"]
+    routing: bool
+
+
 class NavigationMessage(TypedDict):
     t: Literal["navigation"]
     url: str
@@ -150,6 +155,7 @@ class DomReplyMessage(TypedDict):
 
 type ServerMessage = (
     InitMessage
+    | AdoptedMessage
     | PatchMessage
     | DomCommandMessage
     | MountMessage

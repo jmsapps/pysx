@@ -1,3 +1,4 @@
+from .async_runtime import push
 from .bindings import Binding, Deferred, bounded_while, defer, defer2
 from .boundaries import ErrorBoundary
 from .composition import Children, Component
@@ -20,6 +21,7 @@ from .elements import (
 )
 from .errors import ErrorInfo
 from .events import BrowserEvent, EventHandler, on_event
+from .hosting import Application, HostConfig, StaticAsset
 from .lifecycle import (
     local_state,
     on_cleanup,
@@ -59,6 +61,8 @@ from .render import (
     render,
     when,
 )
+from .request import Document, RequestContext, current_request
+from .resources import Resource, ResourceState, resource
 from .routing import (
     Link,
     Location,
@@ -74,11 +78,13 @@ from .styled import StyledCallable, StyledTag, global_style, styled, stylesheet
 from .styles import Theme, Themes, css
 
 __all__ = [
+    "Application",
     "Binding",
     "BrowserEvent",
     "Children",
     "Component",
     "Deferred",
+    "Document",
     "Dom",
     "DomError",
     "DomListener",
@@ -89,6 +95,7 @@ __all__ = [
     "ErrorInfo",
     "EventHandler",
     "Fragment",
+    "HostConfig",
     "Link",
     "Location",
     "NavigationEvent",
@@ -96,11 +103,15 @@ __all__ = [
     "PysxSyntaxError",
     "Rect",
     "Rendered",
+    "RequestContext",
+    "Resource",
+    "ResourceState",
     "Route",
     "RouteResponse",
     "RouteState",
     "Router",
     "Signal",
+    "StaticAsset",
     "Structured",
     "StyledCallable",
     "StyledTag",
@@ -116,6 +127,7 @@ __all__ = [
     "concat",
     "contains",
     "css",
+    "current_request",
     "defer",
     "defer2",
     "derived",
@@ -154,8 +166,10 @@ __all__ = [
     "own_timer",
     "p",
     "project",
+    "push",
     "pysx",
     "render",
+    "resource",
     "section",
     "signal",
     "span",

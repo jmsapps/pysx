@@ -75,7 +75,7 @@ def main():
 DEMO_SOURCE = """from pysx import pysx
 
 def app():
-    return pysx(t"div: installed artifact proof")
+    return pysx(t'div: "installed artifact proof"')
 """
 
 EXTENSION_SOURCE = r"""const vscode = require("vscode");
@@ -321,15 +321,14 @@ def candidate(destination: Path) -> None:
     metadata = metadata.replace(
         'example = "run_example:app"',
         '''example = "pysx._example_runner:app"
-pysx = "pysx.cli:main"
 pysx-lsp = "pysx.lsp:main"''',
     )
+    metadata = metadata.replace('pysx = "pysx.server:main"', 'pysx = "pysx.cli:main"')
     metadata = metadata.replace(
-        "[build-system]",
+        "[project.optional-dependencies]",
         f"""[project.optional-dependencies]
 examples = ["{EXAMPLES_EXTRA}"]
-
-[build-system]""",
+""",
     )
     metadata = metadata.replace(
         'module-root = ""',

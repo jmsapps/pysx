@@ -10,8 +10,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
+from .async_runtime import active_runtime
 from .errors import FailureCapture, failure_context
-from .reactive import Effect, Signal
+from .reactive import Effect, Signal, untracked
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine, Generator
@@ -255,6 +256,7 @@ def own_effect(key: str, callback: Callable[[], object]) -> None:
 
 def own_timer(key: str, delay: float, callback: Callable[[], object]) -> None:
     owner = current_scope()
+    runtime = active_runtime.get()
 
     def invoke() -> None:
         if owner.alive:
@@ -268,16 +270,29 @@ def own_timer(key: str, delay: float, callback: Callable[[], object]) -> None:
             finally:
                 failure_context.reset(token)
 
+    def fire() -> None:
+        if runtime is None:
+            invoke()
+        elif owner.alive and not runtime.closed:
+            future = runtime.schedule(invoke)
+            future.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+
     own_subscription(
-        f"timer:{key}", lambda: asyncio.get_running_loop().call_later(delay, invoke).cancel
+        f"timer:{key}", lambda: asyncio.get_running_loop().call_later(delay, fire).cancel
     )
 
 
 def own_task(key: str, factory: Callable[[], Coroutine[object, object, object]]) -> None:
     owner = current_scope()
+    runtime = active_runtime.get()
 
     def start() -> Callable[[], object]:
-        task = asyncio.get_running_loop().create_task(factory())
+        with untracked():
+            task = (
+                asyncio.get_running_loop().create_task(factory())
+                if runtime is None
+                else runtime.spawn(factory)
+            )
 
         def finished(done: asyncio.Task[object]) -> None:
             if done.cancelled():
@@ -286,17 +301,27 @@ def own_task(key: str, factory: Callable[[], Coroutine[object, object, object]])
 
             if error is None:
                 return
-            handled = (
-                isinstance(error, Exception)
-                and owner.alive
-                and owner.failure is not None
-                and owner.failure.handle(error, "async")
-            )
 
-            if not handled:
-                done.get_loop().call_exception_handler(
-                    {"message": "owned task failed", "exception": error, "task": done}
+            def handle() -> None:
+                handled = (
+                    isinstance(error, Exception)
+                    and owner.alive
+                    and owner.failure is not None
+                    and owner.failure.handle(error, "async")
                 )
+
+                if not handled:
+                    done.get_loop().call_exception_handler(
+                        {"message": "owned task failed", "exception": error, "task": done}
+                    )
+
+            if runtime is not None and not runtime.closed:
+                future = runtime.schedule(handle)
+                future.add_done_callback(
+                    lambda result: None if result.cancelled() else result.exception()
+                )
+            else:
+                handle()
 
         task.add_done_callback(finished)
 

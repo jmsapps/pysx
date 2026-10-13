@@ -1,5 +1,8 @@
 # pysx wire protocol (v2)
 
+Standalone and ASGI adapters share this protocol and session engine; see
+[hosting](HOSTING.md) for configuration, prefix and process affinity requirements.
+
 Stylesheet patches use `{"op":"css","v":"..."}` and replace the session's style
 element via `textContent`. They precede the DOM operations that require those rules.
 Dynamic rules and active themes belong to one session; removal releases owned rules,
@@ -10,6 +13,34 @@ Supersedes the counter-era `{"slots": {...}}` format, which could only replace
 text by index.
 
 ## Messages
+
+### HTTP rendering and attachment
+
+An initial GET renders app content, settled setup state, CSS and document metadata
+without a socket. Responses are private and uncached. The root has an opaque
+`data-pysx-adoption` handle; a random HttpOnly `pysx_browser` cookie binds it to
+the requesting browser, alongside the host-supplied principal. Bootstrap contains
+no serialized signals, principal or callbacks. The external client opens `/ws`
+with `adoption` and its complete local `location`, then sends
+`{"t":"adopt","edits":[{"h":"binding-id","v":"current value","rev":1}]}`.
+Only changed controls submit edits, compared with their native HTTP defaults;
+pristine bindings sharing a signal cannot overwrite an edited sibling. Only newly
+checked radios submit their string values. All binding IDs and payloads are
+validated before a batched, handler-free reconciliation turn.
+
+The server reuses that graph and answers `{"t":"adopted","routing":false}`,
+followed by any reconciliation patches and pending mount requests. The client
+retains the existing root, controls, focus and caret, without reapplying defaults.
+Equal binding echoes are suppressed; dependent content receives ordinary patches.
+Setup runs once and browser mount still requires acknowledgement. Initial select
+defaults are real selected options in HTTP HTML; textarea values are text content.
+
+Handles are single-use. Pending renders default to a capacity of 128 and expire
+after 30 seconds without requiring another request. Expiry/shutdown disposes their
+graphs; failed and redirected renders retain none. Missing, expired or identity-
+mismatched handles close with 1008 instead of constructing a second graph. This
+requires HTTP and attachment to reach the same runtime. Direct sockets without a
+handle retain the `init` contract below; adoption failure does not fall back to it.
 
 ### Event outcomes and local recovery
 
@@ -36,7 +67,8 @@ server. Local fallback receives the same safe metadata. Reset/retry clears the
 boundary error and replaces only the failed ownership generation; removed-owner
 failures and retries have no effect. A failing fallback escalates to its parent.
 Cancellation during teardown is not an application error. Async callbacks belong
-to their captured live owner; background async resource scheduling is a host seam.
+to their captured live owner. [Async resources](RESOURCES.md) commit through a
+bounded session queue; an independent outbox pushes their patches and safe errors.
 
 The standalone host emits result frames for failures and rejections. Successful
 events use ordinary patches and emit no frame when nothing changes. Boundary
@@ -78,13 +110,13 @@ Navigation acknowledgement is also the scroll/focus commit boundary. Entry keys,
 up to 128 saved positions/focus IDs, and bounded two-second fragment retries stay in
 the browser. Later DOM patches can satisfy the current retry; URL/revision checks
 cancel work for departed routes. The server exposes `RouteResponse` location,
-pattern and status metadata for future HTTP rendering hosts. The standalone host
-answers any non-asset path with the shell, so a reloaded route URL reconnects with
-its own `location`.
+pattern and status metadata for HTTP rendering hosts. The standalone host renders
+route content for non-asset paths, including dotted route segments, using that
+request's path/query. The browser's hash is reconciled during attachment.
 
 ### Component mount acknowledgement
 
-After `init` or a `patch` commits an owner's markup, the server may send
+After `init`, `adopted` or a `patch` commits an owner's markup, the server may send
 `{"t":"mount","ids":["opaque-generation-token"]}`. The client processes DOM messages
 in order, then replies `{"t":"mounted","ids":["opaque-generation-token"]}`. Each batch
 contains at most 1024 tokens. The session accepts only its currently live generations;
@@ -164,7 +196,7 @@ no hash-only destination, no download and a current-window target. Absolute and
 scheme-relative destinations retain native behavior. Keyboard filters do not cancel unmatched keys. Typed submit
 handlers prevent native submission immediately while respecting validation.
 
-**server -> client, once per connection**
+**server -> client, once per direct connection without an HTTP handle**
 
 ```json
 {"t":"init","html":"<div ...>","css":".pysx-ab12cd { ... }"}
@@ -204,8 +236,9 @@ or null; ARIA and enumerated booleans are the strings `"true"` and `"false"`.
 For `value`, `checked`, `selected` and `muted`, the client updates the live DOM
 property (null clears the property), preserving attributes that hold reset defaults.
 Other attributes use set/removeAttribute.
-Textarea initial values become escaped text content; select initial values are
-applied after its options have been inserted. Class patches carry the complete,
+Textarea initial values become escaped text content; HTTP select values are emitted
+as selected option defaults. Direct socket initialization sets select properties
+after its options have been inserted. Class patches carry the complete,
 deduplicated class list. Marker IDs and list keys are HTML escaped and client
 selectors escape their values.
 

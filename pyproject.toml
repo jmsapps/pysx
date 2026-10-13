@@ -5,7 +5,11 @@ description = "Server-side reactive renderer for Python, templated with PEP 750 
 requires-python = ">=3.14"
 dependencies = ["websockets==17.1"]
 
+[project.optional-dependencies]
+asgi = ["uvicorn==0.54.0"]
+
 [project.scripts]
+pysx = "pysx.server:main"
 example = "run_example:app"
 pysx-build = "pysx.build:main"
 
@@ -14,7 +18,7 @@ requires = ["uv_build==0.11.8"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["typer==0.27.2", "pytest==9.1.1", "ruff==0.16.10", "mypy==2.4.0", "pyright==1.1.414"]
+dev = ["typer==0.27.2", "pytest==9.1.1", "ruff==0.16.10", "mypy==2.4.0", "pyright==1.1.414", "uvicorn==0.54.0"]
 
 [tool.uv.build-backend]
 module-root = ""
@@ -28,7 +32,7 @@ markers = ["acceptance: real HTTP and WebSocket headless acceptance"]
 python_version = "3.14"
 strict = true
 files = ["."]
-exclude = ["^build/", "^dist/", "^\\.venv/"]
+exclude = ["^build/", "^dist/", "^\\.venv/", "(^|/)_pysx_revision_[^/]+/"]
 
 [tool.pyright]
 pythonVersion = "3.14"

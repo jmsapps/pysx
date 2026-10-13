@@ -8,6 +8,7 @@ prepares the environment without activation.
 uv run --project . example run counter
 uv run --project . example run todos
 uv run --project . example run recovery
+uv run --project . example run resources
 uv run --project . example run reactive_state
 uv run --project . example run operators
 uv run --project . example run forms
@@ -34,6 +35,20 @@ example run counter
 
 The command is installed into the environment's bin directory. A new terminal
 needs activation again, or you can keep using the `uv run --project .` prefix.
+
+## Async resources
+
+Run `uv run --project . example run resources`. The first HTTP response already
+contains the styled page, draft and pending state. Wait without clicking: a message
+loads, the delivered count increases through server push, and a timer posts a server
+notice. **Reload message** starts another load; **Cancel load** stops pending work.
+The setup counter stays at one when the browser attaches. Your draft survives
+background updates; a second tab has its own draft and resource. Ctrl+C disposes
+sessions and their work. The loader is local and needs no network/database or extra
+host setup. Optional ASGI launch:
+`uv run --project . pysx --app examples.resources:app --asgi` (Uvicorn is in the
+checkout dev environment; installed users need `pysx[asgi]`). See
+[resources](../docs/RESOURCES.md) and [hosting](../docs/HOSTING.md).
 
 ## Keyed rows
 

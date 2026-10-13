@@ -295,7 +295,8 @@ These hooks accept synchronous callbacks; use managed tasks for asynchronous wor
 `own_effect(name, callback)` reuses an owned reactive effect. `own_subscription(name,
 subscribe)` calls `subscribe()` once and owns its returned unsubscribe callback.
 `own_timer(name, delay, callback)` owns a one-shot asyncio timer; `own_task(name, factory)`
-owns an asyncio task produced once by the coroutine factory. Timer/task registration needs
+owns an asyncio task produced once by the coroutine factory, running it outside the session
+mutation turn so it commits writes through `push`. Timer/task registration needs
 a running event loop. Teardown cancels both, and timers guard disposed owners. Tasks must
 cooperate with cancellation; local state also guards late writes. Resource names stay
 stable across renders; each scope bounds state, resources and hook registrations to 1024

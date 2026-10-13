@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from .errors import ErrorPhase
 
 _current: ContextVar[Effect | None] = ContextVar("pysx_current_effect", default=None)
+write_guard: ContextVar[Callable[[], None] | None] = ContextVar("pysx_write_guard", default=None)
 
 
 class Dependency(Protocol):
@@ -175,6 +176,7 @@ def _reject_nested_signals(value: object, seen: set[int] | None = None) -> None:
 
 class Signal[T]:
     def __init__(self, value: T, *, equal: Callable[[T, T], bool] | None = None) -> None:
+        self._write_guard = write_guard.get()
         _reject_nested_signals(value)
 
         self._value = deepcopy(value)
@@ -233,6 +235,8 @@ class Signal[T]:
                 eff.invalidate()
 
     def set(self, value: T) -> None:
+        if self._write_guard is not None:
+            self._write_guard()
         _scheduler.check_owner()
 
         if self.computation is not None:

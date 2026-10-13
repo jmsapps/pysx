@@ -34,7 +34,7 @@ See [the wire contract](PROTOCOL.md#event-outcomes-and-local-recovery).
 
 Async event handlers retain their captured owner across awaits. `own_task` and
 `own_timer` hand failures to their live boundary and ignore departed owners;
-their fallback patches enter the session outbox. The current host sends those
-patches on the next dispatch. Independent background push and async resource
-scheduling require a host integration that drains the outbox. Cancellation during
+their fallback patches enter the independent session outbox. Both shipped hosts
+send background patches without another browser event. See [async resources](RESOURCES.md)
+and [hosting](HOSTING.md) for scheduling and lifetime rules. Cancellation during
 disconnect releases resources without presenting an application error.
