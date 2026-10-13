@@ -1,7 +1,12 @@
 const root = document.getElementById("pysx-root");
 const style = document.getElementById("pysx-style");
 const browserLocation = () => location.pathname + location.search + location.hash;
-const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?location=${encodeURIComponent(browserLocation())}`);
+const adoption = root.dataset.pysxAdoption;
+const endpoint = new URL(document.currentScript?.src ?? "/client.js", location.href);
+endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+endpoint.pathname = endpoint.pathname.replace(/client\.js$/, "ws");
+endpoint.search = `location=${encodeURIComponent(browserLocation())}${adoption ? `&adoption=${encodeURIComponent(adoption)}` : ""}`;
+const socket = new WebSocket(endpoint);
 let routing = false;
 let navigationRevision = 0;
 let observedLocation = browserLocation();
@@ -468,6 +473,13 @@ socket.onmessage = (event) => {
     hydrate(root);
     syncDom();
     if (routing) queueRouteScroll(browserLocation());
+  } else if (message.t === "adopted") {
+    if (message.routing) enableRouting();
+    registerTyped(root);
+    syncDom();
+    delete root.dataset.pysxAdoption;
+    root.dataset.pysxAttached = "true";
+    if (routing) queueRouteScroll(browserLocation());
   } else if (message.t === "result") {
     for (const op of message.ops) apply(op);
     syncDom();
@@ -489,6 +501,27 @@ socket.onmessage = (event) => {
     if (message.on) enableRouting();
   }
 };
+
+socket.addEventListener("open", () => {
+  if (!adoption) return;
+  // HTTP controls already have their browser values; never hydrate over edits.
+  const values = [...root.querySelectorAll("[data-pysx-binding]")]
+    .filter(el => {
+      if (el.dataset.pysxBind === "radio") return el.checked && !el.defaultChecked;
+      if (el.dataset.pysxBind === "checked") return el.checked !== el.defaultChecked;
+      if (el.tagName === "SELECT") {
+        let defaults = [...el.options].filter(option => option.defaultSelected).map(option => option.value);
+        if (!el.multiple) {
+          const first = [...el.options].find(option => !option.disabled && !option.closest("optgroup[disabled]"));
+          defaults = defaults.length ? [defaults.at(-1)] : first ? [first.value] : [""];
+        }
+        const current = el.multiple ? bindingValue(el) : [el.value];
+        return JSON.stringify(current) !== JSON.stringify(defaults);
+      }
+      return el.value !== el.defaultValue;
+    }).map(edit);
+  socket.send(JSON.stringify({t: "adopt", edits: values}));
+});
 
 socket.addEventListener("close", () => {
   cancelRouteScroll();

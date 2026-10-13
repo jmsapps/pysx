@@ -11,6 +11,40 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
+def test_serialized_async_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = (
+        (
+            "from typing import assert_type\n"
+            "from pysx import Resource, ResourceState, push, resource\n"
+            "async def load() -> int:\n    return 1\n"
+            "value = resource('load', load)\n"
+            "assert_type(value, Resource[int])\n"
+            "assert_type(value(), ResourceState[int])\n"
+            "assert_type(value().value, int | None)\n"
+            "async def update() -> None:\n    assert_type(await push(lambda: 1), int)\n"
+        )
+        if valid
+        else (ROOT / "tests/typing/serialized_async_invalid.txt").read_text()
+    )
+    fixture = tmp_path / "serialized_async.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "Awaitable" in output
+        assert ("str" if checker == "mypy" else "wrong value") in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
 def test_pysx_12_st_1_route_state_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = (
         "from collections.abc import Mapping\n"

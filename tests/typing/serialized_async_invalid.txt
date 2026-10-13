@@ -1,0 +1,7 @@
+from pysx import ResourceState, resource
+
+def wrong_loader() -> int:
+    return 1
+
+resource("wrong", wrong_loader)
+ResourceState[int]("success", "wrong value")

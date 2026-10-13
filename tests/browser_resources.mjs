@@ -1,0 +1,53 @@
+import assert from "node:assert/strict";
+import playwright from "playwright";
+
+const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
+try {
+  const page = await browser.newPage(), other = await browser.newPage();
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  let release;
+  const delayed = new Promise(resolve => { release = resolve; });
+  await page.route("**/client.js", async route => { await delayed; await route.continue(); });
+  const url = `http://127.0.0.1:${process.argv[2]}/`;
+  const load = page.goto(url);
+  await page.waitForSelector("#resource-draft");
+  assert.equal(await page.title(), "Async resources");
+  assert.equal(await page.locator("#resource-setups").textContent(), "1");
+  assert.equal(await page.locator("#resource-mounts").textContent(), "0");
+  assert.equal(await page.locator("#resource-status").textContent(), "pending");
+  console.log("  ok  HTTP alone includes styled content, head, setup and pending resource");
+  await page.locator("#resource-draft").evaluate(el => {
+    window.originalDraft = el;
+    el.value = "Edited before attachment";
+    el.focus(); el.setSelectionRange(3, 3);
+  });
+  await page.waitForTimeout(400);
+  release(); await load;
+  await page.waitForFunction(() => document.getElementById("resource-value").textContent === "Result 1");
+  await page.waitForFunction(() => document.getElementById("resource-mounts").textContent === "1");
+  assert.equal(await page.locator("#resource-echo").textContent(), "Edited before attachment");
+  assert.equal(await page.locator("#resource-setups").textContent(), "1");
+  assert.equal(await page.locator("#resource-delivered").textContent(), "1");
+  assert.equal(await page.locator("#server-notice").textContent(), "Server update received");
+  assert.equal(await page.evaluate(() => window.originalDraft === document.getElementById("resource-draft")), true);
+  assert.equal(await page.locator("#resource-draft").evaluate(el => el === document.activeElement && el.selectionStart === 3), true);
+  console.log("  ok  same graph, draft, focus and caret survive adoption with completed server work");
+  await other.goto(url);
+  await other.waitForFunction(() => document.getElementById("resource-value").textContent === "Result 1");
+  await page.locator("#reload-resource").click();
+  await page.waitForFunction(() => document.getElementById("resource-value").textContent === "Result 2");
+  assert.equal(await other.locator("#resource-value").textContent(), "Result 1");
+  assert.equal(await other.locator("#resource-draft").inputValue(), "Keep this draft");
+  console.log("  ok  reload and delivered push update one tab independently");
+  await page.locator("#reload-resource").click();
+  await page.waitForFunction(() => document.getElementById("resource-status").textContent === "pending");
+  await page.locator("#cancel-resource").click();
+  await page.waitForFunction(() => document.getElementById("resource-status").textContent === "cancelled");
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator("#resource-status").textContent(), "cancelled");
+  assert.equal(await page.locator("#resource-delivered").textContent(), "2");
+  assert.deepEqual(errors, []);
+  console.log("  ok  cancellation prevents late publication or delivered mutation");
+  console.log("RESOURCES EXAMPLE BROWSER PASSED");
+} finally { await browser.close(); }

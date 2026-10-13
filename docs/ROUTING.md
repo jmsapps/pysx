@@ -1,5 +1,8 @@
 # Routing
 
+Routers infer the host's request prefix unless `base_path` is explicitly supplied.
+Links should include that prefix; see [hosting](HOSTING.md).
+
 Create a `Router` inside the application factory so each browser session owns its
 location and route state. `Route(path, view, children=...)` takes a callable that
 receives `RouteState` and returns a t-string or `Fragment`. Render `router.view()`
@@ -48,10 +51,13 @@ accepted state intact.
 
 `router.response` exposes the accepted location, matched pattern, and a suggested
 status (`200` for a match/fallback, `404` otherwise). HTTP hosts can use this seam
-for initial rendering and deep-link responses. The standalone host serves its shell
-for any path that does not name a static asset, so reloading a route URL re-enters
-the application at that location; rendering route content over HTTP, rather than
-after the client connects, is a separate host integration concern.
+for initial rendering and deep-link responses. The standalone host renders content
+for any path that does not name a static asset, including dotted route segments.
+The first registered router supplies the HTTP status unless the app sets
+`current_request().document.status`. The document also exposes `title`,
+`description` and `redirect`; text metadata is escaped. Setup navigation becomes
+an HTTP 303 redirect (or the explicit document status), with no retained graph.
+HTTP has no fragment; attachment reconciles the browser's complete local URL.
 
 ## Navigation and links
 
@@ -105,7 +111,8 @@ The browser's initial local URL is validated before constructing the session. Hi
 and hash observations share a deduplicated listener and serialize with server events.
 The browser assigns monotonically increasing navigation revisions. Server history
 commands follow the patches they caused; stale revisions cannot replace newer browser
-history state. This ordering does not provide transport resume or HTTP deep-link SSR.
+history state. HTTP deep links render before attachment; this ordering does not
+provide transport resume.
 
 ## Scroll and focus
 

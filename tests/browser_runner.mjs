@@ -16,6 +16,19 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "resources", cases: [
+    [0, "resources", "browser_resources.mjs", "RESOURCES EXAMPLE BROWSER PASSED"],
+  ] },
+  { suite: "host_config", cases: [
+    [0, "host_standalone", "browser_hosts.mjs", "HOST CONFIG BROWSER PASSED"],
+    [1, "host_asgi", "browser_hosts.mjs", "HOST CONFIG BROWSER PASSED"],
+  ] },
+  { suite: "serialized_async", cases: [
+    [0, "async_fixture", "browser_async.mjs", "SERIALIZED ASYNC BROWSER PASSED"],
+  ] },
+  { suite: "meaningful_http", cases: [
+    [0, "http_fixture", "browser_http.mjs", "MEANINGFUL HTTP BROWSER PASSED"],
+  ] },
   { suite: "fallback_empty", cases: [
     [0, "recovery", "browser_fallback.mjs", "FALLBACK EXAMPLE BROWSER PASSED"],
     [1, "todos", "browser_empty.mjs", "EMPTY FILTER BROWSER PASSED"],
@@ -204,8 +217,14 @@ try {
   let selectedAssertions = 0;
   for (const [index, name, script, banner] of cases) {
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
-    const server = name ? start(interpreter, name === "keyed_snapshot_fixture" ?
+    const server = name ? start(interpreter, name?.startsWith("host_") ?
+      ["-m", "pysx.server", "--app", "tests.browser_host_fixture:host", "--port", String(port), ...(name === "host_asgi" ? ["--asgi"] : [])] :
+      name === "keyed_snapshot_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_keyed_snapshot_fixture:app", "--port", String(port)] :
+      name === "http_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_http_fixture:app", "--port", String(port)] :
+      name === "async_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_async_fixture:app", "--port", String(port)] :
       name === "keyed_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_keyed_fixture:app", "--port", String(port)] :
       name === "identity_fixture" ?
@@ -243,7 +262,7 @@ try {
       name === "adoption" ?
       ["-m", "tests.prototypes.standalone_host", "--port", String(port)] :
       ["run_example.py", "run", name, "--port", String(port)]) : null;
-    if (server) await wait(server, "pysx ready", 15000);
+    if (server) await wait(server, name === "host_asgi" ? "Uvicorn running" : "pysx ready", 15000);
     for (const engine of ["chromium", "firefox", "webkit"]) {
       const suite = start(process.execPath, [`tests/${script}`, String(port)], { PYSX_BROWSER_ENGINE: engine });
       const output = await wait(suite, null, 60000);

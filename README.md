@@ -11,7 +11,9 @@ application, sends user events, and applies the updates it receives.
 
 ## How it works
 
-Each browser connection gets its own reactive state. Signals hold values, derived
+The initial HTTP response contains the rendered page. The browser attaches to that
+same graph, preserving edits made before attachment. Each session gets its own
+reactive state. Signals hold values, derived
 signals compute from them, and effects track dependencies automatically. When a
 user clicks a button or edits a field, Python handles the event and sends changes
 back to the page.
@@ -42,6 +44,8 @@ updates.
 - **Reactive state:** signals, derived values, batched updates, and writable views into structured data.
 - **Readable interfaces:** t-string templates and composable, typed native elements.
 - **Live forms:** two-way bindings, native validation, reset and submit handling, and caret-preserving server corrections.
+- **Async applications:** owned resources, timers and server push update pages without another browser event.
+- **Hosting:** shared standalone and optional ASGI serving, request context, static assets and lifecycle hooks. See [hosting](docs/HOSTING.md).
 - **Scoped styling:** typed styled bases, inherited rules, live CSS variables and isolated
   themes. See the [styling guide](docs/STYLING.md).
 - **Editor support:** VSCode syntax highlighting and advisory template diagnostics.

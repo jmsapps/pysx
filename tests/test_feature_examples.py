@@ -16,12 +16,102 @@ from examples.keyed_rows import app as keyed_rows_app
 from examples.navigation import app as navigation_app
 from examples.reactive_state import app
 from examples.recovery import app as recovery_app
+from examples.resources import app as resources_app
 from examples.templates import app as templates_app
 from examples.themes import app as themes_app
 from pysx import BrowserEvent
 from pysx.check import diagnostics
+from pysx.http import HTTPRuntime, reconcile
 from pysx.render_tree import apply, snapshot
+from pysx.request import RequestContext
 from pysx.server import Session
+
+
+def test_resources_http_adoption_async_interactions_isolation_and_cleanup() -> None:
+    async def exercise() -> None:
+        runtime = HTTPRuntime(resources_app)
+        request = RequestContext()
+        initial = runtime.render(request, "first")
+        assert b"Async resources" in initial.body
+        assert b"Keep this draft" in initial.body
+        assert b"<style" in initial.body
+        assert initial.adoption is not None
+        graph = runtime.pending[initial.adoption].session
+        other_result = runtime.render(RequestContext(), "second")
+        assert other_result.adoption is not None
+        other = runtime.pending[other_result.adoption].session
+        session = runtime.claim(initial.adoption, request, "first")
+        assert session is graph
+        tree = snapshot(initial.body.decode(), unwrap_row=False)
+
+        async def settle(text: str) -> None:
+            async with asyncio.timeout(2):
+                while True:
+                    apply(tree, session.pending)
+                    session.pending.clear()
+                    session.changed.clear()
+
+                    if text in tree.markup():
+                        return
+                    await session.changed.wait()
+
+        async def click(identifier: str) -> None:
+            found = re.search(rf'id="{identifier}"[^>]*data-pysx-click="([^"]+)"', tree.markup())
+            assert found is not None
+            result = await session.dispatch_result_async(found[1], None)
+            assert result["status"] == "success"
+            apply(tree, result["ops"])
+
+        try:
+            binding = next(iter(session.rendered.bindings))
+            reconcile(session, [(binding, "Private draft", 1)])
+            with session.context():
+                session.rendered.scopes.acknowledge(session.rendered.scopes.pending_mounts())
+            await settle("Result 1")
+            await settle("Server update received")
+            assert "Private draft" in tree.markup()
+            assert (
+                other.rendered.bindings[next(iter(other.rendered.bindings))].signal()
+                == "Keep this draft"
+            )
+            await click("reload-resource")
+            await settle(">pending<")
+            await click("cancel-resource")
+            await settle(">cancelled<")
+            await asyncio.sleep(0.35)
+            apply(tree, session.pending)
+            assert "Result 2" not in tree.markup()
+            assert "cancelled" in tree.markup()
+        finally:
+            session.dispose()
+            runtime.close()
+            await asyncio.sleep(0)
+        assert session.runtime.closed
+        assert session.rendered.scopes.owners == {}
+        assert session.rendered.handlers == {}
+        assert other.runtime.closed
+
+    asyncio.run(exercise())
+
+
+def test_resources_checker_clean_and_registered() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["resources"] == "examples.resources:app"
+    assert diagnostics(Path("examples/resources.py")) == []
+
+
+@pytest.mark.acceptance
+def test_resources_cli_startup_and_ctrl_c_exit() -> None:
+    command = ["uv", "run", "--project", ".", "example", "run", "resources", "--port", "8776"]
+    with ready_server(command) as server:
+        with urllib.request.urlopen("http://127.0.0.1:8776/", timeout=5) as response:
+            assert response.status == 200
+            assert b"Async resources" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
 
 
 def test_recovery_interactions_isolation_and_cleanup() -> None:

@@ -1,0 +1,218 @@
+"""ASGI 3 HTTP, WebSocket and lifespan adapter for the shared application engine."""
+
+from __future__ import annotations
+
+import asyncio
+from typing import TYPE_CHECKING, cast
+from urllib.parse import quote, urlsplit
+
+from .hosting import request_from_headers
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Awaitable, Callable
+
+    from .hosting import Application
+    from .request import RequestContext
+
+type Event = dict[str, object]
+type Receive = Callable[[], Awaitable[Event]]
+type Send = Callable[[Event], Awaitable[None]]
+
+
+class DisconnectedError(Exception):
+    pass
+
+
+class ASGI:
+    def __init__(self, application: Application) -> None:
+        self.application = application
+
+    def _request(self, scope: Event) -> RequestContext:
+        root = str(scope.get("root_path", ""))
+        prefix = self.application.config.base_path or quote(root.rstrip("/"), safe="/")
+        raw = scope.get("raw_path")
+        path = (
+            raw.decode("ascii")
+            if isinstance(raw, bytes)
+            else quote(str(scope.get("path", "/")), safe="/")
+        )
+
+        if root and prefix and path != prefix and not path.startswith(prefix + "/"):
+            path = prefix + path
+        query = scope.get("query_string", b"")
+
+        if isinstance(query, bytes) and query:
+            path += "?" + query.decode("ascii")
+        headers = [
+            (name.decode("latin-1"), value.decode("latin-1"))
+            for name, value in cast("list[tuple[bytes, bytes]]", scope.get("headers", []))
+        ]
+        state = scope.get("state", {})
+        principal = cast("dict[str, object]", state).get("pysx_principal")
+
+        if principal is not None and not isinstance(principal, str):
+            raise ValueError("middleware principal must be a string or None")
+
+        return request_from_headers(path, headers, base_path=prefix, principal=principal)
+
+    async def __call__(self, scope: Event, receive: Receive, send: Send) -> None:
+        kind = scope.get("type")
+
+        if kind == "lifespan":
+            while True:
+                event = await receive()
+
+                if event.get("type") == "lifespan.startup":
+                    try:
+                        await self.application.start()
+                    except Exception:
+                        await send(
+                            {
+                                "type": "lifespan.startup.failed",
+                                "message": "application startup failed",
+                            }
+                        )
+
+                        return
+                    await send({"type": "lifespan.startup.complete"})
+                elif event.get("type") == "lifespan.shutdown":
+                    try:
+                        await self.application.close()
+                    except Exception:
+                        await send(
+                            {
+                                "type": "lifespan.shutdown.failed",
+                                "message": "application shutdown failed",
+                            }
+                        )
+
+                        return
+                    await send({"type": "lifespan.shutdown.complete"})
+
+                    return
+
+            return
+
+        request = self._request(scope)
+
+        if kind == "http":
+            event = await receive()
+
+            if event.get("type") == "http.disconnect":
+                return
+
+            if event.get("type") != "http.request":
+                raise ValueError("expected http.request")
+
+            if event.get("body") or event.get("more_body"):
+                await send({"type": "http.response.start", "status": 413, "headers": []})
+                await send({"type": "http.response.body", "body": b"request body unsupported"})
+
+                return
+            result = await self.application.http(request, method=str(scope.get("method", "GET")))
+
+            try:
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": result.status,
+                        "headers": [
+                            (name.encode("ascii"), value.encode("latin-1"))
+                            for name, value in result.headers
+                        ],
+                    }
+                )
+                await send({"type": "http.response.body", "body": result.body})
+            except BaseException:
+                if result.adoption is not None:
+                    self.application.runtime.expire(result.adoption)
+
+                raise
+
+            return
+
+        if kind != "websocket":
+            raise ValueError("unsupported ASGI scope")
+
+        if (await receive()).get("type") != "websocket.connect":
+            return
+        context = self.application.prepare(request)
+
+        if urlsplit(context.path).path != context.base_path + "/ws":
+            await send({"type": "websocket.close", "code": 1008})
+
+            return
+        await send({"type": "websocket.accept"})
+        await self.application.websocket(_Connection(context, receive, send, scope))
+
+
+class _Connection:
+    def __init__(self, request: RequestContext, receive: Receive, send: Send, scope: Event) -> None:
+        self.request = request
+        self.receive = receive
+        self.sender = send
+        self.closed = asyncio.Event()
+        versions = cast("dict[str, str]", scope.get("asgi", {}))
+        self.reason = tuple(
+            int(part) for part in versions.get("spec_version", "2.0").split(".")
+        ) >= (2, 3)
+
+    async def send(self, message: str) -> None:
+        if self.closed.is_set():
+            raise OSError("connection closed")
+        await self.sender({"type": "websocket.send", "text": message})
+
+    async def recv(self) -> str | bytes:
+        if self.closed.is_set():
+            raise DisconnectedError
+        incoming = asyncio.ensure_future(self.receive())
+        closing = asyncio.create_task(self.closed.wait())
+
+        try:
+            done, _pending = await asyncio.wait(
+                (incoming, closing), return_when=asyncio.FIRST_COMPLETED
+            )
+
+            if closing in done:
+                raise DisconnectedError
+            event = await incoming
+
+            if event.get("type") == "websocket.disconnect":
+                self.closed.set()
+
+                raise DisconnectedError
+
+            if event.get("type") != "websocket.receive":
+                raise ValueError("expected websocket.receive")
+            value = event.get("text")
+
+            if isinstance(value, str):
+                return value
+            value = event.get("bytes")
+
+            if isinstance(value, bytes):
+                return value
+
+            raise ValueError("expected a text or binary message")
+        finally:
+            for task in (incoming, closing):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(incoming, closing, return_exceptions=True)
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        if self.closed.is_set():
+            return
+        self.closed.set()
+        event: Event = {"type": "websocket.close", "code": code}
+
+        if self.reason:
+            event["reason"] = reason
+        await self.sender(event)
+
+    async def __aiter__(self) -> AsyncIterator[str | bytes]:
+        while True:
+            try:
+                yield await self.recv()
+            except DisconnectedError:
+                return

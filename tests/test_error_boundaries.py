@@ -340,9 +340,7 @@ def test_local_failure_boundary_remounts_under_a_condition() -> None:
 
     boundary = ErrorBoundary(content, fallback)
     session = Session(
-        lambda: pysx(
-            t"\ndiv:\n  if {visible}:\n    Boundary:", namespace={"Boundary": boundary}
-        )
+        lambda: pysx(t"\ndiv:\n  if {visible}:\n    Boundary:", namespace={"Boundary": boundary})
     )
     tree = snapshot(session.rendered.body, unwrap_row=False)
 
