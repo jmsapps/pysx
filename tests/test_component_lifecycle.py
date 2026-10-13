@@ -350,7 +350,8 @@ def test_stable_component_setup_patch_and_mount_follow_a_failed_event() -> None:
             assert found is not None
             await ws.send(json.dumps({"t": "event", "h": found[1]}))
             patch = await receive(ws)
-            assert patch["t"] == "patch"
+            assert patch["t"] == "result"
+            assert patch["status"] == "error"
             assert [op["op"] for op in patch["ops"]] == ["list"]
             mount = await receive(ws)
             assert mount["t"] == "mount"

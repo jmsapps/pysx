@@ -11,9 +11,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast
 from uuid import uuid4
 
+from .errors import failure_context
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from .errors import FailureCapture
     from .events import EventHandler
     from .wire import JSONValue
 
@@ -39,6 +42,7 @@ class DomController:
         self.nodes: dict[str, str] = {}
         self.pending: dict[str, tuple[asyncio.Future[JSONValue], str]] = {}
         self.listeners: dict[str, tuple[EventHandler, str, str, str]] = {}
+        self.listener_failures: dict[str, FailureCapture | None] = {}
         self.sender: Callable[[dict[str, JSONValue]], Awaitable[None]] | None = None
         self.closed = False
 
@@ -69,7 +73,7 @@ class DomController:
 
         for hid, (_handler, _type, root, _target) in tuple(self.listeners.items()):
             if root in roots:
-                self.listeners.pop(hid, None)
+                self.forget_listener(hid)
 
         for rid, (future, root) in tuple(self.pending.items()):
             if root in roots:
@@ -165,7 +169,11 @@ class DomController:
 
                     for hid, (_handler, _type, _root, target) in tuple(self.listeners.items()):
                         if target == token:
-                            self.listeners.pop(hid, None)
+                            self.forget_listener(hid)
+
+    def forget_listener(self, handler: str) -> None:
+        self.listeners.pop(handler, None)
+        self.listener_failures.pop(handler, None)
 
     def close(self) -> None:
         self.closed = True
@@ -355,7 +363,7 @@ class DomNode:
 
         for hid, (_handler, _type, _root, target) in tuple(self.controller.listeners.items()):
             if target == self.token:
-                self.controller.listeners.pop(hid, None)
+                self.controller.forget_listener(hid)
 
     async def listen(
         self, event_type: str, handler: EventHandler, *, window: bool = False
@@ -368,12 +376,13 @@ class DomNode:
             raise DomError("listener limit exceeded")
         hid = uuid4().hex
         self.controller.listeners[hid] = (handler, event_type, self.root, self.token)
+        self.controller.listener_failures[hid] = failure_context.get()
 
         try:
             policy = cast("dict[str, JSONValue]", handler.policy(event_type))
             await self._request("listen", h=hid, policy=policy, window=window)
         except BaseException:
-            self.controller.listeners.pop(hid, None)
+            self.controller.forget_listener(hid)
 
             raise
 
@@ -386,5 +395,5 @@ class DomListener:
     handler: str
 
     async def close(self) -> None:
-        self.node.controller.listeners.pop(self.handler, None)
+        self.node.controller.forget_listener(self.handler)
         await self.node.controller.request(self.node, "unlisten", {"h": self.handler})

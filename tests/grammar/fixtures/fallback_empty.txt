@@ -1,0 +1,12 @@
+from pysx import pysx
+
+view = pysx(t"""
+    Page:
+        Boundary:
+        Card(role="alert"):
+            p: {info.message}
+            Action(onClick={reset}): "Retry panel"
+        if {empty}:
+            Description(id="todo-empty"): {empty_message}
+""")
+AFTER_SENTINEL = True

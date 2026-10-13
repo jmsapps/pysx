@@ -1,4 +1,5 @@
 from .bindings import Binding, Deferred, bounded_while, defer, defer2
+from .boundaries import ErrorBoundary
 from .composition import Children, Component
 from .dom import Dom, DomError, DomListener, DomNode, DomRef, Rect
 from .elements import (
@@ -17,6 +18,7 @@ from .elements import (
     strong,
     ul,
 )
+from .errors import ErrorInfo
 from .events import BrowserEvent, EventHandler, on_event
 from .lifecycle import (
     local_state,
@@ -83,6 +85,8 @@ __all__ = [
     "DomNode",
     "DomRef",
     "Each",
+    "ErrorBoundary",
+    "ErrorInfo",
     "EventHandler",
     "Fragment",
     "Link",

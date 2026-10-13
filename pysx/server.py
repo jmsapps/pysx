@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from websockets.asyncio.server import ServerConnection, serve
 
-from .dom import DomError
+from .errors import ErrorInfo, FailureCapture, failure_context, report_error
 from .events import decode_event
 from .forms import PayloadError, form_edits
 from .loader import import_app
@@ -30,10 +30,11 @@ from .styles import style_context
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Generator
     from string.templatelib import Template
+    from typing import Literal
 
     from websockets.http11 import Request, Response
 
-    from .wire import InitMessage, JSONValue, Op, PatchMessage
+    from .wire import InitMessage, JSONValue, Op, PatchMessage, ResultMessage
 
 STATIC = Path(__file__).parent / "static"
 
@@ -41,15 +42,24 @@ STATIC = Path(__file__).parent / "static"
 class Session:
     """Holds one client's signal graph and the ops it has produced."""
 
-    def __init__(self, app_fn: Callable[[], Template | Fragment], *, location: str = "/") -> None:
+    def __init__(
+        self,
+        app_fn: Callable[[], Template | Fragment],
+        *,
+        location: str = "/",
+        development: bool = False,
+    ) -> None:
         self.pending: list[Op] = []
         self._awaitables: list[Awaitable[object]] = []
+        self._callback_sources: list[Awaitable[object]] = []
         self._live = False
+        self._failed_callback: Exception | None = None
+        self.development = development
         self.routes = RouteHost(location)
         route_token = route_host.set(self.routes)
 
         try:
-            self.rendered = render(app_fn)
+            self.rendered = render(app_fn, development=development)
         finally:
             route_host.reset(route_token)
         # The first run of each effect registers its subscription; watchers were
@@ -72,9 +82,15 @@ class Session:
             raise
         self._live = True
         self.routes.live = True
+        self.rendered.failures.clear()
 
     def _watch(self, watcher: Watcher) -> Effect:
-        return Effect(lambda: self._collect(watcher))
+        token = failure_context.set(watcher.failure)
+
+        try:
+            return Effect(lambda: self._collect(watcher), phase="render")
+        finally:
+            failure_context.reset(token)
 
     def _owned_ops(self, ops: list[Op]) -> None:
         self._sync_styles()
@@ -110,13 +126,50 @@ class Session:
                 self.pending[:] = [op for op in self.pending if op["op"] != "css"]
                 self.pending.insert(0, {"op": "css", "v": css})
 
-    def _invoke(self, callback: Callable[[object], object], value: object) -> None:
-        with self._context():
-            result = callback(value)
+    def _invoke(
+        self,
+        callback: Callable[[object], object],
+        value: object,
+        capture: FailureCapture | None = None,
+    ) -> None:
+        token = failure_context.set(capture)
+
+        try:
+            with self._context():
+                result = callback(value)
+        except Exception as error:
+            if capture is None or not capture.handle(error, "handler"):
+                self._failed_callback = error
+
+                raise
+
+            return
+        finally:
+            failure_context.reset(token)
         self._sync_styles()
 
         if inspect.isawaitable(result):
-            self._awaitables.append(result)
+            self._callback_sources.append(result)
+
+            async def owned_callback() -> object:
+                token = failure_context.set(capture)
+
+                try:
+                    return await result
+                except Exception as error:
+                    if capture is None or not capture.handle(error, "async"):
+                        self._failed_callback = error
+
+                        raise
+
+                    return None
+                finally:
+                    failure_context.reset(token)
+                    self._callback_sources[:] = [
+                        item for item in self._callback_sources if item is not result
+                    ]
+
+            self._awaitables.append(owned_callback())
 
     async def dispatch_async(
         self,
@@ -164,9 +217,11 @@ class Session:
     ) -> list[Op]:
         fn = self.rendered.handlers.get(handler_id)
         listener = self.rendered.dom.listeners.get(handler_id)
+        capture = self.rendered.handler_failures.get(handler_id)
 
         if listener is not None:
             fn = cast("Callable[[object], object]", listener[0].callback)
+            capture = self.rendered.dom.listener_failures.get(handler_id)
 
         if fn is None and not edits:
             return []
@@ -198,9 +253,11 @@ class Session:
 
             if fn is not None:
                 if typed is not None and snapshot is not None:
-                    self._invoke(cast("Callable[[object], object]", typed[0].callback), snapshot)
+                    self._invoke(
+                        cast("Callable[[object], object]", typed[0].callback), snapshot, capture
+                    )
                 else:
-                    self._invoke(fn, value)
+                    self._invoke(fn, value, capture)
 
             if after is not None and after != handler_id:
                 callback = self.rendered.handlers.get(after)
@@ -210,9 +267,10 @@ class Session:
                         self._invoke(
                             cast("Callable[[object], object]", following[0].callback),
                             after_snapshot,
+                            self.rendered.handler_failures.get(after),
                         )
                     else:
-                        self._invoke(callback, value)
+                        self._invoke(callback, value, self.rendered.handler_failures.get(after))
         ops = self.pending
         self.pending = []
 
@@ -242,11 +300,109 @@ class Session:
 
         return ops
 
+    async def dispatch_result_async(
+        self,
+        handler_id: str,
+        value: object,
+        revision: int | None = None,
+        *,
+        after: str | None = None,
+        edits: list[tuple[str, object, int | None]] | None = None,
+        event: object = None,
+        navigation: bool = False,
+    ) -> ResultMessage:
+        """Commit actual-state ops and acknowledge a recoverable dispatch outcome."""
+        self._failed_callback = None
+        status: Literal["success", "error", "invalid", "stale"] = "success"
+        info: ErrorInfo | None = None
+        prior, self.pending = self.pending, []
+        stale = (
+            handler_id not in self.rendered.handlers
+            and handler_id not in self.rendered.dom.listeners
+        )
+
+        try:
+            if stale and not edits:
+                ops, self.pending = self.pending, []
+            else:
+                ops = await self.dispatch_async(
+                    handler_id,
+                    value,
+                    revision,
+                    after=after,
+                    edits=edits,
+                    event=event,
+                    navigation=navigation,
+                )
+
+            if stale:
+                status = "stale"
+        except PayloadError as error:
+            if self._callback_failed(error):
+                status = "error"
+                info = ErrorInfo(None, "handler")
+                report_error(info, error, development=self.development)
+            else:
+                status = "invalid"
+            ops, self.pending = self.pending, []
+        except Exception as error:
+            status = "error"
+            info = ErrorInfo(None, "handler")
+            report_error(info, error, development=self.development)
+            ops, self.pending = self.pending, []
+        except BaseException:
+            self.pending = prior + self.pending
+
+            raise
+        finally:
+            self.cancel_callbacks()
+            self.routes.intercepting = False
+            self._failed_callback = None
+
+        if self.rendered.failures:
+            status = "error"
+            info = self.rendered.failures[0]
+        self.rendered.failures.clear()
+        ops = prior + ops
+
+        if status in ("error", "invalid"):
+            updates = [*(edits or []), (handler_id, value, revision)]
+
+            for hid, _payload, rev in updates:
+                binding = self.rendered.bindings.get(hid)
+
+                if binding is not None:
+                    correction = binding.op()
+
+                    if rev is not None and (
+                        correction["op"] == "attr" or correction["op"] == "prop"
+                    ):
+                        correction["rev"] = rev
+                    ops.append(correction)
+        result: ResultMessage = {"t": "result", "h": handler_id, "status": status, "ops": ops}
+
+        if info is not None:
+            result["error"] = info.wire()
+
+        return result
+
     def cancel_callbacks(self) -> None:
         for awaitable in self._awaitables:
             if inspect.iscoroutine(awaitable):
                 awaitable.close()
         self._awaitables.clear()
+
+        for awaitable in self._callback_sources:
+            if inspect.iscoroutine(awaitable):
+                awaitable.close()
+        self._callback_sources.clear()
+
+    @property
+    def pending_callbacks(self) -> int:
+        return len(self._callback_sources)
+
+    def _callback_failed(self, error: Exception) -> bool:
+        return self._failed_callback is error
 
     def dispose(self) -> None:
         self.cancel_callbacks()
@@ -311,6 +467,7 @@ def main() -> None:
     ap.add_argument("--app", required=True, help="module:attr of the @component to serve")
     ap.add_argument("--port", type=int, default=8750)
     ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--dev", action="store_true", help="log development source tracebacks")
     args = ap.parse_args()
     app_fn = _load_app(args.app)
 
@@ -340,7 +497,7 @@ def main() -> None:
             await connection.close(code=1008, reason="invalid initial location")
 
             return
-        session = Session(app_fn, location=supplied[0])
+        session = Session(app_fn, location=supplied[0], development=args.dev)
         queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=64)
 
         async def send_mounts() -> None:
@@ -375,14 +532,26 @@ def main() -> None:
                 handler_id = message.get("h", "")
 
                 if not isinstance(handler_id, str):
+                    await connection.send(
+                        json.dumps({"t": "result", "h": "", "status": "invalid", "ops": []})
+                    )
+
                     continue
                 revision = message.get("rev")
                 after = message.get("after")
 
                 if revision is not None and (type(revision) is not int or revision < 0):
+                    await connection.send(
+                        json.dumps({"t": "result", "h": handler_id, "status": "invalid", "ops": []})
+                    )
+
                     continue
 
                 if after is not None and not isinstance(after, str):
+                    await connection.send(
+                        json.dumps({"t": "result", "h": handler_id, "status": "invalid", "ops": []})
+                    )
+
                     continue
 
                 try:
@@ -426,7 +595,7 @@ def main() -> None:
                             nav_revision
                         ):
                             continue
-                        ops = await session.dispatch_async(
+                        outcome = await session.dispatch_result_async(
                             handler_id,
                             message.get("v"),
                             revision,
@@ -435,8 +604,28 @@ def main() -> None:
                             event=message.get("event"),
                             navigation=message.get("navigation") is True,
                         )
-                except PayloadError, DomError:
-                    await send_patch()
+
+                        if outcome["status"] != "success":
+                            await connection.send(json.dumps(outcome))
+                            await send_navigation()
+                            await send_mounts()
+
+                            if session.rendered.unrepaired:
+                                await connection.close(
+                                    code=1011, reason="render recovery requires a boundary"
+                                )
+
+                                return
+
+                            continue
+                        ops = outcome["ops"]
+                except PayloadError:
+                    repair, session.pending = session.pending, []
+                    await connection.send(
+                        json.dumps(
+                            {"t": "result", "h": handler_id, "status": "invalid", "ops": repair}
+                        )
+                    )
                     await send_navigation()
                     await send_mounts()
 
@@ -446,7 +635,21 @@ def main() -> None:
 
                     return
 
-                if ops:
+                if session.rendered.failures:
+                    info = session.rendered.failures[0]
+                    session.rendered.failures.clear()
+                    await connection.send(
+                        json.dumps(
+                            {
+                                "t": "result",
+                                "h": handler_id,
+                                "status": "error",
+                                "ops": ops,
+                                "error": info.wire(),
+                            }
+                        )
+                    )
+                elif ops:
                     patch: PatchMessage = {"t": "patch", "ops": ops}
                     await connection.send(json.dumps(patch))
                 await send_navigation()
@@ -471,9 +674,17 @@ def main() -> None:
                 try:
                     decoded: object = json.loads(raw)
                 except TypeError, ValueError:
+                    await connection.send(
+                        json.dumps({"t": "result", "h": "", "status": "invalid", "ops": []})
+                    )
+
                     continue
 
                 if not isinstance(decoded, dict):
+                    await connection.send(
+                        json.dumps({"t": "result", "h": "", "status": "invalid", "ops": []})
+                    )
+
                     continue
                 message = cast("dict[str, object]", decoded)
 

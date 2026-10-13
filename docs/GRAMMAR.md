@@ -236,6 +236,11 @@ typed native constructors. Otherwise it is forwarded as the `children` keyword.
 Insert that object in a content hole to render it in its caller environment.
 Components return a `Template` or `Fragment`; other return types raise `TypeError`.
 
+An `ErrorBoundary` instance is a renderer-managed component tag with no props or
+child block. Its content and fallback callables return `Template` or `Fragment`;
+the renderer owns their replacement and retry generations. See
+[local recovery](RECOVERY.md) for its API and failure behavior.
+
 Defining-module bindings and actual Python closure cells provide a component's namespace,
 so an imported or module-level component resolves from its bare name with no extra argument.
 The compiler resolves bare tags through ordinary Python lexical bindings and captures

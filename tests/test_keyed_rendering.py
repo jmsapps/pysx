@@ -585,9 +585,7 @@ def addressable(body: str, op: Op) -> bool:
 
         return f"pysx:{op['kind']}:{token}:start" in body
 
-    return (
-        f'data-pysx-el="{op["id"]}"' in body or f'pysx-slot id="{op["id"]}"' in body
-    )
+    return f'data-pysx-el="{op["id"]}"' in body or f'pysx-slot id="{op["id"]}"' in body
 
 
 def test_granular_keyed_static_branch_flip_addresses_the_live_markup() -> None:

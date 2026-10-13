@@ -11,6 +11,45 @@ text by index.
 
 ## Messages
 
+### Event outcomes and local recovery
+
+An event outcome uses `{"t":"result","h":"handler-id","status":"error","ops":[],
+"error":{"id":"opaque-correlation-id","owner":"opaque-owner-generation",
+"phase":"handler","message":"This part of the application failed. Please try again."}}`.
+Statuses are `success`, `error` (application failure), `invalid` (rejected payload)
+and `stale` (unknown or removed handler). Only `error` carries an error description.
+The client applies the ordered ops and synchronizes owned DOM handles before emitting
+the window event `pysx:result`, whose detail has `handler`, `status` and `error`
+(null for non-error outcomes). Consumers can clear their event error on success.
+
+Writes already committed to signals are never rolled back. A failed dispatch must
+deliver the ops that reflect those writes and any local fallback, then acknowledge
+the failure. Form corrections keep their revision/echo rules. Pending ops and
+unstarted callback awaitables are drained at the end of a dispatch. Healthy sibling
+owners and other sessions remain independent. Mount/navigation messages follow the
+result. Invalid protocol envelopes are distinct from application errors.
+
+Errors use a fixed safe message, an opaque correlation ID, owner generation (null
+for an uncontained failure), and phase: render, handler, computed, effect, cleanup,
+mount or async. Raw exception text, tracebacks and local source paths stay on the
+server. Local fallback receives the same safe metadata. Reset/retry clears the
+boundary error and replaces only the failed ownership generation; removed-owner
+failures and retries have no effect. A failing fallback escalates to its parent.
+Cancellation during teardown is not an application error. Async callbacks belong
+to their captured live owner; background async resource scheduling is a host seam.
+
+The standalone host emits result frames for failures and rejections. Successful
+events use ordinary patches and emit no frame when nothing changes. Boundary
+reset clears its error on successful reconstruction. Other hosts may acknowledge
+success explicitly with a result frame.
+
+An uncontained structural rendering failure that cannot produce a consistent
+repair sends its safe error outcome and closes with code 1011; place an
+ErrorBoundary around fallible rendering to enable local retry. The default server
+logs only correlation ID and phase. `python -m pysx.server --dev ...`,
+`Session(..., development=True)` and `render(..., development=True)` retain source
+tracebacks in server logs. Client messages remain safe in either mode.
+
 ### Navigation
 
 The WebSocket URL may carry `location`, an encoded local path/search/hash used to

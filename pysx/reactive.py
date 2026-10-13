@@ -9,8 +9,12 @@ from copy import deepcopy
 from threading import get_ident
 from typing import TYPE_CHECKING, Never, Protocol, cast, overload
 
+from .errors import failure_context
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Iterable
+
+    from .errors import ErrorPhase
 
 _current: ContextVar[Effect | None] = ContextVar("pysx_current_effect", default=None)
 
@@ -69,7 +73,16 @@ class _Scheduler:
                 try:
                     observer.run()
                 except Exception as exc:
-                    errors.append(exc)
+                    if observer.failure is None or not observer.failure.handle(exc, observer.phase):
+                        errors.append(exc)
+                    else:
+                        # A failed computation may have invalidated itself before
+                        # raising. Retire it so the queued fallback gets a turn.
+                        try:
+                            observer.dispose()
+                        except Exception as cleanup_error:
+                            if not observer.failure.handle(cleanup_error, "cleanup"):
+                                errors.append(cleanup_error)
         except BaseException:
             self.computed.clear()
             self.observers.clear()
@@ -389,13 +402,21 @@ class Signal[T]:
 
 
 class Effect:
-    def __init__(self, fn: Callable[[], object], *, computed: Signal[object] | None = None) -> None:
+    def __init__(
+        self,
+        fn: Callable[[], object],
+        *,
+        computed: Signal[object] | None = None,
+        phase: ErrorPhase | None = None,
+    ) -> None:
         self._fn = fn
         self._deps: dict[int, Dependency] = {}
         self.computed = computed
         self._disposed = False
         self.running = False
         self._cleanup: Callable[[], object] | None = None
+        self.failure = failure_context.get()
+        self.phase: ErrorPhase = phase or ("computed" if computed is not None else "effect")
 
         if computed is None:
             try:
@@ -438,6 +459,7 @@ class Effect:
         previous = self._deps
         self._deps = {}
         token = _current.set(self)
+        failure_token = failure_context.set(self.failure)
 
         try:
             cleanup, self._cleanup = self._cleanup, None
@@ -462,6 +484,7 @@ class Effect:
 
             raise
         finally:
+            failure_context.reset(failure_token)
             _current.reset(token)
             _scheduler.depth -= 1
             self.running = False

@@ -28,7 +28,7 @@ async def receive(ws: ClientConnection, seconds: float = 5) -> ServerMessage:
     if not isinstance(decoded, dict):
         raise AssertionError(f"expected a server message object: {decoded!r}")
     message = cast("dict[str, object]", decoded)
-    assert message.get("t") in ("init", "patch", "mount"), message
+    assert message.get("t") in ("init", "patch", "mount", "result"), message
 
     # Detailed payload assertions remain in each acceptance case.
     return cast("ServerMessage", message)
