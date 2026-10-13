@@ -80,6 +80,21 @@ class PatchMessage(TypedDict):
     ops: list[Op]
 
 
+class ErrorDetail(TypedDict):
+    id: str
+    owner: str | None
+    phase: Literal["render", "handler", "computed", "effect", "cleanup", "mount", "async"]
+    message: str
+
+
+class ResultMessage(TypedDict):
+    t: Literal["result"]
+    h: str
+    status: Literal["success", "error", "invalid", "stale"]
+    ops: list[Op]
+    error: NotRequired[ErrorDetail]
+
+
 class MountMessage(TypedDict):
     t: Literal["mount"]
     ids: list[str]
@@ -140,4 +155,5 @@ type ServerMessage = (
     | MountMessage
     | NavigationMessage
     | RoutingMessage
+    | ResultMessage
 )

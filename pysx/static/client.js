@@ -468,6 +468,13 @@ socket.onmessage = (event) => {
     hydrate(root);
     syncDom();
     if (routing) queueRouteScroll(browserLocation());
+  } else if (message.t === "result") {
+    for (const op of message.ops) apply(op);
+    syncDom();
+    if (pendingScroll) attemptRouteScroll();
+    window.dispatchEvent(new CustomEvent("pysx:result", {detail: {
+      handler: message.h, status: message.status, error: message.error ?? null,
+    }}));
   } else if (message.t === "patch") {
     for (const op of message.ops) apply(op);
     syncDom();

@@ -25,9 +25,11 @@ from typing import TYPE_CHECKING, cast
 from ._compiler_runtime import MissingComponent
 from .bindings import MAX_ROWS, Deferred, Environment, resolve
 from .bindings import Binding as LexicalBinding
+from .boundaries import ErrorBoundary
 from .composition import Children, Component, identity_for, namespace_for
 from .dom import DomController, DomError, DomRef, dom_context
 from .elements import VOID, ElementTag
+from .errors import ErrorInfo, ErrorPhase, FailureCapture, failure_context, report_error
 from .events import EventHandler
 from .forms import Binding, make_binding
 from .identity import OwnerPath
@@ -389,6 +391,8 @@ def _merge_classes(values: Iterable[str]) -> str:
 
 
 class Watcher:
+    failure: FailureCapture | None = None
+
     def refresh(self) -> list[Op]:
         raise NotImplementedError
 
@@ -435,8 +439,16 @@ class CondWatcher(Watcher):
         return [{"op": "html", "id": self.slot, "v": markup}, *corrections]
 
     def dispose(self, preserved: set[int] | None = None) -> None:
+        errors: list[Exception] = []
+
         for watcher in self.children:
-            watcher.dispose(preserved)
+            try:
+                watcher.dispose(preserved)
+            except Exception as error:
+                errors.append(error)
+
+        if errors:
+            raise ExceptionGroup("branch cleanup failed", errors)
 
 
 @dataclass
@@ -453,6 +465,162 @@ class ContentWatcher(Watcher):
         self.last = markup
 
         return [{"op": "html", "id": self.slot, "v": markup}]
+
+
+class BoundaryWatcher(Watcher):
+    """Own the replaceable subtree, including every watcher and callback."""
+
+    def __init__(
+        self,
+        slot: str,
+        boundary: ErrorBoundary,
+        out: Rendered,
+        build: Callable[[Callable[[], Template | Fragment], str], str],
+    ) -> None:
+        boundary.mount()
+        self.slot, self.boundary, self.out, self.build = slot, boundary, out, build
+        self.failure = failure_context.get()
+        self.children: list[Watcher] = []
+        self.effects: list[Effect] = []
+        self.prefix = ""
+        self.last = -1
+        self.markup = ""
+        self.building = False
+
+    def _fail(self, generation: str, error: Exception, phase: ErrorPhase) -> bool:
+        state = self.boundary.state
+
+        if self.building or not state.alive or generation != state.generation:
+            return False
+        first = state.error is None
+        info = state.fail(generation, phase)
+
+        if info is None:
+            return False
+
+        if first:
+            self.out.failures.append(info)
+            report_error(info, error, development=self.out.development)
+            with untracked():
+                self.boundary.revision.set(self.boundary.revision() + 1)
+
+        return True
+
+    def _clear(self) -> None:
+        errors: list[Exception] = []
+        actions = [
+            *(effect.dispose for effect in self.effects),
+            *(child.dispose for child in self.children),
+            *(
+                watcher.dispose
+                for slot, watcher in tuple(self.out.lists.items())
+                if self.prefix and slot.startswith(self.prefix)
+            ),
+        ]
+        self.effects.clear()
+        self.children.clear()
+
+        for close in actions:
+            try:
+                close()
+            except Exception as error:
+                errors.append(error)
+
+        if self.prefix:
+            try:
+                self.out.release(self.prefix, self.prefix)
+            except Exception as error:
+                errors.append(error)
+
+        # A parent replacement makes queued descendant ops obsolete.
+        if self.prefix:
+            self.out.pending[:] = [
+                op
+                for op in self.out.pending
+                if op["op"] == "css" or not op["id"].startswith(self.prefix)
+            ]
+
+        for cleanup_error in errors:
+            info = self.boundary.state.fail(self.boundary.state.generation, "cleanup")
+
+            if info is not None:
+                self.out.failures.append(info)
+            report_error(
+                info or ErrorInfo(None, "cleanup"), cleanup_error, development=self.out.development
+            )
+
+    def _render(self, fn: Callable[[], Template | Fragment], capture: FailureCapture | None) -> str:
+        token = failure_context.set(capture)
+        start = len(self.out.watchers)
+        self.prefix = f"{self.slot}:boundary:{self.boundary.state.generation}:"
+        dom_token = dom_context.set(self.out.dom)
+        owner_token = style_owner.set(self.prefix)
+
+        try:
+            markup = self.build(fn, self.prefix)
+            self.children = self.out.watchers[start:]
+
+            for child in self.children:
+                def collect(child: Watcher = child) -> None:
+                    self.out.collect(child)
+
+                self.effects.append(Effect(collect, phase="render"))
+
+            return markup
+        finally:
+            self.children = self.out.watchers[start:]
+            del self.out.watchers[start:]
+            style_owner.reset(owner_token)
+            dom_context.reset(dom_token)
+            failure_context.reset(token)
+
+    def refresh(self) -> list[Op]:
+        revision = self.boundary.revision()
+
+        if revision == self.last:
+            return []
+        self.building = True
+        self.out.depth += 1
+
+        try:
+            self._clear()
+            generation = self.boundary.state.generation
+            capture = FailureCapture(lambda error, phase: self._fail(generation, error, phase))
+
+            if self.boundary.error is None:
+                try:
+                    markup = self._render(self.boundary.content, capture)
+                except Exception as error:
+                    self.building = False
+                    self._fail(generation, error, "render")
+                    self.building = True
+                    self._clear()
+                    markup = self._fallback(generation)
+            else:
+                markup = self._fallback(generation)
+            self.last = self.boundary.revision()
+            self.markup = markup
+
+            return [{"op": "html", "id": self.slot, "v": markup}]
+        finally:
+            self.out.depth -= 1
+            self.building = False
+
+    def _fallback(self, generation: str) -> str:
+        info = self.boundary.error
+        assert info is not None
+
+        def retry() -> None:
+            if self.boundary.state.generation == generation and self.boundary.state.alive:
+                self.boundary.reset()
+
+        return self._render(lambda: self.boundary.fallback(info, retry), self.failure)
+
+    def dispose(self, preserved: set[int] | None = None) -> None:
+        if preserved and id(self) in preserved:
+            return
+        self.boundary.unmount()
+        self._clear()
 
 
 @dataclass
@@ -568,7 +736,7 @@ class _Row:
         self.tree = snapshot("")
         self.watchers: list[Watcher] = []
         self.effects: list[Effect] = []
-        self.builder = Effect(self._build)
+        self.builder = Effect(self._build, phase="render")
 
     def _build(self) -> None:
         out = self.owner.out
@@ -645,7 +813,7 @@ class _Row:
                     def collect(watcher: Watcher = watcher) -> None:
                         out.collect(watcher)
 
-                    self.effects.append(Effect(collect))
+                    self.effects.append(Effect(collect, phase="render"))
         finally:
             out.building.remove(self)
             out.depth -= 1
@@ -766,6 +934,7 @@ class ListWatcher(Watcher):
 
 @dataclass
 class Rendered:
+    development: bool = False
     scopes: Scopes = field(default_factory=Scopes)
     styles: StyleRegistry = field(default_factory=StyleRegistry)
     dom: DomController = field(default_factory=DomController)
@@ -789,6 +958,11 @@ class Rendered:
     handlers: dict[str, Callable[[object], object]] = field(
         default_factory=dict[str, Callable[[object], object]]
     )
+    handler_failures: dict[str, FailureCapture | None] = field(
+        default_factory=dict[str, FailureCapture | None]
+    )
+    failures: list[ErrorInfo] = field(default_factory=list[ErrorInfo])
+    unrepaired: bool = False
     watchers: list[Watcher] = field(default_factory=list[Watcher])
     # handler id -> element id, so an input's own event can be stopped from
     # echoing a value patch back and resetting the caret.
@@ -826,6 +1000,11 @@ class Rendered:
             self.record(ops)
 
             return ops
+        except Exception:
+            if watcher.failure is None:
+                self.unrepaired = True
+
+            raise
         finally:
             self.pending = prior + self.pending
             self.depth -= 1
@@ -862,6 +1041,7 @@ class Rendered:
                     self.bind_elements,
                     self.handler_owners,
                     self.event_handlers,
+                    self.handler_failures,
                 ):
                     mapping.pop(hid, None)
 
@@ -869,15 +1049,17 @@ class Rendered:
         self.clear_handlers(prefix)
         self.styles.release(prefix)
         self.revoke_refs(prefix)
-        self.scopes.release(scope)
 
-        for mapping in (self.elements, self.branches):
-            for path in tuple(mapping):
-                if path.startswith(prefix):
-                    mapping.pop(path)
-        self.retired.difference_update(
-            path for path in tuple(self.retired) if path.startswith(prefix)
-        )
+        try:
+            self.scopes.release(scope)
+        finally:
+            for mapping in (self.elements, self.branches):
+                for path in tuple(mapping):
+                    if path.startswith(prefix):
+                        mapping.pop(path)
+            self.retired.difference_update(
+                path for path in tuple(self.retired) if path.startswith(prefix)
+            )
 
     def revoke_refs(self, prefix: str) -> None:
         self.dom.revoke(prefix)
@@ -921,6 +1103,8 @@ class Rendered:
         self.bind_elements.clear()
         self.handler_owners.clear()
         self.event_handlers.clear()
+        self.handler_failures.clear()
+        self.failures.clear()
 
         if errors:
             raise ExceptionGroup("render cleanup failed", errors)
@@ -1030,10 +1214,14 @@ class _Emitter:
         self, nodes: Sequence[Node], *, static: bool = False, root_classes: tuple[object, ...] = ()
     ) -> str:
         environment = self.environment
+        start = len(self.out.watchers)
 
         try:
             return self._nodes(nodes, static=static, root_classes=root_classes)
         finally:
+            for watcher in self.out.watchers[start:]:
+                if watcher.failure is None:
+                    watcher.failure = failure_context.get()
             self.environment = environment
 
     def _nodes(
@@ -1209,6 +1397,7 @@ class _Emitter:
                     self.out.bindings.pop(hid, None)
                     self.out.bind_elements.pop(hid, None)
                     self.out.handler_owners.pop(hid, None)
+                    self.out.handler_failures.pop(hid, None)
                     self.out.event_handlers.pop(hid, None)
             value = source()
             entries = (
@@ -1486,6 +1675,7 @@ class _Emitter:
                     self.out.bindings.pop(hid, None)
                     self.out.bind_elements.pop(hid, None)
                     self.out.handler_owners.pop(hid, None)
+                    self.out.handler_failures.pop(hid, None)
                     self.out.event_handlers.pop(hid, None)
             order: list[str] = []
             markup: dict[str, str] = {}
@@ -1583,6 +1773,24 @@ class _Emitter:
         self.component_n += 1
         prefix = f"{self.prefix}c{self.component_n}:"
         scope_prefix = f"{self.scope_prefix}c{self.component_n}:"
+
+        if isinstance(fn, ErrorBoundary):
+            if props:
+                raise TypeError("ErrorBoundary does not accept component props or children")
+            slot = f"{prefix}boundary"
+
+            def build(content: Callable[[], Template | Fragment], owned: str) -> str:
+                with self.out.scopes.enter(owned, identity_for(content)):
+                    return self._component_body(
+                        content, content, el, {}, owned, owned, static, root_classes
+                    )
+
+            watcher = BoundaryWatcher(slot, fn, self.out, build)
+            self.out.watchers.append(watcher)
+            with untracked():
+                watcher.refresh()
+
+            return self._slot_markup(slot, watcher.markup)
         owner_token = style_owner.set(prefix)
 
         try:
@@ -1830,6 +2038,7 @@ class _Emitter:
                     self.out.event_handlers[hid] = (raw, event_type)
                     self.out.handlers[hid] = lambda _value: None
                     self.out.handler_owners[hid] = self.prefix
+                    self.out.handler_failures[hid] = failure_context.get()
                     encoded = _htmlmod.escape(json.dumps(policy), quote=True)
                     attrs.append(f' data-pysx-policy-{event_type}="{encoded}"')
                     typed_types.append(event_type)
@@ -1841,6 +2050,7 @@ class _Emitter:
                     raise TypeError("event hole requires a callable")
                 self.out.handlers[hid] = cast("Callable[[object], object]", raw)
                 self.out.handler_owners[hid] = self.prefix
+                self.out.handler_failures[hid] = failure_context.get()
                 attrs.append(f' data-pysx-{name[2:].lower()}="{_htmlmod.escape(hid, quote=True)}"')
 
             elif kind is HoleKind.BIND:
@@ -1859,6 +2069,7 @@ class _Emitter:
                     )
                 self.out.handlers[hid] = binding.set
                 self.out.handler_owners[hid] = self.prefix
+                self.out.handler_failures[hid] = failure_context.get()
                 self.out.bindings[hid] = binding
                 self.out.bind_elements[hid] = element_id
                 current = _seed(binding.value)
@@ -1978,8 +2189,9 @@ def render(
     component_fn: Callable[[], Template | Fragment],
     *,
     namespace: Mapping[str, object] | None = None,
+    development: bool = False,
 ) -> Rendered:
-    out = Rendered()
+    out = Rendered(development=development)
     out.styles.shared = global_rules()
     token = dom_context.set(out.dom)
     style_token = style_context.set(out.styles)

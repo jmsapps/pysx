@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
+from .errors import FailureCapture, failure_context
 from .reactive import Effect, Signal
 
 if TYPE_CHECKING:
@@ -29,6 +30,7 @@ class Scope:
     resources: set[str] = field(default_factory=set[str])
     cleanups: list[Callable[[], object]] = field(default_factory=list[Callable[[], object]])
     mounts: list[Callable[[], object]] = field(default_factory=list[Callable[[], object]])
+    failure: FailureCapture | None = field(default_factory=failure_context.get)
 
     def close(self) -> list[Exception]:
         if not self.alive:
@@ -44,7 +46,8 @@ class Scope:
             try:
                 callback()
             except Exception as error:
-                errors.append(error)
+                if self.failure is None or not self.failure.handle(error, "cleanup"):
+                    errors.append(error)
 
         return errors
 
@@ -101,6 +104,7 @@ class Scopes:
         for seen in self.traversals:
             seen.add(path)
         token = _scope.set(owner)
+        failure_token = failure_context.set(owner.failure)
 
         try:
             yield owner
@@ -113,6 +117,7 @@ class Scopes:
 
             raise
         finally:
+            failure_context.reset(failure_token)
             _scope.reset(token)
 
     def release(self, prefix: str) -> None:
@@ -169,6 +174,7 @@ class Scopes:
             owner.mounting = True
             callbacks, owner.mounts = owner.mounts, []
             token = _scope.set(owner)
+            failure_token = failure_context.set(owner.failure)
 
             try:
                 for callback in callbacks:
@@ -178,8 +184,10 @@ class Scopes:
                     try:
                         callback()
                     except Exception as error:
-                        errors.append(error)
+                        if owner.failure is None or not owner.failure.handle(error, "mount"):
+                            errors.append(error)
             finally:
+                failure_context.reset(failure_token)
                 owner.mounting = False
                 _scope.reset(token)
 
@@ -250,7 +258,15 @@ def own_timer(key: str, delay: float, callback: Callable[[], object]) -> None:
 
     def invoke() -> None:
         if owner.alive:
-            callback()
+            token = failure_context.set(owner.failure)
+
+            try:
+                callback()
+            except Exception as error:
+                if owner.failure is None or not owner.failure.handle(error, "async"):
+                    raise
+            finally:
+                failure_context.reset(token)
 
     own_subscription(
         f"timer:{key}", lambda: asyncio.get_running_loop().call_later(delay, invoke).cancel
@@ -258,8 +274,31 @@ def own_timer(key: str, delay: float, callback: Callable[[], object]) -> None:
 
 
 def own_task(key: str, factory: Callable[[], Coroutine[object, object, object]]) -> None:
+    owner = current_scope()
+
     def start() -> Callable[[], object]:
         task = asyncio.get_running_loop().create_task(factory())
+
+        def finished(done: asyncio.Task[object]) -> None:
+            if done.cancelled():
+                return
+            error = done.exception()
+
+            if error is None:
+                return
+            handled = (
+                isinstance(error, Exception)
+                and owner.alive
+                and owner.failure is not None
+                and owner.failure.handle(error, "async")
+            )
+
+            if not handled:
+                done.get_loop().call_exception_handler(
+                    {"message": "owned task failed", "exception": error, "task": done}
+                )
+
+        task.add_done_callback(finished)
 
         return task.cancel
 

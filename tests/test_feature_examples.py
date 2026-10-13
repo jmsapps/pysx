@@ -15,11 +15,67 @@ from examples.forms import app as forms_app
 from examples.keyed_rows import app as keyed_rows_app
 from examples.navigation import app as navigation_app
 from examples.reactive_state import app
+from examples.recovery import app as recovery_app
 from examples.templates import app as templates_app
 from examples.themes import app as themes_app
 from pysx import BrowserEvent
 from pysx.check import diagnostics
+from pysx.render_tree import apply, snapshot
 from pysx.server import Session
+
+
+def test_recovery_interactions_isolation_and_cleanup() -> None:
+    session, other = Session(recovery_app), Session(recovery_app)
+    tree = snapshot(session.rendered.body, unwrap_row=False)
+
+    def click(identifier: str) -> None:
+        found = re.search(rf'id="{identifier}"[^>]*data-pysx-click="([^"]+)"', tree.markup())
+        assert found is not None
+        result = asyncio.run(session.dispatch_result_async(found[1], None))
+        assert result["status"] == ("error" if identifier == "fail-panel" else "success")
+        apply(tree, result["ops"])
+
+    try:
+        click("increment-panel")
+        click("fail-panel")
+        assert 'id="fallback"' in tree.markup()
+        assert 'id="panel"' not in tree.markup()
+        click("increment-healthy")
+        assert other.pending == []
+        assert 'id="fallback"' not in other.rendered.body
+        click("retry")
+        assert 'id="fallback"' not in tree.markup()
+        assert 'id="panel"' in tree.markup()
+        assert session.pending == []
+        assert session.pending_callbacks == 0
+    finally:
+        session.dispose()
+        other.dispose()
+    assert session.rendered.scopes.owners == {}
+    assert session.rendered.handlers == {}
+    assert session.rendered.handler_failures == {}
+    assert session.rendered.watchers == []
+    assert session.rendered.dom.pending == {}
+
+
+def test_recovery_checker_clean_and_registered() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["recovery"] == "examples.recovery:app"
+    assert diagnostics(Path("examples/recovery.py")) == []
+
+
+@pytest.mark.acceptance
+def test_recovery_cli_startup_and_ctrl_c_exit() -> None:
+    command = ["uv", "run", "--project", ".", "example", "run", "recovery", "--port", "8775"]
+    with ready_server(command) as server:
+        with urllib.request.urlopen("http://127.0.0.1:8775/", timeout=5) as response:
+            assert response.status == 200
+            assert b"client.js" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
 
 
 def test_pysx_12_st_4_navigation_interactions_isolation_and_cleanup() -> None:

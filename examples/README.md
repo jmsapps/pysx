@@ -7,6 +7,7 @@ prepares the environment without activation.
 ```sh
 uv run --project . example run counter
 uv run --project . example run todos
+uv run --project . example run recovery
 uv run --project . example run reactive_state
 uv run --project . example run operators
 uv run --project . example run forms
@@ -145,6 +146,21 @@ a branch cleans its descendants; remounting starts their local activation counts
 The counters distinguish server setup, acknowledged browser mount and cleanup.
 Open a second tab to check session isolation. Press Ctrl+C to stop the server.
 See [component ownership](../docs/GRAMMAR.md#component-ownership) for state and resource hooks.
+
+## Local recovery
+
+Run `uv run --project . example run recovery`. Increment the panel, enter text in
+the healthy sibling, and click "Fail this panel". Only that panel shows fallback;
+the committed failed-attempt count increases. The sibling's text and counter remain
+usable. "Retry panel" recreates the failed panel with its count at zero. Each
+failure disposes one panel, and repeated retry does not duplicate healthy handlers.
+Another tab starts with its own state. No extra host configuration is required.
+See [recovery behavior and limits](../docs/RECOVERY.md) for ownership, safe errors,
+development tracebacks and the background async host seam.
+
+Todos explains empty filters and returns rows with their original todo keys when
+you select a populated filter again. Retained rows keep their DOM identity; rows
+removed by an empty filter receive fresh handlers when they return.
 
 ## Routing and navigation
 

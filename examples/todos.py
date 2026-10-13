@@ -71,6 +71,14 @@ def app() -> Fragment:
         return items
 
     filtered = derived(visible)
+    empty = derived(lambda: not filtered())
+    empty_message = derived(
+        lambda: (
+            "No todos yet. Add one above."
+            if mode() == "all"
+            else f"No {mode()} todos. Try another filter or add a todo."
+        )
+    )
 
     def filter_class(name: Literal["all", "active", "completed"]) -> Signal[str]:
         return derived(lambda: "is-active" if mode() == name else "")
@@ -152,5 +160,8 @@ def app() -> Fragment:
             if {has_completed}:
                 Clear(type="button", onClick={clear_completed}):
                     "Clear completed"
+
+            if {empty}:
+                Description(id="todo-empty", role="status"): {empty_message}
     """,
     )

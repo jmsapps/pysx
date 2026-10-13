@@ -16,6 +16,19 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "fallback_empty", cases: [
+    [0, "recovery", "browser_fallback.mjs", "FALLBACK EXAMPLE BROWSER PASSED"],
+    [1, "todos", "browser_empty.mjs", "EMPTY FILTER BROWSER PASSED"],
+  ] },
+  { suite: "recovery", cases: [
+    [0, "recovery", "browser_fallback.mjs", "FALLBACK EXAMPLE BROWSER PASSED"],
+  ] },
+  { suite: "local_failure", cases: [
+    [0, "recovery_fixture", "browser_recovery.mjs", "LOCAL FAILURE BROWSER PASSED"],
+  ] },
+  { suite: "boundary_error", cases: [
+    [0, "counter", "browser_errors.mjs", "BOUNDARY ERROR BROWSER PASSED"],
+  ] },
   { suite: "keyed_rows", cases: [
     [0, "keyed_rows", "browser_keyed_rows.mjs", "KEYED ROWS EXAMPLE BROWSER PASSED"],
   ] },
@@ -199,6 +212,8 @@ try {
       ["-m", "pysx.server", "--app", "tests.browser_identity_fixture:app", "--port", String(port)] :
       name === "keyboard_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_keyboard_fixture:app", "--port", String(port)] :
+      name === "recovery_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_recovery_fixture:app", "--port", String(port)] :
       name === "routing_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_routing_fixture:app", "--port", String(port)] :
       name === "fragments_fixture" ?
