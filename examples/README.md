@@ -8,6 +8,7 @@ prepares the environment without activation.
 uv run --project . example run counter
 uv run --project . example run todos
 uv run --project . example run recovery
+uv run --project . example run reconnect
 uv run --project . example run resources
 uv run --project . example run reactive_state
 uv run --project . example run operators
@@ -35,6 +36,21 @@ example run counter
 
 The command is installed into the environment's bin directory. A new terminal
 needs activation again, or you can keep using the `uv run --project .` prefix.
+
+## Bounded reconnect
+
+Run `uv run --project . example run reconnect`. Type a draft, increment the counter,
+then interrupt the connection — switch the network off, suspend the machine, or close
+the socket from the browser console. The page shows a disconnected status and refuses
+clicks and edits instead of queuing them. It retries on its own with capped backoff and
+offers an explicit retry once the attempts are exhausted. On reconnect the session
+number, your draft, the click count and keyboard focus are unchanged, and the server
+clock jumps straight to its current total rather than replaying the ticks you missed.
+Leave the page away long enough for the session to expire and recovery visibly starts a
+fresh session with a new session number. A second tab keeps its own session throughout.
+No network, database or extra host setup is required. See
+[the protocol](../docs/PROTOCOL.md) and [hosting](../docs/HOSTING.md) for the wire
+version and the configurable transport limits.
 
 ## Async resources
 

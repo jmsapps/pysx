@@ -175,6 +175,14 @@ class DomController:
         self.listeners.pop(handler, None)
         self.listener_failures.pop(handler, None)
 
+    def disconnect(self) -> None:
+        self.sender = None
+
+        for future, _root in self.pending.values():
+            if not future.done():
+                future.set_exception(DomError("browser disconnected"))
+        self.pending.clear()
+
     def close(self) -> None:
         self.closed = True
         self.revoke("")

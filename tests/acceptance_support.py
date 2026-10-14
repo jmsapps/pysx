@@ -65,7 +65,9 @@ def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> 
 
 
 @contextmanager
-def ready_server(command: Sequence[str], timeout: float = 10) -> Generator[subprocess.Popen[str]]:
+def ready_server(
+    command: Sequence[str], timeout: float = 10, *, ready_banner: str = "pysx ready"
+) -> Generator[subprocess.Popen[str]]:
     """Wait for the ready banner with a bounded reader and guaranteed cleanup."""
     owns_group = os.name == "posix" and os.environ.get("PYSX_ACCEPTANCE_GROUP") != "shared"
     proc = subprocess.Popen(
@@ -95,7 +97,7 @@ def ready_server(command: Sequence[str], timeout: float = 10) -> Generator[subpr
         while (line := lines.get()) is not None:
             output.append(line)
 
-            if "pysx ready" in line:
+            if ready_banner in line:
                 yield proc
 
                 return

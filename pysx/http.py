@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import math
 import re
 import secrets
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
@@ -14,6 +16,7 @@ from urllib.parse import urlsplit
 from .forms import PayloadError
 from .render_tree import Tree, apply, snapshot
 from .session import Session
+from .transport import TransportLimits
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -37,6 +40,15 @@ class PendingRender:
     browser: str
     principal: str | None
     expiry: asyncio.TimerHandle
+
+
+@dataclass
+class ResumeHandle:
+    session: Session
+    browser: str
+    principal: str | None
+    deadline: float | None = None
+    expiry: asyncio.TimerHandle | None = None
 
 
 def _controls(node: Tree) -> None:
@@ -83,13 +95,20 @@ class HTTPRuntime:
         self,
         app: Callable[[], Template | Fragment],
         *,
-        capacity: int = 128,
+        capacity: int = 100,
         ttl: float = 30,
         development: bool = False,
         mutation_capacity: int = 64,
         task_capacity: int = 1024,
+        limits: TransportLimits | None = None,
     ) -> None:
-        if capacity < 1 or ttl <= 0:
+        if (
+            type(capacity) is not int
+            or capacity < 1
+            or type(ttl) not in (int, float)
+            or not math.isfinite(ttl)
+            or ttl <= 0
+        ):
             raise ValueError("render capacity and TTL must be positive")
         self.app = app
         self.capacity = capacity
@@ -98,20 +117,157 @@ class HTTPRuntime:
         self.mutation_capacity = mutation_capacity
         self.task_capacity = task_capacity
         self.pending: dict[str, PendingRender] = {}
+        self.limits = limits or TransportLimits()
+        self.graphs: set[Session] = set()
+        self.reservations = 0
+        self.closed = False
+        self.cleanup_tasks: set[asyncio.Task[object]] = set()
+        self.resume_handles: dict[str, ResumeHandle] = {}
+        self.detached: OrderedDict[str, ResumeHandle] = OrderedDict()
+
+    def attach(self, session: Session, request: RequestContext) -> str:
+        from .request import browser_id
+
+        token = secrets.token_urlsafe(32)
+        self.resume_handles[token] = ResumeHandle(session, browser_id(request), request.principal)
+        session.detached = False
+
+        return token
+
+    def reap(self, now: float | None = None) -> None:
+        instant = asyncio.get_running_loop().time() if now is None else now
+
+        for handle in tuple(self.detached.values()):
+            if handle.deadline is not None and handle.deadline <= instant:
+                self.release(handle.session)
+
+    def detach(self, session: Session) -> None:
+        self.reap()
+
+        for token, handle in self.resume_handles.items():
+            if handle.session is session:
+                session.detached = True
+                session.pending.clear()
+                session.routes.commands.clear()
+                session.rendered.failures.clear()
+                session.rendered.dom.disconnect()
+                handle.deadline = asyncio.get_running_loop().time() + self.limits.resume_ttl
+                handle.expiry = asyncio.get_running_loop().call_later(
+                    self.limits.resume_ttl, self.reap
+                )
+                self.detached[token] = handle
+
+                break
+
+        while len(self.detached) > self.limits.detached:
+            self.release(next(iter(self.detached.values())).session)
+
+    def resume(self, token: str, request: RequestContext, epoch: str, revision: int) -> Session:
+        from .request import browser_id
+
+        self.reap()
+        handle = self.detached.get(token)
+
+        if (
+            self.closed
+            or handle is None
+            or handle.browser != browser_id(request)
+            or handle.principal != request.principal
+            or handle.session.transport.epoch != epoch
+            or revision > handle.session.transport.revision
+            or handle.session.rendered.unrepaired
+            or handle.session.pressured
+        ):
+            raise ValueError("unknown or mismatched resume handle")
+        self.detached.pop(token)
+        self.resume_handles.pop(token)
+
+        if handle.expiry is not None:
+            handle.expiry.cancel()
+        handle.session.detached = False
+        handle.session.pending.clear()
+        handle.session.rendered.failures.clear()
+        handle.session.routes.commands.clear()
+
+        return handle.session
+
+    def reserve(self) -> bool:
+        self.graphs = {session for session in self.graphs if not session.closed}
+
+        if self.closed or len(self.graphs) + self.reservations >= self.limits.graphs:
+            return False
+        self.reservations += 1
+
+        return True
+
+    def unreserve(self) -> None:
+        if self.reservations < 1:
+            raise RuntimeError("unbalanced graph reservation")
+        self.reservations -= 1
+
+    def create_reserved(self, request: RequestContext, *, location: str | None = None) -> Session:
+        session = Session(
+            self.app,
+            location=location or request.path,
+            request=request,
+            development=self.development,
+            mutation_capacity=self.mutation_capacity,
+            task_capacity=self.task_capacity,
+            outbox_bytes=self.limits.outbox_bytes,
+        )
+        self.graphs.add(session)
+
+        return session
+
+    def tasks(self) -> set[asyncio.Task[object]]:
+        tasks = self.cleanup_tasks | {
+            task for session in self.graphs for task in session.runtime.tasks
+        }
+        tasks.update(
+            session.runtime.worker for session in self.graphs if session.runtime.worker is not None
+        )
+
+        return tasks
+
+    def release(self, session: Session) -> None:
+        for token, handle in tuple(self.resume_handles.items()):
+            if handle.session is session:
+                self.resume_handles.pop(token)
+                self.detached.pop(token, None)
+
+                if handle.expiry is not None:
+                    handle.expiry.cancel()
+        tasks = set(session.runtime.tasks)
+
+        if session.runtime.worker is not None:
+            tasks.add(session.runtime.worker)
+        self.cleanup_tasks.update(tasks)
+
+        for task in tasks:
+            task.add_done_callback(self.cleanup_tasks.discard)
+        self.graphs.discard(session)
+        session.dispose()
 
     def expire(self, token: str) -> None:
         pending = self.pending.pop(token, None)
 
         if pending is not None:
             pending.expiry.cancel()
-            pending.session.dispose()
+            self.release(pending.session)
 
     def close(self) -> None:
+        self.closed = True
         errors: list[Exception] = []
 
         for token in tuple(self.pending):
             try:
                 self.expire(token)
+            except Exception as error:
+                errors.append(error)
+
+        for session in tuple(self.graphs):
+            try:
+                self.release(session)
             except Exception as error:
                 errors.append(error)
 
@@ -126,16 +282,13 @@ class HTTPRuntime:
             ("cache-control", "private, no-store"),
         )
 
-        if len(self.pending) >= self.capacity:
+        if len(self.pending) >= self.capacity or not self.reserve():
             return HTTPResult(503, headers, b"render capacity reached")
-        session = Session(
-            self.app,
-            location=request.path,
-            development=self.development,
-            request=request,
-            mutation_capacity=self.mutation_capacity,
-            task_capacity=self.task_capacity,
-        )
+
+        try:
+            session = self.create_reserved(request)
+        finally:
+            self.unreserve()
 
         try:
             document = request.document
@@ -147,7 +300,7 @@ class HTTPRuntime:
                 and "." in path.rsplit("/", 1)[-1]
                 and (pattern is None or pattern.rsplit("/", 1)[-1] == "*")
             ):
-                session.dispose()
+                self.release(session)
 
                 return HTTPResult(404, headers, b"not found")
             navigations = session.routes.navigations()
@@ -156,7 +309,7 @@ class HTTPRuntime:
             if redirect is not None:
                 if "\r" in redirect or "\n" in redirect:
                     raise ValueError("invalid redirect")
-                session.dispose()
+                self.release(session)
 
                 return HTTPResult(document.status or 303, (*headers, ("location", redirect)), b"")
             tree = snapshot(session.rendered.body, unwrap_row=False)
@@ -185,7 +338,7 @@ class HTTPRuntime:
 
             return HTTPResult(status, headers, content, token)
         except BaseException:
-            session.dispose()
+            self.release(session)
 
             raise
 

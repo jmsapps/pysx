@@ -76,6 +76,7 @@ from .routing import (
 from .structured import Projection, Structured, dict_key, list_index, project, structured
 from .styled import StyledCallable, StyledTag, global_style, styled, stylesheet
 from .styles import Theme, Themes, css
+from .transport import TransportLimits
 
 __all__ = [
     "Application",
@@ -117,6 +118,7 @@ __all__ = [
     "StyledTag",
     "Theme",
     "Themes",
+    "TransportLimits",
     "all_of",
     "any_of",
     "batch",

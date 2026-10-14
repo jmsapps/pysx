@@ -1,7 +1,88 @@
-# pysx wire protocol (v2)
+# pysx wire protocol (v3)
 
 Standalone and ASGI adapters share this protocol and session engine; see
 [hosting](HOSTING.md) for configuration, prefix and process affinity requirements.
+
+## Current-state resume
+
+Modern attachment publishes a `resume` credential in `init` or `adopted`.
+After healthy socket loss, request `/ws?protocol=3&resume=1&location=...` and
+send `{"t":"hello","version":3,"resume":"credential","epoch":"epoch","state_rev":1}`.
+The query is an admission hint; credentials travel only in the hello body.
+Claims check browser cookie, authenticated principal, epoch and last revision.
+Attached, expired, mismatched and already-used credentials close with 4004.
+No invalid claim allocates or steals a graph. A successful claim rotates the
+credential and sends an unconditional `repair` with complete current HTML/CSS,
+next event sequence, routing state and the new credential. Retained native nodes,
+keyed rows, focus, selection and imperative DOM capabilities survive repair.
+The app and completed setup/mount callbacks do not run again.
+
+Healthy modern graphs remain detached for at most 60 seconds, with at most 50
+detached graphs inside the shared 100-graph worker budget. Monotonic expiry and
+oldest-detached eviction dispose resources once. Detached mutations update the
+current snapshot without retaining patches or notification queues. Outstanding
+DOM requests fail on disconnect. Pressure/deadline, protocol close, host shutdown,
+unrepaired render and application cancellation expire the graph. Legacy v2 graphs
+are disposed on disconnect and have no live resume contract. Live recovery needs
+affinity to the same worker; graph loss requires a fresh app.
+
+The browser retains one set of application listeners during disconnect. It retries
+automatically with exponential backoff from 250ms to 10s, 50–100% jitter, at most
+eight retries, and a five-second attachment deadline. One timer/socket generation
+owns recovery; page exit clears it. `ws`/`wss` follows the page scheme. Accessible
+status explains disconnection and rejected edits. Managed actions are gated before
+sequence/form/navigation bookkeeping; unsent and unacknowledged events are never
+replayed. Repair restores authoritative control values and current navigation.
+Browser outgoing buffered messages are limited to 64KiB; excess closes with 4009
+and requires a fresh graph. Exhaustion offers a retry button or the
+`pysx:reconnect` window event. Protocol failures stop retries and report the
+distinct `stopped` state, which offers no retry button because neither it nor
+`pysx:reconnect` can revive that page. Unavailable resume
+(4004) explicitly starts a fresh session and visibly reports lost session state.
+
+The client emits `pysx:disconnected`, `pysx:repair`, `pysx:rejected` (reason), and
+`pysx:connection` (state, attempt, retryMs, fresh, timers, listeners, pendingBytes).
+These bounded diagnostics contain no credentials. Fresh recovery clears old
+imperative capabilities; same-epoch recovery retains them. Each tab owns its own
+credential and session, even when browser cookies are shared.
+
+## Negotiation, revisions and event admission
+
+The browser requests `/ws?protocol=3&location=...` and sends a bounded
+`{"t":"hello","version":3,"edits":[]}` before attachment. With an HTTP
+adoption handle, `edits` has the changed-control entries described below.
+Unknown versions close with 1008. Direct peers omitting `protocol` or selecting
+`protocol=2` retain validated v2 messages; they have no epoch/sequence guarantee.
+
+Every v3 server message includes `version:3`, an opaque `epoch`, `base_rev` and
+`state_rev` (base plus one). These revisions order every published frame and are
+independent of form and navigation `rev`. The client applies only contiguous
+frames from its epoch. A gap requests `{"t":"repair"}` with its envelope;
+the server returns an unconditional current HTML/CSS snapshot and `expected`,
+the next accepted event sequence. Owned identities reconcile this snapshot while
+preserving surviving nodes and interaction state.
+
+Client messages after hello include `version:3`, `epoch`, `state_rev`; events,
+location observations and mount acknowledgements also include `seq`. Only the
+next sequence is accepted, and the high-water mark advances before user code.
+Older sequences receive `ack` status `duplicate`; gaps, mismatched epochs and
+future revisions receive `gap`, `epoch` or `revision` followed by repair.
+Successful dispatch receives `ack` with `seq`, `status:success` and `expected`;
+failed/rejected dispatch receives a `result` carrying `seq`. A bounded 64-entry
+acknowledgement cache never resets the high-water mark. Lost acknowledgements
+and cache eviction cannot repeat a handler within the same epoch. External
+business effects across graph loss/restart require application idempotency.
+
+Incoming JSON is limited to 64 KiB, 16 levels of nesting and bounded collections.
+Scalar/list top levels, nonfinite numbers, unknown message types/fields, incorrect
+field types and unsupported versions fail before dispatch. Handler, binding,
+mount and command IDs remain subject to their session ownership checks. DOM
+commands/replies use the v3 envelope; the owned command payload API is unchanged.
+Malformed server envelopes/ops make the browser close with application code 4002;
+the browser WebSocket API reserves protocol close codes for the implementation.
+
+The payload examples below omit epoch/revision envelope fields for readability;
+all v3 frames require them. Explicit v2 compatibility payloads are labeled.
 
 Stylesheet patches use `{"op":"css","v":"..."}` and replace the session's style
 element via `textContent`. They precede the DOM operations that require those rules.
@@ -22,7 +103,8 @@ without a socket. Responses are private and uncached. The root has an opaque
 the requesting browser, alongside the host-supplied principal. Bootstrap contains
 no serialized signals, principal or callbacks. The external client opens `/ws`
 with `adoption` and its complete local `location`, then sends
-`{"t":"adopt","edits":[{"h":"binding-id","v":"current value","rev":1}]}`.
+`{"t":"hello","version":3,"edits":[{"h":"binding-id","v":"current value","rev":1}]}`.
+The v2 compatibility client sends `adopt` instead of `hello`.
 Only changed controls submit edits, compared with their native HTTP defaults;
 pristine bindings sharing a signal cannot overwrite an edited sibling. Only newly
 checked radios submit their string values. All binding IDs and payloads are
@@ -35,12 +117,22 @@ Equal binding echoes are suppressed; dependent content receives ordinary patches
 Setup runs once and browser mount still requires acknowledgement. Initial select
 defaults are real selected options in HTTP HTML; textarea values are text content.
 
-Handles are single-use. Pending renders default to a capacity of 128 and expire
+Handles are single-use. Pending renders default to a capacity of 100 and expire
 after 30 seconds without requiring another request. Expiry/shutdown disposes their
 graphs; failed and redirected renders retain none. Missing, expired or identity-
 mismatched handles close with 1008 instead of constructing a second graph. This
 requires HTTP and attachment to reach the same runtime. Direct sockets without a
 handle retain the `init` contract below; adoption failure does not fall back to it.
+
+Pending HTTP renders, upgrades awaiting hello and attached graphs share a default
+100-graph worker cap. Graph reservation precedes awaited hello/upgrade work and
+claim transfers the existing slot. Hello has a five-second deadline. The default
+event queue is 64 messages, inbound frames 64 KiB, outbound batches 1 MiB and
+session outboxes 2 MiB. Sends and graceful closes each have a two-second deadline;
+a stalled close aborts the transport. Frame/batch overflow closes with 1009;
+outbox pressure and send/admission limits close with 1013 and expire the graph.
+Shutdown closes with 1001 and disposes all owned state within the host grace.
+These limits are configurable through [hosting](HOSTING.md).
 
 ### Event outcomes and local recovery
 
@@ -70,10 +162,10 @@ Cancellation during teardown is not an application error. Async callbacks belong
 to their captured live owner. [Async resources](RESOURCES.md) commit through a
 bounded session queue; an independent outbox pushes their patches and safe errors.
 
-The standalone host emits result frames for failures and rejections. Successful
-events use ordinary patches and emit no frame when nothing changes. Boundary
-reset clears its error on successful reconstruction. Other hosts may acknowledge
-success explicitly with a result frame.
+Both hosts emit result frames for failures and rejections. Successful v3 events
+send any ordinary patches followed by an acknowledgement, including when nothing
+changes. V2 compatibility events emit no frame when nothing changes. Boundary
+reset clears its error on successful reconstruction.
 
 An uncontained structural rendering failure that cannot produce a consistent
 repair sends its safe error outcome and closes with code 1011; place an
@@ -104,7 +196,7 @@ cancel it. A router built after `init` was sent announces itself with
 does; enabling twice has no effect. Queued navigation is flushed before every DOM
 command and after a rejected payload or failed DOM command, so a turn that navigates
 and then fails still commits the navigation it decided on. This contract covers the
-current serialized connection, without resume.
+current serialized connection. Resume restores current routing state after repair.
 
 Navigation acknowledgement is also the scroll/focus commit boundary. Entry keys,
 up to 128 saved positions/focus IDs, and bounded two-second fragment retries stay in
@@ -137,14 +229,16 @@ and active-element read is limited to its owned root, including multiple app roo
 Node-property reads never return nodes outside that root. Queries, reads and writes
 are asynchronous and must be awaited in an async callback.
 
-Commands use `{"t":"dom","version":1,"id":...,"target":...,"root":...,"op":...,"args":...}`.
-Replies use `{"t":"dom_reply","version":1,"id":...,"value":...}` or a bounded `error`.
+Commands use `{"t":"dom","version":3,"id":...,"target":...,"root":...,"op":...,"args":...}`.
+Replies use `{"t":"dom_reply","version":3,"id":...,"value":...}` or a bounded `error`.
+The v2 compatibility command channel uses `version:1` instead.
 Optional `revoked` lists invalidate removed node/listener handles. Requests use opaque
 per-session tokens and IDs, a two-second deadline, at most 64 outstanding requests,
 8192-character argument encoding and 16384-character result encoding. Each root has
 at most 256 browser handles per session document; listeners are capped at 128.
 Unknown/late replies are ignored. Removal and disconnect cancel requests; listeners
-are removed when their target/root disappears or the socket closes. Browser reads
+are removed when their target/root disappears. Healthy resume retains their ownership.
+Browser reads
 cannot run from an unconnected static renderer.
 
 The serialized event worker awaits async callbacks while the receiver independently

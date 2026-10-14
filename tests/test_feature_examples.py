@@ -15,6 +15,7 @@ from examples.forms import app as forms_app
 from examples.keyed_rows import app as keyed_rows_app
 from examples.navigation import app as navigation_app
 from examples.reactive_state import app
+from examples.reconnect import app as reconnect_app
 from examples.recovery import app as recovery_app
 from examples.resources import app as resources_app
 from examples.templates import app as templates_app
@@ -705,5 +706,97 @@ def test_keyed_rows_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen("http://127.0.0.1:8764/", timeout=5) as response:
             assert response.status == 200
             assert b"client.js" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
+
+
+def test_reconnect_current_state_interactions_isolation_and_cleanup() -> None:
+    async def exercise() -> None:
+        runtime = HTTPRuntime(reconnect_app)
+        request = RequestContext()
+        initial = runtime.render(request, "first")
+        assert b"Bounded reconnect" in initial.body
+        assert initial.adoption is not None
+        other_result = runtime.render(RequestContext(), "second")
+        assert other_result.adoption is not None
+        other = runtime.pending[other_result.adoption].session
+        session = runtime.claim(initial.adoption, request, "first")
+        tree = snapshot(initial.body.decode(), unwrap_row=False)
+
+        async def click(identifier: str) -> None:
+            found = re.search(rf'id="{identifier}"[^>]*data-pysx-click="([^"]+)"', tree.markup())
+            assert found is not None
+            result = await session.dispatch_result_async(found[1], None)
+            assert result["status"] == "success"
+            apply(tree, result["ops"])
+            session.transport.apply(result["ops"])
+
+        def shown(markup: str, identifier: str) -> str:
+            found = re.search(rf'id="{identifier}"[^>]*>(?:<[^>]*>)*([^<]*)<', markup)
+            assert found is not None
+
+            return found[1]
+
+        def ticks(markup: str) -> int:
+            return int(shown(markup, "reconnect-ticks"))
+
+        try:
+            binding = next(iter(session.rendered.bindings))
+            reconcile(session, [(binding, "Edited draft", 1)])
+            with session.context():
+                session.rendered.scopes.acknowledge(session.rendered.scopes.pending_mounts())
+            await click("reconnect-increment")
+            assert shown(tree.markup(), "reconnect-clicks") == "1"
+            session.pending.clear()
+            session.changed.clear()
+
+            # A detached browser accumulates no patches. The server keeps counting, and a
+            # resuming socket adopts the complete current snapshot instead of a replay.
+            session.detached = True
+            started = ticks(str(session.transport.repair("")["html"]))
+            async with asyncio.timeout(3):
+                while ticks(str(session.transport.repair("")["html"])) < started + 2:
+                    session.changed.clear()
+                    await session.changed.wait()
+            assert session.pending == []
+            repaired = session.transport.repair(session.rendered.css)
+            assert repaired["t"] == "repair"
+            current = str(repaired["html"])
+            assert "Edited draft" in current
+            assert shown(current, "reconnect-clicks") == "1"
+            assert ticks(current) >= started + 2
+            assert "Edited draft" not in other.rendered.body
+            assert other.transport.epoch != session.transport.epoch
+            assert shown(other.rendered.body, "reconnect-clicks") == "0"
+        finally:
+            session.detached = False
+            session.dispose()
+            other.dispose()
+            runtime.close()
+            await asyncio.sleep(0)
+        assert session.runtime.closed
+        assert session.rendered.scopes.owners == {}
+        assert session.rendered.handlers == {}
+        assert session.rendered.watchers == []
+
+    asyncio.run(exercise())
+
+
+def test_reconnect_checker_clean_and_registered() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["reconnect"] == "examples.reconnect:app"
+    assert diagnostics(Path("examples/reconnect.py")) == []
+
+
+@pytest.mark.acceptance
+def test_reconnect_cli_startup_and_ctrl_c_exit() -> None:
+    command = ["uv", "run", "--project", ".", "example", "run", "reconnect", "--port", "8777"]
+    with ready_server(command) as server:
+        with urllib.request.urlopen("http://127.0.0.1:8777/", timeout=5) as response:
+            assert response.status == 200
+            assert b"Bounded reconnect" in response.read()
         server.send_signal(signal.SIGINT)
         assert server.wait(timeout=5) == 0

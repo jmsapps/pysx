@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import suppress
 from typing import TYPE_CHECKING, Protocol, cast
 from urllib.parse import parse_qs, urlsplit
 
@@ -11,7 +12,9 @@ from .forms import PayloadError, form_edits
 from .http import HTTPRuntime, reconcile
 from .request import browser_id
 from .routing import Location
-from .session import Session, close_session
+from .session import close_session
+from .transport import TransportError, TransportLimits
+from .wire import parse_message
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -29,8 +32,125 @@ class Connection(Protocol):
     def __aiter__(self) -> AsyncIterator[str | bytes]: ...
 
 
+class BoundedConnection:
+    def __init__(self, connection: Connection, limits: TransportLimits) -> None:
+        self.raw = connection
+        self.request = connection.request
+        self.limits = limits
+        self.closing = False
+        self.failed = False
+        self.reserved = bool(getattr(connection, "reserved", False))
+
+        if self.reserved:
+            cast("BoundedConnection", connection).reserved = False
+
+    def abort(self) -> None:
+        abort = getattr(self.raw, "abort", None)
+
+        if callable(abort):
+            abort()
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        if self.closing:
+            return
+        self.closing = True
+
+        try:
+            async with asyncio.timeout(self.limits.close_timeout):
+                await self.raw.close(code=code, reason=reason)
+        except TimeoutError:
+            self.abort()
+        except asyncio.CancelledError:
+            self.abort()
+
+            raise
+        except Exception:
+            self.abort()
+
+            raise
+
+    async def send(self, message: str) -> None:
+        if self.closing:
+            raise TransportError("connection closing")
+
+        if len(message.encode()) > self.limits.max_batch_bytes:
+            await self.close(1009, "outbound batch limit")
+
+            raise TransportError("outbound batch limit")
+        task = asyncio.create_task(self.raw.send(message), eager_start=True)
+
+        try:
+            if task.done():
+                task.result()
+
+                return
+            done, _pending = await asyncio.wait({task}, timeout=self.limits.send_timeout)
+
+            if not done:
+                await self.close(1013, "send deadline")
+
+                raise TransportError("send deadline")
+            await task
+        except BaseException:
+            self.failed = True
+
+            if not task.done():
+                self.abort()
+
+            raise
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            elif not task.cancelled():
+                task.exception()
+
+    async def recv(self) -> str | bytes:
+        raw = await self.raw.recv()
+        await self.check_size(raw)
+
+        return raw
+
+    async def check_size(self, raw: str | bytes) -> None:
+        if len(raw.encode() if isinstance(raw, str) else raw) > self.limits.max_frame_bytes:
+            await self.close(1009, "inbound frame limit")
+
+            raise TransportError("inbound frame limit")
+
+    async def __aiter__(self) -> AsyncIterator[str | bytes]:
+        async for raw in self.raw:
+            await self.check_size(raw)
+            yield raw
+
+
 async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None:
+    bounded = bound_connection(connection, runtime.limits)
+
+    try:
+        await _serve_connection(runtime, bounded)
+    finally:
+        if bounded.reserved:
+            runtime.unreserve()
+            bounded.reserved = False
+
+
+def bound_connection(connection: Connection, limits: TransportLimits) -> BoundedConnection:
+    return (
+        connection
+        if isinstance(connection, BoundedConnection)
+        else BoundedConnection(connection, limits)
+    )
+
+
+async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection) -> None:
     request = connection.request
+    protocol = parse_qs(urlsplit(request.path).query).get("protocol", ["2"])
+    modern = protocol == ["3"]
+
+    if protocol not in (["2"], ["3"]):
+        await connection.close(code=1008, reason="unsupported protocol")
+
+        return
     supplied = parse_qs(urlsplit(request.path).query).get("location", [request.base_path or "/"])
 
     try:
@@ -41,8 +161,28 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
         return
     adoption = parse_qs(urlsplit(request.path).query, keep_blank_values=True).get("adoption", [])
     adopted = bool(adoption)
+    resuming = modern and parse_qs(urlsplit(request.path).query).get("resume") == ["1"]
 
-    if adopted:
+    if resuming:
+        try:
+            message = parse_message(
+                await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
+                limit=runtime.limits.max_frame_bytes,
+            )
+
+            if message["t"] != "hello" or message.get("edits"):
+                raise PayloadError("expected resume hello")
+            session = runtime.resume(
+                cast("str", message["resume"]),
+                request,
+                cast("str", message["epoch"]),
+                cast("int", message["state_rev"]),
+            )
+        except PayloadError, ValueError, KeyError, TimeoutError:
+            await connection.close(4004, "resume unavailable")
+
+            return
+    elif adopted:
         try:
             session = runtime.claim(adoption[0], request, browser_id(request))
         except ValueError:
@@ -51,37 +191,70 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
             return
 
         try:
-            hello: object = json.loads(await asyncio.wait_for(connection.recv(), 10))
+            message = parse_message(
+                await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
+                limit=runtime.limits.max_frame_bytes,
+            )
 
-            if not isinstance(hello, dict):
-                raise PayloadError("expected adoption edits")
-            message = cast("dict[str, object]", hello)
-
-            if message.get("t") != "adopt":
+            if message.get("t") != ("hello" if modern else "adopt"):
                 raise PayloadError("expected adoption edits")
             async with session.runtime.turn():
                 reconcile(session, form_edits(message.get("edits")))
                 session.routes.observe(supplied[0])
         except Exception:
-            session.dispose()
+            runtime.release(session)
             await connection.close(code=1008, reason="invalid adoption edits")
 
             return
         except asyncio.CancelledError:
-            session.dispose()
+            runtime.release(session)
 
             raise
     else:
-        session = Session(
-            runtime.app,
-            location=supplied[0],
-            development=runtime.development,
-            request=request,
-            mutation_capacity=runtime.mutation_capacity,
-            task_capacity=runtime.task_capacity,
-        )
-    queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=64)
+        if not connection.reserved:
+            if not runtime.reserve():
+                await connection.close(1013, "graph capacity")
+
+                return
+            connection.reserved = True
+
+        try:
+            if modern:
+                try:
+                    message = parse_message(
+                        await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
+                        limit=runtime.limits.max_frame_bytes,
+                    )
+
+                    if message["t"] != "hello":
+                        raise PayloadError("expected hello")
+                except Exception:
+                    await connection.close(code=1008, reason="invalid hello")
+
+                    return
+            session = runtime.create_reserved(request, location=supplied[0])
+        finally:
+            runtime.unreserve()
+            connection.reserved = False
+    queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=runtime.limits.event_queue)
     announced_mounts: set[str] = set()
+    send_lock = asyncio.Lock()
+    resume_token = runtime.attach(session, request) if modern else None
+
+    async def send(message: dict[str, object]) -> None:
+        async with send_lock:
+            if session.pressured:
+                await connection.close(1013, "session outbox limit")
+
+                raise TransportError("session outbox limit")
+
+            if modern:
+                message = session.transport.envelope(message)
+            await connection.send(json.dumps(message))
+
+    async def send_repair() -> None:
+        announced_mounts.clear()
+        await send(session.transport.repair(session.rendered.css))
 
     async def send_mounts() -> None:
         pending = session.rendered.scopes.pending_mounts()
@@ -89,28 +262,46 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
         tokens = [token for token in pending if token not in announced_mounts]
 
         for start in range(0, len(tokens), 1024):
-            await connection.send(json.dumps({"t": "mount", "ids": tokens[start : start + 1024]}))
+            await send({"t": "mount", "ids": tokens[start : start + 1024]})
             announced_mounts.update(tokens[start : start + 1024])
 
     async def send_navigation() -> None:
         commands, session.routes.commands = session.routes.commands, []
 
         for command in commands:
-            await connection.send(json.dumps(command))
+            await send(dict(command))
 
     async def send_patch() -> None:
         if session.pending:
-            await connection.send(json.dumps({"t": "patch", "ops": session.pending}))
-            session.pending = []
+            ops, session.pending = session.pending, []
+            await send({"t": "patch", "ops": ops})
 
     async def send_command(message: dict[str, JSONValue]) -> None:
         await send_patch()
         await send_navigation()
-        await connection.send(json.dumps(message))
+        await send(dict(message))
 
     session.rendered.dom.sender = send_command
 
     async def handle_message(message: dict[str, object]) -> bool:
+        if modern:
+            admission = session.transport.accept(message)
+
+            if admission != "accepted":
+                await send(
+                    {
+                        "t": "ack",
+                        "seq": message["seq"],
+                        "status": admission,
+                        "expected": session.transport.sequence + 1,
+                    }
+                )
+
+                if admission != "duplicate":
+                    await send_repair()
+                    await send_mounts()
+
+                return True
         handler_id = message.get("h", "")
         revision = message.get("rev")
         after = message.get("after")
@@ -120,20 +311,29 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
             or (revision is not None and (type(revision) is not int or revision < 0))
             or (after is not None and not isinstance(after, str))
         ):
-            await connection.send(
-                json.dumps({"t": "result", "h": "", "status": "invalid", "ops": []})
-            )
+            await send({"t": "result", "h": "", "status": "invalid", "ops": []})
 
             return True
 
         try:
+            if message["t"] == "event":
+                edits = form_edits(message.get("edits"))
+
+                if any(hid not in session.rendered.bindings for hid, _value, _rev in edits):
+                    raise PayloadError("unknown binding")
+
+                if after is not None and after not in session.rendered.handlers:
+                    if handler_id not in session.rendered.bindings:
+                        raise PayloadError("unknown chained handler")
+                    after = None
+
             if message.get("t") == "location":
                 url = message.get("url")
 
                 if not isinstance(url, str) or not session.routes.accept_revision(
                     message.get("rev")
                 ):
-                    return True
+                    raise PayloadError("stale location revision")
 
                 try:
                     session.routes.observe(url)
@@ -161,7 +361,7 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
                 nav_revision = message.get("nav_rev")
 
                 if nav_revision is not None and not session.routes.accept_revision(nav_revision):
-                    return True
+                    raise PayloadError("stale navigation revision")
                 outcome = await session.dispatch_result_async(
                     handler_id,
                     message.get("v"),
@@ -173,7 +373,12 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
                 )
 
                 if outcome["status"] != "success":
-                    await connection.send(json.dumps(outcome))
+                    if modern:
+                        sequence = cast("int", message["seq"])
+                        session.transport.acknowledge(sequence, outcome["status"])
+                        await send({**outcome, "seq": sequence})
+                    else:
+                        await send(dict(outcome))
                     await send_navigation()
                     await send_mounts()
 
@@ -188,9 +393,18 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
                 ops = outcome["ops"]
         except PayloadError:
             repair, session.pending = session.pending, []
-            await connection.send(
-                json.dumps({"t": "result", "h": handler_id, "status": "invalid", "ops": repair})
-            )
+            result: dict[str, object] = {
+                "t": "result",
+                "h": handler_id,
+                "status": "invalid",
+                "ops": repair,
+            }
+
+            if modern:
+                sequence = cast("int", message["seq"])
+                session.transport.acknowledge(sequence, "invalid")
+                result["seq"] = sequence
+            await send(result)
             await send_navigation()
             await send_mounts()
 
@@ -203,20 +417,23 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
         if session.rendered.failures:
             info = session.rendered.failures[0]
             session.rendered.failures.clear()
-            await connection.send(
-                json.dumps(
-                    {
-                        "t": "result",
-                        "h": handler_id,
-                        "status": "error",
-                        "ops": ops,
-                        "error": info.wire(),
-                    }
-                )
+            await send(
+                {
+                    "t": "result",
+                    "h": handler_id,
+                    "status": "error",
+                    "ops": ops,
+                    "error": info.wire(),
+                }
             )
         elif ops:
             patch: PatchMessage = {"t": "patch", "ops": ops}
-            await connection.send(json.dumps(patch))
+            await send(dict(patch))
+
+        if modern:
+            sequence = cast("int", message["seq"])
+            session.transport.acknowledge(sequence, "success")
+            await send({"t": "ack", "seq": sequence, "status": "success", "expected": sequence + 1})
         await send_navigation()
         await send_mounts()
 
@@ -231,6 +448,7 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
 
     worker: asyncio.Task[None] | None = None
     outbox: asyncio.Task[None] | None = None
+    reader: asyncio.Task[None] | None = None
 
     async def push_worker() -> None:
         while True:
@@ -238,19 +456,22 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
             async with session.runtime.lock:
                 session.changed.clear()
 
+                if session.pressured:
+                    await connection.close(1013, "session outbox limit")
+
+                    raise TransportError("session outbox limit")
+
                 while session.rendered.failures:
                     info = session.rendered.failures.pop(0)
                     ops, session.pending = session.pending, []
-                    await connection.send(
-                        json.dumps(
-                            {
-                                "t": "result",
-                                "h": "",
-                                "status": "error",
-                                "ops": ops,
-                                "error": info.wire(),
-                            }
-                        )
+                    await send(
+                        {
+                            "t": "result",
+                            "h": "",
+                            "status": "error",
+                            "ops": ops,
+                            "error": info.wire(),
+                        }
                     )
 
                     if session.rendered.unrepaired:
@@ -263,6 +484,32 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
                 await send_navigation()
                 await send_mounts()
 
+    async def read_worker() -> None:
+        async for raw in connection:
+            try:
+                message = parse_message(raw, modern=modern, limit=runtime.limits.max_frame_bytes)
+            except PayloadError:
+                await send({"t": "result", "h": "", "status": "invalid", "ops": []})
+
+                continue
+
+            if message.get("t") == "dom_reply":
+                if not modern or message["epoch"] == session.transport.epoch:
+                    session.rendered.dom.reply({**message, "version": 1})
+            elif message.get("t") == "repair" and modern:
+                async with session.runtime.lock:
+                    await send_repair()
+                    await send_mounts()
+            elif message.get("t") in ("event", "mounted", "location"):
+                try:
+                    queue.put_nowait(message)
+                except asyncio.QueueFull:
+                    await connection.close(code=1008, reason="event queue limit")
+
+                    return
+
+    failure: BaseException | None = None
+
     try:
         initial: InitMessage = {
             "t": "init",
@@ -270,50 +517,91 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
             "css": session.rendered.css,
             "routing": bool(session.routes.routers),
         }
-        await connection.send(
-            json.dumps(
-                {"t": "adopted", "routing": bool(session.routes.routers)} if adopted else initial
-            )
+        await send(
+            {
+                **session.transport.repair(session.rendered.css),
+                "resume": resume_token,
+                "routing": bool(session.routes.routers),
+                "nav_rev": session.routes.revision,
+            }
+            if resuming
+            else {"t": "adopted", "routing": bool(session.routes.routers), "resume": resume_token}
+            if adopted
+            else {**dict(initial), **({"resume": resume_token} if modern else {})}
         )
         await send_patch()
+
+        if resuming and session.routes.routers:
+            await send(
+                {
+                    "t": "navigation",
+                    "url": session.routes.location.url,
+                    "rev": session.routes.revision,
+                    "mode": "replace",
+                }
+            )
         await send_navigation()
         await send_mounts()
         worker = asyncio.create_task(event_worker())
         outbox = asyncio.create_task(push_worker())
+        reader = asyncio.create_task(read_worker())
+        done, _pending = await asyncio.wait(
+            (worker, outbox, reader), return_when=asyncio.FIRST_COMPLETED
+        )
 
-        async for raw in connection:
-            try:
-                decoded: object = json.loads(raw)
-            except TypeError, ValueError:
-                await connection.send(
-                    json.dumps({"t": "result", "h": "", "status": "invalid", "ops": []})
-                )
-
-                continue
-
-            if not isinstance(decoded, dict):
-                await connection.send(
-                    json.dumps({"t": "result", "h": "", "status": "invalid", "ops": []})
-                )
-
-                continue
-            message = cast("dict[str, object]", decoded)
-
-            if message.get("t") == "dom_reply":
-                session.rendered.dom.reply(message)
-            elif message.get("t") in ("event", "mounted", "location"):
-                try:
-                    queue.put_nowait(message)
-                except asyncio.QueueFull:
-                    await connection.close(code=1008, reason="event queue limit")
+        for task in done:
+            await task
     except BaseException as error:
+        failure = error
+
+        raise
+    finally:
+        if reader is not None:
+            reader.cancel()
+            await asyncio.gather(reader, return_exceptions=True)
+
         if outbox is not None:
             outbox.cancel()
             await asyncio.gather(outbox, return_exceptions=True)
-        await close_session(session, worker, error)
 
-        raise
+        if worker is not None:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+            worker = None
+        retain = (
+            modern
+            and not runtime.closed
+            and not connection.closing
+            and not connection.failed
+            and not session.pressured
+            and not session.rendered.unrepaired
+            and (
+                failure is None
+                or isinstance(failure, OSError)
+                or type(failure).__name__.startswith("ConnectionClosed")
+            )
+            and not isinstance(failure, TransportError)
+            and getattr(getattr(failure, "rcvd", None), "code", 1000) in (1000, 1001, 1006)
+            and getattr(connection.raw, "close_code", 1000) in (None, 1000, 1001, 1006)
+        )
 
-    outbox.cancel()
-    await asyncio.gather(outbox, return_exceptions=True)
-    await close_session(session, worker, None)
+        if retain:
+            runtime.detach(session)
+        else:
+            owned = set(session.runtime.tasks)
+
+            if session.runtime.worker is not None:
+                owned.add(session.runtime.worker)
+
+            try:
+                await close_session(session, worker, failure)
+            finally:
+                runtime.release(session)
+
+            for owned_task in owned:
+                owned_task.cancel()
+
+            if owned:
+                with suppress(TimeoutError):
+                    async with asyncio.timeout(runtime.limits.close_timeout):
+                        await asyncio.gather(*owned, return_exceptions=True)

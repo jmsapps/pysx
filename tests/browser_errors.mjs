@@ -17,11 +17,13 @@ try {
     }));
   });
   assert.ok(connection);
-  connection.send(JSON.stringify({t: "init", html: '<pysx-slot data-pysx="value" id="value">0</pysx-slot>', css: ""}));
+  let revision = 0;
+  const send = message => connection.send(JSON.stringify({...message, version: 3, epoch: "test", base_rev: revision, state_rev: ++revision}));
+  send({t: "init", html: '<pysx-slot data-pysx="value" id="value">0</pysx-slot>', css: ""});
   const error = {id: "correlation", owner: "generation", phase: "handler", message: "Please try again."};
   for (const [status, text] of [["error", "1"], ["success", "2"], ["invalid", "2"], ["stale", "2"]]) {
-    connection.send(JSON.stringify({t: "result", h: "h0", status,
-      ops: [{op: "text", id: "value", v: text}], ...(status === "error" ? {error} : {})}));
+    send({t: "result", h: "h0", status,
+      ops: [{op: "text", id: "value", v: text}], ...(status === "error" ? {error} : {})});
   }
   await page.waitForFunction(() => window.outcomes.length === 4);
   assert.deepEqual(await page.evaluate(() => window.outcomes), [
