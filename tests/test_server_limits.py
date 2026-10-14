@@ -421,16 +421,12 @@ def test_health_probe_path_relocates_and_disables_without_shadowing_routes() -> 
         assert rendered.status == 200
         assert b"status page" in rendered.body
 
-        prefixed = Application(
-            lambda: native.P("status page"), config=HostConfig(base_path="/app")
-        )
+        prefixed = Application(lambda: native.P("status page"), config=HostConfig(base_path="/app"))
         assert (await prefixed.http(request_from_headers("/app/health", []))).body == b"ok"
 
         for invalid in ("health", "/", ""):
             with pytest.raises(ValueError, match="health_path"):
                 HostConfig(health_path=invalid)
-        await asyncio.gather(
-            served.close(), moved.close(), disabled.close(), prefixed.close()
-        )
+        await asyncio.gather(served.close(), moved.close(), disabled.close(), prefixed.close())
 
     asyncio.run(exercise())

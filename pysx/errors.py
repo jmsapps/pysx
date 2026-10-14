@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
+from .request import request_context
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -74,5 +76,12 @@ def report_error(info: ErrorInfo, error: Exception, *, development: bool = False
         "application failure %s (%s)",
         info.id,
         info.phase,
+        extra={
+            "request_id": request.request_id
+            if (request := request_context.get()) is not None
+            else None,
+            "error_id": info.id,
+            "phase": info.phase,
+        },
         exc_info=(type(error), error, error.__traceback__) if development else None,
     )

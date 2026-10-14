@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from string.templatelib import Template
 from typing import cast
 
+from .output import safe_css
 from .reactive import Signal, signal
 from .scoped_css import scoped_rules
 
@@ -29,7 +30,7 @@ def css_text(value: object) -> str:
     if "{" in body or "}" in body:
         raise ValueError("css requires flat declarations without braces")
 
-    return body
+    return safe_css(body)
 
 
 def css_name(body: str) -> str:
@@ -79,6 +80,7 @@ def variable_values(source: object) -> dict[str, str]:
 
         if any(char in value for char in ";{}\0"):
             raise ValueError("CSS variable values must contain one property value")
+        safe_css(value)
 
         if name and value:
             result[name] = value

@@ -74,6 +74,8 @@ def main() -> None:
             timeout_graceful_shutdown=math.ceil(application.config.shutdown_timeout),
             loop="asyncio",
             lifespan="on",
+            proxy_headers=False,
+            access_log=False,
         )
 
         return
@@ -110,6 +112,11 @@ def main() -> None:
         raise SystemExit(f"cannot bind {args.host}:{args.port}: {error}") from error
     except KeyboardInterrupt:
         pass
+    except Exception:
+        if application.config.production:
+            raise SystemExit("application failed") from None
+
+        raise
 
 
 if __name__ == "__main__":

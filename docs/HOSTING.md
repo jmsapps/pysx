@@ -1,5 +1,7 @@
 # Hosting an application
 
+See [application security](SECURITY.md) for output validation and the response CSP.
+
 Python 3.14+ is required. Install `pysx` and expose a callable returning a template
 or Fragment, or an `Application`, in a module in your working directory:
 
@@ -57,7 +59,53 @@ and mutable document metadata during rendering, events and cleanup. Configure
 `HostConfig.principal` to resolve trusted request identity, or set
 `scope["state"]["pysx_principal"]` in trusted ASGI middleware. The value must be a
 string or None. Both HTTP and WebSocket requests must resolve the same principal
-for adoption. Authentication and authorization belong to the application.
+for adoption. Authentication is supplied by the application. Configure an immutable
+`SecurityPolicy` in `HostConfig.security` to enforce access:
+
+```python
+from pysx import SecurityPolicy
+
+policy = SecurityPolicy(
+    origins=("https://app.example",),
+    require_principal=True,
+    authorize=lambda request, action, target: request.principal is not None,
+)
+```
+
+Without explicit origins the hosts accept only loopback peers and loopback Host
+names; this preserves local development. Explicit origins enable remote hosting.
+WebSocket upgrades then require an allowed Origin. Duplicate/malformed origins and
+Host headers, opaque origins, credentials in origins and unsupported forwarding
+headers fail closed before graph allocation. Origin is a browser CSRF boundary,
+not an identity provider. Nonbrowser clients must supply the same allowed Origin
+and application authentication. The authorizer must return exactly `True`; an
+exception produces a safe denial. HTTP, websocket, adoption, resume, event,
+resource, command, dom_reply and repair are operation names. Targets are paths,
+handler IDs, resource keys or outgoing message types. Use `require_access(action,
+target)` inside a session for additional business service checks. Resource access
+is checked before loading and before publishing a successful value. The principal
+callback is rechecked before connected operations; a changed identity ends access.
+Trusted middleware identities require the authorizer to check their live validity.
+
+Call `host.revoke(principal)` on logout or authorization revocation. It disposes
+pending, connected and detached graphs and invalidates their credentials; an active
+socket closes without further private output. The application must also invalidate
+its authentication credential so subsequent requests cannot authenticate again.
+This operation is local to the application's worker.
+
+Configure `SecurityPolicy.trusted_proxies` with exact peer IPs or CIDR networks to
+accept single-valued `X-Forwarded-Host` and `X-Forwarded-Proto`, plus `X-Forwarded-For`
+and `X-Forwarded-Port`, which are ignored. Every other forwarded header is rejected,
+as is any forwarded header from an untrusted peer. Preserve the original peer at the adapter; a proxy must strip
+incoming forwarded headers before setting its own. Paths/base paths must be
+preserved explicitly; forwarded path prefixes are unsupported. ASGI servers should
+disable their independent proxy-header rewriting so this policy sees the real peer.
+
+The browser identity cookie is HttpOnly, SameSite=Lax and optionally Secure; it is
+an ownership binder, not authentication. Application auth cookies should also be
+HttpOnly/Secure with an appropriate SameSite policy. Adoption handles remain in
+the private rendered document and resume handles in browser memory. The client
+stores neither in localStorage and never sends resume handles in URLs.
 
 `startup` and `shutdown` are tuples of synchronous or async hooks. Startup runs
 once; shutdown runs in reverse order. `render_capacity` (100) and `render_ttl`
@@ -67,6 +115,11 @@ queued mutations and `task_capacity` (1024) its owned tasks and resource loads.
 `secure_cookies=True` adds Secure to the browser cookie for
 HTTPS deployments. `development=True` or CLI `--dev` enables source tracebacks
 in server logs; client errors remain safe.
+
+`production=True` validates secure hosting configuration and forbids development
+tracebacks. `observe` accepts a callback for redacted `RequestEvent` values; bounded
+`Application.metrics` counters contain operation/outcome totals. See the
+[production deployment and telemetry contract](SECURITY.md#production-deployment).
 
 `HostConfig.transport` is an immutable `TransportLimits`. Its defaults are 100
 total graphs per worker (pending HTTP graphs, upgrades awaiting hello and attached
@@ -82,7 +135,10 @@ the application is open, without constructing a graph.
 `health_path` (`/health`) is the probe path relative to `base_path`. It is matched
 before the renderer, so an application that owns that route must relocate the probe
 or set `health_path=None` to disable it. A non-None value must be absolute and must
-not be `/`; static assets still take precedence over it.
+not be `/`; static assets still take precedence over it. The probe answers before
+the origin policy and the authorizer so that infrastructure can reach it; set
+`health_path=None` when that disclosure is unacceptable. Static assets are served
+under the origin policy but without the authorizer, which governs application routes.
 
 Oversized inbound/outbound messages close with 1009. Outbox pressure or a send
 deadline closes/expires that graph; required state is never silently dropped.

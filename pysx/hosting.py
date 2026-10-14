@@ -7,6 +7,7 @@ import hashlib
 import inspect
 import math
 import mimetypes
+import re
 import secrets
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
@@ -21,7 +22,9 @@ from .errors import ErrorInfo, report_error
 from .http import HTTPResult, HTTPRuntime
 from .request import RequestContext, browser_id
 from .routing import Location
-from .transport import TransportLimits
+from .security import AccessDenied, SecurityPolicy
+from .telemetry import RequestEvent, record
+from .transport import TransportError, TransportLimits
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping
@@ -76,11 +79,27 @@ class HostConfig:
     shutdown_timeout: float = 5
     transport: TransportLimits = field(default_factory=TransportLimits)
     principal: Callable[[RequestContext], str | None] | None = None
+    security: SecurityPolicy = field(default_factory=SecurityPolicy)
+    production: bool = False
+    observe: Callable[[RequestEvent], None] | None = None
     assets: Mapping[str, StaticAsset] = field(default_factory=lambda: dict[str, StaticAsset]())
     startup: tuple[Hook, ...] = ()
     shutdown: tuple[Hook, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.production and (
+            self.development
+            or not self.secure_cookies
+            or not self.security.origins
+            or not self.security.require_principal
+            or self.security.authorize is None
+            or any(not value.startswith("https://") for value in self.security.origins)
+        ):
+            raise ValueError(
+                "production requires secure cookies, HTTPS origins, required principal "
+                "and authorization; development must be disabled"
+            )
+
         if not isinstance(cast("object", self.transport), TransportLimits):
             raise ValueError("transport must be TransportLimits")
 
@@ -122,7 +141,13 @@ class HostConfig:
 
 
 def request_from_headers(
-    path: str, headers: list[tuple[str, str]], *, base_path: str = "", principal: str | None = None
+    path: str,
+    headers: list[tuple[str, str]],
+    *,
+    base_path: str = "",
+    principal: str | None = None,
+    scheme: str = "http",
+    peer: str | None = None,
 ) -> RequestContext:
     combined: dict[str, str] = {}
 
@@ -132,7 +157,12 @@ def request_from_headers(
         combined[key] = combined[key] + separator + value if key in combined else value
 
     return RequestContext(
-        path=path, headers=MappingProxyType(combined), principal=principal, base_path=base_path
+        path=path,
+        headers=MappingProxyType(combined),
+        principal=principal,
+        base_path=base_path,
+        scheme=scheme,
+        peer=peer,
     )
 
 
@@ -165,17 +195,125 @@ class Application:
         self.connections: dict[int, tuple[Connection, asyncio.Task[object]]] = {}
         self.handshakes: dict[int, tuple[Connection, asyncio.Task[object]]] = {}
         self.start_tasks: set[asyncio.Task[object]] = set()
+        self.metrics: dict[str, int] = {}
 
     def path(self, path: str) -> str:
         return self.config.base_path + "/" + path.lstrip("/")
 
-    def prepare(self, request: RequestContext) -> RequestContext:
+    def prepare(self, request: RequestContext, *, websocket: bool = False) -> RequestContext:
         context = replace(request, base_path=request.base_path or self.config.base_path)
 
-        if context.principal is None and self.config.principal is not None:
-            context = replace(context, principal=self.config.principal(context))
+        try:
+            if any(
+                any(character in value for character in "\r\n\0")
+                for value in context.headers.values()
+            ):
+                raise AccessDenied
+            forwarded = {
+                name
+                for name in context.headers
+                if name == "forwarded" or name.startswith("x-forwarded-")
+            }
 
-        return context
+            if forwarded:
+                if not self.config.security.trusts(context.peer) or forwarded - {
+                    "x-forwarded-host",
+                    "x-forwarded-proto",
+                    "x-forwarded-for",
+                    "x-forwarded-port",
+                }:
+                    raise AccessDenied
+                scheme = context.headers.get("x-forwarded-proto", context.scheme)
+
+                if scheme not in ("http", "https"):
+                    raise AccessDenied
+                headers = dict(context.headers)
+                headers["host"] = headers.get("x-forwarded-host", headers.get("host", ""))
+                context = replace(context, headers=MappingProxyType(headers), scheme=scheme)
+
+            resolved = context.principal is None and self.config.principal is not None
+
+            if resolved:
+                assert self.config.principal is not None
+                context = replace(context, principal=self.config.principal(context))
+
+            if context.principal is not None and (
+                not isinstance(cast("object", context.principal), str) or not context.principal
+            ):
+                raise AccessDenied
+            self.config.security.check_network(context, websocket=websocket)
+
+            browser = browser_id(context)
+
+            if browser and not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", browser):
+                raise AccessDenied
+
+            if self.config.production:
+                if context.scheme != "https":
+                    raise AccessDenied
+
+                if browser and not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", browser):
+                    raise AccessDenied
+
+                if (
+                    len(re.findall(r"(?:^|;)\s*pysx_browser=", context.headers.get("cookie", "")))
+                    > 1
+                ):
+                    raise AccessDenied
+        except AccessDenied:
+            raise AccessDenied("access denied") from None
+        except Exception as error:
+            self.denial_failed(error)
+
+            raise AccessDenied("access denied") from None
+
+        def check(action: str, target: str) -> None:
+            try:
+                if (
+                    resolved
+                    and action != "command"
+                    and self.config.principal is not None
+                    and self.config.principal(context) != context.principal
+                ):
+                    raise AccessDenied
+                self.config.security.check(context, action, target)
+            except AccessDenied:
+                raise AccessDenied("access denied") from None
+            except Exception as error:
+                self.denial_failed(error)
+
+                raise AccessDenied("access denied") from None
+
+        return replace(context, access=check)
+
+    def denial_failed(self, error: Exception) -> None:
+        """A denial caused by a failing hook is a server fault, not a quiet rejection."""
+        report_error(ErrorInfo(None, "handler"), error, development=self.config.development)
+
+    def revoke(self, principal: str) -> None:
+        """Dispose every pending, active and detached graph for a logged-out identity."""
+        errors: list[Exception] = []
+
+        for token, pending in tuple(self.runtime.pending.items()):
+            if pending.principal == principal:
+                try:
+                    self.runtime.expire(token)
+                except Exception as error:
+                    errors.append(error)
+
+        for session in tuple(self.runtime.graphs):
+            if session.request.principal == principal:
+                session.revoked = True
+
+                try:
+                    self.runtime.release(session)
+                except Exception as error:
+                    errors.append(error)
+                finally:
+                    session.changed.set()
+
+        if errors:
+            raise ExceptionGroup("revocation cleanup failed", errors)
 
     async def start(self) -> None:
         task = asyncio.current_task()
@@ -202,14 +340,63 @@ class Application:
                     await result
             self.started = True
 
+    def observed(self, request: RequestContext, operation: str, status: int) -> None:
+        event = RequestEvent(request.request_id, operation, status)
+        outcome = (
+            "denied"
+            if status in (403, 1008)
+            else "success"
+            if status in (1000, 1001) or 200 <= status < 400
+            else "failure"
+        )
+        key = f"{operation}:{outcome}"
+        self.metrics[key] = self.metrics.get(key, 0) + 1
+        record(event)
+
+        if self.config.observe is not None:
+            try:
+                self.config.observe(event)
+            except Exception:
+                report_error(ErrorInfo(None, "handler"), RuntimeError("observer failed"))
+
     async def http(self, request: RequestContext, *, method: str = "GET") -> HTTPResult:
+        try:
+            result = await self._http(request, method=method)
+        except Exception as error:
+            report_error(ErrorInfo(None, "render"), error, development=self.config.development)
+            result = HTTPResult(
+                500, (("cache-control", "private, no-store"),), b"application failed"
+            )
+        self.observed(request, "http", result.status)
+
+        return replace(result, headers=(*result.headers, ("x-request-id", request.request_id)))
+
+    async def _http(self, request: RequestContext, *, method: str = "GET") -> HTTPResult:
         if self.closed:
             return HTTPResult(503, (), b"application closed")
 
         if method not in ("GET", "HEAD"):
             return HTTPResult(405, (("allow", "GET, HEAD"),), b"method not allowed")
         await self.start()
-        context = self.prepare(request)
+
+        probe = request.base_path or self.config.base_path
+
+        if (
+            self.config.health_path is not None
+            and urlsplit(request.path).path == probe + self.config.health_path
+            and self.config.health_path not in self.assets
+        ):
+            headers = (("content-type", "text/plain; charset=utf-8"), ("cache-control", "no-store"))
+
+            if method == "HEAD":
+                return HTTPResult(200, (*headers, ("content-length", "2")), b"")
+
+            return HTTPResult(200, headers, b"ok")
+
+        try:
+            context = self.prepare(request)
+        except AccessDenied:
+            return HTTPResult(403, (("cache-control", "private, no-store"),), b"access denied")
         path = urlsplit(context.path).path
         prefix = context.base_path
 
@@ -220,9 +407,12 @@ class Application:
 
         if asset is not None:
             result = asset.response(context.headers)
-        elif self.config.health_path is not None and local == self.config.health_path:
-            result = HTTPResult(200, (("content-type", "text/plain; charset=utf-8"),), b"ok")
         else:
+            try:
+                assert context.access is not None
+                context.access("http", path)
+            except AccessDenied:
+                return HTTPResult(403, (("cache-control", "private, no-store"),), b"access denied")
             browser = browser_id(context) or secrets.token_urlsafe(32)
 
             try:
@@ -258,6 +448,21 @@ class Application:
         admission_key = getattr(connection, "admission_key", id(connection))
         self.handshakes.pop(admission_key, None)
 
+        try:
+            context = self.prepare(connection.request, websocket=True)
+            assert context.access is not None
+            context.access("websocket", "/ws")
+            bounded.request = context
+        except AccessDenied:
+            await bounded.close(1008, "access denied")
+            self.observed(connection.request, "websocket", 1008)
+
+            if bounded.reserved:
+                self.runtime.unreserve()
+                bounded.reserved = False
+
+            return
+
         if self.closed or len(self.connections) >= self.config.transport.graphs:
             await bounded.close(1013, "connection capacity")
 
@@ -280,8 +485,16 @@ class Application:
 
         try:
             await serve_connection(self.runtime, bounded)
+        except AccessDenied:
+            await bounded.close(1008, "access denied")
+        except TransportError:
+            await bounded.close(1001, "session closed")
+        except Exception as error:
+            report_error(ErrorInfo(None, "handler"), error, development=self.config.development)
+            await bounded.close(1011, "application failed")
         finally:
             self.connections.pop(identifier, None)
+            self.observed(connection.request, "websocket", bounded.close_code or 1000)
 
     def admit_handshake(self, identifier: int, connection: Connection) -> bool:
         if (
@@ -440,13 +653,25 @@ class Application:
             _connection: ServerConnection, request: Request
         ) -> Response | None:
             context = request_from_headers(
-                request.path, list(request.headers.raw_items()), base_path=self.config.base_path
+                request.path,
+                list(request.headers.raw_items()),
+                base_path=self.config.base_path,
+                peer=str(_connection.remote_address[0]) if _connection.remote_address else None,
             )
 
             method = _connection.method if isinstance(_connection, HTTPConnection) else "GET"
 
             if method == "GET" and urlsplit(request.path).path == self.path("ws"):
                 from urllib.parse import parse_qs
+
+                try:
+                    context = self.prepare(context, websocket=True)
+                    assert context.access is not None
+                    context.access("websocket", "/ws")
+                except AccessDenied:
+                    self.observed(context, "websocket", 1008)
+
+                    return Response(403, "Forbidden", Headers(), b"access denied")
 
                 if not isinstance(_connection, HTTPConnection):
                     raise RuntimeError("missing admission adapter")
@@ -481,10 +706,11 @@ class Application:
         async def handler(connection: ServerConnection) -> None:
             request = connection.request
             assert request is not None
-            context = self.prepare(
-                request_from_headers(
-                    request.path, list(request.headers.raw_items()), base_path=self.config.base_path
-                )
+            context = request_from_headers(
+                request.path,
+                list(request.headers.raw_items()),
+                base_path=self.config.base_path,
+                peer=str(connection.remote_address[0]) if connection.remote_address else None,
             )
             reserved = False
 

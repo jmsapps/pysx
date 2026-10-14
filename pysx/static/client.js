@@ -264,7 +264,7 @@ function domCommand(message) {
         value = nodeToken(el[args.name], message.root); break;
       }
       case "style": {
-        if (!/^(--)?[a-z][a-z0-9-]{0,63}$/.test(args.name) || /url\s*\(|expression\s*\(/i.test(args.value ?? "")) throw new Error("unsafe style");
+        if (!/^(--)?[a-z][a-z0-9-]{0,63}$/.test(args.name) || /[{}<>\\\x00]|\/\*|url\s*\(|expression\s*\(|@import|behavior\s*:|-moz-binding/i.test(args.value ?? "")) throw new Error("unsafe style");
         if (args.value === null) el.style.removeProperty(args.name); else el.style.setProperty(args.name, args.value);
         break;
       }

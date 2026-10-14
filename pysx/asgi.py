@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 from .connection import BoundedConnection
 from .hosting import request_from_headers
+from .security import AccessDenied
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable
@@ -54,7 +55,17 @@ class ASGI:
         if principal is not None and not isinstance(principal, str):
             raise ValueError("middleware principal must be a string or None")
 
-        return request_from_headers(path, headers, base_path=prefix, principal=principal)
+        client = scope.get("client")
+        peer = (
+            str(cast("tuple[object, ...]", client)[0])
+            if isinstance(client, (tuple, list)) and client
+            else None
+        )
+        scheme = "https" if scope.get("scheme") in ("https", "wss") else "http"
+
+        return request_from_headers(
+            path, headers, base_path=prefix, principal=principal, scheme=scheme, peer=peer
+        )
 
     async def __call__(self, scope: Event, receive: Receive, send: Send) -> None:
         kind = scope.get("type")
@@ -94,7 +105,16 @@ class ASGI:
 
             return
 
-        request = self._request(scope)
+        try:
+            request = self._request(scope)
+        except ValueError, UnicodeError:
+            if kind == "http":
+                await send({"type": "http.response.start", "status": 403, "headers": []})
+                await send({"type": "http.response.body", "body": b"access denied"})
+            elif kind == "websocket":
+                await send({"type": "websocket.close", "code": 1008, "reason": "access denied"})
+
+            return
 
         if kind == "http":
             event = await receive()
@@ -137,7 +157,16 @@ class ASGI:
 
         if (await receive()).get("type") != "websocket.connect":
             return
-        context = self.application.prepare(request)
+
+        try:
+            context = self.application.prepare(request, websocket=True)
+            assert context.access is not None
+            context.access("websocket", "/ws")
+        except AccessDenied:
+            self.application.observed(request, "websocket", 1008)
+            await send({"type": "websocket.close", "code": 1008, "reason": "access denied"})
+
+            return
 
         connection = _Connection(context, receive, send, scope)
         bounded = BoundedConnection(connection, self.application.config.transport)

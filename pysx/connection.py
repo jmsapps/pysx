@@ -12,6 +12,7 @@ from .forms import PayloadError, form_edits
 from .http import HTTPRuntime, reconcile
 from .request import browser_id
 from .routing import Location
+from .security import AccessDenied
 from .session import close_session
 from .transport import TransportError, TransportLimits
 from .wire import parse_message
@@ -39,6 +40,7 @@ class BoundedConnection:
         self.limits = limits
         self.closing = False
         self.failed = False
+        self.close_code: int | None = None
         self.reserved = bool(getattr(connection, "reserved", False))
 
         if self.reserved:
@@ -54,6 +56,7 @@ class BoundedConnection:
         if self.closing:
             return
         self.closing = True
+        self.close_code = code
 
         try:
             async with asyncio.timeout(self.limits.close_timeout):
@@ -144,6 +147,11 @@ def bound_connection(connection: Connection, limits: TransportLimits) -> Bounded
 
 async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection) -> None:
     request = connection.request
+
+    def authorize(action: str, target: str = "") -> None:
+        if request.access is not None:
+            request.access(action, target)
+
     protocol = parse_qs(urlsplit(request.path).query).get("protocol", ["2"])
     modern = protocol == ["3"]
 
@@ -165,6 +173,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
     if resuming:
         try:
+            authorize("resume")
             message = parse_message(
                 await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
                 limit=runtime.limits.max_frame_bytes,
@@ -178,14 +187,15 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                 cast("str", message["epoch"]),
                 cast("int", message["state_rev"]),
             )
-        except PayloadError, ValueError, KeyError, TimeoutError:
+        except PayloadError, ValueError, KeyError, TimeoutError, AccessDenied:
             await connection.close(4004, "resume unavailable")
 
             return
     elif adopted:
         try:
+            authorize("adoption")
             session = runtime.claim(adoption[0], request, browser_id(request))
-        except ValueError:
+        except ValueError, AccessDenied:
             await connection.close(code=1008, reason="invalid adoption")
 
             return
@@ -199,7 +209,12 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             if message.get("t") != ("hello" if modern else "adopt"):
                 raise PayloadError("expected adoption edits")
             async with session.runtime.turn():
-                reconcile(session, form_edits(message.get("edits")))
+                authorize("adoption")
+                edits = form_edits(message.get("edits"))
+
+                for handler, _value, _revision in edits:
+                    authorize("event", handler)
+                reconcile(session, edits)
                 session.routes.observe(supplied[0])
         except Exception:
             runtime.release(session)
@@ -232,6 +247,13 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                     await connection.close(code=1008, reason="invalid hello")
 
                     return
+
+            try:
+                authorize("websocket", "/ws")
+            except AccessDenied:
+                await connection.close(1008, "access denied")
+
+                return
             session = runtime.create_reserved(request, location=supplied[0])
         finally:
             runtime.unreserve()
@@ -243,6 +265,22 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
     async def send(message: dict[str, object]) -> None:
         async with send_lock:
+            if session.closed:
+                if session.revoked:
+                    await connection.close(1008, "access denied")
+
+                    raise AccessDenied("access denied")
+                await connection.close(1001, "session closed")
+
+                raise TransportError("session closed")
+
+            try:
+                authorize("command", str(message.get("t", "")))
+            except AccessDenied:
+                await connection.close(1008, "access denied")
+
+                raise
+
             if session.pressured:
                 await connection.close(1013, "session outbox limit")
 
@@ -284,6 +322,21 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     session.rendered.dom.sender = send_command
 
     async def handle_message(message: dict[str, object]) -> bool:
+        try:
+            authorize("event", str(message.get("h", message.get("t", ""))))
+
+            if message.get("after") is not None:
+                authorize("event", str(message["after"]))
+
+            for handler, _value, _revision in form_edits(message.get("edits")):
+                authorize("event", handler)
+        except AccessDenied:
+            await connection.close(1008, "access denied")
+
+            return False
+        except PayloadError:
+            pass  # Shape validation below produces the protocol's invalid result.
+
         if modern:
             admission = session.transport.accept(message)
 
@@ -456,6 +509,14 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             async with session.runtime.lock:
                 session.changed.clear()
 
+                if session.closed:
+                    if session.revoked:
+                        await connection.close(1008, "access denied")
+                    else:
+                        await connection.close(1001, "session closed")
+
+                    return
+
                 if session.pressured:
                     await connection.close(1013, "session outbox limit")
 
@@ -494,9 +555,22 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                 continue
 
             if message.get("t") == "dom_reply":
+                try:
+                    authorize("dom_reply", str(message.get("id", "")))
+                except AccessDenied:
+                    await connection.close(1008, "access denied")
+
+                    return
+
                 if not modern or message["epoch"] == session.transport.epoch:
                     session.rendered.dom.reply({**message, "version": 1})
             elif message.get("t") == "repair" and modern:
+                try:
+                    authorize("repair")
+                except AccessDenied:
+                    await connection.close(1008, "access denied")
+
+                    return
                 async with session.runtime.lock:
                     await send_repair()
                     await send_mounts()

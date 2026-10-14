@@ -43,6 +43,7 @@ class Session:
     ) -> None:
         self.request = request or RequestContext(path=location)
         self.closed = False
+        self.revoked = False
         self.runtime = MutationRuntime(capacity=mutation_capacity, tasks=task_capacity)
         self.runtime.development = development
         self.changed = asyncio.Event()

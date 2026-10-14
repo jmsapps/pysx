@@ -267,6 +267,12 @@ class DomNode:
         return value
 
     async def set_attribute(self, name: str, value: str | None) -> None:
+        from .output import attribute_name, attribute_value
+
+        attribute_name(name)
+
+        if value is not None:
+            attribute_value(name, value)
         await self._request("set_attr", name=name, value=value)
 
     async def get_property(self, name: PropertyName) -> str | bool | int | float:
@@ -286,6 +292,10 @@ class DomNode:
         return self._node(await self._request("node_prop", name=name))
 
     async def style(self, name: str, value: str | None) -> None:
+        from .output import safe_css
+
+        if value is not None:
+            safe_css(value)
         await self._request("style", name=name, value=value)
 
     async def measure(self) -> Rect:

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from .forms import PayloadError
+from .output import safe_url
 from .render_tree import Tree, apply, snapshot
 from .session import Session
 from .transport import TransportLimits
@@ -277,7 +278,7 @@ class HTTPRuntime:
     def render(
         self, request: RequestContext, browser: str, *, client_path: str = "/client.js"
     ) -> HTTPResult:
-        headers = (
+        headers: tuple[tuple[str, str], ...] = (
             ("content-type", "text/html; charset=utf-8"),
             ("cache-control", "private, no-store"),
         )
@@ -307,6 +308,8 @@ class HTTPRuntime:
             redirect = document.redirect or (navigations[-1]["url"] if navigations else None)
 
             if redirect is not None:
+                safe_url(redirect)
+
                 if "\r" in redirect or "\n" in redirect:
                     raise ValueError("invalid redirect")
                 self.release(session)
@@ -321,12 +324,30 @@ class HTTPRuntime:
             description = html.escape(document.description, quote=True)
             client_url = html.escape(client_path, quote=True)
             token = secrets.token_urlsafe(32)
+            nonce = secrets.token_urlsafe(24)
+            host = request.headers.get("host", "")
+            socket_origin = (
+                ("wss" if request.scheme == "https" else "ws") + "://" + host if host else ""
+            )
+            policy = (
+                "default-src 'none'; script-src 'self'; "
+                f"style-src 'self' 'nonce-{nonce}'; style-src-attr 'unsafe-inline'; "
+                f"connect-src 'self' {socket_origin}; img-src 'self' https:; "
+                "font-src 'self'; frame-src 'self'; base-uri 'none'; object-src 'none'; "
+                "frame-ancestors 'none'; form-action 'self'"
+            )
+            headers = (
+                *headers,
+                ("content-security-policy", policy),
+                ("x-content-type-options", "nosniff"),
+                ("referrer-policy", "same-origin"),
+            )
             content = (
                 '<!doctype html><html lang="en"><head><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width, initial-scale=1">'
                 f"<title>{html.escape(document.title)}</title>"
                 f'<meta name="description" content="{description}">'
-                f'<style id="pysx-style">{css}</style></head><body>'
+                f'<style id="pysx-style" nonce="{nonce}">{css}</style></head><body>'
                 f'<div id="pysx-root" data-pysx-adoption="{token}">{body}</div>'
                 f'<script src="{client_url}" defer></script></body></html>'
             ).encode()

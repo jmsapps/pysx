@@ -34,6 +34,7 @@ from .events import EventHandler
 from .forms import Binding, make_binding
 from .identity import OwnerPath
 from .lifecycle import Scopes, active_scope
+from .output import attribute_name, attribute_value
 from .parser import (
     Case,
     Conditional,
@@ -361,7 +362,7 @@ def _attr_text(value: object, name: str = "") -> str | None:
     if isinstance(value, bool):
         return str(value).lower()
 
-    return str(value)
+    return attribute_value(name, value if isinstance(value, str) else str(value))
 
 
 def _class_text(value: object) -> str:
@@ -698,7 +699,7 @@ class InlineStyleWatcher(Watcher):
     last: str = ""
 
     def value(self) -> str:
-        base = _attr_text(self.source) or ""
+        base = _attr_text(self.source, "style") or ""
         variables = variable_values(self.variables)
         custom = ";".join(f"{name}:{value}" for name, value in sorted(variables.items()))
 
@@ -1875,6 +1876,10 @@ class _Emitter:
                 cast("Component", found), el, static=static, root_classes=root_classes
             )
         tag, scoped = self._resolve(el.tag)
+
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", tag):
+            raise ValueError("unsafe element name")
+
         classes: list[object] = list(scoped)
         classes.extend(root_classes)
 
@@ -1961,6 +1966,7 @@ class _Emitter:
             kind = self._kind(name)
             raw_name = name
             name = normalize_attr(name) if el.namespace == "html" else name
+            attribute_name(name)
 
             if normalize_attr(name) in {"css", "stylevars", "cssvars"}:
                 continue

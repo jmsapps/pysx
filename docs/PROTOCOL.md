@@ -5,6 +5,13 @@ Standalone and ASGI adapters share this protocol and session engine; see
 
 ## Current-state resume
 
+The host applies its origin/principal policy before upgrade/admission. HTTP access
+denial returns 403; an accepted socket's denied event, chained handler, bundled
+form edit, DOM reply or outgoing command closes with 1008 and a generic reason.
+Authorization is rechecked against the retained principal before each operation.
+Logout revocation expires pending, active and detached ownership; subsequent
+adoption/resume cannot recover that graph. See [host security policy](HOSTING.md).
+
 Modern attachment publishes a `resume` credential in `init` or `adopted`.
 After healthy socket loss, request `/ws?protocol=3&resume=1&location=...` and
 send `{"t":"hello","version":3,"resume":"credential","epoch":"epoch","state_rev":1}`.
