@@ -1,5 +1,9 @@
 # Python template compilation
 
+Output contexts and explicit `TrustedHTML` source values follow the
+[application security contract](SECURITY.md). Ordinary data is escaped; network
+values must never become Python templates, deferred code or trusted HTML source.
+
 Applications stay in ordinary `.py` files. Import components normally and name them
 in markup; the compiler records real lexical references before Python compiles the
 module. The defining binding is captured when the fragment is constructed.

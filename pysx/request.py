@@ -5,9 +5,10 @@ from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
 from types import MappingProxyType
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
 
 @dataclass
@@ -25,6 +26,10 @@ class RequestContext:
     principal: str | None = None
     base_path: str = ""
     document: Document = field(default_factory=Document)
+    scheme: str = "http"
+    peer: str | None = None
+    access: Callable[[str, str], None] | None = field(default=None, repr=False, compare=False)
+    request_id: str = field(default_factory=lambda: uuid4().hex)
 
 
 request_context: ContextVar[RequestContext | None] = ContextVar("pysx_request", default=None)

@@ -18,6 +18,7 @@ from examples.reactive_state import app
 from examples.reconnect import app as reconnect_app
 from examples.recovery import app as recovery_app
 from examples.resources import app as resources_app
+from examples.session_security import app as security_app
 from examples.templates import app as templates_app
 from examples.themes import app as themes_app
 from pysx import BrowserEvent
@@ -798,5 +799,85 @@ def test_reconnect_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen("http://127.0.0.1:8777/", timeout=5) as response:
             assert response.status == 200
             assert b"Bounded reconnect" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
+
+
+def test_session_security_principals_authorization_isolation_and_cleanup() -> None:
+    async def exercise() -> None:
+        from pysx.hosting import request_from_headers
+
+        writer = await security_app.http(request_from_headers("/?principal=alice", []))
+        reader = await security_app.http(request_from_headers("/?principal=reader", []))
+        other = await security_app.http(request_from_headers("/?principal=alice", []))
+        assert writer.adoption is not None
+        assert reader.adoption is not None
+        assert other.adoption is not None
+        first = security_app.runtime.pending[writer.adoption].session
+        readonly = security_app.runtime.pending[reader.adoption].session
+        sibling = security_app.runtime.pending[other.adoption].session
+
+        async def write(session: Session) -> str:
+            tree = snapshot(session.rendered.body, unwrap_row=False)
+            handler = re.search(r'id="security-write"[^>]*data-pysx-click="([^"]+)"', tree.markup())
+            assert handler is not None
+            outcome = await session.dispatch_result_async(handler[1], None)
+            assert outcome["status"] == "success"
+            apply(tree, outcome["ops"])
+
+            return tree.markup()
+
+        try:
+            updated = await write(first)
+            assert "Allowed: your counter" in updated
+            assert re.search(r'id="security-count"[^>]*>.*?>1<', updated)
+            denied = await write(readonly)
+            assert "Denied: this identity" in denied
+            assert re.search(r'id="security-count"[^>]*>.*?>0<', denied)
+            binding = next(iter(first.rendered.bindings))
+            await first.dispatch_result_async(binding, "Writer-only draft", 1)
+            assert next(iter(sibling.rendered.bindings.values())).signal() == "My private draft"
+            assert next(iter(readonly.rendered.bindings.values())).signal() == "My private draft"
+        finally:
+            for token in (writer.adoption, reader.adoption, other.adoption):
+                security_app.runtime.expire(token)
+        assert first.closed
+        assert readonly.closed
+        assert sibling.closed
+        assert not security_app.runtime.graphs
+
+    asyncio.run(exercise())
+
+
+def test_session_security_checker_clean_and_registered() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["session_security"] == "examples.session_security:app"
+    assert diagnostics(Path("examples/session_security.py")) == []
+
+
+@pytest.mark.acceptance
+def test_session_security_cli_startup_interaction_and_ctrl_c_exit() -> None:
+    command = [
+        "uv",
+        "run",
+        "--project",
+        ".",
+        "example",
+        "run",
+        "session_security",
+        "--port",
+        "8778",
+    ]
+    with ready_server(command) as server:
+        with urllib.request.urlopen(
+            "http://127.0.0.1:8778/?principal=reader", timeout=5
+        ) as response:
+            assert response.status == 200
+            body = response.read()
+            assert b"Session security" in body
+            assert b"reader" in body
         server.send_signal(signal.SIGINT)
         assert server.wait(timeout=5) == 0

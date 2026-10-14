@@ -48,6 +48,7 @@ from .operators import (
     ne,
     not_,
 )
+from .output import TrustedHTML
 from .parser import PysxSyntaxError
 from .reactive import Signal, batch, derived, effect, signal
 from .render import (
@@ -73,12 +74,15 @@ from .routing import (
     RouteState,
     match_route,
 )
+from .security import AccessDenied, SecurityPolicy, require_access
 from .structured import Projection, Structured, dict_key, list_index, project, structured
 from .styled import StyledCallable, StyledTag, global_style, styled, stylesheet
 from .styles import Theme, Themes, css
+from .telemetry import RequestEvent
 from .transport import TransportLimits
 
 __all__ = [
+    "AccessDenied",
     "Application",
     "Binding",
     "BrowserEvent",
@@ -105,12 +109,14 @@ __all__ = [
     "Rect",
     "Rendered",
     "RequestContext",
+    "RequestEvent",
     "Resource",
     "ResourceState",
     "Route",
     "RouteResponse",
     "RouteState",
     "Router",
+    "SecurityPolicy",
     "Signal",
     "StaticAsset",
     "Structured",
@@ -119,6 +125,7 @@ __all__ = [
     "Theme",
     "Themes",
     "TransportLimits",
+    "TrustedHTML",
     "all_of",
     "any_of",
     "batch",
@@ -171,6 +178,7 @@ __all__ = [
     "push",
     "pysx",
     "render",
+    "require_access",
     "resource",
     "section",
     "signal",

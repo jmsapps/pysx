@@ -213,6 +213,21 @@ Require sign-in changes a signal. An `effect()` observes that state and redirect
 Its path guard prevents repeated redirects. Continue clears the requirement and
 navigates home; another tab keeps its own state. The effect is disposed with the app.
 
+## Session security
+
+Run `uv run --project . example run session_security`. The Writer identity can
+increment its counter. Choose Read-only and Attempt write: the page shows a denial
+and the counter stays zero. Both identities can edit their private drafts. Open
+another tab, including another Writer tab, to see independent drafts and counters.
+Choosing an identity opens a fresh principal-bound session.
+
+These are explicitly local fixtures selected by URL, with no credentials or
+external setup. The default loopback policy confines the demonstration. Production
+applications must supply real authentication and live authorization through the
+[host integration](../docs/HOSTING.md) and [security contract](../docs/SECURITY.md).
+The example uses shipped Application/HostConfig/SecurityPolicy/require_access APIs
+and shared components.
+
 ## Adding an example
 
 Add `examples/<name>.py` with an `app` attribute; the registry discovers it

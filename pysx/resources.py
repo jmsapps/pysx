@@ -10,6 +10,7 @@ from .async_runtime import active_runtime
 from .errors import ErrorInfo, report_error
 from .lifecycle import current_scope, own_subscription
 from .reactive import Signal, signal
+from .security import require_access
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -29,9 +30,14 @@ class ResourceState[T]:
 
 class Resource[T]:
     def __init__(
-        self, loader: Callable[[], Awaitable[T]], owner: Scope, runtime: MutationRuntime
+        self,
+        loader: Callable[[], Awaitable[T]],
+        owner: Scope,
+        runtime: MutationRuntime,
+        key: str = "",
     ) -> None:
         self.loader = loader
+        self.key = key
         self.owner = owner
         self.runtime = runtime
         self.version = 0
@@ -57,6 +63,8 @@ class Resource[T]:
 
         async def load() -> None:
             try:
+                with self.runtime.context():
+                    require_access("resource", self.key)
                 await self.runtime.update(lambda: self._publish(version, ResourceState("pending")))
                 value = await self.loader()
                 await self.runtime.update(
@@ -83,6 +91,8 @@ class Resource[T]:
 
     def _publish(self, version: int, state: ResourceState[T]) -> None:
         if self._live(version):
+            if state.status == "success":
+                require_access("resource", self.key)
             self._state.set(state)
 
     def cancel(self) -> None:
@@ -112,7 +122,7 @@ def resource[T](key: str, loader: Callable[[], Awaitable[T]]) -> Resource[T]:
     if name not in owner.values:
         if len(owner.resources) >= 1024:
             raise RuntimeError("component resource limit exceeded")
-        value = Resource(loader, owner, runtime)
+        value = Resource(loader, owner, runtime, key)
         own_subscription(name, lambda: value.cancel)
         owner.values[name] = value
 
