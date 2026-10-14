@@ -88,7 +88,9 @@ try {
   await page.locator('#clear').click();
   await page.waitForFunction(() => document.querySelector('#selected')?.textContent === 'none');
   await page.evaluate(() => {
-    window.socketProbe.send(JSON.stringify({t: "event", h: window.staleHandler}));
+    const button = document.createElement("button");
+    button.setAttribute("data-pysx-click", window.staleHandler);
+    document.getElementById("pysx-root").append(button); button.click(); button.remove();
     document.querySelector('[data-count="a"]').click();
   });
   await page.waitForFunction(() => document.querySelector('[data-count="a"]')?.textContent === '1');

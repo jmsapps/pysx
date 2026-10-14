@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING, cast
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
+from .connection import BoundedConnection
 from .hosting import request_from_headers
 
 if TYPE_CHECKING:
@@ -138,12 +139,41 @@ class ASGI:
             return
         context = self.application.prepare(request)
 
+        connection = _Connection(context, receive, send, scope)
+        bounded = BoundedConnection(connection, self.application.config.transport)
+
         if urlsplit(context.path).path != context.base_path + "/ws":
-            await send({"type": "websocket.close", "code": 1008})
+            await bounded.close(1008, "invalid socket path")
 
             return
-        await send({"type": "websocket.accept"})
-        await self.application.websocket(_Connection(context, receive, send, scope))
+
+        if not self.application.admit_handshake(id(connection), bounded):
+            await bounded.close(1013, "connection capacity")
+
+            return
+
+        try:
+            query = parse_qs(urlsplit(context.path).query)
+
+            if not query.get("adoption") and query.get("resume") != ["1"]:
+                if not self.application.runtime.reserve():
+                    await bounded.close(1013, "graph capacity")
+
+                    return
+                connection.reserved = True
+            async with asyncio.timeout(self.application.config.transport.hello_timeout):
+                await send({"type": "websocket.accept"})
+            await self.application.websocket(connection)
+        except BaseException:
+            connection.abort()
+
+            raise
+        finally:
+            self.application.handshakes.pop(id(connection), None)
+
+            if connection.reserved:
+                connection.reserved = False
+                self.application.runtime.unreserve()
 
 
 class _Connection:
@@ -152,6 +182,10 @@ class _Connection:
         self.receive = receive
         self.sender = send
         self.closed = asyncio.Event()
+        self.reserved = False
+        extensions = cast("dict[str, dict[str, object]]", scope.get("extensions", {}))
+        abort = extensions.get("pysx.transport", {}).get("abort")
+        self.abort_transport = cast("Callable[[], None] | None", abort) if callable(abort) else None
         versions = cast("dict[str, str]", scope.get("asgi", {}))
         self.reason = tuple(
             int(part) for part in versions.get("spec_version", "2.0").split(".")
@@ -178,6 +212,7 @@ class _Connection:
             event = await incoming
 
             if event.get("type") == "websocket.disconnect":
+                self.close_code = cast("int", event.get("code", 1000))
                 self.closed.set()
 
                 raise DisconnectedError
@@ -209,6 +244,13 @@ class _Connection:
         if self.reason:
             event["reason"] = reason
         await self.sender(event)
+
+    def abort(self) -> None:
+        self.closed.set()
+        abort = self.abort_transport
+
+        if abort is not None:
+            abort()
 
     async def __aiter__(self) -> AsyncIterator[str | bytes]:
         while True:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, cast
 
@@ -16,6 +17,7 @@ from .render import Fragment, Watcher, render
 from .request import RequestContext, request_context
 from .routing import RouteHost, route_host
 from .styles import style_context
+from .transport import TransportState
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Generator
@@ -37,15 +39,19 @@ class Session:
         request: RequestContext | None = None,
         mutation_capacity: int = 64,
         task_capacity: int = 1024,
+        outbox_bytes: int = 2097152,
     ) -> None:
         self.request = request or RequestContext(path=location)
         self.closed = False
         self.runtime = MutationRuntime(capacity=mutation_capacity, tasks=task_capacity)
         self.runtime.development = development
         self.changed = asyncio.Event()
-        self.runtime.finished = self.changed.set
+        self.runtime.finished = self._finished
         self.runtime.failed = self.background_error
         self.pending: list[Op] = []
+        self.outbox_bytes = outbox_bytes
+        self.pressured = False
+        self.detached = False
         self._awaitables: list[Awaitable[object]] = []
         self._callback_sources: list[Awaitable[object]] = []
         self._live = False
@@ -72,6 +78,7 @@ class Session:
         # seeded with the rendered value, so it produces ops only where setup
         # wrote a signal after its hole had already been emitted.
         self.effects: list[Effect] = []
+        self.transport = TransportState(self.rendered.body)
         self.rendered.context = self.context
         self.runtime.context = self.context
         self.rendered.sink = self._owned_ops
@@ -101,7 +108,33 @@ class Session:
 
     def _owned_ops(self, ops: list[Op]) -> None:
         self._sync_styles()
-        self.pending.extend(ops)
+        self.transport.apply(ops)
+        self._queue(ops)
+        self.changed.set()
+
+    def _finished(self) -> None:
+        if self.detached:
+            self.pending.clear()
+            self.routes.commands.clear()
+            self.rendered.failures.clear()
+        self.changed.set()
+
+    def _queue(self, ops: list[Op]) -> None:
+        if self.detached:
+            self.pending.clear()
+            self.routes.commands.clear()
+            self.rendered.failures.clear()
+
+            return
+
+        if self.pressured:
+            return
+
+        if len(json.dumps([*self.pending, *ops]).encode()) > self.outbox_bytes:
+            self.pressured = True
+            self.pending.clear()
+        else:
+            self.pending.extend(ops)
         self.changed.set()
 
     @contextmanager
@@ -128,7 +161,8 @@ class Session:
         self._sync_styles()
 
         if ops:
-            self.pending.extend(ops)
+            self.transport.apply(ops)
+            self._queue(ops)
             self.changed.set()
 
     def _sync_styles(self) -> None:
@@ -137,15 +171,18 @@ class Session:
         if css != self.rendered.css:
             self.rendered.css = css
 
-            if self._live:
+            if self._live and not self.detached:
                 self.pending[:] = [op for op in self.pending if op["op"] != "css"]
                 self.pending.insert(0, {"op": "css", "v": css})
+                self._queue([])
                 self.changed.set()
 
     def background_error(self, error: Exception) -> None:
         info = ErrorInfo(None, "async")
         report_error(info, error, development=self.development)
-        self.rendered.failures.append(info)
+
+        if not self.detached:
+            self.rendered.failures.append(info)
         self.changed.set()
 
     def _invoke(

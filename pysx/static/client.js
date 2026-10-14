@@ -5,8 +5,27 @@ const adoption = root.dataset.pysxAdoption;
 const endpoint = new URL(document.currentScript?.src ?? "/client.js", location.href);
 endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 endpoint.pathname = endpoint.pathname.replace(/client\.js$/, "ws");
-endpoint.search = `location=${encodeURIComponent(browserLocation())}${adoption ? `&adoption=${encodeURIComponent(adoption)}` : ""}`;
-const socket = new WebSocket(endpoint);
+endpoint.search = `protocol=3&location=${encodeURIComponent(browserLocation())}${adoption ? `&adoption=${encodeURIComponent(adoption)}` : ""}`;
+let socket = new WebSocket(endpoint);
+let resumeToken = null;
+let connected = false;
+let retryAttempt = 0;
+let transportTimer = null;
+let stopped = false;
+let freshSession = false;
+const connectionStatus = document.createElement("p");
+connectionStatus.id = "pysx-connection-status";
+connectionStatus.setAttribute("role", "status");
+connectionStatus.hidden = true;
+const retryButton = document.createElement("button");
+retryButton.type = "button";
+retryButton.textContent = "Retry connection";
+retryButton.hidden = true;
+root.after(connectionStatus, retryButton);
+let epoch = null;
+let stateRevision = 0;
+let eventSequence = 0;
+let repairing = false;
 let routing = false;
 let navigationRevision = 0;
 let observedLocation = browserLocation();
@@ -121,6 +140,7 @@ function commitNavigation(message) {
 }
 
 function observeLocation() {
+  if (!connected) return;
   const url = browserLocation();
   if (!routing || (url === observedLocation && history.state?.pysxEntry === historyEntry)) return;
   rememberPosition();
@@ -209,7 +229,7 @@ function domCommand(message) {
   try {
     syncDom();
     const originalTokens = [...domNodes.keys()];
-    if (message.version !== 1) throw new Error("unsupported command version");
+    if (message.version !== 3) throw new Error("unsupported command version");
     const entry = domNodes.get(message.target);
     const owner = domNodes.get(message.root)?.node;
     if (!entry || entry.root !== message.root || !owner) throw new Error("stale DOM handle");
@@ -279,6 +299,7 @@ function domCommand(message) {
         if (domListeners.size >= 128 || domListeners.has(args.h)) throw new Error("listener limit exceeded");
         const policy = args.policy, target = args.window ? window : el;
         const fn = event => {
+          if (blockInteraction(event, true)) return;
           syncDom();
           if (!domNodes.has(message.target) || !eligible(event, el, policy)) return;
           if (policy.prevent) event.preventDefault();
@@ -338,6 +359,7 @@ function eligible(event, target, policy) {
 }
 
 function typedEvents(event, phase, composed) {
+  if (blockInteraction(event)) return;
   let path = composed;
   if (!event.bubbles && phase === "bubble") path = path.slice(0, 1);
   if (phase === "capture") path = [...path].reverse();
@@ -403,6 +425,7 @@ function registerEvent(type) {
     throw new Error("custom event limit exceeded");
   }
   const capture = event => {
+    if (blockInteraction(event)) return;
     const path = composedTargets(event);
     if (!path.length) return;
     typedEvents(event, "capture", path);
@@ -464,12 +487,91 @@ function hydrate(scope) {
   }
 }
 
-socket.onmessage = (event) => {
-  const message = JSON.parse(event.data);
+function validOperation(op) {
+  if (!op || typeof op !== "object" || Array.isArray(op)) return false;
+  const fields = {css: ["v"], text: ["id", "v"], html: ["id", "v"],
+    children: ["id", "v", "range", "kind"], attr: ["id", "name", "v", "rev"],
+    prop: ["id", "name", "v", "rev"], list: ["id", "keys", "html"]};
+  if (typeof op.op !== "string" || !Object.hasOwn(fields, op.op) || Object.keys(op).some(key => key !== "op" && !fields[op.op].includes(key))) return false;
+  if (op.rev !== undefined && (!Number.isSafeInteger(op.rev) || op.rev < 0)) return false;
+  if (op.op === "css") return typeof op.v === "string";
+  if (typeof op.id !== "string" || !op.id.length) return false;
+  if (op.op === "children") return typeof op.v === "string" && typeof op.range === "boolean" && ["slot", "list", "row"].includes(op.kind);
+  if (["text", "html"].includes(op.op)) return typeof op.v === "string";
+  if (op.op === "attr") return typeof op.name === "string" && (op.v === null || typeof op.v === "string");
+  if (op.op === "prop") return op.name === "selectedValues" && Array.isArray(op.v) && op.v.every(v => typeof v === "string");
+  if (op.op === "list") return Array.isArray(op.keys) && op.keys.every(v => typeof v === "string") &&
+    new Set(op.keys).size === op.keys.length && op.html && typeof op.html === "object" && !Array.isArray(op.html) &&
+    Object.entries(op.html).every(([key, value]) => op.keys.includes(key) && typeof value === "string");
+  return false;
+}
+
+function validMessage(message) {
+  if (["init", "repair"].includes(message.t)) return typeof message.html === "string" && typeof message.css === "string" &&
+    (message.t !== "repair" || (Number.isSafeInteger(message.expected) && message.expected > 0));
+  if (message.t === "adopted") return typeof message.routing === "boolean";
+  if (message.t === "patch") return Array.isArray(message.ops) && message.ops.every(validOperation);
+  if (message.t === "result") return typeof message.h === "string" &&
+    ["success", "error", "invalid", "stale"].includes(message.status) && Array.isArray(message.ops) && message.ops.every(validOperation) &&
+    (message.status !== "error" || (message.error && typeof message.error === "object" &&
+      typeof message.error.id === "string" && typeof message.error.message === "string" &&
+      (message.error.owner === null || typeof message.error.owner === "string") &&
+      ["render", "handler", "computed", "effect", "cleanup", "mount", "async"].includes(message.error.phase)));
+  if (message.t === "ack") return Number.isSafeInteger(message.seq) && Number.isSafeInteger(message.expected) &&
+    ["success", "duplicate", "gap", "epoch", "revision"].includes(message.status);
+  if (message.t === "mount") return Array.isArray(message.ids) && message.ids.length <= 1024 && message.ids.every(id => typeof id === "string");
+  if (message.t === "navigation") return typeof message.url === "string" && Number.isSafeInteger(message.rev) &&
+    ["push", "replace", "observe", "external"].includes(message.mode);
+  if (message.t === "routing") return typeof message.on === "boolean";
+  if (message.t === "dom") return ["id", "target", "root", "op"].every(key => typeof message[key] === "string") &&
+    message.args && typeof message.args === "object" && !Array.isArray(message.args);
+  return false;
+}
+
+function receiveMessage(event) {
+  let message;
+  try { message = JSON.parse(event.data); } catch { socket.close(4002, "invalid JSON"); return; }
+  if (!message || typeof message !== "object" || Array.isArray(message) || message.version !== 3 ||
+      typeof message.epoch !== "string" || !Number.isSafeInteger(message.state_rev) ||
+      !Number.isSafeInteger(message.base_rev) || message.state_rev !== message.base_rev + 1 ||
+      !["init", "adopted", "result", "patch", "dom", "mount", "navigation", "routing", "ack", "repair"].includes(message.t) ||
+      message.base_rev < 0 || !validMessage(message)) {
+    socket.close(4002, "invalid envelope"); return;
+  }
+  if (["init", "adopted"].includes(message.t)) {
+    if (epoch !== null) { socket.close(4002, "repeated attachment"); return; }
+    epoch = message.epoch;
+  } else if (message.epoch !== epoch) { socket.close(4002, "wrong epoch"); return; }
+  if (message.t === "repair" && message.state_rev < stateRevision) return;
+  if (message.t !== "repair" && !["init", "adopted"].includes(message.t) && message.base_rev !== stateRevision) {
+    if (!repairing) { repairing = true; send({t: "repair"}); }
+    return;
+  }
+  stateRevision = message.state_rev;
+  if (typeof message.resume === "string") resumeToken = message.resume;
+  if (message.t === "repair") {
+    if (message.routing) enableRouting();
+    if (Number.isSafeInteger(message.nav_rev)) navigationRevision = message.nav_rev;
+    const parser = document.createRange(); parser.selectNodeContents(root);
+    const fresh = parser.createContextualFragment(message.html);
+    hydrate(fresh);
+    preserveInteraction(() => morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true));
+    style.textContent = message.css;
+    registerTyped(root); syncDom();
+    eventSequence = message.expected - 1;
+    repairing = false;
+    root.dataset.pysxAttached = "true";
+    attachmentReady();
+    window.dispatchEvent(new CustomEvent("pysx:repair"));
+  } else if (message.t === "ack") {
+    if (["gap", "epoch", "revision"].includes(message.status)) repairing = true;
+  } else
   if (message.t === "init") {
     if (message.routing) enableRouting();
     style.textContent = message.css;
     root.innerHTML = message.html;
+    root.dataset.pysxAttached = "true";
+    attachmentReady();
     hydrate(root);
     syncDom();
     if (routing) queueRouteScroll(browserLocation());
@@ -479,6 +581,7 @@ socket.onmessage = (event) => {
     syncDom();
     delete root.dataset.pysxAdoption;
     root.dataset.pysxAttached = "true";
+    attachmentReady();
     if (routing) queueRouteScroll(browserLocation());
   } else if (message.t === "result") {
     for (const op of message.ops) apply(op);
@@ -494,16 +597,20 @@ socket.onmessage = (event) => {
   } else if (message.t === "dom") {
     domCommand(message);
   } else if (message.t === "mount") {
-    socket.send(JSON.stringify({t: "mounted", ids: message.ids}));
+    send({t: "mounted", ids: message.ids});
   } else if (message.t === "navigation") {
     commitNavigation(message);
   } else if (message.t === "routing") {
     if (message.on) enableRouting();
   }
-};
+}
 
-socket.addEventListener("open", () => {
-  if (!adoption) return;
+function openSocket() {
+  if (resumeToken) {
+    socket.send(JSON.stringify({t: "hello", version: 3, resume: resumeToken, epoch, state_rev: stateRevision}));
+    return;
+  }
+  if (!adoption || freshSession) { socket.send(JSON.stringify({t: "hello", version: 3, edits: []})); return; }
   // HTTP controls already have their browser values; never hydrate over edits.
   const values = [...root.querySelectorAll("[data-pysx-binding]")]
     .filter(el => {
@@ -520,15 +627,54 @@ socket.addEventListener("open", () => {
       }
       return el.value !== el.defaultValue;
     }).map(edit);
-  socket.send(JSON.stringify({t: "adopt", edits: values}));
-});
+  socket.send(JSON.stringify({t: "hello", version: 3, edits: values}));
+}
 
-socket.addEventListener("close", () => {
-  cancelRouteScroll();
-  if (previousRestoration !== null) history.scrollRestoration = previousRestoration;
-  historyPositions.clear();
-  window.removeEventListener("popstate", observeLocation);
-  window.removeEventListener("hashchange", observeLocation);
+function clearTransportTimer() {
+  clearTimeout(transportTimer);
+  transportTimer = null;
+}
+
+function connectionState(state, retryMs = 0) {
+  root.dataset.pysxConnection = state;
+  connectionStatus.hidden = state === "connected" && !freshSession;
+  const text = state === "connected" ? "Connected. A fresh session started; previous session state was lost." :
+    state === "reconnecting" ? "Disconnected. Reconnecting; offline edits are rejected." :
+    state === "fresh" ? "Previous session expired. Starting a fresh session." :
+    state === "stopped" ? "Disconnected by a protocol failure. Offline edits are rejected. Reload the page to continue." :
+    "Disconnected. Offline edits are rejected. Retry to connect.";
+  connectionStatus.textContent = text;
+  retryButton.hidden = state !== "disconnected";
+  window.dispatchEvent(new CustomEvent("pysx:connection", {detail: {
+    state, attempt: retryAttempt, retryMs, fresh: freshSession,
+    timers: transportTimer === null ? 0 : 1,
+    listeners: registeredEvents.size * 2 + domListeners.size,
+    pendingBytes: socket.bufferedAmount,
+  }}));
+}
+
+function attachmentReady() {
+  connected = true;
+  clearTransportTimer();
+  retryAttempt = 0;
+  connectionState("connected");
+}
+
+function rejectInteraction() {
+  window.dispatchEvent(new CustomEvent("pysx:rejected", {detail: {reason: "disconnected"}}));
+}
+
+function blockInteraction(event, owned = false) {
+  if ((connected && !repairing) || root.dataset.pysxAttached === undefined) return false;
+  if (!owned && (!(event.target instanceof Node) || !root.contains(event.target))) return false;
+  if (event.cancelable) event.preventDefault();
+  rejectInteraction();
+  return true;
+}
+
+function resetSession() {
+  resumeToken = null; epoch = null; stateRevision = 0; eventSequence = 0;
+  repairing = false; freshSession = true;
   for (const listener of domListeners.values()) listener.target.removeEventListener(listener.type, listener.fn, listener.capture);
   domListeners.clear(); domNodes.clear();
   for (const [type, listeners] of registeredEvents) {
@@ -536,6 +682,69 @@ socket.addEventListener("close", () => {
     window.removeEventListener(type, listeners.bubble);
   }
   registeredEvents.clear();
+  if (previousRestoration !== null) history.scrollRestoration = previousRestoration;
+  routing = false; navigationRevision = 0;
+  historyPositions.clear();
+  observedLocation = browserLocation(); committedLocation = observedLocation;
+}
+
+function scheduleReconnect() {
+  if (stopped || transportTimer !== null) return;
+  if (retryAttempt >= 8) { connectionState("disconnected"); return; }
+  const ceiling = Math.min(10000, 250 * 2 ** retryAttempt++);
+  const delay = Math.round(ceiling * (0.5 + Math.random() * 0.5));
+  transportTimer = setTimeout(() => { transportTimer = null; reconnect(false); }, delay);
+  connectionState("reconnecting", delay);
+}
+
+function closeSocket(event) {
+  connected = false;
+  clearTransportTimer();
+  cancelRouteScroll();
+  root.dataset.pysxAttached = "false";
+  window.dispatchEvent(new CustomEvent("pysx:disconnected"));
+  if (stopped) return;
+  if (event.code === 4004 || event.code === 4009 || (event.code === 1008 && epoch === null)) {
+    resetSession();
+    connectionState("fresh");
+  } else if ([4002, 1002, 1008, 1009].includes(event.code)) {
+    stopped = true;
+    connectionState("stopped");
+    return;
+  }
+  scheduleReconnect();
+}
+
+function attachSocket() {
+  const owner = socket;
+  socket.onmessage = event => { if (socket === owner) receiveMessage(event); };
+  socket.addEventListener("open", () => { if (socket === owner) openSocket(); });
+  socket.addEventListener("close", event => { if (socket === owner) closeSocket(event); });
+  clearTransportTimer();
+  transportTimer = setTimeout(() => {
+    transportTimer = null;
+    if (socket === owner && !connected) owner.close(4000, "attachment deadline");
+  }, 5000);
+}
+
+function reconnect(manual = true) {
+  if (socket.readyState !== WebSocket.CLOSED || stopped) return;
+  clearTransportTimer();
+  if (manual) retryAttempt = 0;
+  endpoint.search = `protocol=3${resumeToken ? "&resume=1" : ""}&location=${encodeURIComponent(browserLocation())}`;
+  socket = new WebSocket(endpoint);
+  attachSocket();
+  connectionState(freshSession ? "fresh" : "reconnecting");
+}
+
+attachSocket();
+window.addEventListener("pysx:reconnect", () => reconnect());
+retryButton.addEventListener("click", () => reconnect());
+window.addEventListener("pagehide", () => {
+  stopped = true;
+  clearTransportTimer();
+  cancelRouteScroll();
+  socket.close();
 });
 
 function apply(op) {
@@ -651,7 +860,7 @@ function compatible(old, fresh) {
   return token === nextToken;
 }
 
-function morphNode(old, fresh) {
+function morphNode(old, fresh, complete = false) {
   if (old.nodeType !== Node.ELEMENT_NODE) {
     if (old.data !== fresh.data) old.data = fresh.data;
     return;
@@ -669,10 +878,14 @@ function morphNode(old, fresh) {
     if (name === "value") setValue(old, "");
     else old[name] = false;
   }
-  if (!old.hasAttribute("data-pysx-imperative")) morphChildren(old, [...old.childNodes], [...fresh.childNodes]);
+  if (!old.hasAttribute("data-pysx-imperative")) morphChildren(old, [...old.childNodes], [...fresh.childNodes], null, complete);
+  if (complete && old.tagName === "SELECT") {
+    if (fresh.hasAttribute("data-pysx-selected")) setSelected(old, JSON.parse(fresh.dataset.pysxSelected));
+    else if (fresh.hasAttribute("value")) setSelected(old, [fresh.getAttribute("value")]);
+  }
 }
 
-function morphChildren(parent, previousNodes, nextNodes, boundary = null) {
+function morphChildren(parent, previousNodes, nextNodes, boundary = null, complete = false) {
   const oldGroups = nodeGroups(previousNodes);
   const freshGroups = nodeGroups(nextNodes);
   const keyed = new Map(oldGroups.filter(group => group.key).map(group => [group.key, group]));
@@ -685,7 +898,7 @@ function morphChildren(parent, previousNodes, nextNodes, boundary = null) {
     if (old) {
       used.add(old);
       if (old.kind) {
-        if (old.kind !== "list") morphChildren(parent, old.nodes.slice(1, -1), fresh.nodes.slice(1, -1), old.nodes.at(-1));
+        if (old.kind !== "list" || complete) morphChildren(parent, old.nodes.slice(1, -1), fresh.nodes.slice(1, -1), old.nodes.at(-1), complete);
         // Nested reconciliation may have changed the live range's length.
         const members = [];
         for (let node = old.nodes[0]; node; node = node.nextSibling) {
@@ -693,7 +906,7 @@ function morphChildren(parent, previousNodes, nextNodes, boundary = null) {
           if (node === old.nodes.at(-1)) break;
         }
         resulting.push(...members);
-      } else { morphNode(old.nodes[0], fresh.nodes[0]); resulting.push(old.nodes[0]); }
+      } else { morphNode(old.nodes[0], fresh.nodes[0], complete); resulting.push(old.nodes[0]); }
     } else resulting.push(...fresh.nodes);
   }
   for (const old of oldGroups) if (!used.has(old)) for (const node of old.nodes) node.remove();
@@ -718,8 +931,13 @@ function preserveInteraction(change) {
   for (let node = active; node instanceof Element; node = node.parentElement) scroll.push([node, node.scrollLeft, node.scrollTop]);
   change();
   if (active?.isConnected && document.activeElement !== active) active.focus({preventScroll: true});
-  if (caret && active.isConnected) active.setSelectionRange(...caret);
-  if (!caret && selected && selected[0]?.isConnected && selected[2]?.isConnected) selection.setBaseAndExtent(...selected);
+  if (caret && active.isConnected && typeof active.selectionStart === "number") {
+    active.setSelectionRange(Math.min(caret[0], active.value.length), Math.min(caret[1], active.value.length), caret[2]);
+  }
+  if (!caret && selected && selected[0]?.isConnected && selected[2]?.isConnected) {
+    const extent = node => node.nodeType === Node.TEXT_NODE ? node.data.length : node.childNodes.length;
+    selection.setBaseAndExtent(selected[0], Math.min(selected[1], extent(selected[0])), selected[2], Math.min(selected[3], extent(selected[2])));
+  }
   for (const [node, left, top] of scroll) if (node.isConnected) { node.scrollLeft = left; node.scrollTop = top; }
 }
 
@@ -774,10 +992,12 @@ function resyncBindings(form) {
 // The browser restores defaults after dispatch, so the resynchronised bindings
 // and the handler snapshot travel together in one message on the next tick.
 function resetEvent(event, handler, typed = true) {
+  if (blockInteraction(event)) return;
   const form = event.target;
   if (!(form instanceof HTMLFormElement) || !root.contains(form)) return;
   const snap = typed ? snapshot(event, handler) : null;
   setTimeout(() => {
+    if (blockInteraction(event)) return;
     if (!root.contains(form)) return;
     const prevented = event.defaultPrevented;
     if (prevented && !typed) return;
@@ -803,9 +1023,24 @@ function edit(el) {
 }
 
 function send(payload) {
+  if (!connected || (repairing && ["event", "location", "mounted"].includes(payload.t))) {
+    if (["event", "location"].includes(payload.t)) rejectInteraction();
+    return;
+  }
   if (routing && payload.t === "event") rememberPosition();
   if (routing && payload.t === "event") payload.nav_rev = navigationRevision;
-  if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
+  if (socket.readyState === WebSocket.OPEN && epoch) {
+    if (["event", "location", "mounted"].includes(payload.t)) payload.seq = ++eventSequence;
+    payload.version = 3; payload.epoch = epoch; payload.state_rev = stateRevision;
+    const encoded = JSON.stringify(payload);
+    if (new TextEncoder().encode(encoded).length + socket.bufferedAmount > 65536) {
+      connected = false;
+      rejectInteraction();
+      socket.close(4009, "outbound queue limit");
+      return;
+    }
+    socket.send(encoded);
+  }
 }
 
 function submitPayload(form, submitter = null) {
@@ -819,10 +1054,12 @@ function submitPayload(form, submitter = null) {
 }
 
 document.addEventListener("compositionstart", event => {
+  if (blockInteraction(event)) return;
   if (event.target.dataset?.pysxBinding) editState(event.target).composing = true;
 });
 
 document.addEventListener("compositionend", event => {
+  if (blockInteraction(event)) return;
   const el = event.target;
   if (!el.dataset?.pysxBinding) return;
   const state = editState(el);
@@ -837,6 +1074,7 @@ document.addEventListener("compositionend", event => {
 
 for (const type of EVENTS) {
   window.addEventListener(type, (event) => {
+    if (blockInteraction(event)) return;
     if (event.cancelBubble) return;
     const bound = event.target.closest?.("[data-pysx-binding]");
     if ((type === "input" || type === "change") && bound?.dataset.pysxBindEvent === type) {

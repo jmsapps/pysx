@@ -16,6 +16,16 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "bounded_reconnect", cases: [
+    [0, "reconnect_fixture", "browser_reconnect.mjs", "BOUNDED RECONNECT BROWSER PASSED"],
+    [1, "expired_reconnect_fixture", "browser_reconnect.mjs", "BOUNDED RECONNECT BROWSER PASSED"],
+  ] },
+  { suite: "current_state", cases: [
+    [0, "resume_fixture", "browser_resume.mjs", "CURRENT STATE BROWSER PASSED"],
+  ] },
+  { suite: "shape_protocol", cases: [
+    [0, "counter", "browser_transport.mjs", "SHAPE PROTOCOL BROWSER PASSED"],
+  ] },
   { suite: "resources", cases: [
     [0, "resources", "browser_resources.mjs", "RESOURCES EXAMPLE BROWSER PASSED"],
   ] },
@@ -123,6 +133,9 @@ const registry = [
   { suite: "serialization_live", cases: [
     [0, "native_fixture", "browser_serialization.mjs", "SERIALIZATION BROWSER PASSED"],
   ] },
+  { suite: "example_reconnect", cases: [
+    [0, "reconnect", "browser_example_reconnect.mjs", "EXAMPLE RECONNECT BROWSER PASSED"],
+  ] },
   { suite: "examples", cases: [
     [0, "counter", "browser.mjs", "BROWSER ACCEPTANCE PASSED"],
     [1, "todos", "browser_todos.mjs", "TODOS BROWSER ACCEPTANCE PASSED"],
@@ -221,6 +234,10 @@ try {
       ["-m", "pysx.server", "--app", "tests.browser_host_fixture:host", "--port", String(port), ...(name === "host_asgi" ? ["--asgi"] : [])] :
       name === "keyed_snapshot_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_keyed_snapshot_fixture:app", "--port", String(port)] :
+      name === "resume_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_resume_fixture:app", "--port", String(port)] :
+      name === "reconnect_fixture" || name === "expired_reconnect_fixture" ?
+      ["-m", "pysx.server", "--app", `tests.browser_reconnect_fixture:${name === "reconnect_fixture" ? "host" : "expired_host"}`, "--port", String(port)] :
       name === "http_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_http_fixture:app", "--port", String(port)] :
       name === "async_fixture" ?
@@ -264,7 +281,7 @@ try {
       ["run_example.py", "run", name, "--port", String(port)]) : null;
     if (server) await wait(server, name === "host_asgi" ? "Uvicorn running" : "pysx ready", 15000);
     for (const engine of ["chromium", "firefox", "webkit"]) {
-      const suite = start(process.execPath, [`tests/${script}`, String(port)], { PYSX_BROWSER_ENGINE: engine });
+      const suite = start(process.execPath, [`tests/${script}`, String(port)], { PYSX_BROWSER_ENGINE: engine, PYSX_BROWSER_CASE: name ?? "" });
       const output = await wait(suite, null, 60000);
       if (!output.includes(banner)) throw new Error(`missing suite banner: ${output}`);
       if (process.env.PYSX_BROWSER_FORCE_FAILURE === "1") throw new Error("forced assertion failure");

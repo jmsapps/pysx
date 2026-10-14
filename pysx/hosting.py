@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
+import math
 import mimetypes
 import secrets
 from contextlib import asynccontextmanager
@@ -12,14 +13,15 @@ from dataclasses import dataclass, field, replace
 from http import HTTPStatus
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlsplit
 
-from .connection import serve_connection
+from .connection import bound_connection, serve_connection
 from .errors import ErrorInfo, report_error
 from .http import HTTPResult, HTTPRuntime
 from .request import RequestContext, browser_id
 from .routing import Location
+from .transport import TransportLimits
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping
@@ -64,19 +66,35 @@ class StaticAsset:
 @dataclass(frozen=True)
 class HostConfig:
     base_path: str = ""
-    render_capacity: int = 128
+    render_capacity: int = 100
     render_ttl: float = 30
     mutation_capacity: int = 64
     task_capacity: int = 1024
     development: bool = False
     secure_cookies: bool = False
+    health_path: str | None = "/health"
     shutdown_timeout: float = 5
+    transport: TransportLimits = field(default_factory=TransportLimits)
     principal: Callable[[RequestContext], str | None] | None = None
     assets: Mapping[str, StaticAsset] = field(default_factory=lambda: dict[str, StaticAsset]())
     startup: tuple[Hook, ...] = ()
     shutdown: tuple[Hook, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(cast("object", self.transport), TransportLimits):
+            raise ValueError("transport must be TransportLimits")
+
+        for name in ("render_capacity", "mutation_capacity", "task_capacity"):
+            value = getattr(self, name)
+
+            if type(value) is not int or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+
+        for name in ("render_ttl", "shutdown_timeout"):
+            value = getattr(self, name)
+
+            if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive")
         location = Location.parse(self.base_path or "/")
 
         if (
@@ -87,6 +105,16 @@ class HostConfig:
             or self.task_capacity < 1
         ):
             raise ValueError("invalid host prefix, shutdown timeout or capacity")
+
+        if self.health_path is not None and (
+            not isinstance(cast("object", self.health_path), str)
+            or not self.health_path.startswith("/")
+            or self.health_path.rstrip("/") == ""
+        ):
+            raise ValueError("health_path must be None or an absolute non-root path")
+
+        if self.health_path is not None:
+            object.__setattr__(self, "health_path", self.health_path.rstrip("/"))
         object.__setattr__(
             self, "base_path", quote(location.path.rstrip("/"), safe="/%:@-._~!$&'()*+,;=")
         )
@@ -121,6 +149,7 @@ class Application:
             development=self.config.development,
             mutation_capacity=self.config.mutation_capacity,
             task_capacity=self.config.task_capacity,
+            limits=self.config.transport,
         )
         self.assets = {
             "/client.js": StaticAsset(
@@ -132,7 +161,10 @@ class Application:
         self.closed = False
         self.started = False
         self.start_lock = asyncio.Lock()
+        self.close_lock = asyncio.Lock()
         self.connections: dict[int, tuple[Connection, asyncio.Task[object]]] = {}
+        self.handshakes: dict[int, tuple[Connection, asyncio.Task[object]]] = {}
+        self.start_tasks: set[asyncio.Task[object]] = set()
 
     def path(self, path: str) -> str:
         return self.config.base_path + "/" + path.lstrip("/")
@@ -146,6 +178,16 @@ class Application:
         return context
 
     async def start(self) -> None:
+        task = asyncio.current_task()
+        assert task is not None
+        self.start_tasks.add(task)
+
+        try:
+            await self._start()
+        finally:
+            self.start_tasks.discard(task)
+
+    async def _start(self) -> None:
         async with self.start_lock:
             if self.closed:
                 raise RuntimeError("application has been closed")
@@ -178,6 +220,8 @@ class Application:
 
         if asset is not None:
             result = asset.response(context.headers)
+        elif self.config.health_path is not None and local == self.config.health_path:
+            result = HTTPResult(200, (("content-type", "text/plain; charset=utf-8"),), b"ok")
         else:
             browser = browser_id(context) or secrets.token_urlsafe(32)
 
@@ -210,53 +254,108 @@ class Application:
     async def websocket(self, connection: Connection) -> None:
         await self.start()
 
+        bounded = bound_connection(connection, self.config.transport)
+        admission_key = getattr(connection, "admission_key", id(connection))
+        self.handshakes.pop(admission_key, None)
+
+        if self.closed or len(self.connections) >= self.config.transport.graphs:
+            await bounded.close(1013, "connection capacity")
+
+            if bounded.reserved:
+                self.runtime.unreserve()
+
+            return
+
         if urlsplit(connection.request.path).path != connection.request.base_path + "/ws":
-            await connection.close(code=1008, reason="invalid socket path")
+            await bounded.close(code=1008, reason="invalid socket path")
+
+            if bounded.reserved:
+                self.runtime.unreserve()
 
             return
         task = asyncio.current_task()
         assert task is not None
         identifier = id(connection)
-        self.connections[identifier] = (connection, task)
+        self.connections[identifier] = (bounded, task)
 
         try:
-            await serve_connection(self.runtime, connection)
+            await serve_connection(self.runtime, bounded)
         finally:
             self.connections.pop(identifier, None)
 
+    def admit_handshake(self, identifier: int, connection: Connection) -> bool:
+        if (
+            self.closed
+            or len(self.handshakes) + len(self.connections) >= self.config.transport.graphs
+        ):
+            return False
+        task = asyncio.current_task()
+        assert task is not None
+        self.handshakes[identifier] = (connection, task)
+
+        return True
+
     async def close(self) -> None:
+        try:
+            async with asyncio.timeout(self.config.shutdown_timeout):
+                async with self.close_lock:
+                    await self._close()
+        except (TimeoutError, asyncio.CancelledError) as error:
+            self.closed = True
+
+            for task in self.start_tasks:
+                task.cancel()
+
+            for connection, task in (*self.connections.values(), *self.handshakes.values()):
+                bound_connection(connection, self.config.transport).abort()
+                task.cancel()
+            self.runtime.close()
+            await asyncio.sleep(0)
+
+            if isinstance(error, asyncio.CancelledError):
+                raise
+
+            raise TimeoutError("application shutdown deadline") from None
+
+    async def _close(self) -> None:
         async with self.start_lock:
             if self.closed:
                 return
             self.closed = True
         errors: list[Exception] = []
-        sessions = [entry.session for entry in self.runtime.pending.values()]
-        pending_tasks = {task for session in sessions for task in session.runtime.tasks}
-        workers = {
-            session.runtime.worker for session in sessions if session.runtime.worker is not None
-        }
+        owned_tasks = self.runtime.tasks()
+
+        active = (*self.connections.values(), *self.handshakes.values())
+
+        if active:
+            outcomes = await asyncio.gather(
+                *(
+                    bound_connection(connection, self.config.transport).close(
+                        1001, "application shutdown"
+                    )
+                    for connection, _task in active
+                ),
+                return_exceptions=True,
+            )
+            errors.extend(outcome for outcome in outcomes if isinstance(outcome, Exception))
+        current = asyncio.current_task()
+        tasks = {task for _connection, task in active if task is not current} | owned_tasks
+
+        for task in tasks:
+            task.cancel()
 
         try:
             self.runtime.close()
         except Exception as error:
             errors.append(error)
-        active = tuple(self.connections.values())
 
-        if active:
-            outcomes = await asyncio.gather(
-                *(connection.close() for connection, _task in active), return_exceptions=True
-            )
-            errors.extend(outcome for outcome in outcomes if isinstance(outcome, Exception))
-        current = asyncio.current_task()
-        tasks = (
-            {task for _connection, task in active if task is not current} | pending_tasks | workers
-        )
-
-        for task in tasks:
-            task.cancel()
+        tasks.update(self.runtime.tasks())
 
         if tasks:
-            done, _pending = await asyncio.wait(tasks, timeout=self.config.shutdown_timeout)
+            done, pending = await asyncio.wait(tasks, timeout=self.config.shutdown_timeout)
+
+            if pending:
+                raise TimeoutError("owned task shutdown deadline")
 
             for task in done:
                 if not task.cancelled() and isinstance(
@@ -288,6 +387,7 @@ class Application:
         from websockets.http11 import Response
 
         await self.start()
+        protocols: set[ServerConnection] = set()
 
         class HTTPConnection(ServerConnection):
             # The websocket handshake parser accepts only GET. Keep the HTTP
@@ -295,6 +395,24 @@ class Application:
             method: str = "GET"
             first_line: bytes = b""
             reading_line: bool = True
+            reserved: bool = False
+            admitted: bool = False
+
+            def connection_made(self, transport: asyncio.BaseTransport) -> None:
+                protocols.add(self)
+                super().connection_made(transport)
+
+            def connection_lost(self, exc: Exception | None) -> None:
+                protocols.discard(self)
+
+                if self.reserved:
+                    self.reserved = False
+                    application.runtime.unreserve()
+
+                if self.admitted:
+                    self.admitted = False
+                    application.handshakes.pop(id(self), None)
+                super().connection_lost(exc)
 
             def data_received(self, data: bytes) -> None:
                 if not self.reading_line:
@@ -316,6 +434,8 @@ class Application:
                 self.first_line = b""
                 super().data_received(b"GET" + separator + rest)
 
+        application = self
+
         async def process_request(
             _connection: ServerConnection, request: Request
         ) -> Response | None:
@@ -326,6 +446,24 @@ class Application:
             method = _connection.method if isinstance(_connection, HTTPConnection) else "GET"
 
             if method == "GET" and urlsplit(request.path).path == self.path("ws"):
+                from urllib.parse import parse_qs
+
+                if not isinstance(_connection, HTTPConnection):
+                    raise RuntimeError("missing admission adapter")
+
+                adapter = _StandaloneConnection(_connection, context)
+
+                if not self.admit_handshake(id(_connection), adapter):
+                    return Response(503, "Service Unavailable", Headers(), b"connection capacity")
+                _connection.admitted = True
+                adoption = parse_qs(urlsplit(request.path).query).get("adoption")
+                resume = parse_qs(urlsplit(request.path).query).get("resume") == ["1"]
+
+                if not adoption and not resume:
+                    if not self.runtime.reserve():
+                        return Response(503, "Service Unavailable", Headers(), b"graph capacity")
+                    _connection.reserved = True
+
                 return None
             result = await self.http(context, method=method)
 
@@ -348,26 +486,76 @@ class Application:
                     request.path, list(request.headers.raw_items()), base_path=self.config.base_path
                 )
             )
-            await self.websocket(_StandaloneConnection(connection, context))
+            reserved = False
+
+            if isinstance(connection, HTTPConnection):
+                reserved, connection.reserved = connection.reserved, False
+
+            adapter = _StandaloneConnection(connection, context, reserved=reserved)
+
+            try:
+                await self.websocket(adapter)
+            finally:
+                self.handshakes.pop(id(connection), None)
+
+                if reserved and self.runtime.reservations and adapter.reserved:
+                    self.runtime.unreserve()
 
         try:
-            async with serve(
+            server = await serve(
                 handler,
                 host,
                 port,
                 process_request=process_request,
                 create_connection=HTTPConnection,
-                close_timeout=self.config.shutdown_timeout,
-            ) as server:
-                yield server
-        finally:
+                close_timeout=self.config.transport.close_timeout,
+                open_timeout=self.config.transport.hello_timeout,
+                ping_interval=self.config.transport.ping_interval,
+                ping_timeout=self.config.transport.ping_timeout,
+                max_size=self.config.transport.max_frame_bytes,
+                max_queue=self.config.transport.socket_queue,
+                write_limit=self.config.transport.write_limit,
+            )
+        except BaseException:
             await self.close()
+
+            raise
+
+        try:
+            yield server
+        finally:
+            server.close(close_connections=False)
+            shutdown_error: BaseException | None = None
+
+            try:
+                async with asyncio.timeout(self.config.shutdown_timeout):
+                    try:
+                        await self.close()
+                    except BaseException as error:
+                        shutdown_error = error
+                    finally:
+                        for protocol in tuple(protocols):
+                            protocol.transport.abort()
+                    await server.wait_closed()
+            finally:
+                for protocol in tuple(protocols):
+                    protocol.transport.abort()
+
+            if shutdown_error is not None:
+                raise shutdown_error
 
 
 class _StandaloneConnection:
-    def __init__(self, connection: ServerConnection, request: RequestContext) -> None:
+    def __init__(
+        self, connection: ServerConnection, request: RequestContext, *, reserved: bool = False
+    ) -> None:
         self.connection = connection
         self.request = request
+        self.reserved = reserved
+        self.admission_key = id(connection)
+
+    def abort(self) -> None:
+        self.connection.transport.abort()
 
     async def send(self, message: str) -> None:
         await self.connection.send(message)

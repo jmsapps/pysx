@@ -29,6 +29,7 @@ try {
     window.WebSocket = class extends Socket {
       constructor(...args) {
         super(...args); window.liveSocket = this;
+        this.addEventListener("message", event => { window.lastEnvelope = JSON.parse(event.data); });
       }
     };
   });
@@ -92,12 +93,17 @@ try {
   console.log("  ok  composition holds intermediate edits and commits the final value once");
   await page.locator("#text").evaluate(el => {
     const edit = window.sentEdits.findLast(message => message.h === el.dataset.pysxBinding);
-    window.liveSocket.onmessage({ data: JSON.stringify({ t: "patch", ops: [{
+    window.liveSocket.onmessage({ data: JSON.stringify({ ...window.lastEnvelope, t: "patch", base_rev: window.lastEnvelope.state_rev, state_rev: window.lastEnvelope.state_rev + 1, ops: [{
       op: "attr", id: el.dataset.pysxEl, name: "value", v: "stale", rev: edit.rev - 1,
     }] }) });
   });
   assert.equal(await page.locator("#text").inputValue(), "完成");
   console.log("  ok  stale authoritative replies cannot overwrite newer edits");
+  await page.evaluate(() => new Promise(resolve => {
+    window.addEventListener("pysx:repair", resolve, {once: true});
+    window.liveSocket.send(JSON.stringify({t: "repair", version: 3,
+      epoch: window.lastEnvelope.epoch, state_rev: window.lastEnvelope.state_rev}));
+  }));
   await page.locator("#text").fill("");
   await waitText(page, "text-state", "");
   await page.locator("#submit").click();

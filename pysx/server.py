@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import math
+import signal
 import sys
+from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -16,6 +19,7 @@ from .session import Session, close_session
 if TYPE_CHECKING:
     from collections.abc import Callable
     from string.templatelib import Template
+    from types import FrameType
 
     from .render import Fragment
 
@@ -54,13 +58,20 @@ def main() -> None:
     if args.asgi:
         try:
             import uvicorn
+
+            from ._uvicorn import websocket_protocol
         except ImportError:
             raise SystemExit("ASGI serving requires pysx[asgi]; install that extra.") from None
         uvicorn.run(
             application.asgi(),
             host=args.host,
             port=args.port,
-            ws="websockets-sansio",
+            ws=websocket_protocol(application.config.transport),
+            ws_max_size=application.config.transport.max_frame_bytes,
+            ws_max_queue=application.config.transport.socket_queue,
+            ws_ping_interval=application.config.transport.ping_interval,
+            ws_ping_timeout=application.config.transport.ping_timeout,
+            timeout_graceful_shutdown=math.ceil(application.config.shutdown_timeout),
             loop="asyncio",
             lifespan="on",
         )
@@ -68,9 +79,30 @@ def main() -> None:
         return
 
     async def run() -> None:
-        async with application.listen(args.host, args.port):
-            print(f"pysx ready -> http://{args.host}:{args.port}", flush=True)
-            await asyncio.get_running_loop().create_future()
+        loop = asyncio.get_running_loop()
+        stopping = asyncio.Event()
+        installed: list[
+            tuple[signal.Signals, int | Callable[[int, FrameType | None], object] | None]
+        ] = []
+
+        for name in (signal.SIGINT, signal.SIGTERM):
+            previous = signal.getsignal(name)
+
+            try:
+                loop.add_signal_handler(name, stopping.set)
+            except NotImplementedError:
+                signal.signal(name, lambda _signal, _frame: loop.call_soon_threadsafe(stopping.set))
+            installed.append((name, previous))
+
+        try:
+            async with application.listen(args.host, args.port):
+                print(f"pysx ready -> http://{args.host}:{args.port}", flush=True)
+                await stopping.wait()
+        finally:
+            for name, previous in installed:
+                with suppress(NotImplementedError):
+                    loop.remove_signal_handler(name)
+                signal.signal(name, previous)
 
     try:
         asyncio.run(run())
