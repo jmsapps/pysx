@@ -31,7 +31,8 @@ current snapshot without retaining patches or notification queues. Outstanding
 DOM requests fail on disconnect. Pressure/deadline, protocol close, host shutdown,
 unrepaired render and application cancellation expire the graph. Legacy v2 graphs
 are disposed on disconnect and have no live resume contract. Live recovery needs
-affinity to the same worker; graph loss requires a fresh app.
+affinity to the same worker; volatile graph loss requires a fresh app.
+[Durable hosts](OWNERSHIP.md) can separately reconstruct explicitly declared state.
 
 The browser retains one set of application listeners during disconnect. It retries
 automatically with exponential backoff from 250ms to 10s, 50–100% jitter, at most
@@ -52,6 +53,34 @@ The client emits `pysx:disconnected`, `pysx:repair`, `pysx:rejected` (reason), a
 These bounded diagnostics contain no credentials. Fresh recovery clears old
 imperative capabilities; same-epoch recovery retains them. Each tab owns its own
 credential and session, even when browser cookies are shared.
+
+## Declared-state reconstruction
+
+Durable SSR includes private `data-pysx-recovery` and nonsecret `data-pysx-owner`
+metadata. Attachment messages advertise optional `recovery` and `owner` fields.
+The client includes `owner` as a URL routing hint and sends `recovery` only in the
+hello body, alongside an existing `resume` credential when available. A
+`recover=1` query hint requests reconstruction when no resume handle was received.
+It is not a credential or proof of ownership. The host checks principal, browser,
+authorization, store ownership and capacity before claiming state.
+
+Unavailable live resume or an owner-lost adoption can fall back to declared-state
+reconstruction using that separate credential. Success sends `init` with a new
+epoch, `recovered:true`, authoritative HTML/CSS, a rotated live-resume handle and
+the recovery credential/worker hint. Only this authenticated attachment transition
+permits an already-attached client to accept a new `init` epoch. The client clears
+prior DOM capabilities, listeners and sequence/revision state before installation.
+It displays that declared state was restored and uncommitted edits were discarded.
+No old event or changed-control payload is applied to fresh handlers.
+
+An explicit incompatible-schema fresh policy sends `init` with `fresh:true`, a new
+credential and the normal visible fresh-session notification. `fresh` and
+`recovered` cannot both be true. Unknown/revoked/mismatched credentials return 4004;
+failed store/ownership/checkpoint operations return 1013. A live owner returns
+4010 with only a bounded worker identifier as its close reason; the client updates
+its routing hint and retries within the existing finite policy. A proxy resolves
+hints against configured workers. Durable hosts require v3; v2 remains supported
+by volatile hosts.
 
 ## Negotiation, revisions and event admission
 

@@ -67,7 +67,7 @@ def parse_message(
     message = cast("dict[str, object]", value)
     kind = message.get("t")
     fields: dict[str, set[str]] = {
-        "hello": {"version", "edits", "resume", "epoch", "state_rev"},
+        "hello": {"version", "edits", "resume", "epoch", "state_rev", "recovery"},
         "adopt": {"edits"},
         "event": {"h", "v", "rev", "after", "edits", "event", "nav_rev", "navigation"},
         "mounted": {"ids"},
@@ -102,7 +102,7 @@ def parse_message(
         if type(message.get("version")) is not int or message.get("version") != PROTOCOL_VERSION:
             raise PayloadError("unsupported protocol version")
 
-        for name in ("resume", "epoch"):
+        for name in ("resume", "epoch", "recovery"):
             item = message.get(name)
 
             if name in message and (not isinstance(item, str) or len(item) > 512):

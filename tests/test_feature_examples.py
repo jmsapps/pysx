@@ -1,10 +1,13 @@
 """Runnable feature example acceptance using public handlers and the real launcher."""
 
+from __future__ import annotations
+
 import asyncio
 import re
 import signal
 import urllib.request
 from dataclasses import asdict
+from typing import TYPE_CHECKING
 
 import pytest
 from acceptance_support import ready_server
@@ -27,6 +30,11 @@ from pysx.http import HTTPRuntime, reconcile
 from pysx.render_tree import apply, snapshot
 from pysx.request import RequestContext
 from pysx.server import Session
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pysx.durable import DurableSession
 
 
 def test_resources_http_adoption_async_interactions_isolation_and_cleanup() -> None:
@@ -879,5 +887,109 @@ def test_session_security_cli_startup_interaction_and_ctrl_c_exit() -> None:
             body = response.read()
             assert b"Session security" in body
             assert b"reader" in body
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
+
+
+def test_durable_state_declared_state_reconstruction_and_session_isolation(tmp_path: Path) -> None:
+    from typing import cast
+
+    from examples.durable_state import CODEC, ExampleState, create_application
+
+    async def exercise() -> None:
+        host = create_application(tmp_path / "state.db", worker="example-worker")
+        await host.start()
+        request = RequestContext(headers={"cookie": "pysx_browser=example-browser"})
+
+        try:
+            result = host.runtime.render(request, "example-browser")
+            assert result.adoption is not None
+            first = host.runtime.claim(result.adoption, request, "example-browser")
+            typed = cast("DurableSession[ExampleState]", first)
+            generation = re.search(
+                r'id="durable-generation"[^>]*>(.*?)</span>', first.rendered.body
+            )
+            assert generation is not None
+            handler = re.search(
+                r'id="durable-increment"[^>]*data-pysx-click="([^"]+)"', first.rendered.body
+            )
+            assert handler is not None
+            binding = next(iter(first.rendered.bindings))
+            reconcile(first, [(binding, "A saved draft", 1)])
+            update = await first.dispatch_result_async(handler[1], None)
+            assert update["status"] == "success"
+            first.checkpoint()
+            saved = host.state_store.load(typed.snapshot.identity)
+            assert saved is not None
+            assert CODEC.loads(saved.payload) == ExampleState(1, "A saved draft")
+            token = host.runtime.recovery_token(first)
+            assert token is not None
+            host.runtime.release(first)
+            rebuilt = host.runtime.recover(token, request, location="/durable/recovered")
+            assert "A saved draft" in rebuilt.rendered.body
+            assert cast("DurableSession[ExampleState]", rebuilt).state().count == 1
+            assert generation[1] not in rebuilt.rendered.body
+            assert first.closed
+            assert first.rendered.handlers == {}
+            assert first.runtime.closed
+            other = host.runtime.render(request, "example-browser")
+            assert other.adoption is not None
+            sibling = cast(
+                "DurableSession[ExampleState]", host.runtime.pending[other.adoption].session
+            )
+            assert sibling.state() == ExampleState()
+        finally:
+            await host.close()
+        assert not host.runtime.graphs
+        assert host.renewal is not None
+        assert host.renewal.done()
+
+    asyncio.run(exercise())
+
+
+def test_durable_state_codec_rejects_unsupported_or_oversized_fields() -> None:
+    from examples.durable_state import CODEC, ExampleState
+
+    assert CODEC.loads(CODEC.dumps(ExampleState(3, "Saved"))) == ExampleState(3, "Saved")
+
+    for payload in (b"null", b'{"count":true,"draft":"bad"}', b'{"count":1,"draft":null}'):
+        with pytest.raises(ValueError, match=r"expected state object|invalid counter or draft"):
+            CODEC.loads(payload)
+    with pytest.raises(ValueError, match="invalid counter or draft"):
+        CODEC.loads(CODEC.dumps(ExampleState(0, "x" * 513)))
+
+
+def test_durable_state_checker_clean_and_registered() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["durable_state"] == "examples.durable_state:app"
+    assert diagnostics(Path("examples/durable_state.py")) == []
+
+
+@pytest.mark.acceptance
+def test_durable_state_cli_startup_and_ctrl_c_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ownership_topology import free_port
+
+    port = free_port()
+    monkeypatch.setenv("PYSX_STATE_PATH", str(tmp_path / "example.sqlite3"))
+    command = [
+        "uv",
+        "run",
+        "--project",
+        ".",
+        "example",
+        "run",
+        "durable_state",
+        "--port",
+        str(port),
+    ]
+    with ready_server(command) as server:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+            assert response.status == 200
+            assert b"Declared session state" in response.read()
         server.send_signal(signal.SIGINT)
         assert server.wait(timeout=5) == 0

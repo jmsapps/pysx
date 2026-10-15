@@ -1,0 +1,35 @@
+services:
+  worker-a:
+    image: pysx-reference:local
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["--app", "${PYSX_APP:?set PYSX_APP to module:host}", "--host", "0.0.0.0", "--port", "8750", "--drain-signal"]
+    environment:
+      PYSX_STATE_PATH: /state/state.sqlite3
+      PYSX_WORKER: worker-a
+      PYSX_ORIGIN: ${PYSX_ORIGIN:?set PYSX_ORIGIN}
+    volumes: ["state:/state"]
+    expose: ["8750"]
+    stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD", "uv", "run", "--project", ".", "--no-dev", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8750/_pysx/ready', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 2
+  worker-b:
+    extends: worker-a
+    command: ["--app", "${PYSX_APP:?set PYSX_APP to module:host}", "--host", "0.0.0.0", "--port", "8750", "--asgi", "--drain-signal"]
+    environment:
+      PYSX_WORKER: worker-b
+  proxy:
+    image: nginx:1.30.0-alpine@sha256:0272e4604ed93c1792f03695a033a6e8546840f86e0de20a884bb17d2c924883
+    depends_on: [worker-a, worker-b]
+    ports: ["127.0.0.1:${PYSX_PORT:-8443}:8443"]
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${PYSX_TLS_CERT:?set PYSX_TLS_CERT}:/run/tls/cert.pem:ro
+      - ${PYSX_TLS_KEY:?set PYSX_TLS_KEY}:/run/tls/key.pem:ro
+    stop_grace_period: 5s
+volumes:
+  state:

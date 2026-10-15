@@ -16,6 +16,7 @@ uv run --project . example run forms
 uv run --project . example run events
 uv run --project . example run templates
 uv run --project . example run keyed_rows
+uv run --project . example run durable_state
 uv run --project . example run
 ```
 
@@ -36,6 +37,29 @@ example run counter
 
 The command is installed into the environment's bin directory. A new terminal
 needs activation again, or you can keep using the `uv run --project .` prefix.
+
+## Durable state
+
+Run `uv run --project . example run durable_state`. Edit the saved draft and increment
+the counter, then keep the page open while stopping and restarting the server with
+the same command. The browser restores committed count/draft state and reports that
+recovery; the setup marker changes and a new resource loads. Another tab and a page
+reload start independent sessions. Healthy socket reconnect retains the live graph.
+Unsent edits are discarded on reconstruction, rather than replayed.
+
+The default SQLite file is `pysx-durable-example.sqlite3` in the OS temporary directory.
+It survives process restart until removed by local cleanup. For an explicit local
+file, set `PYSX_STATE_PATH` to an existing directory's file path before launching.
+Only the typed count/draft root is persisted; Python handlers, effects and async
+resources are rebuilt from code. This example uses a local demonstration principal,
+not production authentication.
+
+For owner routing across two workers, use the [Linux deployment runbook](../docs/DEPLOYMENT.md)
+with `PYSX_APP=examples.durable_state:app`. The example reads `PYSX_STATE_PATH`,
+`PYSX_WORKER` and `PYSX_ORIGIN` supplied by that topology. Supply disposable TLS
+material for local testing; production applications must replace the demonstration
+identity with their own authentication and authorization. The two workers share
+declared snapshots and atomic leases, while each live graph has one owner.
 
 ## Bounded reconnect
 

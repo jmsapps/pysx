@@ -2,10 +2,12 @@ const root = document.getElementById("pysx-root");
 const style = document.getElementById("pysx-style");
 const browserLocation = () => location.pathname + location.search + location.hash;
 const adoption = root.dataset.pysxAdoption;
+let ownerHint = root.dataset.pysxOwner ?? null;
+let recoveryToken = root.dataset.pysxRecovery ?? null;
 const endpoint = new URL(document.currentScript?.src ?? "/client.js", location.href);
 endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 endpoint.pathname = endpoint.pathname.replace(/client\.js$/, "ws");
-endpoint.search = `protocol=3&location=${encodeURIComponent(browserLocation())}${adoption ? `&adoption=${encodeURIComponent(adoption)}` : ""}`;
+endpoint.search = `protocol=3&location=${encodeURIComponent(browserLocation())}${adoption ? `&adoption=${encodeURIComponent(adoption)}` : ""}${ownerHint ? `&owner=${encodeURIComponent(ownerHint)}` : ""}`;
 let socket = new WebSocket(endpoint);
 let resumeToken = null;
 let connected = false;
@@ -13,6 +15,7 @@ let retryAttempt = 0;
 let transportTimer = null;
 let stopped = false;
 let freshSession = false;
+let restoredSession = false;
 const connectionStatus = document.createElement("p");
 connectionStatus.id = "pysx-connection-status";
 connectionStatus.setAttribute("role", "status");
@@ -507,6 +510,11 @@ function validOperation(op) {
 }
 
 function validMessage(message) {
+  if (message.owner !== undefined && (typeof message.owner !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(message.owner))) return false;
+  if (message.recovery !== undefined && (typeof message.recovery !== "string" || !/^[A-Za-z0-9_-]{32,128}$/.test(message.recovery))) return false;
+  if (message.recovered !== undefined && (message.t !== "init" || message.recovered !== true)) return false;
+  if (message.fresh !== undefined && (message.t !== "init" || message.fresh !== true)) return false;
+  if (message.fresh && message.recovered) return false;
   if (["init", "repair"].includes(message.t)) return typeof message.html === "string" && typeof message.css === "string" &&
     (message.t !== "repair" || (Number.isSafeInteger(message.expected) && message.expected > 0));
   if (message.t === "adopted") return typeof message.routing === "boolean";
@@ -538,6 +546,10 @@ function receiveMessage(event) {
       message.base_rev < 0 || !validMessage(message)) {
     socket.close(4002, "invalid envelope"); return;
   }
+  if (message.t === "init" && (message.recovered === true || message.fresh === true)) {
+    if (!recoveryToken) { socket.close(4002, "unexpected reconstruction"); return; }
+    resetSession(message.recovered === true);
+  }
   if (["init", "adopted"].includes(message.t)) {
     if (epoch !== null) { socket.close(4002, "repeated attachment"); return; }
     epoch = message.epoch;
@@ -549,6 +561,8 @@ function receiveMessage(event) {
   }
   stateRevision = message.state_rev;
   if (typeof message.resume === "string") resumeToken = message.resume;
+  if (typeof message.recovery === "string") recoveryToken = message.recovery;
+  if (typeof message.owner === "string") ownerHint = message.owner;
   if (message.t === "repair") {
     if (message.routing) enableRouting();
     if (Number.isSafeInteger(message.nav_rev)) navigationRevision = message.nav_rev;
@@ -606,11 +620,14 @@ function receiveMessage(event) {
 }
 
 function openSocket() {
+  const recovery = recoveryToken ? {recovery: recoveryToken} : {};
   if (resumeToken) {
-    socket.send(JSON.stringify({t: "hello", version: 3, resume: resumeToken, epoch, state_rev: stateRevision}));
+    socket.send(JSON.stringify({t: "hello", version: 3, resume: resumeToken, epoch, state_rev: stateRevision, ...recovery}));
     return;
   }
-  if (!adoption || freshSession) { socket.send(JSON.stringify({t: "hello", version: 3, edits: []})); return; }
+  if (!adoption || freshSession || endpoint.searchParams.get("recover") === "1") {
+    socket.send(JSON.stringify({t: "hello", version: 3, edits: [], ...recovery})); return;
+  }
   // HTTP controls already have their browser values; never hydrate over edits.
   const values = [...root.querySelectorAll("[data-pysx-binding]")]
     .filter(el => {
@@ -627,7 +644,7 @@ function openSocket() {
       }
       return el.value !== el.defaultValue;
     }).map(edit);
-  socket.send(JSON.stringify({t: "hello", version: 3, edits: values}));
+  socket.send(JSON.stringify({t: "hello", version: 3, edits: values, ...recovery}));
 }
 
 function clearTransportTimer() {
@@ -637,8 +654,10 @@ function clearTransportTimer() {
 
 function connectionState(state, retryMs = 0) {
   root.dataset.pysxConnection = state;
-  connectionStatus.hidden = state === "connected" && !freshSession;
-  const text = state === "connected" ? "Connected. A fresh session started; previous session state was lost." :
+  connectionStatus.hidden = state === "connected" && !freshSession && !restoredSession;
+  const text = state === "connected" ? (restoredSession ?
+    "Connected. Declared session state was restored; uncommitted edits were discarded." :
+    "Connected. A fresh session started; previous session state was lost.") :
     state === "reconnecting" ? "Disconnected. Reconnecting; offline edits are rejected." :
     state === "fresh" ? "Previous session expired. Starting a fresh session." :
     state === "stopped" ? "Disconnected by a protocol failure. Offline edits are rejected. Reload the page to continue." :
@@ -672,9 +691,10 @@ function blockInteraction(event, owned = false) {
   return true;
 }
 
-function resetSession() {
+function resetSession(restored = false) {
   resumeToken = null; epoch = null; stateRevision = 0; eventSequence = 0;
-  repairing = false; freshSession = true;
+  recoveryToken = null;
+  repairing = false; freshSession = !restored; restoredSession = restored;
   for (const listener of domListeners.values()) listener.target.removeEventListener(listener.type, listener.fn, listener.capture);
   domListeners.clear(); domNodes.clear();
   for (const [type, listeners] of registeredEvents) {
@@ -704,6 +724,7 @@ function closeSocket(event) {
   root.dataset.pysxAttached = "false";
   window.dispatchEvent(new CustomEvent("pysx:disconnected"));
   if (stopped) return;
+  if (event.code === 4010 && /^[A-Za-z0-9_-]{1,64}$/.test(event.reason)) ownerHint = event.reason;
   if (event.code === 4004 || event.code === 4009 || (event.code === 1008 && epoch === null)) {
     resetSession();
     connectionState("fresh");
@@ -731,7 +752,7 @@ function reconnect(manual = true) {
   if (socket.readyState !== WebSocket.CLOSED || stopped) return;
   clearTransportTimer();
   if (manual) retryAttempt = 0;
-  endpoint.search = `protocol=3${resumeToken ? "&resume=1" : ""}&location=${encodeURIComponent(browserLocation())}`;
+  endpoint.search = `protocol=3${resumeToken ? "&resume=1" : recoveryToken ? "&recover=1" : ""}&location=${encodeURIComponent(browserLocation())}${ownerHint ? `&owner=${encodeURIComponent(ownerHint)}` : ""}`;
   socket = new WebSocket(endpoint);
   attachSocket();
   connectionState(freshSession ? "fresh" : "reconnecting");

@@ -184,7 +184,11 @@ class ASGI:
         try:
             query = parse_qs(urlsplit(context.path).query)
 
-            if not query.get("adoption") and query.get("resume") != ["1"]:
+            if (
+                not query.get("adoption")
+                and query.get("resume") != ["1"]
+                and query.get("recover") != ["1"]
+            ):
                 if not self.application.runtime.reserve():
                     await bounded.close(1013, "graph capacity")
 

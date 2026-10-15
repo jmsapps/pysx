@@ -10,6 +10,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from .forms import PayloadError, form_edits
 from .http import HTTPRuntime, reconcile
+from .ownership import OwnerMoved
+from .persistence import RecoveryUnavailable
 from .request import browser_id
 from .routing import Location
 from .security import AccessDenied
@@ -21,6 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from .request import RequestContext
+    from .session import Session
     from .wire import InitMessage, JSONValue, PatchMessage
 
 
@@ -131,6 +134,10 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
 
     try:
         await _serve_connection(runtime, bounded)
+    except OwnerMoved as error:
+        await bounded.close(4010, error.worker)
+    except RecoveryUnavailable:
+        await bounded.close(1013, "durable state unavailable")
     finally:
         if bounded.reserved:
             runtime.unreserve()
@@ -155,6 +162,11 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     protocol = parse_qs(urlsplit(request.path).query).get("protocol", ["2"])
     modern = protocol == ["3"]
 
+    if runtime.owner_hint is not None and not modern:
+        await connection.close(1008, "durable sessions require protocol 3")
+
+        return
+
     if protocol not in (["2"], ["3"]):
         await connection.close(code=1008, reason="unsupported protocol")
 
@@ -170,8 +182,20 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     adoption = parse_qs(urlsplit(request.path).query, keep_blank_values=True).get("adoption", [])
     adopted = bool(adoption)
     resuming = modern and parse_qs(urlsplit(request.path).query).get("resume") == ["1"]
+    recovering = modern and parse_qs(urlsplit(request.path).query).get("recover") == ["1"]
+    rebuilt = False
+    hello: dict[str, object] | None = None
 
-    if resuming:
+    def reconstruct(message: dict[str, object]) -> Session:
+        authorize("resume")
+        token = message.get("recovery")
+
+        if not isinstance(token, str):
+            raise ValueError("recovery credential required")
+
+        return runtime.recover(token, request, location=supplied[0])
+
+    if resuming or recovering:
         try:
             authorize("resume")
             message = parse_message(
@@ -181,12 +205,20 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
             if message["t"] != "hello" or message.get("edits"):
                 raise PayloadError("expected resume hello")
-            session = runtime.resume(
-                cast("str", message["resume"]),
-                request,
-                cast("str", message["epoch"]),
-                cast("int", message["state_rev"]),
-            )
+            hello = message
+
+            try:
+                if not resuming:
+                    raise ValueError("explicit reconstruction")
+                session = runtime.resume(
+                    cast("str", message["resume"]),
+                    request,
+                    cast("str", message["epoch"]),
+                    cast("int", message["state_rev"]),
+                )
+            except ValueError, KeyError:
+                session = reconstruct(message)
+                rebuilt = True
         except PayloadError, ValueError, KeyError, TimeoutError, AccessDenied:
             await connection.close(4004, "resume unavailable")
 
@@ -195,36 +227,62 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
         try:
             authorize("adoption")
             session = runtime.claim(adoption[0], request, browser_id(request))
-        except ValueError, AccessDenied:
+        except AccessDenied:
             await connection.close(code=1008, reason="invalid adoption")
 
             return
+        except ValueError:
+            if not modern or runtime.owner_hint is None:
+                await connection.close(1008, "invalid adoption")
 
-        try:
-            message = parse_message(
-                await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
-                limit=runtime.limits.max_frame_bytes,
-            )
+                return
 
-            if message.get("t") != ("hello" if modern else "adopt"):
-                raise PayloadError("expected adoption edits")
-            async with session.runtime.turn():
-                authorize("adoption")
-                edits = form_edits(message.get("edits"))
+            try:
+                hello = parse_message(
+                    await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
+                    limit=runtime.limits.max_frame_bytes,
+                )
 
-                for handler, _value, _revision in edits:
-                    authorize("event", handler)
-                reconcile(session, edits)
-                session.routes.observe(supplied[0])
-        except Exception:
-            runtime.release(session)
-            await connection.close(code=1008, reason="invalid adoption edits")
+                if hello["t"] != "hello":
+                    raise PayloadError("expected recovery hello")
+                session = reconstruct(hello)
+                rebuilt = True
+                adopted = False
+            except ValueError, PayloadError, AccessDenied, TimeoutError:
+                await connection.close(4004, "adoption recovery unavailable")
 
-            return
-        except asyncio.CancelledError:
-            runtime.release(session)
+                return
 
-            raise
+        if not rebuilt:
+            try:
+                message = parse_message(
+                    await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
+                    limit=runtime.limits.max_frame_bytes,
+                )
+
+                if message.get("t") != ("hello" if modern else "adopt"):
+                    raise PayloadError("expected adoption edits")
+                async with session.runtime.turn():
+                    authorize("adoption")
+                    edits = form_edits(message.get("edits"))
+
+                    for handler, _value, _revision in edits:
+                        authorize("event", handler)
+                    reconcile(session, edits)
+                    session.routes.observe(supplied[0])
+            except RecoveryUnavailable:
+                runtime.release(session)
+
+                raise
+            except Exception:
+                runtime.release(session)
+                await connection.close(code=1008, reason="invalid adoption edits")
+
+                return
+            except asyncio.CancelledError:
+                runtime.release(session)
+
+                raise
     else:
         if not connection.reserved:
             if not runtime.reserve():
@@ -266,6 +324,11 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     async def send(message: dict[str, object]) -> None:
         async with send_lock:
             if session.closed:
+                if session.recovery_failed:
+                    await connection.close(1013, "durable state unavailable")
+
+                    raise RecoveryUnavailable("durable state unavailable")
+
                 if session.revoked:
                     await connection.close(1008, "access denied")
 
@@ -288,6 +351,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
             if modern:
                 message = session.transport.envelope(message)
+            session.checkpoint()
             await connection.send(json.dumps(message))
 
     async def send_repair() -> None:
@@ -444,6 +508,8 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
                     return True
                 ops = outcome["ops"]
+        except RecoveryUnavailable:
+            raise
         except PayloadError:
             repair, session.pending = session.pending, []
             result: dict[str, object] = {
@@ -510,7 +576,9 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                 session.changed.clear()
 
                 if session.closed:
-                    if session.revoked:
+                    if session.recovery_failed:
+                        await connection.close(1013, "durable state unavailable")
+                    elif session.revoked:
                         await connection.close(1008, "access denied")
                     else:
                         await connection.close(1001, "session closed")
@@ -591,18 +659,33 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             "css": session.rendered.css,
             "routing": bool(session.routes.routers),
         }
-        await send(
+        attachment: dict[str, object] = (
             {
                 **session.transport.repair(session.rendered.css),
                 "resume": resume_token,
                 "routing": bool(session.routes.routers),
                 "nav_rev": session.routes.revision,
             }
-            if resuming
+            if resuming and not rebuilt
             else {"t": "adopted", "routing": bool(session.routes.routers), "resume": resume_token}
             if adopted
             else {**dict(initial), **({"resume": resume_token} if modern else {})}
         )
+
+        if rebuilt:
+            attachment["html"] = session.transport.tree.markup()
+            session.pending.clear()
+            attachment[
+                "recovered"
+                if hello is not None and runtime.recovery_token(session) == hello.get("recovery")
+                else "fresh"
+            ] = True
+        recovery = runtime.recovery_token(session)
+
+        if modern and recovery is not None:
+            attachment["recovery"] = recovery
+            attachment["owner"] = runtime.owner_hint
+        await send(attachment)
         await send_patch()
 
         if resuming and session.routes.routers:
@@ -645,6 +728,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
         retain = (
             modern
             and not runtime.closed
+            and not session.closed
             and not connection.closing
             and not connection.failed
             and not session.pressured
