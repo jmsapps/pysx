@@ -1,10 +1,14 @@
 """Exact maps preserve raw syntax, Python byte columns and editor UTF-16."""
 
 import ast
+from typing import TYPE_CHECKING
 
 import pytest
 
 from pysx.source_map import EditorPosition, LiteralMapper, Positions, SourceSpan, compose
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.parametrize(
@@ -81,3 +85,39 @@ def test_exact_source_utf8_utf16_and_invalid_surrogate_boundary() -> None:
     with pytest.raises(ValueError, match="surrogate"):
         positions.editor_offset(EditorPosition(0, 1))
     assert SourceSpan(0, 1).start == 0
+
+
+def test_exact_source_crlf_editor_line_end_excludes_carriage_return() -> None:
+    positions = Positions("😀 text\r\nnext")
+    end = EditorPosition(0, 7)
+    assert positions.editor_position(6) == end
+    assert positions.editor_position(7) == end
+    assert positions.editor_offset(end) == 6
+    assert positions.editor_position(8) == EditorPosition(1, 0)
+
+    with pytest.raises(ValueError, match="column"):
+        positions.editor_offset(EditorPosition(0, 8))
+
+
+def test_exact_source_projection_cli_preserves_crlf_file_and_stdin(tmp_path: Path) -> None:
+    import json
+    import subprocess
+    import sys
+
+    from pysx.analysis import projection_for_source
+
+    source = "from pysx import pysx\r\nview = pysx(t\"p: '😀'\")\r\n"
+    path = tmp_path / "view.py"
+    path.write_bytes(source.encode())
+    expected = json.loads(json.dumps(projection_for_source(source, str(path))))
+
+    for flags in [[], ["--stdin"]]:
+        result = subprocess.run(
+            [sys.executable, "-m", "pysx.analysis", str(path), *flags],
+            input=source,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout) == expected

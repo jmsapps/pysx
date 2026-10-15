@@ -149,10 +149,15 @@ def lint_source(
     projection = projection if projection is not None else compilation.projection()
     imports = _import_ranges(source)
     out: dict[tuple[str, SourceSpan], Finding] = {}
+    original_messages = _ruff(source, filename)
+    projected_messages = _ruff(projection.text, filename)
+    safe_imports = compilation.complete and not any(
+        item["code"] in {"F821", "F823"} for item in projected_messages
+    )
 
     for mapped, messages in (
-        (original, _ruff(source, filename)),
-        (projection, _ruff(projection.text, filename)),
+        (original, original_messages),
+        (projection, projected_messages),
     ):
         positions = Positions(mapped.text)
 
@@ -169,7 +174,7 @@ def lint_source(
             fix = item["fix"]
 
             if (
-                compilation.complete
+                safe_imports
                 and item["code"] == "F401"
                 and fix is not None
                 and fix["applicability"] == "safe"

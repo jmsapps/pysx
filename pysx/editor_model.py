@@ -289,6 +289,7 @@ def workspace_model(request: Request) -> list[Model]:
                     "endLine": end.line,
                     "endChar": end.character,
                     "message": f"{item.code}: {item.message}",
+                    "code": item.code,
                     "severity": "warning",
                 }
             )

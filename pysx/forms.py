@@ -72,6 +72,44 @@ class Binding:
         }
 
 
+def binding_control_error(
+    name: str,
+    tag: str,
+    control_type: str | None,
+    multiple: bool | None,
+    has_value: bool | None,
+) -> str | None:
+    """Shared control constraints; unknown static values cannot prove an error."""
+
+    if tag not in {"input", "select", "textarea"}:
+        return f"{name} requires a form control"
+    mode = {"bindChecked": "checked", "bindSelected": "selected"}.get(name, "value")
+
+    if mode == "checked" and (
+        tag != "input" or (control_type is not None and control_type not in {"checkbox", "radio"})
+    ):
+        return "bindChecked requires a checkbox or radio"
+
+    if mode == "selected" and (tag != "select" or multiple is False):
+        return "bindSelected requires a multiple select"
+
+    if mode == "value" and (multiple is True or control_type in {"checkbox", "file"}):
+        return "bindValue requires a text control, single select or radio"
+
+    if mode == "value" and control_type == "radio" and has_value is False:
+        return "radio bindValue requires a value attribute"
+
+    if (
+        mode == "value"
+        and control_type is not None
+        and control_type != "radio"
+        and has_value is True
+    ):
+        return f"{name} conflicts with a value attribute"
+
+    return None
+
+
 def make_binding(
     name: str,
     tag: str,
@@ -88,26 +126,14 @@ def make_binding(
     if bound.computation is not None:
         raise TypeError(f"{name} requires a writable signal")
 
-    if tag not in {"input", "select", "textarea"}:
-        raise TypeError(f"{name} requires a form control")
+    error = binding_control_error(name, tag, control_type, multiple, value_attr is not None)
+
+    if error is not None:
+        raise TypeError(error)
     mode = {"bindChecked": "checked", "bindSelected": "selected"}.get(name, "value")
-
-    if mode == "checked" and (tag != "input" or control_type not in {"checkbox", "radio"}):
-        raise TypeError("bindChecked requires a checkbox or radio")
-
-    if mode == "selected" and (tag != "select" or not multiple):
-        raise TypeError("bindSelected requires a multiple select")
-
-    if mode == "value" and (multiple or control_type in {"checkbox", "file"}):
-        raise TypeError("bindValue requires a text control, single select or radio")
 
     if mode == "value" and control_type == "radio":
         mode = "radio"
-
-        if value_attr is None:
-            raise TypeError("radio bindValue requires a value attribute")
-    elif mode == "value" and value_attr is not None:
-        raise TypeError(f"{name} conflicts with a value attribute")
     binding = Binding(bound, element, mode, value_attr)
     binding.validate(bound())
 

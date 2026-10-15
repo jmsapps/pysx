@@ -63,6 +63,9 @@ class Positions:
         row = bisect.bisect_right(self.starts, offset) - 1
         prefix = self.source[self.starts[row] : offset]
 
+        if offset < len(self.source) and self.source[offset] == "\n":
+            prefix = prefix.removesuffix("\r")
+
         return EditorPosition(row, len(prefix.encode("utf-16-le")) // 2)
 
     def editor_offset(self, position: EditorPosition) -> int:
@@ -74,6 +77,9 @@ class Positions:
             if position.line + 1 < len(self.starts)
             else len(self.source)
         )
+
+        if end > start and self.source[end - 1] == "\r":
+            end -= 1
         units = 0
 
         for offset in range(start, end):

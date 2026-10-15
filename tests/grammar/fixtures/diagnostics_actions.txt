@@ -1,0 +1,7 @@
+from pysx import pysx
+view = pysx(t"""
+    div(hreff="advisory", data-note="😀 {{brace}} \t"):
+        p(title={value}): {value()}{other}
+        button(onClick={handler}): "Change"
+""")
+AFTER_SENTINEL = "ordinary Python"

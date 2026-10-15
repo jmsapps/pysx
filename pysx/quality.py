@@ -41,8 +41,11 @@ def source_files(root: Path) -> tuple[Path, ...]:
 
 
 def read_source(path: Path) -> str:
-    with tokenize.open(path) as stream:
-        return stream.read()
+    with path.open("rb") as stream:
+        encoding, _ = tokenize.detect_encoding(stream.readline)
+        stream.seek(0)
+
+        return stream.read().decode(encoding)
 
 
 def _position(source: str, span: SourceSpan) -> str:
@@ -76,7 +79,7 @@ def lint_project(root: Path, *, fix_imports: bool = False) -> int:
             if source != buffers[str(path)]:
                 if read_source(path) != buffers[str(path)]:
                     raise ValueError(f"source changed before import fixes: {path}")
-                path.write_text(source, encoding="utf-8")
+                path.write_text(source, encoding="utf-8", newline="")
                 findings = lint_source(
                     source, str(path), roots=(root,), buffers={**buffers, str(path): source}
                 )

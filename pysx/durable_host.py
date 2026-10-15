@@ -347,6 +347,7 @@ class DurableApplication[T](Application):
 
     def _lapsed(self, graphs: Sequence[DurableSession[T]]) -> tuple[StateIdentity, ...]:
         """An unreachable store fences nothing until the leases it stopped renewing lapse."""
+
         if asyncio.get_running_loop().time() - self.renewed < self.state_store.seconds:
             return ()
 

@@ -11,7 +11,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
   suite = args[i + 1];
 }
-if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "identity_cleanup", "fallback_empty"].includes(suite)) throw new Error("empty grammar selection");
+if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "identity_cleanup", "fallback_empty", "diagnostics_actions"].includes(suite)) throw new Error("empty grammar selection");
 const host = pylanceHost();
 const injectionPath = process.env.PYSX_INJECTION_GRAMMAR ??
   fileURLToPath(new URL("../../editor/syntaxes/pysx.injection.tmLanguage.json", import.meta.url));
@@ -36,7 +36,8 @@ try {
     if (!condition) throw new Error(`scope assertion failed: ${label}`);
     assertions++;
   };
-  const fixtures = suite === "fallback_empty" ? ["fallback_empty"] :
+  const fixtures = suite === "diagnostics_actions" ? ["diagnostics_actions"] :
+    suite === "fallback_empty" ? ["fallback_empty"] :
     suite === "identity_cleanup" ? ["keyed_identity"] :
     suite === "templates_example" ? ["templates_example"] :
     suite === "inline_siblings" ? ["inline_siblings"] :
@@ -45,7 +46,7 @@ try {
     suite === "composition_recursive" ? ["composition"] :
     suite === "styling_diagnostics" ? ["styling"] :
     suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
-    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity", "fallback_empty"];
+    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity", "fallback_empty", "diagnostics_actions"];
   for (const fixture of fixtures) {
     const source = fixture === "templates_example" ? "../../examples/templates.py" : `fixtures/${fixture}.txt`;
     const lines = readFileSync(new URL(source, import.meta.url), "utf8").split("\n");
@@ -57,6 +58,18 @@ try {
       stack = current.ruleStack;
     }
     tokens += result.length;
+    if (fixture === "diagnostics_actions") {
+      for (const word of ["hreff", "data-note", "title", "onClick"]) {
+        const row = lines.findIndex(line => line.includes(word));
+        const start = lines[row].indexOf(word);
+        check(result.some(token => token.line === row && token.start === start && token.text === word && token.scopes.includes("entity.other.attribute-name.pysx")), `exact advisory attribute ${word}`);
+      }
+      for (const word of ["value", "other", "handler"]) check(result.some(token => token.text === word && token.scopes.includes("meta.embedded.inline.python")), `diagnostic Python ${word}`);
+      check(result.some(token => token.text === "button" && token.scopes.includes("entity.name.tag.pysx")), "diagnostic native tag");
+      const sentinel = result.find(token => token.text.includes("AFTER_SENTINEL"));
+      check(sentinel && !sentinel.scopes.some(scope => scope.includes("pysx")), "diagnostic scopes do not leak");
+      continue;
+    }
     if (fixture === "fallback_empty") {
       for (const word of ["Boundary", "Card", "Action", "Description"]) check(result.some(token => token.text === word && token.scopes.includes("support.class.component.pysx")), `recovery component ${word}`);
       for (const word of ["role", "onClick", "id"]) check(result.some(token => token.text === word && token.scopes.includes("entity.other.attribute-name.pysx")), `recovery attribute ${word}`);

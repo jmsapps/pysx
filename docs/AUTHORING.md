@@ -165,6 +165,9 @@ uv run --project . python -m pysx.quality mypy
 uv run --project . python -m pysx.quality pyright
 ```
 
+The [static diagnostic contract](DIAGNOSTICS.md) documents buffer/CLI analysis,
+stable codes, exact source ranges and guarded template fixes.
+
 Formatting and style rules inspect original Python. Scope and import rules inspect
 the compiler projection, so a component used only as a tag counts as a real use.
 Safe import cleanup maps only changes to original import declarations. Incomplete
@@ -172,6 +175,9 @@ or unsupported source blocks deletion. Strict mypy and Pyright inspect every
 maintained Python file in an isolated package-preserving copy; the commands reject
 empty or skipped analysis and report original locations. Application modules are
 never imported by analysis. Keep the project’s normal strict analyzer settings.
+Import cleanup also withholds edits while undefined/unbound names remain, and
+preserves the source file's line endings. These CLI adapters are the supported
+template-aware path; plain Python import-removal tools cannot see textual tags.
 
 ## VS Code authoring
 
