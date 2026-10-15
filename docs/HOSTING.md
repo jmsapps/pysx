@@ -1,6 +1,8 @@
 # Hosting an application
 
 See [application security](SECURITY.md) for output validation and the response CSP.
+The [Linux deployment runbook](DEPLOYMENT.md) covers the TLS proxy, durable workers,
+readiness, metrics, capacity, draining and backups.
 
 Python 3.14+ is required. Install `pysx` and expose a callable returning a template
 or Fragment, or an `Application`, in a module in your working directory:
@@ -38,7 +40,8 @@ dispose the graph; see [current-state recovery](PROTOCOL.md#current-state-resume
 The shipped browser retries within finite backoff/deadline bounds, rejects offline
 events, and reports when an expired graph requires a fresh session. It never
 replays business actions after uncertain delivery. Retry exhaustion offers manual
-recovery; durable reconstruction and cross-worker storage remain application work.
+recovery. [DurableApplication](OWNERSHIP.md) adds explicit declared-state
+reconstruction with leased worker ownership; ordinary `Application` stays volatile.
 
 Both hosts share request handling, rendering, graph adoption and the connection
 protocol. GET renders content immediately; HEAD returns metadata and disposes its
@@ -155,7 +158,9 @@ Adoption handles are single-use and bound to browser cookie and principal. Pendi
 graphs and connected sessions live in one process. Multiple workers require
 affinity from HTTP GET through WebSocket attachment. An expired or wrong-worker
 handle closes the socket; reload obtains a new render. Live resume retains graphs
-in the same worker; cross-worker graph storage is not provided.
+in the same worker. Durable hosts use worker hints and a shared ownership store to
+reconstruct a fresh graph after owner loss; live graphs themselves are never stored.
+See the [ownership contract](OWNERSHIP.md) for routing, draining and upgrade policy.
 
 Create database pools in startup hooks and close them in shutdown hooks. Read
 through an async resource loader; commit writes through explicit application

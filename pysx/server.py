@@ -12,6 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from .durable_host import DurableApplication
 from .hosting import Application, HostConfig
 from .loader import import_app
 from .session import Session, close_session
@@ -33,7 +34,8 @@ def _load_app(spec: str, *, development: bool = False) -> Application:
 
     if isinstance(value, Application):
         if development and not value.config.development:
-            return Application(value.app, config=replace(value.config, development=True))
+            value.config = replace(value.config, development=True)
+            value.runtime.development = True
 
         return value
 
@@ -52,8 +54,16 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--dev", action="store_true", help="log development source tracebacks")
     parser.add_argument("--asgi", action="store_true", help="serve through the optional ASGI host")
+    parser.add_argument(
+        "--drain-signal", action="store_true", help="drain durable admission on SIGUSR1"
+    )
     args = parser.parse_args()
     application = _load_app(args.app, development=args.dev)
+
+    if args.drain_signal:
+        if not isinstance(application, DurableApplication) or not hasattr(signal, "SIGUSR1"):
+            raise SystemExit("--drain-signal requires a durable application and SIGUSR1 support")
+        signal.signal(signal.SIGUSR1, lambda _signal, _frame: application.begin_drain())
 
     if args.asgi:
         try:

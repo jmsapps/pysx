@@ -683,8 +683,9 @@ class Application:
                 _connection.admitted = True
                 adoption = parse_qs(urlsplit(request.path).query).get("adoption")
                 resume = parse_qs(urlsplit(request.path).query).get("resume") == ["1"]
+                recover = parse_qs(urlsplit(request.path).query).get("recover") == ["1"]
 
-                if not adoption and not resume:
+                if not adoption and not resume and not recover:
                     if not self.runtime.reserve():
                         return Response(503, "Service Unavailable", Headers(), b"graph capacity")
                     _connection.reserved = True

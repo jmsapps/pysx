@@ -1,0 +1,10 @@
+from pathlib import Path
+from pysx import DurableApplication, Fragment, Signal, SQLiteOwnershipStore, StateCodec
+from pysx.wire import JSONValue
+def decode(value: JSONValue) -> int:
+    return 0
+def wrong(state: Signal[str]) -> Fragment:
+    raise RuntimeError
+DurableApplication[int](wrong, initial=lambda: "bad", codec=StateCodec[int](lambda value: value, decode),
+    store=SQLiteOwnershipStore(Path("state.sqlite3")), application="app", lease_seconds="bad",
+    fresh_on_incompatible="yes")

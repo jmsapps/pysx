@@ -1,0 +1,10 @@
+from pysx import DurableSession, Fragment, Signal, StateCodec, StateIdentity, MemoryStateStore
+from pysx.wire import JSONValue
+def decode(value: JSONValue) -> int:
+    return 0
+codec = StateCodec[int](lambda value: value, decode)
+codec.dumps("wrong state")
+def app(state: Signal[str]) -> Fragment:
+    raise RuntimeError
+DurableSession[int](app, initial=lambda: 0, codec=codec,
+    store=MemoryStateStore(), identity=StateIdentity("app", "session", "principal", "browser"))

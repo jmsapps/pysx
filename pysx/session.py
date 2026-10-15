@@ -30,6 +30,8 @@ if TYPE_CHECKING:
 class Session:
     """Holds one client's signal graph and the ops it has produced."""
 
+    durability: Literal["volatile", "durable"] = "volatile"
+
     def __init__(
         self,
         app_fn: Callable[[], Template | Fragment],
@@ -44,6 +46,7 @@ class Session:
         self.request = request or RequestContext(path=location)
         self.closed = False
         self.revoked = False
+        self.recovery_failed = False
         self.runtime = MutationRuntime(capacity=mutation_capacity, tasks=task_capacity)
         self.runtime.development = development
         self.changed = asyncio.Event()
@@ -98,6 +101,9 @@ class Session:
         self._live = True
         self.routes.live = True
         self.rendered.failures.clear()
+
+    def checkpoint(self) -> None:
+        """Volatile sessions retain no durable application state."""
 
     def _watch(self, watcher: Watcher) -> Effect:
         token = failure_context.set(watcher.failure)

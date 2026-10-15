@@ -11,6 +11,80 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
+def test_owner_routing_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = (
+        "from pathlib import Path\n"
+        "from typing import assert_type\n"
+        "from pysx import (DurableApplication, Fragment, Signal, SQLiteOwnershipStore, "
+        "OwnershipStore, StateCodec, native)\n"
+        "from pysx.wire import JSONValue\n"
+        "def decode(value: JSONValue) -> int:\n"
+        "    if isinstance(value, int):\n        return value\n    raise ValueError\n"
+        "def page(state: Signal[int]) -> Fragment:\n    return native.Div(state)\n"
+        "host = DurableApplication(page, initial=lambda: 0, "
+        "codec=StateCodec[int](lambda value: value, decode), "
+        "store=SQLiteOwnershipStore(Path('state.sqlite3')), application='app')\n"
+        "assert_type(host, DurableApplication[int])\n"
+        "assert_type(host.backend, OwnershipStore)\n"
+        if valid
+        else (ROOT / "tests/typing/owner_routing_invalid.txt").read_text()
+    )
+    fixture = tmp_path / "owner_routing.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "str" in output
+        assert "int" in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_explicit_state_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = (
+        "from typing import assert_type\n"
+        "from pysx import (DurableSession, Fragment, Signal, StateCodec, StateIdentity, "
+        "MemoryStateStore, native)\n"
+        "from pysx.wire import JSONValue\n"
+        "def decode(value: JSONValue) -> int:\n"
+        "    if isinstance(value, int):\n        return value\n    raise ValueError\n"
+        "codec = StateCodec[int](lambda value: value, decode)\n"
+        "assert_type(codec.loads(b'1'), int)\n"
+        "def app(state: Signal[int]) -> Fragment:\n    return native.Div(state)\n"
+        "session = DurableSession(app, initial=lambda: 0, codec=codec, "
+        "store=MemoryStateStore(), identity=StateIdentity('app', 's', 'p', 'b'))\n"
+        "assert_type(session, DurableSession[int])\n"
+        "assert_type(session.state, Signal[int])\n"
+        if valid
+        else (ROOT / "tests/typing/explicit_state_invalid.txt").read_text()
+    )
+    fixture = tmp_path / "explicit_state.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "str" in output
+        assert "int" in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
 def test_serialized_async_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = (
         (

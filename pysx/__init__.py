@@ -3,6 +3,8 @@ from .bindings import Binding, Deferred, bounded_while, defer, defer2
 from .boundaries import ErrorBoundary
 from .composition import Children, Component
 from .dom import Dom, DomError, DomListener, DomNode, DomRef, Rect
+from .durable import DurableSession
+from .durable_host import DurableApplication
 from .elements import (
     br,
     button,
@@ -49,7 +51,19 @@ from .operators import (
     not_,
 )
 from .output import TrustedHTML
+from .ownership import OwnerLease, OwnershipStore, SQLiteOwnershipStore
 from .parser import PysxSyntaxError
+from .persistence import (
+    IncompatibleState,
+    MemoryStateStore,
+    RecoveryUnavailable,
+    SQLiteStateStore,
+    StateCodec,
+    StateIdentity,
+    StateSnapshot,
+    StateStore,
+    StoreUnavailable,
+)
 from .reactive import Signal, batch, derived, effect, signal
 from .render import (
     Each,
@@ -95,17 +109,24 @@ __all__ = [
     "DomListener",
     "DomNode",
     "DomRef",
+    "DurableApplication",
+    "DurableSession",
     "Each",
     "ErrorBoundary",
     "ErrorInfo",
     "EventHandler",
     "Fragment",
     "HostConfig",
+    "IncompatibleState",
     "Link",
     "Location",
+    "MemoryStateStore",
     "NavigationEvent",
+    "OwnerLease",
+    "OwnershipStore",
     "Projection",
     "PysxSyntaxError",
+    "RecoveryUnavailable",
     "Rect",
     "Rendered",
     "RequestContext",
@@ -116,9 +137,16 @@ __all__ = [
     "RouteResponse",
     "RouteState",
     "Router",
+    "SQLiteOwnershipStore",
+    "SQLiteStateStore",
     "SecurityPolicy",
     "Signal",
+    "StateCodec",
+    "StateIdentity",
+    "StateSnapshot",
+    "StateStore",
     "StaticAsset",
+    "StoreUnavailable",
     "Structured",
     "StyledCallable",
     "StyledTag",

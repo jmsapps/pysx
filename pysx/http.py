@@ -92,6 +92,8 @@ def _controls(node: Tree) -> None:
 
 
 class HTTPRuntime:
+    owner_hint: str | None = None
+
     def __init__(
         self,
         app: Callable[[], Template | Fragment],
@@ -206,7 +208,13 @@ class HTTPRuntime:
             raise RuntimeError("unbalanced graph reservation")
         self.reservations -= 1
 
-    def create_reserved(self, request: RequestContext, *, location: str | None = None) -> Session:
+    def create_reserved(
+        self,
+        request: RequestContext,
+        *,
+        location: str | None = None,
+        browser: str | None = None,  # noqa: ARG002 - durable factory hook
+    ) -> Session:
         session = Session(
             self.app,
             location=location or request.path,
@@ -219,6 +227,14 @@ class HTTPRuntime:
         self.graphs.add(session)
 
         return session
+
+    def recovery_token(self, session: Session) -> str | None:  # noqa: ARG002 - durable hook
+        return None
+
+    def recover(self, token: str, request: RequestContext, *, location: str) -> Session:
+        del token, request, location
+
+        raise ValueError("durable recovery unavailable")
 
     def tasks(self) -> set[asyncio.Task[object]]:
         tasks = self.cleanup_tasks | {
@@ -287,7 +303,7 @@ class HTTPRuntime:
             return HTTPResult(503, headers, b"render capacity reached")
 
         try:
-            session = self.create_reserved(request)
+            session = self.create_reserved(request, browser=browser)
         finally:
             self.unreserve()
 
@@ -342,18 +358,29 @@ class HTTPRuntime:
                 ("x-content-type-options", "nosniff"),
                 ("referrer-policy", "same-origin"),
             )
+            recovery = self.recovery_token(session)
+            attributes = (
+                f' data-pysx-recovery="{html.escape(recovery, quote=True)}"'
+                if recovery is not None
+                else ""
+            ) + (
+                f' data-pysx-owner="{html.escape(self.owner_hint, quote=True)}"'
+                if self.owner_hint is not None
+                else ""
+            )
             content = (
                 '<!doctype html><html lang="en"><head><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width, initial-scale=1">'
                 f"<title>{html.escape(document.title)}</title>"
                 f'<meta name="description" content="{description}">'
                 f'<style id="pysx-style" nonce="{nonce}">{css}</style></head><body>'
-                f'<div id="pysx-root" data-pysx-adoption="{token}">{body}</div>'
+                f'<div id="pysx-root" data-pysx-adoption="{token}"{attributes}>{body}</div>'
                 f'<script src="{client_url}" defer></script></body></html>'
             ).encode()
             status = document.status or (
                 session.routes.routers[0].response.status if session.routes.routers else 200
             )
+            session.checkpoint()
             expiry = asyncio.get_running_loop().call_later(self.ttl, self.expire, token)
             self.pending[token] = PendingRender(session, browser, request.principal, expiry)
 

@@ -38,6 +38,7 @@ class MutationRuntime:
         self.context: Callable[[], AbstractContextManager[None]] = untracked
         self.finished: Callable[[], None] = lambda: None
         self.failed: Callable[[Exception], None] = lambda _error: None
+        self.admit: Callable[[], None] = lambda: None
 
     def check_write(self) -> None:
         if self.closed:
@@ -54,6 +55,7 @@ class MutationRuntime:
     @asynccontextmanager
     async def turn(self) -> AsyncGenerator[None]:
         async with self.lock:
+            self.admit()
             self.check_write()
             self.owner = asyncio.current_task()
 
