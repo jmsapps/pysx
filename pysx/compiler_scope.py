@@ -126,11 +126,22 @@ class _Declarations(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         for target in node.targets:
-            if isinstance(target, ast.Name):
-                self.add(target.id, node.value)
-            else:
-                self.visit(target)
+            self.assign(target, node.value)
         self.visit(node.value)
+
+    def assign(self, target: ast.expr, value: ast.expr) -> None:
+        if isinstance(target, ast.Name):
+            self.add(target.id, value)
+        elif (
+            isinstance(target, (ast.Tuple, ast.List))
+            and isinstance(value, (ast.Tuple, ast.List))
+            and len(target.elts) == len(value.elts)
+            and not any(isinstance(item, ast.Starred) for item in (*target.elts, *value.elts))
+        ):
+            for item, expression in zip(target.elts, value.elts, strict=True):
+                self.assign(item, expression)
+        else:
+            self.visit(target)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if isinstance(node.target, ast.Name):
@@ -189,11 +200,14 @@ class _Declarations(ast.NodeVisitor):
         self.generic_visit(node)
         self.conditional, self.type_only = previous, previous_type
 
-    def visit_Try(self, node: ast.Try) -> None:
+    def visit_Try(self, node: ast.Try | ast.TryStar) -> None:
         previous = self.conditional
         self.conditional = True
         self.generic_visit(node)
         self.conditional = previous
+
+    def visit_TryStar(self, node: ast.TryStar) -> None:
+        self.visit_Try(node)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.name is not None:
@@ -233,6 +247,16 @@ class _Declarations(ast.NodeVisitor):
         self.conditional = previous
 
 
+def _annotations(args: ast.arguments) -> tuple[ast.expr | None, ...]:
+    """Annotations evaluate in the enclosing scope, never the function body scope."""
+    variadics = (variadic for variadic in (args.vararg, args.kwarg) if variadic is not None)
+
+    return tuple(
+        argument.annotation
+        for argument in (*args.posonlyargs, *args.args, *args.kwonlyargs, *variadics)
+    )
+
+
 class ScopeIndex:
     def __init__(self, tree: ast.Module, *, package: str = "") -> None:
         self.nodes: dict[ast.AST, Scope] = {}
@@ -265,6 +289,16 @@ class ScopeIndex:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for decorator in node.decorator_list:
                     self._walk(decorator, scope)
+
+                signature: tuple[ast.AST | None, ...] = (
+                    *_annotations(node.args),
+                    node.returns,
+                    *node.type_params,
+                )
+
+                for annotation in signature:
+                    if annotation is not None:
+                        self._walk(annotation, scope)
             parent = scope.parent if scope.kind == "class" else scope
             child = Scope(parent, "function", package=scope.package)
             arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
@@ -289,8 +323,15 @@ class ScopeIndex:
             return
 
         if isinstance(node, ast.ClassDef):
-            for expression in (*node.bases, *node.decorator_list):
-                self._walk(expression, scope)
+            members: tuple[ast.AST, ...] = (
+                *node.bases,
+                *node.decorator_list,
+                *node.keywords,
+                *node.type_params,
+            )
+
+            for member in members:
+                self._walk(member, scope)
             child = Scope(scope, "class", package=scope.package)
             self._scope(node.body, child)
 

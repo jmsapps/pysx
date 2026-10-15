@@ -178,7 +178,7 @@ def projection_for_source(
         sites=sites,
         complete=compilation.complete,
         diagnostics=diagnostics_for_source(
-            source, filename, workspace_roots=roots, buffers=buffers
+            source, filename, workspace_roots=roots, buffers=buffers, compilation=compilation
         ),
         validation=validation_ranges(projection) if compilation.tree is not None else [],
     )
@@ -189,7 +189,11 @@ def main() -> None:
     parser.add_argument("filename")
     parser.add_argument("--stdin", action="store_true")
     args = parser.parse_args()
-    source = sys.stdin.read() if args.stdin else Path(args.filename).read_text("utf-8")
+    source = (
+        sys.stdin.buffer.read().decode("utf-8")
+        if args.stdin
+        else Path(args.filename).read_bytes().decode("utf-8")
+    )
     print(json.dumps(projection_for_source(source, args.filename)))
 
 

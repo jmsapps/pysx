@@ -165,6 +165,7 @@ class Compilation:
             insertions.setdefault(offset, []).append((priority, value))
 
         dependencies: dict[str, str] = {}
+        uses_native = False
 
         for call in self.calls:
             span = positions.ast_span(call.node)
@@ -179,7 +180,7 @@ class Compilation:
             tail.synthetic("}, (")
 
             for element in call.elements:
-                _validate(
+                uses_native |= _validate(
                     tail,
                     element,
                     call,
@@ -193,7 +194,7 @@ class Compilation:
             add(span.end, -span.start, tail.finish())
         imports = (
             f"import pysx._compiler_runtime as {self.helper}\n"
-            f"import pysx.native as {self.helper}_native\n"
+            + (f"import pysx.native as {self.helper}_native\n" if uses_native else "")
             + "".join(f"import {module} as {alias}\n" for module, alias in dependencies.items())
         )
 
@@ -284,7 +285,7 @@ def _component_tag(tag: str, scope: Scope) -> bool:
     )
 
 
-def _native_base(
+def native_base_for(
     expression: ast.expr,
     scope: Scope,
     resolver: WorkspaceResolver,
@@ -312,14 +313,14 @@ def _native_base(
             external = resolver.resolve(identity)
 
             if external is not None and isinstance(external[1], ast.expr):
-                return _native_base(external[1], external[0].scope, resolver, seen | {identity})
+                return native_base_for(external[1], external[0].scope, resolver, seen | {identity})
 
     if isinstance(expression, ast.Name) and expression.id not in seen:
         value = scope.binding(expression.id)
         owner = scope.owner(expression.id)
 
         if isinstance(value, ast.expr) and owner is not None:
-            return _native_base(value, owner, resolver, seen | {expression.id})
+            return native_base_for(value, owner, resolver, seen | {expression.id})
 
     if isinstance(expression, ast.Call):
         identity = scope.identity(expression.func)
@@ -363,10 +364,10 @@ def _native_base(
 
         if (
             isinstance(expression.func, ast.Call)
-            and scope.identity(expression.func.func) == "pysx.styled"
+            and scope.identity(expression.func.func) in {"pysx.styled", "pysx.styled.styled"}
             and expression.func.args
         ):
-            base = _native_base(expression.func.args[0], scope, resolver, seen)
+            base = native_base_for(expression.func.args[0], scope, resolver, seen)
 
             if base is not None:
                 return base[0], True
@@ -379,7 +380,7 @@ def native_tag_for(tag: str, scope: Scope, resolver: WorkspaceResolver) -> str |
 
     if tag in NATIVE_TAGS:
         return tag
-    base = _native_base(ast.Name(tag, ast.Load()), scope, resolver)
+    base = native_base_for(ast.Name(tag, ast.Load()), scope, resolver)
 
     return base[0] if base is not None else None
 
@@ -491,7 +492,12 @@ def analyze(
             (),
             (
                 CompilerDiagnostic(
-                    message, SourceSpan(start, min(start + 1, len(source))), "python-syntax"
+                    message,
+                    SourceSpan(
+                        start,
+                        min(start + (2 if source.startswith("\r\n", start) else 1), len(source)),
+                    ),
+                    "python-syntax",
                 ),
             ),
             "",
@@ -661,14 +667,14 @@ def _validate(
     helper: str,
     resolver: WorkspaceResolver,
     dependencies: dict[str, str],
-) -> None:
+) -> bool:
     tag = element.tag
 
     if isinstance(tag, str) and _unknown_partial(tag, call.scope, resolver):
-        return
+        return False
 
     if isinstance(tag, str) and tag not in NATIVE_TAGS and not _component_tag(tag, call.scope):
-        return
+        return False
     native = isinstance(tag, str) and tag in NATIVE_TAGS
     origin = (
         call.source.location(element.span.start, len(tag))
@@ -703,7 +709,7 @@ def _validate(
             alias = dependencies.setdefault(binding_module.name, f"{helper}_dep{len(dependencies)}")
             text.synthetic("(" + resolver.qualified(value, binding_module, alias) + ")")
 
-    resolved_native = _native_base(expression, call.scope, resolver) if not native else None
+    resolved_native = native_base_for(expression, call.scope, resolver) if not native else None
 
     if resolved_native is not None:
         tag, styled_native = resolved_native
@@ -722,14 +728,14 @@ def _validate(
         elif (
             isinstance(binding, ast.Call)
             and isinstance(binding.func, ast.Call)
-            and binding_scope.identity(binding.func.func) == "pysx.styled"
+            and binding_scope.identity(binding.func.func) in {"pysx.styled", "pysx.styled.styled"}
             and binding.func.args
         ):
             target = binding.func.args[0]
             styled_callable = True
 
     if isinstance(tag, str) and "-" in tag:
-        return
+        return False
 
     text.synthetic(f"{helper}.component_result(")
 
@@ -870,3 +876,5 @@ def _validate(
                 else:
                     text.synthetic(repr(str(value)))
                 text.synthetic("), ")
+
+    return native and isinstance(tag, str) and tag in NATIVE_TAGS

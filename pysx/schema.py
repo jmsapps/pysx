@@ -160,6 +160,7 @@ GLOBAL_ATTRS = frozenset(
 )
 PSEUDO_ATTRS = frozenset(["key", "css", "stylevars", "cssvars", "customattrs"])
 RUNTIME_ATTRS = frozenset(["ref"])
+BINDING_ATTRS = frozenset(["bindValue", "bindChecked", "bindSelected"])
 EVENT_NAMES = frozenset(
     [
         "abort",
@@ -332,7 +333,17 @@ NUMBER_ATTRS = frozenset(
 TAG_ATTRS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "a": frozenset(
-            ["download", "href", "hreflang", "ping", "referrerpolicy", "rel", "target", "type"]
+            [
+                "download",
+                "href",
+                "hreflang",
+                "name",
+                "ping",
+                "referrerpolicy",
+                "rel",
+                "target",
+                "type",
+            ]
         ),
         "area": frozenset(
             [
@@ -518,7 +529,7 @@ TAG_ATTRS: Mapping[str, frozenset[str]] = MappingProxyType(
             ]
         ),
         "select": frozenset(
-            ["autocomplete", "disabled", "form", "multiple", "name", "required", "size"]
+            ["autocomplete", "disabled", "form", "multiple", "name", "required", "size", "value"]
         ),
         "slot": frozenset(["name"]),
         "source": frozenset(["height", "media", "sizes", "src", "srcset", "type", "width"]),
@@ -538,6 +549,7 @@ TAG_ATTRS: Mapping[str, frozenset[str]] = MappingProxyType(
                 "readonly",
                 "required",
                 "rows",
+                "value",
                 "wrap",
             ]
         ),
@@ -636,6 +648,10 @@ def is_event(name: str) -> bool:
     )
 
 
+def is_custom_event(name: str) -> bool:
+    return len(name) > 2 and name.startswith("on") and name[2].isupper()
+
+
 def family_of(name: str, tag: str | None = None) -> AttrFamily:
     name = normalize_attr(name)
 
@@ -667,13 +683,17 @@ def tag_info(name: str) -> TagInfo | None:
 
 
 def allowed_attr(tag: str, name: str) -> bool:
+    """Foreign namespaces carry no attribute table, so only HTML tags can reject a name."""
+    custom_event = is_custom_event(name)
     name = normalize_attr(name)
     info = tag_info(tag)
 
     return bool(name) and (
         name.startswith(("data-", "aria-"))
         or is_event(name)
+        or custom_event
         or name in PSEUDO_ATTRS
         or name in RUNTIME_ATTRS
-        or (info is not None and name in info.attributes)
+        or name in {normalize_attr(binding) for binding in BINDING_ATTRS}
+        or (info is not None and (info.namespace != "html" or name in info.attributes))
     )

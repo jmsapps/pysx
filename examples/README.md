@@ -118,6 +118,15 @@ imperative zones, supported operations and limits.
 
 ## Templates
 
+Run `uv run --project . example run diagnostics` for the static diagnostic workflow.
+**Apply suggested fix** changes the frozen `count()` sample into an uncalled Signal
+reference and clears its finding. **Show attribute warning** demonstrates an advisory
+schema finding without a guessed fix; **Reset sample** restores the first case.
+The live counter remains interactive, and each tab owns its state. Source samples
+are displayed and analyzed as text, never executed. No additional setup is needed.
+See [diagnostic APIs, codes and edits](../docs/DIAGNOSTICS.md) for the matching
+buffer/CLI workflow; checking `examples/diagnostics.py` itself reports `[]`.
+
 Run `uv run --project . example run templates` for live template controls.
 **Update heading** changes a live heading followed by two styled break siblings on
 one row. The action is a later inline sibling, and each session owns its heading.

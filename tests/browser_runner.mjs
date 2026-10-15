@@ -16,6 +16,12 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "diagnostics_example", cases: [
+    [0, "diagnostics", "browser_diagnostics_example.mjs", "DIAGNOSTICS EXAMPLE BROWSER PASSED"],
+  ] },
+  { suite: "diagnostics_actions", cases: [
+    [0, "diagnostics_fixture", "browser_diagnostics.mjs", "DIAGNOSTICS ACTIONS BROWSER PASSED"],
+  ] },
   { suite: "durable_state", cases: [
     [0, "durable_state_fixture", "browser_durable_state.mjs", "DURABLE STATE EXAMPLE BROWSER PASSED"],
   ] },
@@ -254,6 +260,8 @@ try {
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
     const server = name ? start(interpreter, name === "durable_state_fixture" ?
       ["tests/browser_deployment_fixture.py", "--port", String(port), "--example"] :
+      name === "diagnostics_fixture" ?
+      ["-m", "pysx.server", "--app", "tests.browser_diagnostics_fixture:app", "--port", String(port)] :
       name === "deployment_fixture" ?
       ["tests/browser_deployment_fixture.py", "--port", String(port)] :
       name === "ownership_fixture" ?

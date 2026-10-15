@@ -294,9 +294,7 @@ def test_explicit_state_unreachable_store_withholds_output_without_fencing() -> 
             return super().commit(snapshot)
 
     store = FlakyStore()
-    graph = DurableSession(
-        view, initial=lambda: 0, codec=CODEC, store=store, identity=IDENTITY
-    )
+    graph = DurableSession(view, initial=lambda: 0, codec=CODEC, store=store, identity=IDENTITY)
 
     try:
         graph.state.set(1)

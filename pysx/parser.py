@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
 
-from .schema import is_event
+from .schema import BINDING_ATTRS, is_custom_event, is_event
 from .template import dedent_fragments
 
 
@@ -333,14 +333,14 @@ def _indent_of(line: Line) -> int:
 
 
 def _is_event(name: str) -> bool:
-    return is_event(name) or (len(name) > 2 and name.startswith("on") and name[2].isupper())
+    return is_event(name) or is_custom_event(name)
 
 
 def attr_kind(name: str) -> HoleKind:
     if _is_event(name):
         return HoleKind.EVENT
 
-    if name in {"bindValue", "bindChecked", "bindSelected"}:
+    if name in BINDING_ATTRS:
         return HoleKind.BIND
 
     return HoleKind.ATTR

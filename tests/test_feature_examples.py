@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 import signal
+import socket
 import urllib.request
 from dataclasses import asdict
 from typing import TYPE_CHECKING
@@ -13,6 +14,7 @@ import pytest
 from acceptance_support import ready_server
 
 from examples.composition import app as composition_app
+from examples.diagnostics import app as diagnostics_app
 from examples.events import app as events_app
 from examples.forms import app as forms_app
 from examples.keyed_rows import app as keyed_rows_app
@@ -35,6 +37,72 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from pysx.durable import DurableSession
+
+
+def test_diagnostics_example_fix_warning_reset_isolation_and_cleanup() -> None:
+    session, other = Session(diagnostics_app), Session(diagnostics_app)
+    tree = snapshot(session.rendered.body, unwrap_row=False)
+
+    def reading(markup: str) -> str:
+        found = re.search(r'id="live-count"[^>]*>(.*?)</span>', markup)
+        assert found is not None
+
+        return re.sub(r"<[^>]+>", "", found[1])
+
+    def click(identifier: str) -> None:
+        found = re.search(rf'id="{identifier}"[^>]*data-pysx-click="([^"]+)"', tree.markup())
+        assert found is not None
+        result = asyncio.run(session.dispatch_result_async(found[1], None))
+        assert result["status"] == "success"
+        apply(tree, result["ops"])
+
+    try:
+        assert "template-freeze" in tree.markup()
+        click("apply-fix")
+        assert "No diagnostics ([])" in tree.markup()
+        assert "count()" not in tree.markup()
+        click("increment-counter")
+        assert reading(tree.markup()) == "1"
+        click("show-warning")
+        assert "native-attribute" in tree.markup()
+        click("reset-sample")
+        assert "template-freeze" in tree.markup()
+        assert reading(tree.markup()) == "1"
+        assert "template-freeze" in other.rendered.body
+        assert reading(other.rendered.body) == "0"
+        assert other.pending == []
+        assert session.pending_callbacks == 0
+    finally:
+        session.dispose()
+        other.dispose()
+    assert session.rendered.scopes.owners == {}
+    assert session.rendered.handlers == {}
+    assert session.rendered.watchers == []
+
+
+def test_diagnostics_example_checker_clean_and_registered() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["diagnostics"] == "examples.diagnostics:app"
+    assert diagnostics(Path("examples/diagnostics.py")) == []
+    assert diagnostics(Path("examples/components/diagnostics.py")) == []
+
+
+@pytest.mark.acceptance
+def test_diagnostics_example_cli_startup_and_ctrl_c_exit() -> None:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    command = ["uv", "run", "--project", ".", "example", "run", "diagnostics", "--port", str(port)]
+
+    with ready_server(command) as server:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+            assert response.status == 200
+            assert b"Diagnostics" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
 
 
 def test_resources_http_adoption_async_interactions_isolation_and_cleanup() -> None:

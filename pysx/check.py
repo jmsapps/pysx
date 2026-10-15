@@ -13,15 +13,19 @@ and silently desync every range.
 from __future__ import annotations
 
 import ast
+import hashlib
+import io
 import json
 import re
 import sys
+import tokenize
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 from .compiler import analyze
 from .compiler_imports import WorkspaceResolver
 from .compiler_scope import Scope, ScopeIndex
+from .diagnostic_rules import diagnostics_for_compilation
 from .parser import (
     Conditional,
     Element,
@@ -54,6 +58,19 @@ def _utf16_from_bytes(line: str, byte_col: int) -> int:
     return _utf16(line, len(prefix))
 
 
+class TextEdit(TypedDict):
+    start: int
+    end: int
+    text: str
+    expected: str
+
+
+class DiagnosticFix(TypedDict):
+    title: str
+    edits: list[TextEdit]
+    source_digest: str
+
+
 class Diagnostic(TypedDict):
     line: int
     startChar: int
@@ -61,6 +78,60 @@ class Diagnostic(TypedDict):
     message: str
     severity: Literal["error", "warning"]
     endLine: NotRequired[int]
+    code: str
+    fixes: NotRequired[list[DiagnosticFix]]
+
+
+def apply_fix(source: str, fix: DiagnosticFix) -> str:
+    """Apply guarded raw-source edits; reject stale, overlapping or invalid edits."""
+
+    if hashlib.sha256(source.encode()).hexdigest() != fix["source_digest"]:
+        raise ValueError("diagnostic edit is stale")
+    edits = sorted(fix["edits"], key=lambda edit: (edit["start"], edit["end"]))
+    end = 0
+
+    for edit in edits:
+        start, finish = edit["start"], edit["end"]
+
+        if not end <= start <= finish <= len(source):
+            raise ValueError("invalid or overlapping diagnostic edits")
+
+        if source[start:finish] != edit["expected"]:
+            raise ValueError("diagnostic edit is stale")
+        end = finish
+
+    for edit in reversed(edits):
+        source = source[: edit["start"]] + edit["text"] + source[edit["end"] :]
+
+    return source
+
+
+def _code(message: str) -> str:
+    if message.startswith("unknown component"):
+        return "unknown-component"
+
+    if "needs a t-string" in message:
+        return "template-fstring"
+
+    if "bare lambda" in message:
+        return "template-lambda"
+
+    if "evaluated once and frozen" in message or "snapshot" in message:
+        return "template-freeze"
+
+    if any(
+        word in message
+        for word in ("coerce", "coerces", "cannot return a Signal", "compares identity")
+    ):
+        return "reactive-coercion"
+
+    if "metadata" in message or ("interpolation" in message and "CSS" in message):
+        return "interpolation-metadata"
+
+    if any(word in message for word in ("styled", "global_style", "variant")):
+        return "style-declaration"
+
+    return "template-syntax"
 
 
 def _d(
@@ -76,6 +147,7 @@ def _d(
         "endChar": end,
         "message": message,
         "severity": severity,
+        "code": _code(message),
     }
 
 
@@ -108,41 +180,58 @@ def _bound_names(tree: ast.AST) -> set[str]:
     return names
 
 
-def _signal_names(tree: ast.AST) -> set[str]:
+def _scope_values(scope: Scope) -> dict[str, ast.expr]:
+    names: set[str] = set()
+    current: Scope | None = scope
+
+    while current is not None:
+        names.update(current.bindings)
+        current = current.parent
+
+    return {name: value for name in names if isinstance(value := scope.binding(name), ast.expr)}
+
+
+def _signal_names(scope: Scope, resolver: WorkspaceResolver) -> set[str]:
     out: set[str] = set()
+    values = _scope_values(scope)
 
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+    for name, value in values.items():
+        if not isinstance(value, ast.Call):
             continue
+        owner = scope.owner(name)
+        identity = resolver.identity(owner.identity(value.func)) if owner is not None else None
 
-        fn = node.value.func
-
-        if isinstance(fn, ast.Name) and fn.id in (
-            "signal",
-            "local_state",
-            "structured",
-            "derived",
-            "eq",
-            "ne",
-            "lt",
-            "le",
-            "gt",
-            "ge",
-            "all_of",
-            "any_of",
-            "not_",
-            "length",
-            "contains",
-            "concat",
+        if (
+            identity is not None
+            and identity.startswith("pysx.")
+            and identity.rsplit(".", 1)[-1]
+            in (
+                "signal",
+                "local_state",
+                "structured",
+                "derived",
+                "eq",
+                "ne",
+                "lt",
+                "le",
+                "gt",
+                "ge",
+                "all_of",
+                "any_of",
+                "not_",
+                "length",
+                "contains",
+                "concat",
+            )
         ):
-            out.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            out.add(name)
 
-    for _ in range(len(out) + 1):
+    for _ in range(len(values) + 1):
         previous = out.copy()
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and _reactive_expression(node.value, out):
-                out.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        for name, value in values.items():
+            if _reactive_expression(value, out):
+                out.add(name)
 
         if out == previous:
             break
@@ -184,22 +273,18 @@ def _snapshot_expression(node: ast.AST, signals: set[str]) -> bool:
     return isinstance(node, (ast.List, ast.Tuple, ast.ListComp)) and _reads_signal(node, signals)
 
 
-def _snapshot_names(tree: ast.AST, signals: set[str]) -> set[str]:
+def _snapshot_names(scope: Scope, signals: set[str]) -> set[str]:
     names: set[str] = set()
-    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
+    assignments = _scope_values(scope)
 
     for _ in range(len(assignments) + 1):
         previous = names.copy()
 
-        for assignment in assignments:
-            value = assignment.value
-
+        for name, value in assignments.items():
             if _snapshot_expression(value, signals) or (
                 isinstance(value, ast.Name) and value.id in names
             ):
-                names.update(
-                    target.id for target in assignment.targets if isinstance(target, ast.Name)
-                )
+                names.add(name)
 
         if names == previous:
             break
@@ -279,27 +364,32 @@ def _span_diagnostic(node: ast.AST, lines: list[str], message: str) -> Diagnosti
     return diagnostic
 
 
-def _styling_diagnostics(tree: ast.AST, lines: list[str]) -> list[Diagnostic]:
+def _styling_diagnostics(
+    tree: ast.AST, lines: list[str], scopes: ScopeIndex, resolver: WorkspaceResolver
+) -> list[Diagnostic]:
     out: list[Diagnostic] = []
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
+        scope = scopes.nodes[node]
+        identity = resolver.identity(scope.identity(node.func))
+        styled_identities = {"pysx.styled", "pysx.styled.styled"}
         declaration = (
             isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "styled"
+            and resolver.identity(scope.identity(node.func.value)) in styled_identities
         )
         extension = (
             isinstance(node.func, ast.Call)
-            and isinstance(node.func.func, ast.Name)
-            and node.func.func.id == "styled"
+            and resolver.identity(scope.identity(node.func.func)) in styled_identities
         )
         name = (
-            node.func.id
-            if isinstance(node.func, ast.Name)
-            else "styled"
-            if declaration or extension
+            "styled"
+            if declaration or extension or identity in styled_identities
+            else "css"
+            if identity in {"pysx.css", "pysx.styles.css"}
+            else "global_style"
+            if identity in {"pysx.global_style", "pysx.styled.global_style"}
             else ""
         )
 
@@ -366,29 +456,29 @@ def _styling_diagnostics(tree: ast.AST, lines: list[str]) -> list[Diagnostic]:
     return out
 
 
-def _templates(tree: ast.AST) -> Iterator[ast.TemplateStr | ast.JoinedStr]:
-    assignments = {
-        target.id: node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        for target in node.targets
-        if isinstance(target, ast.Name)
-    }
-
+def _templates(
+    tree: ast.AST, scopes: ScopeIndex, resolver: WorkspaceResolver
+) -> Iterator[tuple[ast.TemplateStr | ast.JoinedStr, Scope]]:
     def resolve(
-        expression: ast.expr, visited: frozenset[str] = frozenset()
+        expression: ast.expr, scope: Scope, visited: frozenset[str] = frozenset()
     ) -> ast.TemplateStr | ast.JoinedStr | None:
+        if len(visited) >= 32:
+            return None
+
         if isinstance(expression, (ast.TemplateStr, ast.JoinedStr)):
             return expression
 
         if isinstance(expression, ast.Name) and expression.id not in visited:
-            value = assignments.get(expression.id)
+            value, owner = scope.binding(expression.id), scope.owner(expression.id)
 
-            if value is not None:
-                return resolve(value, visited | {expression.id})
+            if isinstance(value, ast.expr) and owner is not None:
+                return resolve(value, owner, visited | {expression.id})
 
         if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Add):
-            left, right = resolve(expression.left, visited), resolve(expression.right, visited)
+            left, right = (
+                resolve(expression.left, scope, visited),
+                resolve(expression.right, scope, visited),
+            )
 
             if isinstance(left, ast.TemplateStr) and isinstance(right, ast.TemplateStr):
                 combined = ast.TemplateStr(values=[*left.values, *right.values])
@@ -403,19 +493,22 @@ def _templates(tree: ast.AST) -> Iterator[ast.TemplateStr | ast.JoinedStr]:
         return None
 
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "pysx"
-            and node.args
-        ):
-            arg = resolve(node.args[0])
+        if isinstance(node, ast.Call) and resolver.identity(
+            scopes.nodes[node].identity(node.func)
+        ) in {"pysx.pysx", "pysx.render.pysx"}:
+            scope = scopes.nodes[node]
+            argument = (
+                node.args[0]
+                if node.args
+                else next((kw.value for kw in node.keywords if kw.arg == "template"), None)
+            )
 
-            if isinstance(arg, ast.TemplateStr):
-                yield arg
-            elif isinstance(arg, ast.JoinedStr):
-                # f-strings eagerly interpolate and cannot preserve live holes.
-                yield arg
+            if argument is None:
+                continue
+            arg = resolve(argument, scope)
+
+            if isinstance(arg, (ast.TemplateStr, ast.JoinedStr)):
+                yield arg, scope
 
 
 def template_fragments(node: ast.TemplateStr) -> tuple[str, ...]:
@@ -523,15 +616,16 @@ def _legacy_diagnostics(
         return [_d(row, col, max(col + 1, len(line)), message)]
 
     bound = _bound_names(tree)
-    signals = _signal_names(tree)
-    snapshots = _snapshot_names(tree, signals)
-    out: list[Diagnostic] = _styling_diagnostics(tree, lines)
     resolver = compilation.resolver if compilation is not None else WorkspaceResolver(filename)
     scopes = ScopeIndex(tree, package=resolver.package)
+    out: list[Diagnostic] = _styling_diagnostics(tree, lines, scopes, resolver)
     mapper = LiteralMapper(source)
     positions = Positions(source)
 
-    for node in _templates(tree):
+    for node, template_scope in _templates(tree, scopes, resolver):
+        signals = _signal_names(template_scope, resolver)
+        snapshots = _snapshot_names(template_scope, signals)
+
         if isinstance(node, ast.JoinedStr):
             line = lines[node.lineno - 1]
             col = _utf16_from_bytes(line, node.col_offset)
@@ -641,7 +735,7 @@ def _legacy_diagnostics(
                 continue
             keys = _variant_keys(
                 tag_expr if tag_expr is not None else ast.Name(tag_name, ast.Load()),
-                scopes.nodes.get(node, scopes.nodes[tree]),
+                template_scope,
                 resolver,
             )
 
@@ -770,6 +864,15 @@ def diagnostics_for_source(
     legacy = _legacy_diagnostics(source, filename, compilation.tree, compilation)
 
     if compilation.tree is None:
+        for item, failure in zip(legacy, compilation.diagnostics, strict=True):
+            start = positions.editor_position(failure.span.start)
+            end = positions.editor_position(failure.span.end)
+            item["line"] = start.line
+            item["startChar"] = start.character
+            item["endLine"] = end.line
+            item["endChar"] = end.character
+            item["code"] = failure.code
+
         return legacy
     # The old raw-line scan cannot see single-line, escaped or lexical tag bindings.
     # Preserve it only for explicit compatibility calls omitted by the compiler.
@@ -799,7 +902,7 @@ def diagnostics_for_source(
             item["endLine"] = end.line
             out.append(item)
 
-    for diagnostic in compilation.diagnostics:
+    for diagnostic in (*compilation.diagnostics, *diagnostics_for_compilation(compilation)):
         if any(
             "needs a t-string" in item["message"] and diagnostic.code == "template-source"
             for item in out
@@ -809,15 +912,121 @@ def diagnostics_for_source(
         end = positions.editor_position(diagnostic.span.end)
         item = _d(start.line, start.character, end.character, diagnostic.message, "warning")
         item["endLine"] = end.line
+        item["code"] = diagnostic.code
 
-        if not any(existing["message"] == item["message"] for existing in out):
+        matches = [
+            existing
+            for existing in out
+            if existing["message"] == item["message"]
+            and existing["line"] == item["line"]
+            and existing["startChar"] == item["startChar"]
+        ]
+
+        if not matches:
             out.append(item)
+        else:
+            for existing in matches:
+                existing["code"] = diagnostic.code
+
+    _attach_fixes(source, compilation, out)
 
     return out
 
 
+def _attach_fixes(source: str, compilation: Compilation, findings: list[Diagnostic]) -> None:
+    positions = Positions(source)
+    digest = hashlib.sha256(source.encode()).hexdigest()
+
+    def attach(code: str, start: int, end: int, text: str, title: str) -> None:
+        position = positions.editor_position(start)
+
+        for item in findings:
+            if (
+                item["code"] == code
+                and item["line"] == position.line
+                and item["startChar"] <= position.character <= item["endChar"]
+            ):
+                item["fixes"] = [
+                    {
+                        "title": title,
+                        "source_digest": digest,
+                        "edits": [
+                            {
+                                "start": start,
+                                "end": end,
+                                "text": text,
+                                "expected": source[start:end],
+                            }
+                        ],
+                    }
+                ]
+
+    for call in compilation.calls:
+        for hole in call.source.holes:
+            expression = hole.value
+
+            if (
+                isinstance(expression, ast.Call)
+                and isinstance(expression.func, ast.Name)
+                and not expression.args
+                and not expression.keywords
+            ):
+                binding = call.scope.binding(expression.func.id)
+                owner = call.scope.owner(expression.func.id)
+
+                if (
+                    isinstance(binding, ast.Call)
+                    and owner is not None
+                    and compilation.resolver.identity(owner.identity(binding.func))
+                    in {"pysx.signal", "pysx.reactive.signal"}
+                ):
+                    span = positions.ast_span(expression)
+
+                    if "#" not in source[span.start : span.end]:
+                        attach(
+                            "template-freeze",
+                            span.start,
+                            span.end,
+                            expression.func.id,
+                            "Keep this Signal reactive",
+                        )
+
+    if compilation.tree is not None:
+        scopes = ScopeIndex(compilation.tree, package=compilation.resolver.package)
+
+        for node, _ in _templates(compilation.tree, scopes, compilation.resolver):
+            if isinstance(node, ast.JoinedStr):
+                span = positions.ast_span(node)
+                match = re.match(r"(?i)(r?f|fr)(['\"])", source[span.start : span.end])
+
+                if match is None:
+                    continue
+                literal = f"({source[span.start : span.end]})"
+                depth, starts, adjacent = 0, 0, False
+
+                for token in tokenize.generate_tokens(io.StringIO(literal).readline):
+                    if token.type == tokenize.FSTRING_START:
+                        depth += 1
+                        starts += 1
+                    elif token.type == tokenize.FSTRING_END:
+                        depth -= 1
+                    elif token.type == tokenize.STRING and depth == 0:
+                        adjacent = True
+
+                if starts == 1 and not adjacent:
+                    prefix = match[1]
+                    index = prefix.lower().index("f")
+                    attach(
+                        "template-fstring",
+                        span.start + index,
+                        span.start + index + 1,
+                        "t",
+                        "Use a t-string template",
+                    )
+
+
 def diagnostics(path: Path) -> list[Diagnostic]:
-    return diagnostics_for_source(path.read_text("utf-8"), str(path))
+    return diagnostics_for_source(path.read_bytes().decode("utf-8"), str(path))
 
 
 def main() -> int:

@@ -31,7 +31,9 @@ try {
 
   await page.evaluate(() => window.scrollTo(0, 100));
   await click("fragment"); await atTarget();
-  await click("named-link"); await focused("");
+  await click("named-link");
+  await page.waitForFunction(() =>
+    document.activeElement?.getAttribute("name") === "named");
   assert.equal(await page.evaluate(() => document.activeElement.getAttribute("name")), "named");
   await click("first"); await route("/first"); await atTop();
   await page.evaluate(() => {

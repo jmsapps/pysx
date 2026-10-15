@@ -3,9 +3,376 @@ from pathlib import Path
 
 import pytest
 
-from pysx.check import Diagnostic, diagnostics, diagnostics_for_source
+from pysx.check import Diagnostic, apply_fix, diagnostics, diagnostics_for_source
+from pysx.source_map import EditorPosition, Positions
 
 HEADER = "from pysx import component, div, pysx, signal, styled\n\n"
+
+
+@pytest.mark.parametrize(
+    ("markup", "code", "selected"),
+    [
+        ("div(hreff='bad')", "native-attribute", "hreff"),
+        ("span(open={True})", "native-attribute", "open"),
+        ("input(disabled={'bad'})", "native-value", "{'bad'}"),
+        ("input(disabled='bad')", "native-value", "'bad'"),
+        ("input(disabled={1})", "native-value", "{1}"),
+        ("p(title={42})", "native-value", "{42}"),
+        ("button(onClick={42})", "event-handler", "{42}"),
+        ("input(bindValue={'bad'})", "binding-value", "{'bad'}"),
+        ("Panel", "component-required-prop", "Panel"),
+        ("Panel(title={42})", "component-prop-value", "{42}"),
+        ("Panel(title={'ok'}, extra={1})", "component-unknown-prop", "Panel"),
+        ("Panel(title={'ok'}): 'child'", "component-unknown-prop", "Panel"),
+    ],
+)
+def test_diagnostics_actions_advisory_exact_ranges(markup: str, code: str, selected: str) -> None:
+    source = (
+        "from pysx import Fragment, pysx\n"
+        "def Panel(*, title: str) -> Fragment:\n    return pysx(t'p: {title}')\n"
+        + 'emoji = "😀"; view = pysx(t"'
+        + markup
+        + '")\n'
+    )
+    findings = diagnostics_for_source(source)
+    assert len(findings) == 1, findings
+    finding = findings[0]
+    assert finding["code"] == code
+    assert finding["severity"] == "warning"
+    positions = Positions(source)
+    start = positions.editor_offset(EditorPosition(finding["line"], finding["startChar"]))
+    end = positions.editor_offset(
+        EditorPosition(finding.get("endLine", finding["line"]), finding["endChar"])
+    )
+    assert source[start:end] == selected
+
+
+@pytest.mark.parametrize("literal", ['f"p: {count}"', 't"p: {count()}"'])
+def test_diagnostics_actions_guarded_fix_and_reanalysis(literal: str) -> None:
+    source = "from pysx import pysx, signal\ncount = signal(0)\n" + f"view = pysx({literal})\n"
+    findings = diagnostics_for_source(source)
+    assert len(findings) == 1
+    fixes = findings[0].get("fixes", [])
+    assert len(fixes) == 1
+    repaired = apply_fix(source, fixes[0])
+    assert diagnostics_for_source(repaired) == []
+
+    with pytest.raises(ValueError, match="stale"):
+        apply_fix("😀" + source, fixes[0])
+
+
+def test_diagnostics_survive_ragged_implicit_concatenation() -> None:
+    source = (
+        "from pysx import pysx\n"
+        "def view():\n"
+        '    return pysx(f"<div>"\n'
+        '            f"<p>hi</p>"\n'
+        '          f"</div>")\n'
+    )
+    compile(source, "<ragged>", "exec")
+    findings = diagnostics_for_source(source)
+    assert [finding["code"] for finding in findings] == ["template-fstring"]
+    assert findings[0].get("fixes", []) == []
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        "svg(viewBox='0 0 10 10')",
+        "svg(xmlns='http://www.w3.org/2000/svg')",
+        "math(display='block')",
+        "div(onCustom={handler})",
+        "textarea(value='text')",
+        "select(value='b')",
+        "a(name='anchor')",
+    ],
+)
+def test_diagnostics_accept_foreign_custom_and_control_attributes(markup: str) -> None:
+    source = (
+        "from pysx import pysx\n"
+        "def handler(event: object) -> None: ...\n"
+        'view = pysx(t"' + markup + '")\n'
+    )
+    assert diagnostics_for_source(source) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "view = pysx(t",
+        "def app():\n",
+        "😀 =",
+        "view = (",
+        "from pysx import pysx\nview = pysx(t'input(title=')",
+    ],
+)
+def test_diagnostics_actions_partial_buffer_recovery(source: str) -> None:
+    findings = diagnostics_for_source(source)
+    assert findings
+    positions = Positions(source)
+
+    for finding in findings:
+        start = positions.editor_offset(EditorPosition(finding["line"], finding["startChar"]))
+        end = positions.editor_offset(
+            EditorPosition(finding.get("endLine", finding["line"]), finding["endChar"])
+        )
+        assert 0 <= start < end <= len(source)
+        assert finding["code"]
+    assert diagnostics_for_source("from pysx import pysx\nview = pysx(t'input')\n") == []
+
+
+def test_diagnostics_actions_aliases_defaults_dynamic_and_styled() -> None:
+    source = '''from pysx import Fragment, pysx
+from pysx.styled import styled as decorate
+from functools import partial
+def panel(*, title: str = "Default", **props: object) -> Fragment:
+    return pysx(t"p: {title} {props}")
+Partial = partial(panel, title="fixed")
+Card = decorate(Partial)(t"color: red")
+class Dynamic: pass
+str = Dynamic
+def other(*, title: str) -> Fragment:
+    return pysx(t"p: {title}")
+def app(unknown, factory):
+    Widget = factory()
+    return pysx(t"""
+        Card(variant={'any'}, title={unknown}, extra={1}); Widget(foo={42}); other(title={42})
+    """)
+'''
+    assert diagnostics_for_source(source) == []
+
+
+def test_diagnostics_actions_styling_identity_and_unrelated_names() -> None:
+    source = """from pysx.styled import styled as decorate
+Card = decorate('div')(t"color: red")
+def styled(*args): return args
+unrelated = styled('text', t"value: {42}")
+"""
+    findings = diagnostics_for_source(source)
+    assert len(findings) == 1
+    assert findings[0]["code"] == "style-declaration"
+
+
+def test_diagnostics_actions_shadowed_signal_is_unknown() -> None:
+    source = """from pysx import pysx, signal
+count = signal(0)
+def app(count):
+    return pysx(t"p: {count()}")
+"""
+    assert diagnostics_for_source(source) == []
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        "div(bindValue={value})",
+        "input(bindChecked={value})",
+        "select(bindSelected={value})",
+        "input(type='radio', bindValue={value})",
+    ],
+)
+def test_diagnostics_actions_binding_control_contract(markup: str) -> None:
+    source = (
+        "from pysx import pysx, signal\nvalue = signal('draft')\n" + f'view = pysx(t"{markup}")\n'
+    )
+    findings = diagnostics_for_source(source)
+    assert [item["code"] for item in findings] == ["binding-control"]
+
+
+def test_diagnostics_actions_formatted_and_dynamic_values_stay_conservative() -> None:
+    source = """from pysx import pysx, signal
+draft = signal('text')
+def app(unknown):
+    return pysx(t"p(title={42!s}); input(type={unknown}, bindValue={draft}); p(title={unknown})")
+"""
+    assert diagnostics_for_source(source) == []
+
+
+def test_diagnostics_actions_assembled_fstring_has_no_guessed_fix() -> None:
+    source = """from pysx import pysx
+view = pysx(f"p: " f'{42}')
+"""
+    findings = diagnostics_for_source(source)
+    assert findings
+    assert not any(item.get("fixes") for item in findings)
+
+
+def test_diagnostics_actions_marker_alias_and_local_template_scope() -> None:
+    source = """from pysx import pysx as html, signal as state
+def app():
+    count = state(0)
+    template = t"p: {count()}"
+    return html(template=template)
+def other():
+    template = t"p: 'different scope'"
+    return html(template)
+"""
+    findings = diagnostics_for_source(source)
+    assert len(findings) == 1
+    assert findings[0]["code"] == "template-freeze"
+    fixes = findings[0].get("fixes", [])
+    assert len(fixes) == 1
+    fix = fixes[0]
+    assert diagnostics_for_source(apply_fix(source, fix)) == []
+
+
+def test_diagnostics_actions_unrelated_template_spelling_is_ignored() -> None:
+    source = """def pysx(value): return value
+view = pysx(t"not markup at all")
+"""
+    assert diagnostics_for_source(source) == []
+
+
+def test_diagnostics_actions_native_spelling_remains_reserved() -> None:
+    source = """from pysx import pysx, styled
+button = styled.div(t"color: red")
+view = pysx(t"button(disabled={True})")
+"""
+    assert diagnostics_for_source(source) == []
+
+
+def test_diagnostics_actions_custom_metadata_and_pseudo_values_are_supported() -> None:
+    source = """from pysx import pysx
+view = pysx(t"div(data-count={1}, aria-hidden={False}, key={42})")
+"""
+    assert diagnostics_for_source(source) == []
+
+
+def test_diagnostics_actions_callable_binding_named_prop_is_not_a_form() -> None:
+    source = '''from pysx import Binding, Fragment, pysx, signal
+row = Binding[str]('row')
+rows = signal(['one'])
+value = signal('draft')
+def Panel(*, bindValue: object) -> Fragment:
+    return pysx(t"p: {bindValue}")
+view = pysx(t"""
+    for row in {rows}:
+        Panel(bindValue={value})
+""")
+'''
+    assert diagnostics_for_source(source) == []
+
+
+def test_diagnostics_actions_browser_fixture_has_the_advisory_warning() -> None:
+    findings = diagnostics(Path(__file__).with_name("browser_diagnostics_fixture.py"))
+    assert [item["code"] for item in findings] == ["native-attribute"]
+
+
+def test_diagnostics_actions_crlf_fixes_match_buffer_and_cli(tmp_path: Path) -> None:
+    import json
+    import subprocess
+    import sys
+
+    source = (
+        'from pysx import pysx, signal\r\ncount = signal(0)\r\nview = pysx(t"p: {count()}")\r\n'
+    )
+    path = tmp_path / "source.py"
+    path.write_bytes(source.encode())
+    findings = diagnostics_for_source(source, str(path))
+    assert diagnostics(path) == findings
+    result = subprocess.run(
+        [sys.executable, "-m", "pysx.check", str(path)], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == findings
+    fixes = findings[0].get("fixes", [])
+    assert len(fixes) == 1
+    repaired = apply_fix(source, fixes[0])
+    assert repaired.count("\r\n") == source.count("\r\n")
+    assert diagnostics_for_source(repaired) == []
+
+
+def test_diagnostics_actions_crlf_eof_uses_valid_editor_line_end() -> None:
+    source = "def app():\r\n"
+    findings = diagnostics_for_source(source)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert (finding["line"], finding["startChar"]) == (0, len("def app():"))
+    assert (finding.get("endLine"), finding["endChar"]) == (1, 0)
+    positions = Positions(source)
+    assert positions.editor_offset(EditorPosition(0, finding["startChar"])) == source.index("\r")
+
+
+def test_diagnostics_actions_workspace_signatures_use_unsaved_source_without_execution(
+    tmp_path: Path,
+) -> None:
+    producer = tmp_path / "producer.py"
+    saved = "def Panel(*, title: str): return title\nraise AssertionError('must not execute')\n"
+    producer.write_text(saved)
+    filename = str(tmp_path / "view.py")
+    source = (
+        'from pysx import pysx\nfrom producer import Panel\nview = pysx(t"Panel(title={42})")\n'
+    )
+    assert [item["code"] for item in diagnostics_for_source(source, filename)] == [
+        "component-prop-value"
+    ]
+    assert (
+        diagnostics_for_source(
+            source, filename, buffers={str(producer): saved.replace("title: str", "title: int")}
+        )
+        == []
+    )
+
+
+def test_diagnostics_actions_unkeyed_form_warning() -> None:
+    source = '''from pysx import Binding, pysx, signal
+row = Binding[str]('row')
+rows = signal(['one'])
+value = signal('draft')
+view = pysx(t"""
+    for row in {rows}:
+        input(bindValue={value})
+""")
+'''
+    findings = diagnostics_for_source(source)
+    assert [item["code"] for item in findings] == ["form-loop-key"]
+    keyed = source.replace("in {rows}:", "in {rows} key={row}:")
+    assert diagnostics_for_source(keyed) == []
+
+
+@pytest.mark.parametrize(
+    ("body", "selected", "message"),
+    [
+        (r"""view = pysx(t"p: '😀 {{brace}} \t'; Missing")""", "Missing", "unknown component"),
+        (r"""view = pysx(rt"p: '😀 {{brace}} \t'; Missing")""", "Missing", "unknown component"),
+        (r"""view = pysx(t"\n\tdiv:")""", r"\t", "indentation uses spaces"),
+        ('view = pysx(t"""\r\n\tdiv:\r\n""")', "\t", "indentation uses spaces"),
+        (r"""view = pysx(t"\n  div:\n    p(\n      title=bad\n    )")""", "b", "expected a string"),
+        (r"""view = pysx(t"\n  div:\n    for nope:\n      p")""", ":", "expected 'in'"),
+        (r"""view = pysx(t"div(")""", '"', "unclosed '('"),
+        (
+            'head = t"\\n  div:\\n"\ntail = t"    p(title=bad)"\nview = pysx(head + tail)',
+            "b",
+            "expected a string",
+        ),
+    ],
+)
+def test_exact_source_structural_buffer_and_cli_ranges(
+    tmp_path: Path, body: str, selected: str, message: str
+) -> None:
+    import json
+    import subprocess
+    import sys
+
+    source = "from pysx import pysx\n" + body + "\n"
+    path = tmp_path / "source.py"
+    path.write_bytes(source.encode())
+    findings = diagnostics_for_source(source, str(path))
+    assert len(findings) == 1
+    finding = findings[0]
+    assert message in finding["message"]
+    positions = Positions(source)
+    start = positions.editor_offset(EditorPosition(finding["line"], finding["startChar"]))
+    end = positions.editor_offset(
+        EditorPosition(finding.get("endLine", finding["line"]), finding["endChar"])
+    )
+    assert source[start:end] == selected
+    assert end > start
+    result = subprocess.run(
+        [sys.executable, "-m", "pysx.check", str(path)], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == findings
 
 
 @pytest.mark.parametrize(

@@ -68,6 +68,22 @@ def test_positioned_multiline_errors(strings: tuple[str, ...], expected: tuple[i
     assert (position.line, position.column) == expected
 
 
+def test_exact_source_positioned_error_traceback() -> None:
+    import traceback
+
+    with pytest.raises(PysxSyntaxError) as caught:
+        parse(("\n  div:\n    for nope:\n      p",))
+    error = caught.value
+    assert error.msg == "expected 'in' after loop bindings"
+    assert error.lineno == 3
+    assert error.offset is not None
+    assert error.offset > 0
+    assert str(error) == "expected 'in' after loop bindings (line 3)"
+    assert "PysxSyntaxError: expected 'in' after loop bindings" in "".join(
+        traceback.format_exception(error)
+    )
+
+
 @pytest.mark.parametrize("strings", [("\n" + "a" * 1_048_576,), ("",) * 16386])
 def test_positioned_multiline_cache_input_bounds(strings: tuple[str, ...]) -> None:
     with pytest.raises(PysxSyntaxError, match="exceeds"):

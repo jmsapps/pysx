@@ -149,6 +149,7 @@ class AAttrs(GlobalAttrs, total=False):
     download: str | Signal[str] | None
     href: str | Signal[str] | None
     hreflang: str | Signal[str] | None
+    name: str | Signal[str] | None
     ping: str | Signal[str] | None
     referrerpolicy: str | Signal[str] | None
     rel: str | Signal[str] | None
@@ -994,6 +995,7 @@ class SelectAttrs(GlobalAttrs, total=False):
     name: str | Signal[str] | None
     required: bool | Signal[bool] | None
     size: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
+    value: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     bind_value: Signal[str]
     bind_selected: Signal[list[str]]
 
@@ -1135,6 +1137,7 @@ class TextareaAttrs(GlobalAttrs, total=False):
     readonly: bool | Signal[bool] | None
     required: bool | Signal[bool] | None
     rows: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
+    value: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     wrap: str | Signal[str] | None
     bind_value: Signal[str]
 
