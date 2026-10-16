@@ -11,7 +11,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
   suite = args[i + 1];
 }
-if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "identity_cleanup", "fallback_empty", "diagnostics_actions"].includes(suite)) throw new Error("empty grammar selection");
+if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "identity_cleanup", "fallback_empty", "diagnostics_actions", "client_verify", "editor_surface"].includes(suite)) throw new Error("empty grammar selection");
 const host = pylanceHost();
 const injectionPath = process.env.PYSX_INJECTION_GRAMMAR ??
   fileURLToPath(new URL("../../editor/syntaxes/pysx.injection.tmLanguage.json", import.meta.url));
@@ -36,7 +36,8 @@ try {
     if (!condition) throw new Error(`scope assertion failed: ${label}`);
     assertions++;
   };
-  const fixtures = suite === "diagnostics_actions" ? ["diagnostics_actions"] :
+  const fixtures = suite === "client_verify" || suite === "editor_surface" ? ["client_verify"] :
+    suite === "diagnostics_actions" ? ["diagnostics_actions"] :
     suite === "fallback_empty" ? ["fallback_empty"] :
     suite === "identity_cleanup" ? ["keyed_identity"] :
     suite === "templates_example" ? ["templates_example"] :
@@ -46,7 +47,7 @@ try {
     suite === "composition_recursive" ? ["composition"] :
     suite === "styling_diagnostics" ? ["styling"] :
     suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
-    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity", "fallback_empty", "diagnostics_actions"];
+    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity", "fallback_empty", "diagnostics_actions", "client_verify"];
   for (const fixture of fixtures) {
     const source = fixture === "templates_example" ? "../../examples/templates.py" : `fixtures/${fixture}.txt`;
     const lines = readFileSync(new URL(source, import.meta.url), "utf8").split("\n");
@@ -58,6 +59,29 @@ try {
       stack = current.ruleStack;
     }
     tokens += result.length;
+    if (fixture === "client_verify") {
+      // Direct literal markup remains TextMate-owned. Statically resolved
+      // templates and renderer aliases are handled by resident decorations;
+      // grammar injection must not guess their dataflow or leak into Python.
+      for (const word of ["ul", "li"]) check(result.some(token => token.text === word && token.scopes.includes("entity.name.tag.pysx")), `client native tag ${word}`);
+      check(result.some(token => token.text === "Card" && token.scopes.includes("support.class.component.pysx")), "client component tag");
+      for (const word of ["class", "id", "title"]) check(result.some(token => token.text === word && token.scopes.includes("entity.other.attribute-name.pysx")), `client attribute ${word}`);
+      for (const word of ["list", "first", "row"]) check(result.some(token => token.text === word && token.scopes.includes("string.quoted.double.pysx")), `client value ${word}`);
+      for (const word of ["if", "elif", "else", "for"]) check(result.some(token => token.text.trim() === word && token.scopes.includes("keyword.control.conditional.pysx")), `client keyword ${word}`);
+      for (const word of ["flag", "mode", "items", "item", "label"]) check(result.some(token => token.text === word && token.scopes.includes("meta.embedded.inline.python")), `client interpolation ${word}`);
+      for (const word of ["color", "margin"]) check(result.some(token => token.text === word && token.scopes.includes("support.type.property-name.css")), `client CSS property ${word}`);
+      check(result.some(token => token.text === "rebeccapurple" && token.scopes.includes("support.constant.property-value.css.pysx")), "client CSS value retains its theme scope");
+      for (const marker of ["shared = t", "renderer(t'section"]) {
+        const row = lines.findIndex(line => line.includes(marker));
+        check(row >= 0 && !result.some(token => token.line === row && token.scopes.some(scope => scope.includes("pysx") || scope.includes("css"))), `${marker}: dataflow templates stay outside literal injection`);
+        check(result.some(token => token.line === row && token.text.includes("label") && token.scopes.includes("source.python")), `${marker}: interpolation retains the host grammar scopes`);
+      }
+      const directEnd = lines.findIndex(line => line.trim() === '""",');
+      check(directEnd >= 0 && !result.some(token => token.line > directEnd && token.scopes.some(scope => scope.includes("pysx") || scope.includes("css"))), "multiline literal terminator closes markup and CSS scopes");
+      const sentinel = result.find(token => token.text.includes("AFTER_SENTINEL"));
+      check(sentinel && !sentinel.scopes.some(scope => scope.includes("pysx")), "client scopes do not leak");
+      continue;
+    }
     if (fixture === "diagnostics_actions") {
       for (const word of ["hreff", "data-note", "title", "onClick"]) {
         const row = lines.findIndex(line => line.includes(word));

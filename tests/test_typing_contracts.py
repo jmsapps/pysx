@@ -11,6 +11,38 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
+def test_resident_protocol_generation_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = (
+        "from typing import assert_type\nfrom pysx.lsp_backend import Stamp\n"
+        "stamp = Stamp(1, 2)\nassert_type(stamp.generation, int)\n"
+        "assert_type(stamp.backend, int)\nstamp.require_current(Stamp(1, 2))\n"
+        if valid
+        else (ROOT / "tests/typing/resident_protocol_invalid.txt").read_text()
+    )
+    fixture = tmp_path / "resident_protocol.py"
+    fixture.write_text(source)
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args += ["--strict"]
+    result = subprocess.run(
+        [*args, str(fixture)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert "Stamp" in output
+        assert "unchanged document version" in output or '"str"' in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
 def test_owner_routing_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = (
         "from pathlib import Path\n"

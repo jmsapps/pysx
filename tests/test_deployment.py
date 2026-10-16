@@ -6,7 +6,8 @@ import asyncio
 import sqlite3
 from typing import TYPE_CHECKING
 
-from deployment_topology import Deployment
+import pytest
+from deployment_topology import Deployment, linux_containers
 
 from pysx import DurableApplication, HostConfig, SQLiteOwnershipStore, StateCodec, native
 from pysx.request import RequestContext
@@ -66,6 +67,10 @@ def test_operational_topology_probe_store_failure_drain_and_redaction(tmp_path: 
     asyncio.run(exercise())
 
 
+@pytest.mark.skipif(
+    not linux_containers(),
+    reason="the reference topology needs a Linux container runtime, which this host has not got",
+)
 def test_operational_topology_linux_proxy_adapters_drain_and_cleanup(tmp_path: Path) -> None:
     with Deployment(tmp_path) as topology:
         for worker in ("worker-a", "worker-b"):

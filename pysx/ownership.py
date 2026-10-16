@@ -53,6 +53,7 @@ class OwnershipStore(Protocol):
     def acquire(self, snapshot: StateSnapshot, worker: str, seconds: float) -> StateSnapshot: ...
     def save(self, snapshot: StateSnapshot, worker: str, seconds: float) -> StateSnapshot: ...
     def check_owner(self, snapshot: StateSnapshot, worker: str) -> None: ...
+    def extend(self, worker: str, seconds: float) -> int: ...
     def renew(
         self, snapshots: Sequence[StateSnapshot], worker: str, seconds: float
     ) -> tuple[StateIdentity, ...]: ...
@@ -216,6 +217,29 @@ class SQLiteOwnershipStore(SQLiteStateStore):
                     raise RecoveryUnavailable("session owner has been fenced")
         except sqlite3.Error as error:
             raise StoreUnavailable("ownership store unavailable") from error
+
+    def extend(self, worker: str, seconds: float) -> int:
+        """Push this worker's own lease expiries out, without judging ownership.
+
+        `renew` answers two questions at once: extend my leases, and tell me
+        which I lost. The second needs a per-session state comparison, and
+        paying for it on every extension is what lets a busy worker starve the
+        renewal it depends on. Extending rows that already name this worker is
+        safe on its own: a claim by anyone else replaces the worker and epoch in
+        the same serialized transaction, so those rows stop matching here.
+        """
+        validate_worker(worker)
+        validate_lease(seconds)
+
+        def refresh(database: sqlite3.Connection) -> int:
+            updated = database.execute(
+                "UPDATE leases SET expires = ? WHERE worker = ? AND expires > ?",
+                (self.clock() + seconds, worker, self.clock()),
+            )
+
+            return updated.rowcount
+
+        return self._transaction(refresh)
 
     def renew(
         self, snapshots: Sequence[StateSnapshot], worker: str, seconds: float

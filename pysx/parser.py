@@ -824,6 +824,27 @@ def _parse_row(
     return _Row(nodes)
 
 
+def line_starts(strings: tuple[str, ...]) -> list[tuple[Position, str]]:
+    """First piece of each logical markup line, positioned in original coordinates.
+
+    Editor tooling needs the grammar's own line boundaries without reimplementing
+    the dedent and continuation rules that decide them.
+    """
+    out: list[tuple[Position, str]] = []
+
+    for line in _logical_lines(_split_lines(dedent_fragments(strings), strings)):
+        head = next((piece for piece in line if isinstance(piece, Text)), None)
+
+        if head is None:
+            continue
+
+        if not head.s.strip() and not any(isinstance(piece, Hole) for piece in line):
+            continue
+        out.append((head.position, head.s))
+
+    return out
+
+
 @lru_cache(maxsize=256)
 def parse(strings: tuple[str, ...]) -> Skeleton:
     if sum(len(value.encode("utf-8")) for value in strings) > 1_048_576 or len(strings) > 16385:

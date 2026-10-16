@@ -1,0 +1,4 @@
+from pysx.lsp_backend import Stamp
+
+stamp = Stamp(1, 1)
+stamp.require_current("unchanged document version")

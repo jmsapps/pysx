@@ -152,6 +152,16 @@ def _signature(
     return None
 
 
+def component_signature(
+    expression: ast.expr,
+    scope: Scope,
+    resolver: WorkspaceResolver,
+) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef, int, frozenset[str], Scope | None, bool] | None:
+    """Share the conservative callable schema with editor features."""
+
+    return _signature(expression, scope, resolver)
+
+
 def _annotation_accepts(
     annotation: ast.expr | None, value: object, scope: Scope | None
 ) -> bool | None:

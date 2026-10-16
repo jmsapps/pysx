@@ -29,6 +29,10 @@ try {
   await page.waitForFunction(() => document.getElementById("ticks").textContent === "1");
   await page.locator("#next").click();
   await page.waitForFunction(() => document.getElementById("route").textContent === "Next");
+  // The address bar is pushed by its own server message, so it is not ordered
+  // against the patch that rendered the route. Wait for the URL itself rather
+  // than inferring it has arrived from the content having arrived.
+  await page.waitForFunction(() => new URL(location.href).pathname === "/demo/next");
   assert.equal(new URL(page.url()).pathname, "/demo/next");
   await page.reload();
   assert.equal(await page.locator("#route").textContent(), "Next");

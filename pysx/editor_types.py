@@ -58,6 +58,7 @@ def diagnostics(directory: Path, root: Path) -> dict[str, object]:
             cwd=root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
             timeout=25,
         )
