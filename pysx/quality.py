@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -92,6 +93,10 @@ def lint_project(root: Path, *, fix_imports: bool = False) -> int:
     )
 
     return int(errors > 0)
+
+
+def _comparable(path: str) -> str:
+    return os.path.normcase(os.path.normpath(path))
 
 
 def _mapped_range(
@@ -200,9 +205,16 @@ def type_project(root: Path, backend: str) -> int:
         messages: list[dict[str, object]] = []
 
         if backend == "mypy":
-            found = set(re.findall(r"Found source:\s+BuildSource\(path='([^']+)'", result.stderr))
+            # mypy prints the path through Python's repr, so a Windows separator
+            # arrives doubled, and the case it reports need not match ours.
+            found = {
+                _comparable(path.replace("\\\\", "\\"))
+                for path in re.findall(
+                    r"Found source:\s+BuildSource\(path='([^']+)'", result.stderr
+                )
+            }
 
-            if not set(targets) <= found:
+            if not {_comparable(target) for target in targets} <= found:
                 raise RuntimeError("mypy did not report all requested projection inputs")
             messages = [
                 cast("dict[str, object]", json.loads(line))

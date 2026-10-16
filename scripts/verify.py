@@ -63,7 +63,9 @@ GATES: tuple[Gate, ...] = (
         "generator",
         ("uv", "run", "--project", ".", "python", "scripts/generate_native.py", "--check"),
     ),
-    Gate("python", "pytest", ("uv", "run", "--project", ".", "pytest", "-q")),
+    # Linux finishes this in about six minutes, so a gate still running at twenty
+    # is hung rather than slow, and the remaining tiers still fit the job budget.
+    Gate("python", "pytest", ("uv", "run", "--project", ".", "pytest", "-q"), timeout=1200),
     Gate("browser", "browser", ("npm", "--prefix", "tests", "run", "browser")),
     Gate("grammar", "grammar", ("npm", "--prefix", "tests", "run", "grammar")),
     Gate("editor", "editor", ("npm", "--prefix", "editor", "test"), needs_display=True),
@@ -79,6 +81,9 @@ SELECTORS: dict[str, tuple[str, ...]] = {
 
 def environment() -> dict[str, str]:
     env = dict(os.environ)
+    # Output is captured, so a gate that hangs is only diagnosable from what it
+    # already wrote; buffering would discard exactly that.
+    env["PYTHONUNBUFFERED"] = "1"
     managed = ROOT / ".vscode-test" / "extensions"
 
     if "PYSX_EXTENSIONS_DIR" not in env and managed.is_dir():
