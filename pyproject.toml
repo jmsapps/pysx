@@ -7,6 +7,13 @@ dependencies = ["websockets==17.1"]
 
 [project.optional-dependencies]
 asgi = ["uvicorn==0.54.0"]
+dev = ["ruff==0.16.10"]
+lsp = [
+    "lsprotocol==2025.0.0",
+    "pygls==2.1.1",
+    "pyright==1.1.414",
+    "ruff==0.16.10",
+]
 
 [project.scripts]
 pysx = "pysx.server:main"
@@ -18,7 +25,15 @@ requires = ["uv_build==0.11.8"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["typer==0.27.2", "pytest==9.1.1", "ruff==0.16.10", "mypy==2.4.0", "pyright==1.1.414", "uvicorn==0.54.0"]
+dev = [
+    "typer==0.27.2",
+    "pytest==9.1.1",
+    "ruff==0.16.10",
+    "mypy==2.4.0",
+    "pyright==1.1.414",
+    "uvicorn==0.54.0",
+    "pygls==2.1.1",
+]
 
 [tool.uv.build-backend]
 module-root = ""
@@ -72,3 +87,5 @@ select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "RUF", "PT", "TC", "ANN", 
 "pysx/elements.py" = ["A001"]
 # Capitalized component functions are referenced verbatim by the DSL.
 "examples/todos.py" = ["N802", "E501"]
+# Components are Python callables named like markup tags.
+"examples/editor_features.py" = ["N802"]

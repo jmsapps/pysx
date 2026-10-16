@@ -1,0 +1,34 @@
+from pysx import pysx
+
+
+def view(items, flag, mode):
+    return pysx(
+        t"""
+        ul(class="list", css="color: rebeccapurple; margin: 1px;"):
+            if {flag}:
+                li(id="first"): "one"
+            elif {mode}:
+                li: "two"
+            else:
+                li: "three"
+            for item in {items}:
+                let label = {item}
+                Card(title="row"):
+                    {label}
+    """,
+    )
+
+
+renderer = pysx
+
+
+def shared_view(label):
+    shared = t'"🌍"; span(title="shared", css="color: rebeccapurple;"): {label}'
+    first = renderer(shared)
+    return pysx(shared)
+
+
+def aliased_view(label):
+    return renderer(t'section(id="alias"): {label}')
+
+AFTER_SENTINEL = "plain python again"

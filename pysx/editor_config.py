@@ -7,7 +7,10 @@ import re
 import sys
 import tomllib
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
+
+if TYPE_CHECKING:
+    from .editor_ownership import RetainedState
 
 RULES = ("reportUnusedImport", "reportUnusedVariable", "reportUnusedFunction")
 MIRRORS = "**/_pysx_revision_*/**"
@@ -17,6 +20,16 @@ class ConfigurationEdit(TypedDict):
     filename: str
     source: str
     text: str
+
+
+def parse_json_configuration(source: str) -> dict[str, object]:
+    """Read a JSON-with-comments configuration object without executing code."""
+    value: object = json.loads(_jsonc(source))
+
+    if not isinstance(value, dict):
+        raise ValueError("Configuration must be a JSON object")
+
+    return cast("dict[str, object]", value)
 
 
 def _jsonc(source: str, *, trailing: bool = True) -> str:
@@ -223,7 +236,50 @@ def configuration_edit(root: Path) -> ConfigurationEdit | None:
 
 
 def main() -> None:
-    sys.stdout.write(json.dumps(configuration_edit(Path(sys.argv[1]))) + "\n")
+    """`<root>` keeps the original edit-only contract; `plan`/`restore` add ownership."""
+    from .editor_ownership import SetupRefusedError, ownership_plan, restore_plan
+
+    argv = sys.argv[1:]
+
+    if not argv or argv[0] not in {"plan", "restore"}:
+        sys.stdout.write(json.dumps(configuration_edit(Path(argv[0]))) + "\n")
+
+        return
+    command, root = argv[0], Path(argv[1])
+    request = cast("dict[str, Any]", json.loads(sys.stdin.read() or "{}"))
+    observed = cast("dict[str, object]", request.get("observed", {}))
+
+    if command == "plan":
+        try:
+            plan = ownership_plan(
+                observed,
+                root,
+                coverage=cast("dict[str, bool]", request.get("coverage", {})),
+                ready=bool(request.get("ready", False)),
+            )
+        except SetupRefusedError as refusal:
+            sys.stdout.write(json.dumps({"refused": str(refusal)}) + "\n")
+
+            return
+        payload: dict[str, object] = {
+            "steps": [
+                {"key": step.key, "value": step.value, "previous": step.previous}
+                for step in plan.steps
+            ],
+            "rollback": [{"key": step.key, "value": step.value} for step in plan.rollback],
+            "configuration": plan.configuration,
+            "state": plan.state,
+            "notes": list(plan.notes),
+        }
+    else:
+        steps, skipped = restore_plan(
+            observed, cast("RetainedState", request.get("state", {"values": {}, "digests": {}}))
+        )
+        payload = {
+            "steps": [{"key": step.key, "value": step.value} for step in steps],
+            "skipped": list(skipped),
+        }
+    sys.stdout.write(json.dumps(payload) + "\n")
 
 
 if __name__ == "__main__":

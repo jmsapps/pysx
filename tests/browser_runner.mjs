@@ -174,6 +174,10 @@ const registry = [
   { suite: "adoption", cases: [
     [0, "adoption", "browser_adoption.mjs", "ARCHITECTURE ADOPTION PASSED"],
   ] },
+  { suite: "editor_surface", cases: [
+    [0, "diagnostics_fixture", "browser_diagnostics.mjs", "DIAGNOSTICS ACTIONS BROWSER PASSED"],
+    [1, "authoring_fixture", "browser_authoring.mjs", "AUTHORING BROWSER PASSED"],
+  ] },
   { suite: "template_ergonomics", cases: [
     [0, "reactive_state", "browser_operators.mjs", "OPERATORS BROWSER PASSED"],
   ] },

@@ -460,6 +460,50 @@ def _assembly(
     )
 
 
+def template_source_for(
+    argument: ast.expr,
+    scope: Scope,
+    mapper: LiteralMapper,
+) -> TemplateSource:
+    """Resolve literal/assembled template origins without parsing or executing markup."""
+
+    return _assembly(argument, scope, mapper)
+
+
+def component_binding_identity(
+    name: str,
+    scope: Scope,
+    resolver: WorkspaceResolver,
+    filename: str,
+) -> str | None:
+    """Stable source declaration identity for read-only template reference indexing."""
+    binding = scope.binding(name)
+
+    if isinstance(binding, str):
+        external = resolver.resolve(binding)
+
+        if external is None:
+            return "library:" + binding if binding.startswith("pysx.") else None
+        module, value = external
+        names = [
+            key
+            for key, values in module.scope.bindings.items()
+            if len(values) == 1 and values[0] is value
+        ]
+        original = binding.rsplit(".", 1)[-1]
+
+        if original not in names:
+            if len(names) != 1:
+                return None
+            original = names[0]
+        binding, name, filename = value, original, str(module.path)
+
+    if isinstance(binding, (ast.expr, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return f"{filename}:{binding.lineno}:{binding.col_offset}:{name}"
+
+    return None
+
+
 def analyze(
     source: str,
     filename: str = "<template>",

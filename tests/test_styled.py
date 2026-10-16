@@ -281,10 +281,17 @@ def test_styling_diagnostics_fresh_vsix_contents(tmp_path: Path) -> None:
     destination = tmp_path / "editor"
     destination.mkdir()
 
-    for name in ("build_vsix.py", "package.json", "extension.js", "authoring.js"):
+    for name in ("build_vsix.py", "package.json", "extension.js", "authoring.js", "client.js"):
         shutil.copyfile(root / "editor" / name, destination / name)
     shutil.copytree(root / "editor" / "syntaxes", destination / "syntaxes")
     shutil.copytree(root / "editor" / "snippets", destination / "snippets")
+    # The build refuses to ship a declared dependency it cannot find, so the
+    # staged tree needs the same runtime closure a real build has.
+    shutil.copytree(
+        root / "editor" / "node_modules",
+        destination / "node_modules",
+        ignore=shutil.ignore_patterns("@vscode", ".bin"),
+    )
     result = subprocess.run(
         [sys.executable, str(destination / "build_vsix.py")],
         capture_output=True,
@@ -304,6 +311,8 @@ def test_styling_diagnostics_fresh_vsix_contents(tmp_path: Path) -> None:
             == (root / "editor" / "snippets" / "python.json").read_bytes()
         )
         assert b"support.type.property-name.css" in package.read("extension/" + grammar)
+        assert "extension/node_modules/vscode-languageclient/package.json" in package.namelist()
+        assert not any("test-electron" in name for name in package.namelist())
 
 
 def test_styled_callable_wrapper_outranks_its_styled_base() -> None:

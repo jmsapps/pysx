@@ -34,6 +34,7 @@ class Request(TypedDict):
     revision: str
     buffers: dict[str, Buffer]
     previous: NotRequired[list[Model]]
+    selected: NotRequired[list[str]]
 
 
 class Model(Projection):
@@ -201,11 +202,15 @@ def workspace_model(request: Request) -> list[Model]:
     if not revision.startswith("_pysx_revision_") or not revision.isidentifier():
         raise ValueError("invalid projection revision")
     roots = (root, root / "src") if (root / "src").is_dir() else (root,)
-    files = source_files(root)
+    overlays = request["buffers"]
+    additions = {Path(name).resolve() for name in overlays}
+
+    if any(not path.is_relative_to(root) or path.suffix != ".py" for path in additions):
+        raise ValueError("open buffers must be Python files within the workspace")
+    files = tuple(sorted(set(source_files(root)) | additions))
 
     if not files or len(files) > MAX_FILES:
         raise ValueError("workspace must contain between 1 and 512 Python sources")
-    overlays = request["buffers"]
     buffers = {
         str(path): overlays[str(path)]["source"] if str(path) in overlays else read_source(path)
         for path in files
@@ -222,15 +227,22 @@ def workspace_model(request: Request) -> list[Model]:
         if name in relative.values():
             raise ValueError(f"ambiguous source roots: {name}")
         relative[path] = name
-    modules = frozenset(path.parts[0].removesuffix(".py") for path in relative.values())
+    # Compiler helpers and Fragment/native types always belong to the real SDK.
+    modules = frozenset(path.parts[0].removesuffix(".py") for path in relative.values()) - {"pysx"}
 
     if any(re.search(rf"\b{re.escape(revision)}\b", source) for source in buffers.values()):
         raise ValueError("projection revision conflicts with an original name")
     output: list[Model] = []
     configuration = _configuration(root, files)
     previous = {model["filename"]: model for model in request.get("previous", [])}
+    selected = set(request.get("selected", buffers))
+
+    if not selected or not selected.issubset(buffers):
+        raise ValueError("selected sources must be a nonempty subset of the workspace")
 
     for path in files:
+        if str(path) not in selected:
+            continue
         source = buffers[str(path)]
         cached = previous.get(str(path))
 

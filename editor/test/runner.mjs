@@ -1,12 +1,12 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, realpathSync, readdirSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pylanceHost } from "../../tests/pylance_host.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const SUITES = ["diagnostics", "packaging", "authoring"];
+const SUITES = ["diagnostics", "packaging", "authoring", "client_verify", "editor_surface", "template_import_usage", "interpreter_routing"];
 const args = process.argv.slice(2);
 if (!args.length && process.env.PYSX_EDITOR_PROBE !== "1") {
   for (const registered of SUITES) {
@@ -22,6 +22,14 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 if (!SUITES.includes(suite)) throw new Error("empty editor selection");
+if (["client_verify", "editor_surface"].includes(suite) && !process.env.PYSX_EDITOR_ACTIVATION_ORDER) {
+  for (const order of ["client-first", "pylance-first"]) {
+    const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--suite", suite],
+      { cwd: root, stdio: "inherit", env: { ...process.env, PYSX_EDITOR_ACTIVATION_ORDER: order } });
+    if (result.status !== 0) process.exit(result.status ?? 1);
+  }
+  process.exit(0);
+}
 const host = pylanceHost();
 const registryRoot = process.env.PYSX_EXTENSIONS_DIR ?? path.join(homedir(), ".vscode", "extensions");
 const registryPath = path.join(registryRoot, "extensions.json");
@@ -34,7 +42,7 @@ const ruffEntry = existsSync(registryPath) && JSON.parse(readFileSync(registryPa
   .filter((item) => item.identifier.id === "charliermarsh.ruff")
   .sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))[0];
 const ruffExtension = process.env.PYSX_RUFF_EXTENSION ?? (ruffEntry && path.join(registryRoot, ruffEntry.relativeLocation));
-if (suite === "authoring" && (!ruffExtension || !existsSync(ruffExtension))) throw new Error("missing Ruff extension for template-aware configuration qualification; run npm --prefix editor run setup:host");
+if (["authoring", "template_import_usage", "editor_surface"].includes(suite) && (!ruffExtension || !existsSync(ruffExtension))) throw new Error("missing Ruff extension for template-aware configuration qualification; run npm --prefix editor run setup:host");
 const selected = spawnSync("uv", ["run", "--project", root, "python", "-c", "import sys; print(sys.executable)"], { cwd: root, encoding: "utf8", timeout: 30000 });
 if (selected.status !== 0 || !selected.stdout.trim()) throw new Error(`interpreter discovery failed: ${selected.stderr}`);
 const interpreter = selected.stdout.trim();
@@ -58,6 +66,28 @@ try {
   const extension = path.join(workspace, "extension");
   const consumer = path.join(workspace, "consumer");
   if (suite !== "packaging") mkdirSync(consumer);
+  // Multi-root qualification needs real sibling and nested roots, so the host
+  // opens a generated workspace file rather than a single folder.
+  let multiRoot = null;
+  let alternate = null;
+  let bare = null;
+  if (suite === "interpreter_routing") {
+    const secondary = path.join(workspace, "secondary");
+    const nested = path.join(consumer, "nested");
+    mkdirSync(secondary);
+    mkdirSync(nested);
+    multiRoot = path.join(workspace, "pysx.code-workspace");
+    writeFileSync(multiRoot, JSON.stringify({ folders: [{ path: consumer }, { path: secondary }, { path: nested }], settings: {} }));
+    // A second executable identity for the same working environment, so a
+    // folder's selection is observable as an actual different child command.
+    alternate = path.join(workspace, "alternate-python");
+    writeFileSync(alternate, `#!/bin/sh\nexec ${JSON.stringify(interpreter)} "$@"\n`, { mode: 0o755 });
+    bare = path.join(workspace, "bare");
+    const created = spawnSync("uv", ["venv", "--python", interpreter, bare], { cwd: root, encoding: "utf8", timeout: 120000 });
+    if (created.status !== 0) throw new Error(`bare environment creation failed: ${created.stderr}`);
+    bare = path.join(bare, "bin", "python");
+    if (!existsSync(bare)) throw new Error("bare environment has no interpreter");
+  }
   const manifest = JSON.parse(readFileSync(path.join(extension, "package.json"), "utf8"));
   if (process.env.PYSX_EDITOR_PROBE === "1") {
     console.log(JSON.stringify({ root, interpreter, host: host.version, client: manifest.version, workspace }));
@@ -67,8 +97,8 @@ try {
     child = spawn(process.execPath, [fileURLToPath(new URL("launch.mjs", import.meta.url))], {
       cwd: root, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, PYSX_EDITOR_INPUT: JSON.stringify({ executable, extension, workspace,
-        root: fixture ? fixture.consumer : consumer, checkout: root, host, suite,
-        python: fixture?.python ?? interpreter, pythonExtension, ruffExtension: suite === "authoring" ? ruffExtension : null }) },
+        root: multiRoot ?? (fixture ? fixture.consumer : consumer), checkout: root, host, suite,
+        python: fixture?.python ?? interpreter, alternate, bare, pythonExtension, ruffExtension: ["authoring", "template_import_usage", "editor_surface"].includes(suite) ? ruffExtension : null }) },
     });
     if (process.env.PYSX_EDITOR_STATE_FILE) {
       writeFileSync(process.env.PYSX_EDITOR_STATE_FILE, JSON.stringify({ workspace, pid: child.pid }));
@@ -84,7 +114,23 @@ try {
       // buffered when "exit" fires.
       child.once("close", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`editor host exited ${code}: ${output}`)); });
     });
-    const cases = suite === "authoring" ? 10 : 3;
+    const cases = suite === "interpreter_routing" ? 8 : suite === "authoring" ? 11 : suite === "client_verify" ? 12 : suite === "editor_surface" ? 11 : suite === "template_import_usage" ? 7 : 3;
+    if (suite === "client_verify") {
+      const failures = /Client is stopping but no stop promise|rejected promise not handled|unhandled rejection|Handling connection close failed|Restarting server failed|Stopping server failed|Stopping the server timed out/i;
+      const inspect = (directory) => {
+        if (!existsSync(directory)) return;
+        for (const entry of readdirSync(directory, { withFileTypes: true })) {
+          const filename = path.join(directory, entry.name);
+          if (entry.isDirectory()) inspect(filename);
+          else if (entry.name.endsWith(".log")) {
+            const log = readFileSync(filename, "utf8");
+            if (failures.test(log)) throw new Error(`lifecycle failure in ${entry.name}: ${log.match(new RegExp(`.{0,100}(?:${failures.source}).{0,200}`, "i"))?.[0]}`);
+          }
+        }
+      };
+      if (failures.test(output)) throw new Error(`lifecycle failure in host output: ${output}`);
+      inspect(path.join(workspace, "profile", "logs"));
+    }
     if (!output.includes(`PYSX EDITOR CASES PASSED: ${cases}`)) throw new Error(`missing host assertions: ${output}`);
     console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR PERFORMANCE")).join("\n"));
     console.log(`EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, ${cases} cases)`);
