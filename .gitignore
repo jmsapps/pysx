@@ -33,3 +33,4 @@ PLAN.md
 
 # Port-only verification material
 tests/migration/
+.pysx-logs/

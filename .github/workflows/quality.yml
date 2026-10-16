@@ -8,10 +8,15 @@ permissions:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     env:
       PYSX_EXTENSIONS_DIR: ${{ github.workspace }}/.vscode-test/extensions
+      PYSX_DEPLOYMENT_LOGS: ${{ github.workspace }}/.pysx-logs
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,3 +32,13 @@ jobs:
       - run: uv python install 3.14.4
       - run: uv sync --locked --python 3.14.4
       - run: uv run --project . python scripts/verify.py all
+      # The failure evidence lives in fixture and container logs that the
+      # suites delete on teardown, so it is collected whatever the result.
+      - name: Collect fixture logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixture-logs-${{ matrix.os }}
+          path: .pysx-logs/
+          if-no-files-found: ignore
+          retention-days: 7

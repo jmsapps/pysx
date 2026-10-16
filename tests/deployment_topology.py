@@ -150,7 +150,27 @@ class Deployment:
 
         return self
 
+    def capture(self) -> Path | None:
+        """Persist container output before teardown destroys it.
+
+        A failed upgrade or unhealthy worker leaves its only evidence inside the
+        containers, and `close` removes them, so the logs are read out first and
+        written somewhere that outlives the fixture's temporary directory.
+        """
+        destination = Path(os.environ.get("PYSX_DEPLOYMENT_LOGS") or ROOT / ".pysx-logs")
+
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+            logs = self.command("logs", "--no-color", "--timestamps", timeout=30)
+        except OSError, RuntimeError, subprocess.SubprocessError:
+            return None
+        target = destination / f"deployment-{self.project}.log"
+        target.write_text(logs, encoding="utf-8")
+
+        return target
+
     def close(self) -> None:
+        self.capture()
         self.command("down", "--volumes", "--remove-orphans", "--timeout", "7", timeout=30)
         remaining = subprocess.run(
             ["docker", "ps", "-aq", "--filter", f"label=com.docker.compose.project={self.project}"],

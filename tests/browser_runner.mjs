@@ -223,6 +223,14 @@ async function wait(child, ready = null, timeout = 30000) {
       clearTimeout(timer);
       child.off("error", failed); child.off("close", closed);
       child.stdout.off("data", read); child.stderr.off("data", read);
+      // Nothing reads these pipes once the child is ready, so a chatty server
+      // would block writing into a full buffer and everything it reports after
+      // startup would be lost with it. Keep draining into a bounded tail.
+      if (!child.draining) {
+        child.draining = true;
+        const drain = (data) => { child.tail = (`${child.tail ?? ""}${data}`).slice(-200000); };
+        child.stdout.on("data", drain); child.stderr.on("data", drain);
+      }
       if (error) reject(error); else resolve();
     }
     const failed = (error) => finish(error);
@@ -332,7 +340,11 @@ try {
     }
     for (const engine of ["chromium", "firefox", "webkit"]) {
       const suite = start(process.execPath, [`tests/${script}`, String(port)], { PYSX_BROWSER_ENGINE: engine, PYSX_BROWSER_CASE: name ?? "" });
-      const output = await wait(suite, null, 60000);
+      // A browser timeout usually means the server refused the request, so its
+      // own output belongs in the failure rather than in a discarded buffer.
+      const output = await wait(suite, null, 60000).catch((error) => {
+        throw server?.tail ? new Error(`${error.message}\n--- server ---\n${server.tail}`) : error;
+      });
       if (!output.includes(banner)) throw new Error(`missing suite banner: ${output}`);
       if (process.env.PYSX_BROWSER_FORCE_FAILURE === "1") throw new Error("forced assertion failure");
       const count = output.split("\n").filter((line) => line.startsWith("  ok  ")).length;
