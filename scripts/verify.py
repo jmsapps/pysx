@@ -93,7 +93,19 @@ def resolve(gate: Gate) -> tuple[str, ...]:
         and shutil.which("xvfb-run") is not None
     )
 
-    return ("xvfb-run", "-a", *gate.command) if needs_xvfb else gate.command
+    command = ("xvfb-run", "-a", *gate.command) if needs_xvfb else gate.command
+
+    return (_executable(command[0]), *command[1:])
+
+
+def _executable(name: str) -> str:
+    """Resolve a launcher to a real file.
+
+    Windows ships npm and npx as `.cmd` shims, which `CreateProcess` cannot run
+    from a bare name, so the gate has to name the file PATH would have picked.
+    """
+
+    return shutil.which(name) or name
 
 
 def run(gate: Gate, *, stream: bool) -> tuple[bool, float, str]:
