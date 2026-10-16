@@ -461,9 +461,14 @@ def test_resident_protocol_incremental_bounded_affected_set(
     client.open(producer, producer_source)
     client.change(producer, producer_source.replace("title: str", "title: int"), 2)
     client.diagnostic(path, 1, None)
-    state = client.settled(lambda status: len(status["workspaces"][0]["republished"]) >= 2)
-    assert set(state["workspaces"][0]["changed"]) == {"parts.py", "view.py"}
-    assert set(state["workspaces"][0]["republished"]) == {"parts.py", "view.py"}
+    # Wait for the affected files themselves rather than for a count: a count
+    # is satisfied by whichever publishes land first, so it can sample the set
+    # before the edited consumer is in it. Any unrelated file still fails the
+    # assertion below, so the bound itself is unchanged.
+    affected = {"parts.py", "view.py"}
+    state = client.settled(lambda status: affected <= set(status["workspaces"][0]["republished"]))
+    assert set(state["workspaces"][0]["changed"]) == affected
+    assert set(state["workspaces"][0]["republished"]) == affected
     assert state["workspaces"][0]["starts"] == 1
 
 
