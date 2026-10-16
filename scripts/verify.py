@@ -9,12 +9,13 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 ROOT = Path(__file__).resolve().parent.parent
 PYTHON_VERSION = "3.14.4"
@@ -120,30 +121,48 @@ def run(gate: Gate, *, stream: bool) -> tuple[bool, float, str]:
     started = time.monotonic()
 
     # A gate that hangs would otherwise consume the whole job budget and report
-    # nothing. Failing it keeps whatever it printed before it stopped.
+    # nothing. Each gate owns a process group so the whole tree can be ended;
+    # killing only the direct child leaves grandchildren holding the pipes, and
+    # the wait that follows then blocks on the very hang it is handling.
+    process = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        env=environment(),
+        stdout=subprocess.PIPE if not stream else None,
+        stderr=subprocess.PIPE if not stream else None,
+        text=True,
+        start_new_session=sys.platform != "win32",
+        # Named dynamically: the flag only exists in the Windows subprocess module.
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+    )
+
     try:
-        result = subprocess.run(
-            command,
-            cwd=ROOT,
-            env=environment(),
-            check=False,
-            capture_output=not stream,
-            text=True,
-            timeout=gate.timeout,
-        )
-    except subprocess.TimeoutExpired as expired:
-        captured = cast("tuple[str | bytes | None, ...]", (expired.stdout, expired.stderr))
-        partial = "".join(
-            found.decode(errors="replace") if isinstance(found, bytes) else found
-            for found in captured
-            if found
-        )
+        stdout, stderr = process.communicate(timeout=gate.timeout)
+    except subprocess.TimeoutExpired:
+        _end_tree(process)
+        stdout, stderr = process.communicate(timeout=30)
+        elapsed = time.monotonic() - started
 
-        return False, time.monotonic() - started, f"timed out after {gate.timeout}s\n{partial}"
+        return False, elapsed, f"timed out after {gate.timeout}s\n{stdout or ''}{stderr or ''}"
     elapsed = time.monotonic() - started
-    output = "" if stream else f"{result.stdout}{result.stderr}"
 
-    return result.returncode == 0, elapsed, output
+    return process.returncode == 0, elapsed, f"{stdout or ''}{stderr or ''}"
+
+
+def _end_tree(process: subprocess.Popen[str]) -> None:
+    if sys.platform == "win32":
+        subprocess.run(
+            [_executable("taskkill"), "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+
+        return
+
+    with suppress(ProcessLookupError, PermissionError):
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    process.kill()
 
 
 def main() -> int:
