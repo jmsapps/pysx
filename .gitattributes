@@ -1,0 +1,9 @@
+# Analysis maps raw source offsets, so a CRLF checkout shifts every position a
+# diagnostic reports. Keep working trees LF on every platform.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.vsix binary
+*.db binary

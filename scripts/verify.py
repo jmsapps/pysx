@@ -14,6 +14,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 ROOT = Path(__file__).resolve().parent.parent
 PYTHON_VERSION = "3.14.4"
@@ -33,6 +34,7 @@ class Gate:
     name: str
     command: tuple[str, ...]
     needs_display: bool = False
+    timeout: float = 1800
 
 
 def _playwright_install() -> tuple[str, ...]:
@@ -111,14 +113,28 @@ def _executable(name: str) -> str:
 def run(gate: Gate, *, stream: bool) -> tuple[bool, float, str]:
     command = resolve(gate)
     started = time.monotonic()
-    result = subprocess.run(
-        command,
-        cwd=ROOT,
-        env=environment(),
-        check=False,
-        capture_output=not stream,
-        text=True,
-    )
+
+    # A gate that hangs would otherwise consume the whole job budget and report
+    # nothing. Failing it keeps whatever it printed before it stopped.
+    try:
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=environment(),
+            check=False,
+            capture_output=not stream,
+            text=True,
+            timeout=gate.timeout,
+        )
+    except subprocess.TimeoutExpired as expired:
+        captured = cast("tuple[str | bytes | None, ...]", (expired.stdout, expired.stderr))
+        partial = "".join(
+            found.decode(errors="replace") if isinstance(found, bytes) else found
+            for found in captured
+            if found
+        )
+
+        return False, time.monotonic() - started, f"timed out after {gate.timeout}s\n{partial}"
     elapsed = time.monotonic() - started
     output = "" if stream else f"{result.stdout}{result.stderr}"
 

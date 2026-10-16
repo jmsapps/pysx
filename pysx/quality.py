@@ -187,7 +187,12 @@ def type_project(root: Path, backend: str) -> int:
             else [sys.executable, "-m", "pyright", "--outputjson"]
         )
         result = subprocess.run(
-            [*command, *targets], cwd=tree, check=False, capture_output=True, text=True
+            [*command, *targets],
+            cwd=tree,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
 
         if result.returncode not in {0, 1}:
