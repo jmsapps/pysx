@@ -182,6 +182,14 @@ const registry = [
     [0, "reactive_state", "browser_operators.mjs", "OPERATORS BROWSER PASSED"],
   ] },
 ];
+const CONTAINER_SUITES = new Set(["deployment_fixture", "durable_state_fixture"]);
+// Keyed on what the host can actually run rather than on its name: a Windows
+// container host and a runner with no Docker at all fail these suites for the
+// same reason, and a developer machine with Linux containers runs them.
+const linuxContainers = (() => {
+  const found = spawnSync("docker", ["info", "--format", "{{.OSType}}"], { encoding: "utf8" });
+  return found.status === 0 && found.stdout.trim() === "linux";
+})();
 const selections = registry.filter((entry) => !suite || entry.suite === suite);
 if (!selections.length) throw new Error("empty browser selection");
 
@@ -265,10 +273,19 @@ try {
   }
   let total = 0;
   let caseTotal = 0;
+  const skipped = [];
   for (const selection of selections) {
   const cases = selection.cases;
   let selectedAssertions = 0;
   for (const [index, name, script, banner] of cases) {
+    // These suites assert a Linux production deployment through real Linux
+    // containers, so a host without them reports the case as skipped rather
+    // than counting it as covered.
+    if (CONTAINER_SUITES.has(name) && !linuxContainers) {
+      console.log(`SKIPPED: ${name} needs a Linux container runtime, which this host has not got`);
+      skipped.push(name);
+      continue;
+    }
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
     const server = name ? start(interpreter, name === "durable_state_fixture" ?
       ["tests/browser_deployment_fixture.py", "--port", String(port), "--example"] :
@@ -357,7 +374,9 @@ try {
   }
   await cleanup();
   caseTotal += cases.length * 3;
-  console.log(`BROWSER VERIFICATION PASSED: ${selection.suite} (${cases.length * 3} cases, ${selectedAssertions} assertions)`);
+  const covered = cases.filter(([, name]) => !skipped.includes(name)).length;
+  console.log(`BROWSER VERIFICATION PASSED: ${selection.suite} (${covered * 3} cases, ${selectedAssertions} assertions`
+    + `${skipped.length ? `, skipped ${skipped.join(", ")}` : ""})`);
   }
   if (selections.length > 1) console.log(`BROWSER VERIFICATION PASSED: all selected (${caseTotal} cases, ${total} assertions)`);
 } catch (error) {

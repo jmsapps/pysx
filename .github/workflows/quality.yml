@@ -11,8 +11,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # Windows is not a supported platform yet. The job still runs so its failures
+    # stay visible and measurable, but it does not gate the branch.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 40
     env:
       PYSX_EXTENSIONS_DIR: ${{ github.workspace }}/.vscode-test/extensions

@@ -21,6 +21,23 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def linux_containers() -> bool:
+    """Whether this host can run the Linux images the reference topology needs."""
+
+    try:
+        found = subprocess.run(
+            ["docker", "info", "--format", "{{.OSType}}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except OSError, subprocess.SubprocessError:
+        return False
+
+    return found.returncode == 0 and found.stdout.strip() == "linux"
+
+
 class Deployment:
     def __init__(self, directory: Path, *, example: bool = False) -> None:
         self.directory = directory
