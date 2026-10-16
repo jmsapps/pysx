@@ -5,6 +5,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import threading
 from contextlib import contextmanager, suppress
 from pathlib import Path
@@ -37,10 +38,10 @@ async def receive(ws: ClientConnection, seconds: float = 5) -> ServerMessage:
 def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> None:
     """Stop the child and its server descendants, escalating after five seconds."""
 
-    if os.name == "posix" and process_group:
+    if sys.platform != "win32" and process_group:
         with suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGTERM)
-    elif os.name == "nt" and proc.poll() is None:
+    elif sys.platform == "win32" and proc.poll() is None:
         subprocess.run(
             ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
             capture_output=True,
@@ -53,7 +54,7 @@ def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> 
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        if os.name == "posix" and process_group:
+        if sys.platform != "win32" and process_group:
             with suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
         else:
@@ -69,7 +70,7 @@ def ready_server(
     command: Sequence[str], timeout: float = 10, *, ready_banner: str = "pysx ready"
 ) -> Generator[subprocess.Popen[str]]:
     """Wait for the ready banner with a bounded reader and guaranteed cleanup."""
-    owns_group = os.name == "posix" and os.environ.get("PYSX_ACCEPTANCE_GROUP") != "shared"
+    owns_group = sys.platform != "win32" and os.environ.get("PYSX_ACCEPTANCE_GROUP") != "shared"
     proc = subprocess.Popen(
         command,
         cwd=ROOT,
@@ -119,7 +120,7 @@ def run_suite(command: Sequence[str], banner: str, timeout: float = 30) -> str:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        start_new_session=os.name == "posix",
+        start_new_session=sys.platform != "win32",
         env=environment,
     )
 
