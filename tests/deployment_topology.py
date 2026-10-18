@@ -116,6 +116,16 @@ class Deployment:
         except urllib.error.HTTPError as error:
             return error.code, error.read().decode()
 
+    def routed(self, worker: str) -> bool:
+        """Whether the proxy itself can reach `worker`, rather than merely being up.
+
+        `/health` is answered by nginx from its own configuration and never opens
+        an upstream connection, so it stays 200 through a worker the proxy cannot
+        route to. Only a request carrying the owner hint exercises that upstream,
+        and a proxy with no reachable worker behind it answers 5xx.
+        """
+        return self.public(f"/?owner={worker}")[0] < 500
+
     def wait_ready(self) -> None:
         deadline = time.monotonic() + 30
 
@@ -124,6 +134,7 @@ class Deployment:
                 if (
                     all(self.probe(worker)[0] == 200 for worker in ("worker-a", "worker-b"))
                     and self.public("/health")[0] == 200
+                    and all(self.routed(worker) for worker in ("worker-a", "worker-b"))
                 ):
                     return
             except OSError, RuntimeError, urllib.error.URLError:
