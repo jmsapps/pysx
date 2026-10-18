@@ -3,11 +3,24 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vscode = require("vscode");
 
+async function withDeadline(operation, label, timeout = 90000) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(
+          `timeout waiting for ${typeof label === "function" ? label() : label}`)), timeout);
+      }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
 async function until(predicate, label, timeout = 90000) {
   const deadline = Date.now() + timeout;
   let last;
   while (Date.now() < deadline) {
-    last = await predicate();
+    last = await withDeadline(predicate, label, deadline - Date.now());
     if (last) return last;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
@@ -32,6 +45,10 @@ const SOURCE = [
 ].join("\n");
 
 exports.run = async function () {
+  const started = Date.now();
+  const progress = (label) => console.log(
+    `PYSX EDITOR ROUTING: ${label} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
+  progress("configure workspace interpreters");
   const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
   assert(extension, "fresh extension registered");
   const python = process.env.PYSX_EDITOR_PYTHON;
@@ -56,7 +73,8 @@ exports.run = async function () {
   await select(secondary, alternate);
   await select(nested, python);
 
-  const api = await extension.activate();
+  progress("activate extension");
+  const api = await withDeadline(() => extension.activate(), "extension activation");
   assert(extension.isActive, "actual extension activation");
   assert(api?.router, "resident client exposes its workspace router");
 
@@ -64,7 +82,9 @@ exports.run = async function () {
     const owner = api.owner(target.uri);
     if (!owner?.lifecycle?.status().running) return null;
     try {
-      const found = await owner.lifecycle.client.sendRequest("pysx/status", {});
+      const found = await withDeadline(() =>
+        owner.lifecycle.client.sendRequest("pysx/status", {}),
+      `status response from ${target.name}`, 5000);
       return found.workspaces.length === 1 && found.workspaces[0].pid ? found : null;
     } catch { return null; }
   };
@@ -72,18 +92,20 @@ exports.run = async function () {
     () => `a ready server for ${target.name}: ${JSON.stringify(api.workspaces())}`);
 
   // A folder only builds analysis for documents it owns, so each root opens one.
-  const open = async (target) => {
+  const open = (target) => withDeadline(async () => {
     const filename = path.join(target.uri.fsPath, "app.py");
     fs.writeFileSync(filename, SOURCE);
     const document = await vscode.workspace.openTextDocument(filename);
     await vscode.languages.setTextDocumentLanguage(document, "python");
     await vscode.window.showTextDocument(document);
     return document;
-  };
+  }, `open the document for ${target.name}`);
+  progress("open each folder's document");
   const documents = { consumer: await open(consumer), secondary: await open(secondary),
     nested: await open(nested) };
 
   // 1. Every folder runs its own server with the executable it selected.
+  progress("wait for all three servers and backends");
   const first = { consumer: await ready(consumer), secondary: await ready(secondary),
     nested: await ready(nested) };
   assert.equal(first.consumer.interpreter, python);
@@ -96,6 +118,7 @@ exports.run = async function () {
       fs.realpathSync.native(folder(name).uri.fsPath), `${name} analyses its own root`);
   }
 
+  progress("verify document ownership");
   await until(async () => {
     const counts = await Promise.all(roots.map(async (target) =>
       (await statusOf(target))?.workspaces[0].openDocuments));
@@ -111,6 +134,7 @@ exports.run = async function () {
   assert.equal(api.owner(documents.nested.uri).folder.name, "nested", "nearest owning folder");
 
   // 3. A settings change restarts only the folder it affects.
+  progress("change one folder's interpreter");
   await select(secondary, python);
   const switched = await until(async () => {
     const found = await statusOf(secondary);
@@ -123,10 +147,13 @@ exports.run = async function () {
   assert.equal((await statusOf(nested)).processId, first.nested.processId);
 
   // 4. The Python extension's own selection is honoured for that folder.
+  progress("select an environment through the Python extension API");
   await select(secondary, undefined);
-  const environments = (await vscode.extensions.getExtension("ms-python.python").activate())
+  const environments = (await withDeadline(() =>
+    vscode.extensions.getExtension("ms-python.python").activate(), "Python extension activation"))
     .environments;
-  await environments.updateActiveEnvironmentPath(alternate, secondary.uri);
+  await withDeadline(() => environments.updateActiveEnvironmentPath(alternate, secondary.uri),
+    "Python extension environment selection");
   const api_selected = await until(async () => {
     const found = await statusOf(secondary);
     return found && found.interpreter === alternate ? found : null;
@@ -134,6 +161,7 @@ exports.run = async function () {
   assert.notEqual(api_selected.processId, switched.processId);
 
   // 5. Rapid changes coalesce into the latest choice and one replacement.
+  progress("coalesce rapid interpreter selections");
   await select(secondary, bare);
   await select(secondary, alternate);
   await select(secondary, python);
@@ -148,6 +176,7 @@ exports.run = async function () {
   void coalesced;
 
   // 6. A missing extra is reported and stays recoverable without reactivation.
+  progress("recover from an environment without the language-server extra");
   await select(secondary, bare);
   const unusable = await until(() => {
     const owner = api.owner(secondary.uri);
@@ -161,6 +190,7 @@ exports.run = async function () {
   assert.equal(recovered.interpreter, python, "a later selection recovers the folder");
 
   // 7. The restart command resolves the executable afresh for its folder.
+  progress("restart the active folder");
   await vscode.window.showTextDocument(documents.nested);
   await select(nested, alternate);
   await until(async () => {
@@ -168,7 +198,8 @@ exports.run = async function () {
     return found && found.interpreter === alternate ? found : null;
   }, "the nested folder adopts its new executable");
   const beforeRestart = await statusOf(nested);
-  await vscode.commands.executeCommand("pysx.restartServer");
+  await withDeadline(() => vscode.commands.executeCommand("pysx.restartServer"),
+    "the active folder's restart command");
   const restarted = await until(async () => {
     const found = await statusOf(nested);
     return found && found.processId !== beforeRestart.processId ? found : null;
@@ -178,6 +209,7 @@ exports.run = async function () {
     "the restart leaves other folders alone");
 
   // 8. A removed folder releases its client and its processes.
+  progress("remove a folder and release its processes");
   const removed = await statusOf(secondary);
   const index = vscode.workspace.workspaceFolders.findIndex((item) => item.name === "secondary");
   assert(vscode.workspace.updateWorkspaceFolders(index, 1), "the folder is removed");
@@ -189,6 +221,7 @@ exports.run = async function () {
     "removing a folder leaves the others running");
 
   await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+  progress("complete");
   console.log("PYSX EDITOR CASES PASSED: 8 (per-folder environments, nested ownership, " +
     "setting change, API selection, coalesced rapid changes, missing-extra recovery, " +
     "restart re-resolution and removed-folder disposal)");

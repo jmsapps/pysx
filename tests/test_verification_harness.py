@@ -201,13 +201,16 @@ def test_editor_missing_input(tmp_path: Path, missing: str) -> None:
     assert ("ENOENT" if missing == "PYSX_PYLANCE_EXTENSION" else "missing VSCode") in result.stderr
 
 
-def test_editor_timeout_cleanup(tmp_path: Path) -> None:
+@pytest.mark.parametrize("suite", ["diagnostics", "interpreter_routing"])
+def test_editor_timeout_cleanup(tmp_path: Path, suite: str) -> None:
     state_file = tmp_path / "state.json"
     result = editor_run(
         {
             "PYSX_EDITOR_FORCE_TIMEOUT": "1",
             "PYSX_EDITOR_STATE_FILE": str(state_file),
-        }
+        },
+        "--suite",
+        suite,
     )
     assert result.returncode != 0
     assert "editor deadline exceeded" in result.stderr
@@ -228,6 +231,37 @@ def test_editor_timeout_cleanup(tmp_path: Path) -> None:
         assert not process.stdout.strip() or process.stdout.strip().startswith("Z")
     else:
         assert pid not in process.stdout
+
+
+def test_editor_routing_wait_bounds_a_stalled_status_request() -> None:
+    script = r"""
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+const until = vm.runInNewContext(fs.readFileSync("editor/test/routing_suite.cjs", "utf8") +
+  "\nuntil;", {
+    require: name => name === "vscode" ? {} : require(name), exports: {},
+    setTimeout, clearTimeout,
+  });
+const watchdog = setTimeout(() => {
+  console.error("the routing wait did not bound its stalled request");
+  process.exit(1);
+}, 1000);
+(async () => {
+  await assert.rejects(until(() => new Promise(() => {}), "stalled status request", 20),
+    /timeout waiting for stalled status request/);
+  assert.equal(await until(async () => "ready", "healthy status request", 20), "ready");
+  await assert.rejects(until(async () => { throw new Error("server failed"); }, "failure", 20),
+    /server failed/);
+  console.log("BOUNDED ROUTING WAIT PASSED");
+})().catch(error => { console.error(error); process.exitCode = 1; })
+  .finally(() => clearTimeout(watchdog));
+"""
+    result = subprocess.run(
+        ["node", "-e", script], cwd=ROOT, capture_output=True, text=True, timeout=5, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert "BOUNDED ROUTING WAIT PASSED" in result.stdout
 
 
 def test_editor_empty_selection() -> None:

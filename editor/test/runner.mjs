@@ -81,7 +81,15 @@ try {
     // A second executable identity for the same working environment, so a
     // folder's selection is observable as an actual different child command.
     alternate = path.join(workspace, "alternate-python");
-    writeFileSync(alternate, `#!/bin/sh\nexec ${JSON.stringify(interpreter)} "$@"\n`, { mode: 0o755 });
+    const startupDelay = Number(process.env.PYSX_EDITOR_ROUTING_START_DELAY_MS ?? 0);
+    if (!Number.isFinite(startupDelay) || startupDelay < 0 || startupDelay > 30000) {
+      throw new Error("routing startup delay must be between 0 and 30000 ms");
+    }
+    // Fault injection affects only actual language-server starts, leaving
+    // environment discovery and the missing-extra checks intact.
+    const delay = startupDelay ?
+      `if [ "$1" = "-m" ] && [ "$2" = "pysx.lsp" ]; then sleep ${startupDelay / 1000}; fi\n` : "";
+    writeFileSync(alternate, `#!/bin/sh\n${delay}exec ${JSON.stringify(interpreter)} "$@"\n`, { mode: 0o755 });
     bare = path.join(workspace, "bare");
     const created = spawnSync("uv", ["venv", "--python", interpreter, bare], { cwd: root, encoding: "utf8", timeout: 120000 });
     if (created.status !== 0) throw new Error(`bare environment creation failed: ${created.stderr}`);
@@ -105,8 +113,13 @@ try {
     }
     let output = "";
     await new Promise((resolve, reject) => {
+      // Routing creates three clients and replaces them repeatedly. Its shared
+      // host budget must allow healthy slow starts across all eight cases;
+      // the suite separately bounds each stage and reports its progress.
+      const timeout = process.env.PYSX_EDITOR_FORCE_TIMEOUT === "1" ? 500 :
+        suite === "interpreter_routing" || process.env.PYSX_EDITOR_PERFORMANCE === "1" ? 240000 : 120000;
       const timer = setTimeout(() => reject(new Error(`editor deadline exceeded: ${output}`)),
-        process.env.PYSX_EDITOR_FORCE_TIMEOUT === "1" ? 500 : process.env.PYSX_EDITOR_PERFORMANCE === "1" ? 240000 : 120000);
+        timeout);
       child.stdout.on("data", (data) => { output = (output + data).slice(-30000); });
       child.stderr.on("data", (data) => { output = (output + data).slice(-30000); });
       child.once("error", (error) => { clearTimeout(timer); reject(error); });
@@ -132,7 +145,7 @@ try {
       inspect(path.join(workspace, "profile", "logs"));
     }
     if (!output.includes(`PYSX EDITOR CASES PASSED: ${cases}`)) throw new Error(`missing host assertions: ${output}`);
-    console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR PERFORMANCE")).join("\n"));
+    console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR PERFORMANCE") || line.startsWith("PYSX EDITOR ROUTING:")).join("\n"));
     console.log(`EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, ${cases} cases)`);
   }
 } finally {
