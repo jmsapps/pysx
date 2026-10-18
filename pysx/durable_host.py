@@ -85,6 +85,7 @@ class _DurableRuntime[T](HTTPRuntime):
         return not self.draining and super().reserve()
 
     def _open(self, identity: StateIdentity, request: RequestContext, location: str) -> Session:
+        self.host.renew_if_overdue()
         graph = DurableSession(
             self.factory,
             initial=self.initial,
@@ -228,6 +229,39 @@ class DurableApplication[T](Application):
             self._probe_store()
             self.renewed = asyncio.get_running_loop().time()
             self.renewal = asyncio.create_task(self._renew())
+
+    def renew_if_overdue(self) -> None:
+        """Extend the fleet's leases while admission is monopolising the loop.
+
+        Admitting a recovery storm is one long run of loop-bound work, so the
+        periodic renewal cannot get in between and leases the worker still owns
+        lapse. Admission therefore pays for its own interruption. This only
+        extends leases: fencing stays with the periodic task, which judges each
+        snapshot against a row it read in the same transaction.
+        """
+
+        if not self.renewing or self.renewal is None:
+            return
+
+        try:
+            now = asyncio.get_running_loop().time()
+        except RuntimeError:
+            return
+
+        if now - self.renewed < self.state_store.seconds / 3:
+            return
+        owned = [
+            cast("DurableSession[T]", graph).snapshot
+            for graph in self.runtime.graphs
+            if isinstance(graph, DurableSession) and not graph.closed
+        ]
+
+        try:
+            self.backend.renew(owned, self.worker, self.state_store.seconds)
+            self.store_available = True
+            self.renewed = now
+        except StoreUnavailable, RecoveryUnavailable:
+            self.store_failures_total += 1
 
     def _probe_store(self) -> None:
         try:

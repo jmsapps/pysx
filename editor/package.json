@@ -1,11 +1,16 @@
 {
   "name": "pysx-lang",
   "displayName": "pysx",
-  "description": "pysx markup highlighting and diagnostics inside t-strings",
+  "description": "pysx markup highlighting, diagnostics and an optional resident language server for templates inside t-strings",
   "publisher": "pysx-local",
-  "version": "0.0.1",
-  "scripts": { "test": "node test/runner.mjs", "setup:host": "node test/setup_host.mjs" },
-  "devDependencies": { "@vscode/test-electron": "3.1.0" },
+  "version": "0.1.0",
+  "scripts": {
+    "test": "node test/runner.mjs",
+    "setup:host": "node test/setup_host.mjs"
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "3.1.0"
+  },
   "engines": {
     "vscode": "^1.91.0"
   },
@@ -13,22 +18,73 @@
     "Programming Languages"
   ],
   "contributes": {
-    "snippets": [{ "language": "python", "path": "./snippets/python.json" }],
+    "colors": [
+      { "id": "pysx.markup.type", "description": "Resolved native markup tags outside literal calls.", "defaults": { "dark": "symbolIcon.keywordForeground", "light": "symbolIcon.keywordForeground", "highContrast": "symbolIcon.keywordForeground" } },
+      { "id": "pysx.markup.class", "description": "Resolved markup component tags outside literal calls.", "defaults": { "dark": "symbolIcon.classForeground", "light": "symbolIcon.classForeground", "highContrast": "symbolIcon.classForeground" } },
+      { "id": "pysx.markup.property", "description": "Resolved markup attribute names outside literal calls.", "defaults": { "dark": "symbolIcon.propertyForeground", "light": "symbolIcon.propertyForeground", "highContrast": "symbolIcon.propertyForeground" } },
+      { "id": "pysx.markup.keyword", "description": "Resolved markup control keywords outside literal calls.", "defaults": { "dark": "symbolIcon.keywordForeground", "light": "symbolIcon.keywordForeground", "highContrast": "symbolIcon.keywordForeground" } },
+      { "id": "pysx.markup.variable", "description": "Resolved markup binding names outside literal calls.", "defaults": { "dark": "symbolIcon.variableForeground", "light": "symbolIcon.variableForeground", "highContrast": "symbolIcon.variableForeground" } },
+      { "id": "pysx.markup.string", "description": "Resolved markup quoted values outside literal calls.", "defaults": { "dark": "symbolIcon.stringForeground", "light": "symbolIcon.stringForeground", "highContrast": "symbolIcon.stringForeground" } }
+    ],
+    "snippets": [
+      {
+        "language": "python",
+        "path": "./snippets/python.json"
+      }
+    ],
     "commands": [
-      { "command": "pysx.rename", "title": "pysx: Rename Python and Markup Symbol" },
-      { "command": "pysx.refresh", "title": "pysx: Refresh Analysis" },
-      { "command": "pysx.configureTooling", "title": "pysx: Configure Template-Aware Imports" }
+      {
+        "command": "pysx.rename",
+        "title": "pysx: Rename Python and Markup Symbol"
+      },
+      {
+        "command": "pysx.refresh",
+        "title": "pysx: Refresh Analysis"
+      },
+      {
+        "command": "pysx.configureTooling",
+        "title": "pysx: Configure Template-Aware Imports"
+      },
+      {
+        "command": "pysx.restartServer",
+        "title": "pysx: Restart Language Server"
+      },
+      {
+        "command": "pysx.restoreTooling",
+        "title": "pysx: Restore Editor Settings pysx Changed"
+      }
     ],
     "keybindings": [
-      { "command": "pysx.rename", "key": "f2", "when": "editorTextFocus && pysx.managedDocument" }
+      {
+        "command": "pysx.rename",
+        "key": "f2",
+        "when": "editorTextFocus && pysx.managedDocument"
+      }
     ],
-    "menus": { "editor/context": [
-      { "command": "pysx.rename", "when": "editorLangId == python", "group": "1_modification" }
-    ] },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "pysx.rename",
+          "when": "editorLangId == python",
+          "group": "1_modification"
+        }
+      ]
+    },
     "configuration": {
       "title": "pysx",
       "properties": {
-        "pysx.pythonPath": { "type": "string", "default": "", "scope": "resource", "description": "Python 3.14+ executable with pysx and Ruff installed." }
+        "pysx.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Python 3.14+ executable with pysx and Ruff installed."
+        },
+        "pysx.useLanguageServer": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "Use the resident pysx language server instead of the worker integration. Requires the pysx[lsp] extra in the selected environment."
+        }
       }
     },
     "grammars": [
@@ -41,16 +97,22 @@
       }
     ],
     "configurationDefaults": {
-      "files.exclude": { "**/_pysx_revision_*": true },
+      "files.exclude": {
+        "**/_pysx_revision_*": true
+      },
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {
             "scope": "support.function.css.pysx",
-            "settings": { "foreground": "#DCDCAA" }
+            "settings": {
+              "foreground": "#DCDCAA"
+            }
           },
           {
             "scope": "support.constant.property-value.css.pysx",
-            "settings": { "foreground": "#569CD6" }
+            "settings": {
+              "foreground": "#569CD6"
+            }
           },
           {
             "scope": "support.class.component.pysx",
@@ -132,5 +194,8 @@
   "main": "./extension.js",
   "activationEvents": [
     "onLanguage:python"
-  ]
+  ],
+  "dependencies": {
+    "vscode-languageclient": "10.1.2"
+  }
 }

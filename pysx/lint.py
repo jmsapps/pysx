@@ -75,6 +75,7 @@ def _ruff(source: str, filename: str) -> list[RuffMessage]:
         input=source,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 

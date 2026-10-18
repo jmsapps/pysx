@@ -50,6 +50,16 @@ updates.
   themes. See the [styling guide](docs/STYLING.md).
 - **Editor support:** VSCode syntax highlighting and advisory template diagnostics.
 
+## Supported platforms
+
+Python 3.14 or newer, on macOS and Linux. Both are verified on every change. The reference
+deployment topology needs a Linux container runtime; where a machine has not got one, the
+suites that assert it report themselves as skipped rather than passing.
+
+Windows is **not supported yet.** The library is not known to work there, and the test
+suite does not pass on it; several components still assume POSIX process and signal
+behaviour. Use WSL in the meantime.
+
 ## Explore
 
 - [Examples](examples/README.md) — run the demos and explore reactive state and live forms.

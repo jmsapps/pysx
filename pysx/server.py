@@ -61,9 +61,14 @@ def main() -> None:
     application = _load_app(args.app, development=args.dev)
 
     if args.drain_signal:
-        if not isinstance(application, DurableApplication) or not hasattr(signal, "SIGUSR1"):
+        # SIGUSR1 does not exist on every supported platform, so the attribute is
+        # resolved dynamically rather than named where a checker would resolve it
+        # against the running platform's signal module.
+        drain = cast("signal.Signals | None", getattr(signal, "SIGUSR1", None))
+
+        if not isinstance(application, DurableApplication) or drain is None:
             raise SystemExit("--drain-signal requires a durable application and SIGUSR1 support")
-        signal.signal(signal.SIGUSR1, lambda _signal, _frame: application.begin_drain())
+        signal.signal(drain, lambda _signal, _frame: application.begin_drain())
 
     if args.asgi:
         try:

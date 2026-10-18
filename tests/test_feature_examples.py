@@ -246,7 +246,7 @@ def test_recovery_cli_startup_and_ctrl_c_exit() -> None:
         assert server.wait(timeout=5) == 0
 
 
-def test_pysx_12_st_4_navigation_interactions_isolation_and_cleanup() -> None:
+def test_pysx_12_st_4navigation_report_interactions_isolation_and_cleanup() -> None:
     session, other = Session(navigation_app), Session(navigation_app)
     router = session.routes.routers[0]
     markup = [session.rendered.body]
@@ -324,7 +324,7 @@ def test_pysx_12_st_4_navigation_interactions_isolation_and_cleanup() -> None:
     assert router.path.observers == {}
 
 
-def test_pysx_12_st_4_navigation_checker_clean_and_registered() -> None:
+def test_pysx_12_st_4navigation_report_checker_clean_and_registered() -> None:
     from pathlib import Path
 
     from examples import examples
@@ -335,7 +335,7 @@ def test_pysx_12_st_4_navigation_checker_clean_and_registered() -> None:
 
 
 @pytest.mark.acceptance
-def test_pysx_12_st_4_navigation_cli_startup_and_ctrl_c_exit() -> None:
+def test_pysx_12_st_4navigation_report_cli_startup_and_ctrl_c_exit() -> None:
     command = ["uv", "run", "--project", ".", "example", "run", "navigation", "--port", "8768"]
     with ready_server(command) as server:
         with urllib.request.urlopen("http://127.0.0.1:8768/", timeout=5) as response:
@@ -1059,5 +1059,83 @@ def test_durable_state_cli_startup_and_ctrl_c_exit(
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
             assert response.status == 200
             assert b"Declared session state" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
+
+
+def test_editor_features_example_is_registered_and_clean() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["editor_features"] == "examples.editor_features:app"
+    assert diagnostics(Path("examples/editor_features.py")) == []
+
+
+def test_editor_features_demonstrates_every_advertised_interaction() -> None:
+    """The example must actually exercise completion, hover, navigation and edits."""
+    from pathlib import Path as FilePath
+
+    from examples.editor_features import (
+        SAMPLE,
+        app,
+        completion_report,
+        formatted_sample,
+        hover_report,
+        navigation_report,
+        outline_report,
+        tokens_report,
+    )
+    from pysx import render
+    from pysx.lsp_features import document_symbols, template_calls
+
+    completion = completion_report()
+    assert "tone" in completion, completion
+    assert "title" in completion, completion
+    hover = hover_report()
+    assert "tone" in hover, hover
+    assert "str" in hover, hover
+    navigation = navigation_report()
+    assert "'Panel'" in navigation
+    assert "declared in this module: yes" in navigation
+    tokens = tokens_report()
+    assert "section" in tokens
+    assert "keyword" in tokens
+    name = str(FilePath("examples") / "_editor_sample.py")
+    outline = outline_report(
+        document_symbols(template_calls(SAMPLE, name, FilePath("examples"), {name: SAMPLE}))
+    )
+    assert "section" in outline
+    formatted = formatted_sample()
+    assert formatted != SAMPLE, "the sample is deliberately ragged"
+    assert "Panel(title=" in formatted
+    rendered = render(app)
+    assert 'id="panel"' in rendered.body
+    assert 'id="would-change"' in rendered.body
+    assert "show-tokens" in rendered.body
+
+
+@pytest.mark.acceptance
+def test_editor_features_cli_startup_and_ctrl_c_exit() -> None:
+    from ownership_topology import free_port
+
+    port = free_port()
+    command = [
+        "uv",
+        "run",
+        "--project",
+        ".",
+        "example",
+        "run",
+        "editor_features",
+        "--port",
+        str(port),
+    ]
+    with ready_server(command) as server:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+            assert response.status == 200
+            body = response.read()
+            assert b"Editor features" in body
+            assert b"show-navigation" in body
         server.send_signal(signal.SIGINT)
         assert server.wait(timeout=5) == 0

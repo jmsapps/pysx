@@ -235,6 +235,11 @@ def dependency_cache(destination: Path) -> Path:
                     for link in target.iterdir():
                         if link.is_symlink():
                             original = link.resolve()
+
+                            if not original.is_dir():
+                                link.unlink()
+
+                                continue
                             copied_archive = destination / "archive-v0" / original.name
 
                             if not copied_archive.exists():
@@ -437,6 +442,9 @@ def inspect_wheel(wheel: Path) -> dict[str, str]:
             "pysx/_example_runner.py",
             "examples/counter.py",
         }
+
+        if "pysx/tooling.py" not in names:
+            raise ProofError("the wheel omits the developer tooling resolver")
 
         if not required <= set(names):
             raise ProofError(f"missing artifact members: {required - set(names)}")

@@ -6,12 +6,16 @@ import socket
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 
 import pytest
 from prototypes.distribution import ROOT, clean_env, command, dependency_cache, installed, qualify
+
+from pysx.tooling import RUFF_REQUIREMENT
 
 
 def test_fresh_installed_distribution(tmp_path: Path) -> None:
@@ -140,3 +144,38 @@ def test_host_config_fresh_actual_wheel_user_app(tmp_path: Path, *, asgi: bool) 
             if process.poll() is None:
                 process.kill()
                 process.wait(timeout=5)
+
+
+def test_client_verify_dev_extra_is_separate_from_the_runtime_set() -> None:
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    project = metadata["project"]
+    runtime = project["dependencies"]
+    extras = project["optional-dependencies"]
+    assert runtime == ["websockets==17.1"]
+    assert extras["dev"] == [f"ruff=={RUFF_REQUIREMENT}"]
+    assert not any(item.startswith("ruff") for item in runtime)
+
+    for name, items in extras.items():
+        for item in items:
+            assert "==" in item, f"{name} declares an unpinned requirement: {item}"
+
+
+def test_client_verify_bundled_client_installs_outside_the_checkout(tmp_path: Path) -> None:
+    built = subprocess.run(
+        [sys.executable, str(ROOT / "editor" / "build_vsix.py")],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=ROOT,
+    )
+    staged = tmp_path / "pysx-lang.vsix"
+    shutil.copy(built.stdout.strip(), staged)
+
+    with zipfile.ZipFile(staged) as archive:
+        names = archive.namelist()
+        assert "extension/node_modules/vscode-languageclient/package.json" in names
+        assert not any("pysx-root.json" in name for name in names)
+
+        for name in names:
+            if name.endswith((".js", ".json")):
+                assert str(ROOT).encode() not in archive.read(name), name

@@ -261,5 +261,14 @@ def tree() -> Fragment:
     assert(!vscode.languages.getDiagnostics(large.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("Action")));
     console.log("PYSX EDITOR PERFORMANCE: " + JSON.stringify({ files: warm.models.length, cold_snapshot_ms: coldMs, edited_snapshot_ms: warmMs, ready_hover_ms: Date.now() - hoverStart }));
   }
-  console.log("PYSX EDITOR CASES PASSED: 10 (live buffers, imports, hover, completion, definition, props, stale fixes, cleanup, type recovery, coherent rename)");
+  // Worker mode must answer every command the manifest advertises, reporting
+  // the ones the resident server owns instead of failing as unknown.
+  const advertised = JSON.parse(require("node:fs").readFileSync(
+    require("node:path").join(extension.extensionPath, "package.json"), "utf8"))
+    .contributes.commands.map((item) => item.command);
+  const registered = new Set(await vscode.commands.getCommands(true));
+  for (const command of advertised) assert(registered.has(command), `${command} is registered`);
+  assert.equal(await vscode.commands.executeCommand("pysx.restoreTooling"), false,
+    "a resident-only command reports itself in worker mode instead of failing");
+  console.log("PYSX EDITOR CASES PASSED: 11 (live buffers, imports, hover, completion, definition, props, stale fixes, cleanup, type recovery, coherent rename, advertised commands)");
 };

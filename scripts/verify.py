@@ -9,9 +9,11 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +35,7 @@ class Gate:
     name: str
     command: tuple[str, ...]
     needs_display: bool = False
+    timeout: float = 1800
 
 
 def _playwright_install() -> tuple[str, ...]:
@@ -61,7 +64,9 @@ GATES: tuple[Gate, ...] = (
         "generator",
         ("uv", "run", "--project", ".", "python", "scripts/generate_native.py", "--check"),
     ),
-    Gate("python", "pytest", ("uv", "run", "--project", ".", "pytest", "-q")),
+    # Linux finishes this in about six minutes, so a gate still running at twenty
+    # is hung rather than slow, and the remaining tiers still fit the job budget.
+    Gate("python", "pytest", ("uv", "run", "--project", ".", "pytest", "-q"), timeout=1200),
     Gate("browser", "browser", ("npm", "--prefix", "tests", "run", "browser")),
     Gate("grammar", "grammar", ("npm", "--prefix", "tests", "run", "grammar")),
     Gate("editor", "editor", ("npm", "--prefix", "editor", "test"), needs_display=True),
@@ -77,6 +82,9 @@ SELECTORS: dict[str, tuple[str, ...]] = {
 
 def environment() -> dict[str, str]:
     env = dict(os.environ)
+    # Output is captured, so a gate that hangs is only diagnosable from what it
+    # already wrote; buffering would discard exactly that.
+    env["PYTHONUNBUFFERED"] = "1"
     managed = ROOT / ".vscode-test" / "extensions"
 
     if "PYSX_EXTENSIONS_DIR" not in env and managed.is_dir():
@@ -93,24 +101,68 @@ def resolve(gate: Gate) -> tuple[str, ...]:
         and shutil.which("xvfb-run") is not None
     )
 
-    return ("xvfb-run", "-a", *gate.command) if needs_xvfb else gate.command
+    command = ("xvfb-run", "-a", *gate.command) if needs_xvfb else gate.command
+
+    return (_executable(command[0]), *command[1:])
+
+
+def _executable(name: str) -> str:
+    """Resolve a launcher to a real file.
+
+    Windows ships npm and npx as `.cmd` shims, which `CreateProcess` cannot run
+    from a bare name, so the gate has to name the file PATH would have picked.
+    """
+
+    return shutil.which(name) or name
 
 
 def run(gate: Gate, *, stream: bool) -> tuple[bool, float, str]:
     command = resolve(gate)
     started = time.monotonic()
-    result = subprocess.run(
+
+    # A gate that hangs would otherwise consume the whole job budget and report
+    # nothing. Each gate owns a process group so the whole tree can be ended;
+    # killing only the direct child leaves grandchildren holding the pipes, and
+    # the wait that follows then blocks on the very hang it is handling.
+    process = subprocess.Popen(
         command,
         cwd=ROOT,
         env=environment(),
-        check=False,
-        capture_output=not stream,
+        stdout=subprocess.PIPE if not stream else None,
+        stderr=subprocess.PIPE if not stream else None,
         text=True,
+        start_new_session=sys.platform != "win32",
+        # Named dynamically: the flag only exists in the Windows subprocess module.
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
     )
-    elapsed = time.monotonic() - started
-    output = "" if stream else f"{result.stdout}{result.stderr}"
 
-    return result.returncode == 0, elapsed, output
+    try:
+        stdout, stderr = process.communicate(timeout=gate.timeout)
+    except subprocess.TimeoutExpired:
+        _end_tree(process)
+        stdout, stderr = process.communicate(timeout=30)
+        elapsed = time.monotonic() - started
+
+        return False, elapsed, f"timed out after {gate.timeout}s\n{stdout or ''}{stderr or ''}"
+    elapsed = time.monotonic() - started
+
+    return process.returncode == 0, elapsed, f"{stdout or ''}{stderr or ''}"
+
+
+def _end_tree(process: subprocess.Popen[str]) -> None:
+    if sys.platform == "win32":
+        subprocess.run(
+            [_executable("taskkill"), "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+
+        return
+
+    with suppress(ProcessLookupError, PermissionError):
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    process.kill()
 
 
 def main() -> int:

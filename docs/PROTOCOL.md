@@ -34,6 +34,11 @@ are disposed on disconnect and have no live resume contract. Live recovery needs
 affinity to the same worker; volatile graph loss requires a fresh app.
 [Durable hosts](OWNERSHIP.md) can separately reconstruct explicitly declared state.
 
+A normal peer close retains a healthy graph even if it overlaps an outgoing
+update. Stopping a pending send during disconnect cleanup does not cancel the
+application; resume repairs the current snapshot, including committed updates
+the browser did not receive. Other failed sends still expire the graph.
+
 The browser retains one set of application listeners during disconnect. It retries
 automatically with exponential backoff from 250ms to 10s, 50–100% jitter, at most
 eight retries, and a five-second attachment deadline. One timer/socket generation

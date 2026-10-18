@@ -76,6 +76,8 @@ class BoundedConnection:
             raise
 
     async def send(self, message: str) -> None:
+        from websockets.exceptions import ConnectionClosedOK
+
         if self.closing:
             raise TransportError("connection closing")
 
@@ -97,8 +99,13 @@ class BoundedConnection:
 
                 raise TransportError("send deadline")
             await task
-        except BaseException:
-            self.failed = True
+        except BaseException as error:
+            # A healthy peer close can race a push, or stop the reader while
+            # this send is pending. Cleanup cancels that send; neither case
+            # makes the current-state snapshot unsafe to resume. Cancellation
+            # of the connection pump itself still expires the graph below.
+            if not isinstance(error, (asyncio.CancelledError, ConnectionClosedOK)):
+                self.failed = True
 
             if not task.done():
                 self.abort()

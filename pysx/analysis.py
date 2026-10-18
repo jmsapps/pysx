@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 from .check import Diagnostic, diagnostics_for_source
-from .compiler import Compilation, analyze, native_tag_for
+from .compiler import Compilation, analyze, component_binding_identity, native_tag_for
 from .parser import LiteralText
 from .schema import NATIVE_TAGS, python_attr, tag_info
 from .source_map import MappedText, Positions, SourceSpan
@@ -26,6 +26,7 @@ class Site(TypedDict):
     role: Literal["component", "prop"]
     props: NotRequired[list[str]]
     native: NotRequired[bool]
+    symbol: NotRequired[str]
 
 
 class Projection(TypedDict):
@@ -135,6 +136,37 @@ def sites_for(compilation: Compilation, projection: MappedText) -> list[Site]:
 
         if role == "component" and target[0] in NATIVE_TAGS:
             results[origin]["native"] = True
+            results[origin]["symbol"] = "library:pysx.native." + target[0].capitalize()
+
+    # Native/styled validation may map later occurrences onto a generated native
+    # constructor. Navigation must instead use the deduplicated Python binding in
+    # this call's namespace, retaining a distinct original site for every use.
+    for call in compilation.calls:
+        anchors: dict[str, Site] = {}
+
+        for reference in call.references:
+            site = results.get(reference.span)
+
+            if site is not None:
+                anchors.setdefault(reference.name, site)
+
+        for reference in call.references:
+            anchor = anchors.get(reference.name)
+
+            if anchor is not None:
+                site = anchor.copy()
+                site["start"] = source_offsets[reference.span.start]
+                site["end"] = source_offsets[reference.span.end]
+                symbol = component_binding_identity(
+                    reference.name,
+                    call.scope,
+                    compilation.resolver,
+                    compilation.filename,
+                )
+
+                if symbol is not None:
+                    site["symbol"] = symbol
+                results[reference.span] = site
 
     for call in compilation.calls:
         for element in call.elements:

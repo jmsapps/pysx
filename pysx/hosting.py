@@ -442,6 +442,8 @@ class Application:
         return result
 
     async def websocket(self, connection: Connection) -> None:
+        from websockets.exceptions import ConnectionClosedOK
+
         await self.start()
 
         bounded = bound_connection(connection, self.config.transport)
@@ -485,6 +487,8 @@ class Application:
 
         try:
             await serve_connection(self.runtime, bounded)
+        except ConnectionClosedOK:
+            pass
         except AccessDenied:
             await bounded.close(1008, "access denied")
         except TransportError:

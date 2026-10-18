@@ -174,10 +174,22 @@ const registry = [
   { suite: "adoption", cases: [
     [0, "adoption", "browser_adoption.mjs", "ARCHITECTURE ADOPTION PASSED"],
   ] },
+  { suite: "editor_surface", cases: [
+    [0, "diagnostics_fixture", "browser_diagnostics.mjs", "DIAGNOSTICS ACTIONS BROWSER PASSED"],
+    [1, "authoring_fixture", "browser_authoring.mjs", "AUTHORING BROWSER PASSED"],
+  ] },
   { suite: "template_ergonomics", cases: [
     [0, "reactive_state", "browser_operators.mjs", "OPERATORS BROWSER PASSED"],
   ] },
 ];
+const CONTAINER_SUITES = new Set(["deployment_fixture", "durable_state_fixture"]);
+// Keyed on what the host can actually run rather than on its name: a Windows
+// container host and a runner with no Docker at all fail these suites for the
+// same reason, and a developer machine with Linux containers runs them.
+const linuxContainers = (() => {
+  const found = spawnSync("docker", ["info", "--format", "{{.OSType}}"], { encoding: "utf8" });
+  return found.status === 0 && found.stdout.trim() === "linux";
+})();
 const selections = registry.filter((entry) => !suite || entry.suite === suite);
 if (!selections.length) throw new Error("empty browser selection");
 
@@ -219,6 +231,14 @@ async function wait(child, ready = null, timeout = 30000) {
       clearTimeout(timer);
       child.off("error", failed); child.off("close", closed);
       child.stdout.off("data", read); child.stderr.off("data", read);
+      // Nothing reads these pipes once the child is ready, so a chatty server
+      // would block writing into a full buffer and everything it reports after
+      // startup would be lost with it. Keep draining into a bounded tail.
+      if (!child.draining) {
+        child.draining = true;
+        const drain = (data) => { child.tail = (`${child.tail ?? ""}${data}`).slice(-200000); };
+        child.stdout.on("data", drain); child.stderr.on("data", drain);
+      }
       if (error) reject(error); else resolve();
     }
     const failed = (error) => finish(error);
@@ -253,10 +273,19 @@ try {
   }
   let total = 0;
   let caseTotal = 0;
+  const skipped = [];
   for (const selection of selections) {
   const cases = selection.cases;
   let selectedAssertions = 0;
   for (const [index, name, script, banner] of cases) {
+    // These suites assert a Linux production deployment through real Linux
+    // containers, so a host without them reports the case as skipped rather
+    // than counting it as covered.
+    if (CONTAINER_SUITES.has(name) && !linuxContainers) {
+      console.log(`SKIPPED: ${name} needs a Linux container runtime, which this host has not got`);
+      skipped.push(name);
+      continue;
+    }
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
     const server = name ? start(interpreter, name === "durable_state_fixture" ?
       ["tests/browser_deployment_fixture.py", "--port", String(port), "--example"] :
@@ -328,7 +357,11 @@ try {
     }
     for (const engine of ["chromium", "firefox", "webkit"]) {
       const suite = start(process.execPath, [`tests/${script}`, String(port)], { PYSX_BROWSER_ENGINE: engine, PYSX_BROWSER_CASE: name ?? "" });
-      const output = await wait(suite, null, 60000);
+      // A browser timeout usually means the server refused the request, so its
+      // own output belongs in the failure rather than in a discarded buffer.
+      const output = await wait(suite, null, 60000).catch((error) => {
+        throw server?.tail ? new Error(`${error.message}\n--- server ---\n${server.tail}`) : error;
+      });
       if (!output.includes(banner)) throw new Error(`missing suite banner: ${output}`);
       if (process.env.PYSX_BROWSER_FORCE_FAILURE === "1") throw new Error("forced assertion failure");
       const count = output.split("\n").filter((line) => line.startsWith("  ok  ")).length;
@@ -341,7 +374,9 @@ try {
   }
   await cleanup();
   caseTotal += cases.length * 3;
-  console.log(`BROWSER VERIFICATION PASSED: ${selection.suite} (${cases.length * 3} cases, ${selectedAssertions} assertions)`);
+  const covered = cases.filter(([, name]) => !skipped.includes(name)).length;
+  console.log(`BROWSER VERIFICATION PASSED: ${selection.suite} (${covered * 3} cases, ${selectedAssertions} assertions`
+    + `${skipped.length ? `, skipped ${skipped.join(", ")}` : ""})`);
   }
   if (selections.length > 1) console.log(`BROWSER VERIFICATION PASSED: all selected (${caseTotal} cases, ${total} assertions)`);
 } catch (error) {

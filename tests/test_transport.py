@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 from test_connection_pump import FakeConnection
+from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
+from websockets.frames import Close
 
 from pysx import Application, Fragment, TransportLimits, each, native, on_cleanup, on_mount, signal
 from pysx.connection import BoundedConnection, serve_connection
@@ -177,6 +179,89 @@ def test_current_state_failed_network_send_expires_graph() -> None:
         assert not runtime.graphs
         assert not runtime.detached
         assert not runtime.resume_handles
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    ("close_code", "retained"), [(1000, True), (1001, True), (1002, False), (1008, False)]
+)
+@pytest.mark.parametrize("completion", ["closed_send", "cancelled_send"])
+def test_current_state_close_during_push_resume_policy(
+    close_code: int, *, retained: bool, completion: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    class ClosingSend(DisconnectConnection):
+        def __init__(self) -> None:
+            super().__init__("/ws?protocol=3", ['{"t":"hello","version":3}'])
+            self.close_code = close_code
+            self.sending = asyncio.Event()
+            self.finish = asyncio.Event()
+
+        async def send(self, message: str) -> None:
+            if json.loads(message)["t"] == "patch":
+                self.sending.set()
+                await self.finish.wait()
+                frame = Close(close_code, "peer closed")
+
+                error = ConnectionClosedOK if retained else ConnectionClosedError
+
+                raise error(frame, frame, True)
+            await super().send(message)
+
+    async def exercise() -> None:
+        text = signal("before")
+        application = Application(lambda: native.P(text))
+        runtime = application.runtime
+        connection = ClosingSend()
+        pump = asyncio.create_task(application.websocket(connection))
+
+        try:
+            await wait_for(lambda: bool(connection.frames("init")))
+            initial = connection.frames("init")[0]
+            session = next(iter(runtime.graphs))
+            await session.runtime.update(lambda: text.set("after"))
+            await asyncio.wait_for(connection.sending.wait(), 3)
+
+            if completion == "closed_send":
+                connection.finish.set()
+            else:
+                connection.incoming.put_nowait("disconnect")
+            await asyncio.wait_for(pump, 3)
+
+            if not retained:
+                assert not runtime.graphs
+                assert not runtime.detached
+                assert not runtime.resume_handles
+                assert session.closed
+
+                return
+            assert list(runtime.graphs) == [session]
+            assert not session.closed
+            assert len(runtime.detached) == 1
+            assert "application failure" not in caplog.text
+
+            hello = json.dumps(
+                {
+                    "t": "hello",
+                    "version": 3,
+                    "resume": initial["resume"],
+                    "epoch": initial["epoch"],
+                    "state_rev": initial["state_rev"],
+                }
+            )
+            resumed = DisconnectConnection("/ws?protocol=3&resume=1", [hello])
+            pump = asyncio.create_task(application.websocket(resumed))
+            await wait_for(lambda: bool(resumed.frames("repair")))
+            repair = resumed.frames("repair")[0]
+            assert repair["epoch"] == initial["epoch"]
+            assert "after" in str(repair["html"])
+            assert repair["resume"] != initial["resume"]
+            resumed.incoming.put_nowait("disconnect")
+            await asyncio.wait_for(pump, 3)
+        finally:
+            pump.cancel()
+            await asyncio.gather(pump, return_exceptions=True)
+            await application.close()
 
     asyncio.run(exercise())
 
