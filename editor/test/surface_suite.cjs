@@ -94,6 +94,18 @@ exports.run = async function () {
   const pysxOf = (uri) =>
     vscode.languages.getDiagnostics(uri).filter((item) => item.source === "pysx");
 
+  const configureTooling = async () => {
+    // Buffer diagnostics can precede the complete workspace snapshot required
+    // by setup. Repeated setup can also follow a configuration invalidation.
+    const uri = vscode.window.activeTextEditor.document.uri.toString();
+    await until(async () => {
+      const readiness = await api.client.sendRequest("pysx/readiness", { uri });
+      assert.equal(readiness.error, null, "workspace analysis must be healthy before setup");
+      return readiness.ready;
+    }, "complete workspace analysis before setup");
+    return vscode.commands.executeCommand("pysx.configureTooling");
+  };
+
   // 1. The template-only import is never reported dead.
   const dead = await until(() => {
     const found = pysxOf(consumer.uri).filter((item) => String(item.code) === "F401");
@@ -164,7 +176,7 @@ exports.run = async function () {
     };
     assert.equal(owned("editor.codeActionsOnSave").workspaceFolderValue, undefined,
       "setup starts from an unconfigured workspace folder");
-    assert.equal(await vscode.commands.executeCommand("pysx.configureTooling"), true,
+    assert.equal(await configureTooling(), true,
       "the advertised setup command is registered and succeeds");
     const actions = owned("editor.codeActionsOnSave").workspaceFolderValue;
     assert.equal(actions["source.organizeImports.pysx"], "explicit",
@@ -178,7 +190,7 @@ exports.run = async function () {
     assert.equal(owned("python.analysis.disableTaggedHints").workspaceFolderValue, true);
 
     // 9. Repeated setup is a no-op that preserves the first baseline.
-    assert.equal(await vscode.commands.executeCommand("pysx.configureTooling"), true,
+    assert.equal(await configureTooling(), true,
       "repeated setup succeeds");
     assert.deepEqual(owned("editor.codeActionsOnSave").workspaceFolderValue, actions,
       "repeated setup changes nothing");
@@ -222,7 +234,7 @@ exports.run = async function () {
     for (const item of manifest.contributes.commands) {
       assert(registered.has(item.command), `${item.command} is advertised and registered`);
     }
-    assert.equal(await vscode.commands.executeCommand("pysx.configureTooling"), true,
+    assert.equal(await configureTooling(), true,
       "the setup command runs against this workspace");
   }
 
