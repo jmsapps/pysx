@@ -16,7 +16,7 @@ from .components import (
 def app() -> Fragment:
     # Created per session. A module-scope signal would be shared by every
     # connected client.
-    count = signal(1)
+    count = signal(0)
 
     def increment(_e: object) -> None:
         count.set(count() + 1)
