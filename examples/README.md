@@ -17,10 +17,29 @@ uv run --project . example run events
 uv run --project . example run templates
 uv run --project . example run keyed_rows
 uv run --project . example run durable_state
+uv run --project . example run development
 uv run --project . example run
 ```
 
 The last command lists available apps. Examples serve at http://127.0.0.1:8750.
+The `development` entry reuses the shared-component durable-state view. For live
+editing and inspection, use the watch launcher instead:
+
+```sh
+uv run --project . pysx --app examples.development:app --watch --inspect
+```
+
+Open two tabs, increment their counters independently and enter different saved
+drafts. Edit the title or increment handler in `examples/durable_state.py` and
+save. Each tab retains its declared state while the setup marker changes and new
+handlers take effect. Open the inspector at the bottom for redacted runtime
+events, source links and current-source diagnostics. A broken edit displays an
+error while the previous worker remains usable; repair it to resume replacement.
+Ctrl+C stops the supervisor and its workers. The local SQLite file is stored in
+`.artifacts/development/`; set `PYSX_STATE_PATH` to select another location.
+This example uses a local demonstration identity. See
+[development hosting](../docs/DEVELOPMENT.md) for configuration and limits.
+
 Choose another port with `--port` or `PSX_PORT`:
 
 ```sh

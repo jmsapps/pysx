@@ -1,0 +1,189 @@
+# Local development
+
+Install the package in a Python 3.14+ environment, then run from your application's
+directory:
+
+```sh
+pysx --app my_app:app --watch --port 8750
+```
+
+`app` may be a rendering function or an `Application`. The ordinary `pysx --app`
+command and repository example launcher continue to work without watching.
+Watching has no additional dependencies and starts only with `--watch`.
+
+The default source root is the current directory. Repeat `--watch-root PATH` to
+include shared components or assets elsewhere. Python, `.pysx`, HTML, text template
+and CSS files trigger reload on creation, content change or deletion. Hidden
+directories, virtual environments, build output, node modules and symlinks are
+excluded. Watching is bounded to 10,000 source files; narrow the roots if necessary.
+A poll hashes a file's contents only when its modification time or size changed since
+the previous poll, so an idle tree costs one stat per file rather than a full read. A
+content change that preserves both the size and the modification timestamp — possible
+only on filesystems whose timestamp granularity is coarser than the edit interval — is
+not detected until something else about that file changes.
+The poll interval defaults to 0.2 seconds (`--watch-interval`), with a 0.15 second
+quiet period before loading an edit (`--watch-debounce`). An edit is loaded once the
+quiet period elapses rather than on the following poll, so raising the interval no
+longer multiplies the wait before a settled edit is applied. Local imports are loaded
+fresh in a new process, conservatively invalidating all dependents.
+
+The public listener stays bound while an isolated worker imports and renders the
+candidate app. A successful edit replaces the worker and reconciles open browser
+pages in place, preserving component-local state; see below. A failed import, initial render or
+startup deadline keeps the last healthy worker and its handlers serving; a plain
+text browser alert reports the failure. Repair the file to try again. Initial
+failure serves an HTTP 503 until a valid edit arrives. Candidate startup defaults
+to ten seconds (`--reload-timeout`). Interrupt the command to close the listener,
+watcher, workers and WebSockets. Occupied ports fail before a worker is spawned.
+On supported POSIX development hosts, workers own separate process groups so
+descendants started by a rejected import are also terminated. Output draining
+has its own shutdown deadline.
+
+Application URL prefixes and authorization remain in effect. A candidate's
+unauthenticated denial is not a startup failure; rendering errors are reported
+when the authorized request runs. The proxy supports GET and HEAD and rejects
+other HTTP methods with 405. HTML HEAD responses deliberately omit Content-Length,
+which RFC 9110 permits. The proxy rewrites the development script URL in the GET
+representation only, so the injected length is not derivable from a HEAD response,
+and measuring it would require issuing a GET upstream — which would leave a pending
+adoption that the upstream deliberately expires for HEAD. Non-HTML HEAD responses,
+including the client script, report their true proxied length. The script URL is
+rewritten exactly once per document. Responses are limited to 16 MiB and are not
+cached in watch mode.
+
+## Component-local state preservation
+
+Any application preserves component-local signal values across a reload, with no
+`DurableApplication`, codec or store. Each `signal(...)` call is identified by its
+owning component path, source location and occurrence, and its value is carried to
+the replacement worker in memory over the development control channel. Nothing is
+written to disk and nothing crosses machines; this is a development convenience,
+not persistence.
+
+Preservation is best effort and resets rather than guesses. A value resets when the
+source line of its initializer changed, when its slot is absent or malformed, or
+when it could not be serialized. Editing `count = signal(0)` to `signal(5)`
+therefore shows 5, while an unrelated edit keeps the current count.
+
+The development overlay reports how many values were preserved, carried, dropped
+and reset, and names each reset slot with its reason. Its **Discard preserved
+state** control clears the retained values and cold-starts the page; the same
+effect is available at `/__pysx_dev__/cold`. Pass `--no-preserve-state` to disable
+preservation for a whole session, which restores the previous behaviour of
+reloading the browser on every successful edit.
+
+## Declared-state hot replacement
+
+An existing `DurableApplication` using a `StateCodec` and a stable
+`SQLiteOwnershipStore` path opts into state-preserving replacement automatically.
+Keep its application identity, store path and URL prefix stable between edits.
+Use the [declared-state API](OWNERSHIP.md) to put every value that must survive in
+the codec's root state. Component-local signals, old closures and running tasks
+are rebuilt. No Python frame or arbitrary object is serialized.
+
+The supervisor imports a candidate in a separate process, pauses forwarding and
+new graph admission, and locks each retained graph's serialized mutation turn.
+It validates current snapshots in isolated disposable graphs. These probes do not
+activate owned effects, subscriptions, timers, tasks or resource loads. Failed
+imports, migrations or state-dependent renders leave the old worker serving;
+closing or timing out validation releases all acquired turns. A validated commit
+retires the old process and its resources before forwarding to the replacement.
+The existing authenticated recovery protocol then rebuilds each session from its
+own declared state, installs new handlers/CSS and reconciles compatible DOM nodes.
+Focus/caret survive compatible elements. Canonical control values and reset defaults
+come from the new graph; uncommitted edits and old events are discarded.
+
+Explicit schema migrations are honored. Incompatible state without a usable
+migration, changed identity/store/prefix, and volatile apps use a declared fresh
+reload. Watch workers also enable a fresh fallback for an incompatible recovery
+outside the retained validation window; the normal production setting is unchanged.
+The browser's recovery status distinguishes restored and fresh sessions.
+Import/startup/setup code must be idempotent with explicit cleanup.
+Codecs and migrations must be pure: validation runs them before adoption against
+isolated snapshots, and actual reconstruction runs them against the live store.
+An exception or invalid result from a migration rejects the edit.
+Owned resource activation occurs after adoption; later failures use the normal runtime recovery
+policy. Arbitrary file, network or other external effects of application setup
+cannot be rolled back by process isolation.
+
+Validation retains at most 256 session records for 30 seconds across worker
+generations, covering rapid successive edits before a browser reconnects. It reads
+the latest committed payload from the store rather than replaying a cached value.
+Snapshot transfer is bounded to 16 MiB; exceeding a bound rejects the edit and keeps
+the old worker. Narrow the development workload or wait for retention expiry.
+Candidate import and validation each honor `--reload-timeout`, including the
+candidate's initial render probe and every proxied request, so an application whose
+render is slower than a couple of seconds is still adopted and still served.
+Retirement has its own five-second process and one-second output-drain deadlines.
+The listener's connection deadline covers a full worker swap plus a proxied request,
+so a page refreshed while a replacement commits waits for the new worker instead of
+losing its connection. Worker control uses
+an unadvertised loopback listener with a per-worker random token and exists only
+in explicit development mode.
+
+## Inspector and source diagnostics
+
+```sh
+pysx --app my_app:app --watch --inspect
+```
+
+Open the “pysx inspector” panel in the browser. It shows source links, per-session
+owner/resource/task/handler counts and the last 256 metadata events. Writes,
+dependency reads, effect runs, template/render work and queued/sent patch batches
+have opaque identities and counts. Values are always `[redacted]`; no signal value,
+closure, request header or codec payload is collected. Overflow drops oldest events
+and increments the visible dropped count. Source links use a current user frame
+when available; framework-only steps do not fabricate a user location.
+
+The inspector endpoint is absent without `--inspect`. It requires ownership of a
+pending/attached session through both browser cookie and current principal, then
+calls the application's authorization hook with action `inspector` and the trace
+ID as target. An application's explicit hook may deny this action. Separate
+browsers/principals cannot inspect one another. Production hosts do not expose
+the control endpoint or allocate trace buffers.
+
+Source diagnostics use the same checker, diagnostic codes and UTF-16 ranges as the
+CLI/editor. They describe saved source, including a rejected edit, while traces
+describe the running application. Analysis executes no application code. One
+separate process runs at a time and requests coalesce to the latest source version;
+stale results cannot overwrite it. Analysis has the configured reload deadline,
+at most 1,024 Python files, 4 MiB/file, 16 MiB total source/output and 256 diagnostics
+per file. A limit or analysis failure is visible, rather than reported as a clean
+result. Shutdown terminates and reaps the analysis process independently of app
+workers. Analysis and the inspector asset are unused unless explicitly enabled.
+
+## Development measurements
+
+From a checkout:
+
+```sh
+uv run --project . python tests/dev_measurements.py --report .artifacts/dev/measurements.json
+```
+
+The focused harness creates 200 files / 500 components / 1 MiB source with a
+100 KiB largest file. It declares 20 active imports; remaining files are editor
+workspace load, with comment padding recorded explicitly. Five paired samples
+compare the disabled engine against the same source with only its three trace
+guards removed, validating identical outcomes and observer cleanup. Five hot
+replacement samples reconstruct two real protocol sessions with distinct state,
+checking new code, state preservation and one surviving worker. The report retains
+all samples, imports, cold-ready and source-analysis times, environment and hashes.
+
+The focused limits are at most 5% disabled overhead and one second for replacement
+plus protocol reconstruction. A failure is a failure; shared-host timing variance
+does not waive a limit. Reports explicitly remain unqualified for release: the
+reference runner, sustained load, full warmup/sampling and browser paint measurements
+must be qualified separately. Static/browser acceptance does not prove these timing
+limits.
+
+Watch mode is for local development: it binds only loopback hosts, validates local
+request origins, and exposes development status at `/__pysx_dev__/status` and a
+push channel at `/__pysx_dev__/events`. The injected client subscribes to the push
+channel so a replacement reaches the page without waiting for a poll, and falls back
+to polling that status path whenever the channel is unavailable or closes. Both are
+development-only and carry no application protocol messages. Watch mode cannot be
+combined with `--asgi` or `--drain-signal`. Production hosts never load
+the development poller. Application imports and startup hooks run in each candidate
+process; make external startup side effects safe to repeat. Process isolation keeps
+candidate Python globals separate, but does not roll back changes to external
+services or files made by application code.

@@ -16,13 +16,12 @@ from .components import (
 def app() -> Fragment:
     # Created per session. A module-scope signal would be shared by every
     # connected client.
-    count = signal(0)
+    count = signal(1)
 
     def increment(_e: object) -> None:
         count.set(count() + 1)
 
-    return pysx(
-        t"""
+    return pysx(t"""
         Page(id="container"):
             header:
                 Eyebrow: "pysx / examples"
@@ -33,5 +32,4 @@ def app() -> Fragment:
                 Value: {count}
             Actions:
                 Action(type="button", onClick={increment}): "Increment"
-    """,
-    )
+    """)

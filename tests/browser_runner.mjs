@@ -16,6 +16,18 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "development", cases: [
+    [0, "development_fixture", "browser_development.mjs", "DEVELOPMENT EXAMPLE BROWSER PASSED"],
+  ] },
+  { suite: "inspector_tracing", cases: [
+    [0, "inspector_fixture", "browser_inspector.mjs", "INSPECTOR TRACING BROWSER PASSED"],
+  ] },
+  { suite: "state_preserving", cases: [
+    [0, "hot_fixture", "browser_hot.mjs", "STATE PRESERVING BROWSER PASSED"],
+  ] },
+  { suite: "installed_serve", cases: [
+    [0, "dev_fixture", "browser_dev.mjs", "INSTALLED SERVE BROWSER PASSED"],
+  ] },
   { suite: "diagnostics_example", cases: [
     [0, "diagnostics", "browser_diagnostics_example.mjs", "DIAGNOSTICS EXAMPLE BROWSER PASSED"],
   ] },
@@ -287,7 +299,15 @@ try {
       continue;
     }
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
-    const server = name ? start(interpreter, name === "durable_state_fixture" ?
+    const server = name ? start(interpreter, name === "development_fixture" ?
+      ["tests/browser_development_fixture.py", "--port", String(port)] :
+      name === "inspector_fixture" ?
+      ["tests/browser_inspector_fixture.py", "--port", String(port)] :
+      name === "hot_fixture" ?
+      ["tests/browser_hot_fixture.py", "--port", String(port)] :
+      name === "dev_fixture" ?
+      ["tests/browser_dev_fixture.py", "--port", String(port)] :
+      name === "durable_state_fixture" ?
       ["tests/browser_deployment_fixture.py", "--port", String(port), "--example"] :
       name === "diagnostics_fixture" ?
       ["-m", "pysx.server", "--app", "tests.browser_diagnostics_fixture:app", "--port", String(port)] :

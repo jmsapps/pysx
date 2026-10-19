@@ -58,12 +58,12 @@ try {
   await page.waitForFunction(generation => document.getElementById("pysx-root").dataset.pysxConnection === "connected" &&
     document.getElementById("durable-generation").textContent !== generation, generation, {timeout: 10000});
   assert.equal(await page.locator("#durable-count").textContent(), "1");
-  assert.equal(await page.evaluate(() => window.retained.isConnected), false);
+  assert.equal(await page.evaluate(() => window.retained === document.getElementById("durable-count")), true);
   assert.match(await page.locator("#pysx-connection-status").textContent(), /restored/);
   assert.equal(await page.evaluate(() => window.states.filter(state => state.state === "connected").at(-1).listeners), listeners);
   await page.locator("#durable-increment").click();
   await page.waitForFunction(() => document.getElementById("durable-count").textContent === "2");
-  console.log("  ok  killed owner reconstructs committed state with fresh handlers, nodes and one listener set");
+  console.log("  ok  killed owner reconstructs committed state with fresh handlers, retained compatible nodes and one listener set");
 
   const beforeUpgrade = await page.locator("#durable-generation").textContent();
   await control("restart", "&schema=2&migrate=1");

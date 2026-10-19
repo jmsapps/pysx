@@ -959,10 +959,17 @@ def test_session_security_cli_startup_interaction_and_ctrl_c_exit() -> None:
         assert server.wait(timeout=5) == 0
 
 
-def test_durable_state_declared_state_reconstruction_and_session_isolation(tmp_path: Path) -> None:
+@pytest.mark.parametrize("module", ["durable_state", "development"])
+def test_durable_state_development_reconstruction_and_session_isolation(
+    tmp_path: Path, module: str
+) -> None:
     from typing import cast
 
-    from examples.durable_state import CODEC, ExampleState, create_application
+    from examples.development import create_application as development_application
+    from examples.durable_state import CODEC, ExampleState
+    from examples.durable_state import create_application as durable_application
+
+    create_application = development_application if module == "development" else durable_application
 
     async def exercise() -> None:
         host = create_application(tmp_path / "state.db", worker="example-worker")
@@ -1013,6 +1020,30 @@ def test_durable_state_declared_state_reconstruction_and_session_isolation(tmp_p
         assert host.renewal.done()
 
     asyncio.run(exercise())
+
+
+def test_development_example_is_registered_and_clean() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["development"] == "examples.development:app"
+    assert diagnostics(Path("examples/development.py")) == []
+
+
+@pytest.mark.acceptance
+def test_development_cli_startup_and_ctrl_c_exit() -> None:
+    from ownership_topology import free_port
+
+    port = free_port()
+    command = ["uv", "run", "--project", ".", "example", "run", "development", "--port", str(port)]
+
+    with ready_server(command) as server:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+            assert response.status == 200
+            assert b"Declared session state" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
 
 
 def test_durable_state_codec_rejects_unsupported_or_oversized_fields() -> None:

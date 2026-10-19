@@ -191,6 +191,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     resuming = modern and parse_qs(urlsplit(request.path).query).get("resume") == ["1"]
     recovering = modern and parse_qs(urlsplit(request.path).query).get("recover") == ["1"]
     rebuilt = False
+    volatile_rebuild = False
     hello: dict[str, object] | None = None
 
     def reconstruct(message: dict[str, object]) -> Session:
@@ -224,7 +225,23 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                     cast("int", message["state_rev"]),
                 )
             except ValueError, KeyError:
-                session = reconstruct(message)
+                try:
+                    session = reconstruct(message)
+                except ValueError:
+                    if not runtime.development:
+                        raise
+                    authorize("websocket", "/ws")
+
+                    if not connection.reserved and not runtime.reserve():
+                        raise
+                    connection.reserved = True
+
+                    try:
+                        session = runtime.create_reserved(request, location=supplied[0])
+                    finally:
+                        runtime.unreserve()
+                        connection.reserved = False
+                    volatile_rebuild = True
                 rebuilt = True
         except PayloadError, ValueError, KeyError, TimeoutError, AccessDenied:
             await connection.close(4004, "resume unavailable")
@@ -360,6 +377,15 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                 message = session.transport.envelope(message)
             session.checkpoint()
             await connection.send(json.dumps(message))
+
+            if session.trace is not None and message.get("t") in ("patch", "result", "repair"):
+                operations = message.get("ops")
+                session.trace.record(
+                    "patch.batch",
+                    count=len(cast("list[object]", operations))
+                    if isinstance(operations, list)
+                    else 0,
+                )
 
     async def send_repair() -> None:
         announced_mounts.clear()
@@ -684,9 +710,14 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             session.pending.clear()
             attachment[
                 "recovered"
-                if hello is not None and runtime.recovery_token(session) == hello.get("recovery")
+                if not volatile_rebuild
+                and hello is not None
+                and runtime.recovery_token(session) == hello.get("recovery")
                 else "fresh"
             ] = True
+
+        if runtime.development:
+            attachment["development"] = True
         recovery = runtime.recovery_token(session)
 
         if modern and recovery is not None:

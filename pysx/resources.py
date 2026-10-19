@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 from .async_runtime import active_runtime
 from .errors import ErrorInfo, report_error
-from .lifecycle import current_scope, own_subscription
+from .lifecycle import current_scope, own_subscription, resources_preparing
 from .reactive import Signal, signal
 from .security import require_access
 
@@ -53,6 +53,9 @@ class Resource[T]:
         return self.owner.alive and not self.runtime.closed and self.version == version
 
     def reload(self) -> None:
+        if resources_preparing():
+            return
+
         if not self.owner.alive or self.runtime.closed:
             raise RuntimeError("resource owner has been disposed")
         self.version += 1

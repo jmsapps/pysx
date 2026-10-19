@@ -213,11 +213,12 @@ class HTTPRuntime:
         request: RequestContext,
         *,
         location: str | None = None,
-        browser: str | None = None,  # noqa: ARG002 - durable factory hook
+        browser: str | None = None,
     ) -> Session:
         session = Session(
             self.app,
             location=location or request.path,
+            browser=browser or "",
             request=request,
             development=self.development,
             mutation_capacity=self.mutation_capacity,

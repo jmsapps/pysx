@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import math
+import os
 import signal
 import sys
-from contextlib import suppress
+import time
+from contextlib import nullcontext, suppress
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -19,12 +21,20 @@ from .session import Session, close_session
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from contextlib import AbstractAsyncContextManager
     from string.templatelib import Template
     from types import FrameType
 
     from .render import Fragment
 
 __all__ = ["Session", "close_session", "main"]
+
+
+def _drain_handler(application: Application) -> Callable[[], None] | None:
+    if isinstance(application, DurableApplication):
+        return application.begin_drain
+
+    return None
 
 
 def _load_app(spec: str, *, development: bool = False) -> Application:
@@ -55,10 +65,62 @@ def main() -> None:
     parser.add_argument("--dev", action="store_true", help="log development source tracebacks")
     parser.add_argument("--asgi", action="store_true", help="serve through the optional ASGI host")
     parser.add_argument(
+        "--watch", action="store_true", help="watch local sources and reload browsers"
+    )
+    parser.add_argument(
+        "--watch-root", action="append", type=Path, help="source directory (repeatable)"
+    )
+    parser.add_argument("--watch-interval", type=float, default=0.2)
+    parser.add_argument("--watch-debounce", type=float, default=0.15)
+    parser.add_argument(
+        "--no-preserve-state",
+        action="store_true",
+        help="reload browsers instead of preserving component-local state",
+    )
+    parser.add_argument("--reload-timeout", type=float, default=10)
+    parser.add_argument(
+        "--inspect", action="store_true", help="opt-in redacted local runtime inspector"
+    )
+    parser.add_argument(
         "--drain-signal", action="store_true", help="drain durable admission on SIGUSR1"
     )
     args = parser.parse_args()
+
+    if args.watch:
+        from .development import WatchConfig
+        from .development import run as watch
+
+        if args.asgi or args.drain_signal:
+            parser.error(
+                "--watch uses its own local host; --asgi/--drain-signal cannot be combined"
+            )
+
+        try:
+            watch(
+                WatchConfig(
+                    args.app,
+                    tuple(root.resolve() for root in (args.watch_root or [Path.cwd()])),
+                    interval=args.watch_interval,
+                    debounce=args.watch_debounce,
+                    timeout=args.reload_timeout,
+                    inspect=args.inspect,
+                    preserve=not args.no_preserve_state,
+                ),
+                args.host,
+                args.port,
+            )
+        except (OSError, ValueError) as error:
+            raise SystemExit(f"cannot start development server: {error}") from error
+        except KeyboardInterrupt:
+            pass
+
+        return
+
+    if args.inspect:
+        parser.error("--inspect requires --watch")
+    import_started = time.perf_counter()
     application = _load_app(args.app, development=args.dev)
+    import_seconds = time.perf_counter() - import_started
 
     if args.drain_signal:
         # SIGUSR1 does not exist on every supported platform, so the attribute is
@@ -66,9 +128,11 @@ def main() -> None:
         # against the running platform's signal module.
         drain = cast("signal.Signals | None", getattr(signal, "SIGUSR1", None))
 
-        if not isinstance(application, DurableApplication) or drain is None:
+        begin_drain = _drain_handler(application)
+
+        if begin_drain is None or drain is None:
             raise SystemExit("--drain-signal requires a durable application and SIGUSR1 support")
-        signal.signal(drain, lambda _signal, _frame: application.begin_drain())
+        signal.signal(drain, lambda _signal, _frame: begin_drain())
 
     if args.asgi:
         try:
@@ -112,8 +176,37 @@ def main() -> None:
             installed.append((name, previous))
 
         try:
-            async with application.listen(args.host, args.port):
-                print(f"pysx ready -> http://{args.host}:{args.port}", flush=True)
+            control: AbstractAsyncContextManager[None] = nullcontext()
+
+            control_port = os.environ.get("PYSX_DEV_CONTROL_PORT") if args.dev else None
+
+            if control_port:
+                from .development_control import control_server
+
+                token = os.environ.get("PYSX_DEV_CONTROL_TOKEN")
+
+                if not token:
+                    raise SystemExit(
+                        "PYSX_DEV_CONTROL_PORT requires PYSX_DEV_CONTROL_TOKEN; set both or neither"
+                    )
+
+                if not control_port.isdigit():
+                    raise SystemExit(
+                        f"PYSX_DEV_CONTROL_PORT must be a port number, got {control_port!r}"
+                    )
+
+                control = control_server(
+                    application,
+                    int(control_port),
+                    token,
+                    import_seconds=import_seconds,
+                )
+
+            async with control, application.listen(args.host, args.port):
+                print(
+                    f"pysx ready -> http://{args.host}:{args.port}{application.config.base_path}/",
+                    flush=True,
+                )
                 await stopping.wait()
         finally:
             for name, previous in installed:

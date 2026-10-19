@@ -7,15 +7,43 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from hashlib import sha256
+from inspect import currentframe
+from linecache import getline
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
+from . import reactive
 from .async_runtime import active_runtime
 from .errors import FailureCapture, failure_context
 from .reactive import Effect, Signal, untracked
 
+_preparing: ContextVar[bool] = ContextVar("pysx_preparing_resources", default=False)
+_restoring: ContextVar[dict[str, dict[str, object]] | None] = ContextVar(
+    "pysx_restoring_local_state", default=None
+)
+restore_source: Callable[[str, str | None, str], dict[str, dict[str, object]] | None] | None = None
+
 if TYPE_CHECKING:
     from collections.abc import Coroutine, Generator
+    from contextvars import Token
+
+
+def resources_preparing() -> bool:
+    """Whether this construction turn is an isolated development preflight."""
+
+    return _preparing.get()
+
+
+@contextmanager
+def stage_resources() -> Generator[None]:
+    """Construct disposable probe graphs without activating owned resources."""
+    token = _preparing.set(True)
+
+    try:
+        yield
+    finally:
+        _preparing.reset(token)
 
 
 @dataclass
@@ -28,6 +56,10 @@ class Scope:
     mounted: bool = False
     mounting: bool = False
     values: dict[str, object] = field(default_factory=dict[str, object])
+    slots: dict[str, Signal[object]] = field(default_factory=dict[str, Signal[object]])
+    marks: dict[str, str] = field(default_factory=dict[str, str])
+    sites: dict[str, int] = field(default_factory=dict[str, int])
+    reset: dict[str, str] = field(default_factory=dict[str, str])
     resources: set[str] = field(default_factory=set[str])
     cleanups: list[Callable[[], object]] = field(default_factory=list[Callable[[], object]])
     mounts: list[Callable[[], object]] = field(default_factory=list[Callable[[], object]])
@@ -41,6 +73,10 @@ class Scope:
         callbacks, self.cleanups = self.cleanups, []
         self.mounts.clear()
         self.values.clear()
+        self.slots.clear()
+        self.marks.clear()
+        self.sites.clear()
+        self.reset.clear()
         self.resources.clear()
 
         for callback in reversed(callbacks):
@@ -104,6 +140,10 @@ class Scopes:
 
         for seen in self.traversals:
             seen.add(path)
+        owner.sites.clear()
+        owner.slots.clear()
+        owner.marks.clear()
+        owner.reset.clear()
         token = _scope.set(owner)
         failure_token = failure_context.set(owner.failure)
 
@@ -200,6 +240,80 @@ class Scopes:
         self.release("")
 
 
+def _fingerprint(filename: str, line: int) -> str:
+    source = getline(filename, line).strip()
+
+    return sha256(source.encode()).hexdigest()[:16] if source else ""
+
+
+def _record(created: Signal[object]) -> None:
+    owner = active_scope()
+
+    if owner is None:
+        return
+    frame = currentframe()
+
+    try:
+        caller = frame.f_back.f_back if frame is not None and frame.f_back is not None else None
+
+        if caller is None:
+            return
+        caller_file = caller.f_code.co_filename
+        caller_line = caller.f_lineno
+        site = f"{caller_file}:{caller_line}"
+    finally:
+        del frame
+    index = owner.sites.get(site, 0)
+    owner.sites[site] = index + 1
+
+    if len(owner.slots) >= 1024:
+        raise RuntimeError("component resource limit exceeded")
+    slot = f"{site}#{index}"
+    mark = _fingerprint(caller_file, caller_line)
+    owner.slots[slot] = created
+    owner.marks[slot] = mark
+    retained = _restoring.get()
+
+    if retained is None:
+        return
+    held = retained.get(owner.path, {})
+    entry = held.get(slot)
+
+    if entry is None:
+        owner.reset[slot] = "absent"
+
+        return
+
+    pair = cast("list[object]", entry) if isinstance(entry, list) else []
+
+    if len(pair) != 2:
+        owner.reset[slot] = "malformed"
+
+        return
+
+    if pair[1] != mark:
+        owner.reset[slot] = "initializer changed"
+
+        return
+    created.publish(pair[0])
+
+
+def capture_local_state(*, enable: bool) -> None:
+    """Record component-local signal identities for development replacement."""
+    reactive.created = _record if enable else None
+
+
+def begin_restore(browser: str, principal: str | None, location: str) -> object:
+    """Install retained component-local values for one development render."""
+    source = restore_source
+
+    return _restoring.set(None if source is None else source(browser, principal, location))
+
+
+def end_restore(token: object) -> None:
+    _restoring.reset(cast("Token[dict[str, dict[str, object]] | None]", token))
+
+
 def local_state[T](key: str, initial: T) -> Signal[T]:
     """Reuse a named signal for the lifetime of the current component identity."""
     owner = current_scope()
@@ -245,8 +359,10 @@ def own_subscription(key: str, subscribe: Callable[[], Callable[[], object]]) ->
     if resource_key not in owner.resources:
         if len(owner.resources) >= 1024:
             raise RuntimeError("component resource limit exceeded")
-        cleanup = subscribe()
-        owner.cleanups.append(cleanup)
+
+        if not _preparing.get():
+            cleanup = subscribe()
+            owner.cleanups.append(cleanup)
         owner.resources.add(resource_key)
 
 

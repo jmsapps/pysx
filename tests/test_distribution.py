@@ -14,8 +14,46 @@ from pathlib import Path
 
 import pytest
 from prototypes.distribution import ROOT, clean_env, command, dependency_cache, installed, qualify
+from test_dev_server import get, project, serving, wait_for
 
 from pysx.tooling import RUFF_REQUIREMENT
+
+
+def test_installed_serve_fresh_wheel_outside_checkout(tmp_path: Path) -> None:
+    uv = shutil.which("uv")
+    assert uv is not None
+    cache = dependency_cache(tmp_path / "cache")
+    artifacts = tmp_path / "artifacts"
+    command(
+        [
+            uv,
+            "--offline",
+            "--cache-dir",
+            str(cache),
+            "build",
+            str(ROOT),
+            "--wheel",
+            "--out-dir",
+            str(artifacts),
+            "--python",
+            sys.executable,
+        ],
+        tmp_path,
+    )
+    wheel = next(artifacts.glob("*.whl"))
+
+    with zipfile.ZipFile(wheel) as archive:
+        assert "pysx/static/development.js" in archive.namelist()
+        assert "pysx/development_diagnostics.py" in archive.namelist()
+    python = installed(tmp_path, wheel, cache, extra=False)
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    project(consumer)
+
+    with serving(consumer, [str(python.with_name("pysx"))]) as (port, log):
+        assert b"original" in get(port)
+        (consumer / "component.py").write_text('def label():\n    return "installed edit"\n')
+        wait_for(lambda: b"installed edit" in get(port), log)
 
 
 def test_fresh_installed_distribution(tmp_path: Path) -> None:

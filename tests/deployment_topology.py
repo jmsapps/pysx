@@ -124,6 +124,7 @@ class Deployment:
         route to. Only a request carrying the owner hint exercises that upstream,
         and a proxy with no reachable worker behind it answers 5xx.
         """
+
         return self.public(f"/?owner={worker}")[0] < 500
 
     def wait_ready(self) -> None:
