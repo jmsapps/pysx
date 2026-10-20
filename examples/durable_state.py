@@ -28,6 +28,8 @@ from pysx import (
 from .components import Action, Actions, Card, Description, Eyebrow, Field, Page, Title, Value
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pysx.wire import JSONValue
 
 
@@ -108,10 +110,14 @@ def view(state: Signal[ExampleState]) -> Fragment:
 
 
 def create_application(
-    path: Path, *, worker: str | None = None, origin: str | None = None
+    path: Path,
+    *,
+    worker: str | None = None,
+    origin: str | None = None,
+    render: Callable[[Signal[ExampleState]], Fragment] = view,
 ) -> DurableApplication[ExampleState]:
     return DurableApplication(
-        view,
+        render,
         initial=ExampleState,
         codec=CODEC,
         store=SQLiteOwnershipStore(path),

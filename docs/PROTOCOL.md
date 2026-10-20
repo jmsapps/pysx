@@ -91,10 +91,24 @@ credential and the normal visible fresh-session notification. `fresh` and
 A browser normally refuses a reconstructed `init` unless it already holds a recovery
 credential, closing 4002. Development hosts send `development:true` on the first
 `adopted`/`init` of a session; a browser that received it accepts a later
-`fresh:true` reconstruction without a credential, so a volatile application can be
-reconciled across a worker replacement instead of reloading the page. The exemption
+`recovered:true` reconstruction for an authenticated local-state handoff, or a
+`fresh:true` fallback, without a durable credential. A compatible local handoff
+uses the same complete reconciliation and capability/default reset as declared
+recovery. The exemption
 is bound to a session that was established as a development session — it cannot be
 claimed by a later message alone — and production hosts never send the field.
+
+An established development client reconnects immediately for close code `4000`
+with reason `development reload`. This planned transition retains its live resume
+credential. All other disconnects keep the ordinary bounded retry policy.
+
+Development replacement hands component-local values to the existing tab through
+its original `hello` resume credential, epoch/revision and requested location.
+The candidate verifies browser and principal ownership before consuming this
+single-use, 30-second handoff and rotating the live handle. Independent tabs do
+not share handoffs. HTTP page creation never restores these snapshots: refreshes
+and new tabs use current initializers. This adds no application event fields or
+production persistence mechanism.
 
 Unknown/revoked/mismatched credentials return 4004;
 failed store/ownership/checkpoint operations return 1013. A live owner returns

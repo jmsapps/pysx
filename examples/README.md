@@ -22,7 +22,11 @@ uv run --project . example run
 ```
 
 The last command lists available apps. Examples serve at http://127.0.0.1:8750.
-The `development` entry reuses the shared-component durable-state view. For live
+The `development` entry reuses the shared-component durable-state view and explicitly
+composes its own development snapshot panel. Ordinary watch apps have no such panel.
+The panel reports workspace aggregates and redacted reset reasons/source links;
+discard starts this page fresh without deleting the declared-state store or resetting
+other live tabs. It works with or without the separate `--inspect` inspector. For live
 editing and inspection, use the watch launcher instead:
 
 ```sh

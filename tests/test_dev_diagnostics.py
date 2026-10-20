@@ -35,6 +35,56 @@ if TYPE_CHECKING:
     from pysx.wire import JSONValue
 
 
+def test_inspector_tracing_local_reports_redact_values_and_count_actual_restores() -> None:
+    from pysx.lifecycle import capture_local_state
+
+    def view() -> Fragment:
+        keep = signal(0)
+        signal(0)
+
+        return native.Main(keep)
+
+    async def run() -> None:
+        tracing.configure(enable=False, source_roots=(Path(__file__).parent,))
+        capture_local_state(enable=True)
+        original = Application(view, config=HostConfig(development=True))
+        candidate = Application(view, config=HostConfig(development=True))
+        request = request_from_headers("/", [("Cookie", "pysx_browser=" + "b" * 32)])
+
+        try:
+            graph = original.runtime.create_reserved(request)
+            token = original.runtime.attach(graph, request)
+            slots = list(graph.rendered.scopes.owners[""].slots.values())
+            slots[0].publish(7)
+            slots[1].publish("sensitive-state-panel-value")
+            frozen = cast("dict[str, JSONValue]", Control(original).freeze_local())
+            rows = cast("list[JSONValue]", json.loads(json.dumps(frozen["rows"])))
+            control = Control(candidate)
+            await control.validate_local(rows)
+            control.seed_local(rows)
+            candidate.runtime.resume(token, request, graph.transport.epoch, 0, location="/")
+            report = cast("dict[str, JSONValue]", control.local_report())
+            assert report["preserved"] == 1
+            assert report["scope"] == "workspace"
+            resets = cast("list[dict[str, JSONValue]]", report["reset"])
+            assert len(resets) == 1
+            assert resets[0]["reason"] == "value type changed"
+            source = cast("dict[str, JSONValue]", resets[0]["source"])
+            assert str(source["uri"]).startswith("vscode://file/")
+            assert str(source["file"]) == Path(__file__).name
+            assert "sensitive-state-panel-value" not in json.dumps(report)
+            fresh = candidate.runtime.create_reserved(request)
+            assert not fresh.rendered.scopes.owners[""].preserved
+            assert cast("dict[str, JSONValue]", control.local_report())["preserved"] == 1
+        finally:
+            await original.close()
+            await candidate.close()
+            capture_local_state(enable=False)
+            tracing.configure(enable=False)
+
+    asyncio.run(run())
+
+
 def test_inspector_tracing_matches_graph_metadata_and_omits_values() -> None:
     tracing.configure(enable=True, source_roots=(Path(__file__).parent,))
     values: list[Signal[int]] = []
@@ -285,6 +335,20 @@ def test_inspector_tracing_fixed_workspace_matches_profile(tmp_path: Path) -> No
 
     with pytest.raises(ValueError, match="empty"):
         create_workspace(tmp_path)
+
+
+def test_inspector_tracing_ordinary_large_workspace_activates_every_component(
+    tmp_path: Path,
+) -> None:
+    create_workspace(tmp_path, ordinary=True)
+    report = describe_workspace(tmp_path)
+    assert report["components"] == 500
+    assert report["files"] == 200
+    assert report["bytes"] == TOTAL_BYTES
+    assert report["active_imports"] == 199
+    source = (tmp_path / "user_app.py").read_text()
+    assert "DurableApplication" not in source
+    assert "for module in MODULES" in source
 
 
 @pytest.mark.parametrize(

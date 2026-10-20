@@ -21,7 +21,7 @@ the previous poll, so an idle tree costs one stat per file rather than a full re
 content change that preserves both the size and the modification timestamp — possible
 only on filesystems whose timestamp granularity is coarser than the edit interval — is
 not detected until something else about that file changes.
-The poll interval defaults to 0.2 seconds (`--watch-interval`), with a 0.15 second
+The poll interval defaults to 0.05 seconds (`--watch-interval`), with a 0.03 second
 quiet period before loading an edit (`--watch-debounce`). An edit is loaded once the
 quiet period elapses rather than on the following poll, so raising the interval no
 longer multiplies the wait before a settled edit is applied. Local imports are loaded
@@ -51,24 +51,58 @@ including the client script, report their true proxied length. The script URL is
 rewritten exactly once per document. Responses are limited to 16 MiB and are not
 cached in watch mode.
 
+Planned replacement reconnects immediately, using development close code `4000`
+and reason `development reload`. Only an established development client treats
+that pair as planned; actual network/worker failures retain bounded randomized
+backoff. Warm candidates validate the restored graph once. Failed validation
+releases healthy traffic before the rejected process finishes bounded cleanup.
+
 ## Component-local state preservation
 
-Any application preserves component-local signal values across a reload, with no
+Any application preserves component-local signal values across a source edit, with no
 `DurableApplication`, codec or store. Each `signal(...)` call is identified by its
 owning component path, source location and occurrence, and its value is carried to
 the replacement worker in memory over the development control channel. Nothing is
 written to disk and nothing crosses machines; this is a development convenience,
 not persistence.
 
-Preservation is best effort and resets rather than guesses. A value resets when the
-source line of its initializer changed, when its slot is absent or malformed, or
-when it could not be serialized. Editing `count = signal(0)` to `signal(5)`
+An ordinary refresh, an uncached page load and a new tab start from the current
+initializers. Only an existing tab's authenticated live-resume token can claim
+its hot-update snapshot. The handoff also checks browser, principal, epoch and
+location, expires after 30 seconds and is consumed once. Tabs sharing cookies
+keep separate values. Both anonymous signals and named `local_state()` slots
+participate.
+
+Compatible hot handoffs reconcile the authoritative new graph into the existing
+DOM, retaining compatible nodes, focus and caret. They replace old handlers and
+capabilities, reset form defaults to canonical values, and discard unsent edits.
+A genuinely fresh fallback remains a fresh session with default state.
+
+Before replacing a healthy worker, the candidate renders the captured state in
+disposable graphs. These probes stage owned resources and dispose every graph;
+they do not start subscriptions, effects or tasks. A restored-state render failure
+keeps the healthy worker available until the edit is repaired.
+
+Preservation is best effort and resets rather than guesses. Supported values are
+exact JSON primitives, finite floats, lists and string-keyed dictionaries, nested
+up to 32 levels. Tuples, non-string dictionary keys, subclasses, opaque objects,
+cycles and nonfinite floats reset with a reason instead of changing their types.
+A value also resets when its complete initializer call or initializer type changed,
+when a call site is ambiguous (including loop-created signals), or when its slot
+is absent or malformed. Initializer types are checked even when the value comes
+from another variable and the call's source stays unchanged. Removed scopes and
+slots are reported. Editing `count = signal(0)` to `signal(5)`
 therefore shows 5, while an unrelated edit keeps the current count.
 
-The development overlay reports how many values were preserved, carried, dropped
-and reset, and names each reset slot with its reason. Its **Discard preserved
-state** control clears the retained values and cold-starts the page; the same
-effect is available at `/__pysx_dev__/cold`. Pass `--no-preserve-state` to disable
+The `development` example explicitly composes a shared state panel; ordinary watch
+applications and the separate inspector receive no preservation panel. The example
+shows workspace aggregate counts of values actually restored, carried, dropped and
+reset, with bounded reset reasons and source links. It never displays slot values.
+Its **Discard development snapshots** control clears pending development handoffs
+and starts that page fresh; the endpoint is `/__pysx_dev__/cold`. This does not
+delete the example's declared-state SQLite store or reset other live tabs. Run
+`uv run --project . pysx --app examples.development:app --watch` and optionally add
+`--inspect` for the separate inspector. Pass `--no-preserve-state` to disable
 preservation for a whole session, which restores the previous behaviour of
 reloading the browser on every successful edit.
 
@@ -161,13 +195,20 @@ uv run --project . python tests/dev_measurements.py --report .artifacts/dev/meas
 ```
 
 The focused harness creates 200 files / 500 components / 1 MiB source with a
-100 KiB largest file. It declares 20 active imports; remaining files are editor
-workspace load, with comment padding recorded explicitly. Five paired samples
-compare the disabled engine against the same source with only its three trace
-guards removed, validating identical outcomes and observer cleanup. Five hot
-replacement samples reconstruct two real protocol sessions with distinct state,
-checking new code, state preservation and one surviving worker. The report retains
-all samples, imports, cold-ready and source-analysis times, environment and hashes.
+100 KiB largest file. Its historical durable microbenchmark declares 20 active
+imports; the ordinary-app browser arm imports all 199 leaf modules and renders
+all 500 component definitions. Padding is recorded explicitly. Five edits of the
+real counter and five large-fixture edits measure source write to RAF DOM text
+observation in Chromium, retaining every sample, source hash, environment,
+detection/quiet time, process startup/import, preflight, retirement, snapshot and
+attachment timings. This endpoint does not qualify browser paint.
+
+Use `--section reload` for the reload measurements alone. The default also records
+paired disabled-capture and disabled-tracing measurements against the same source
+with their respective guards removed. Outcomes and observer cleanup must match.
+Capture qualification keeps its 5% budget; tracing qualification is separately
+pending and its raw samples remain reported. Durable replacement also checks two
+distinct protocol sessions and one surviving worker.
 
 The focused limits are at most 5% disabled overhead and one second for replacement
 plus protocol reconstruction. A failure is a failure; shared-host timing variance

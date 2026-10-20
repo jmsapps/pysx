@@ -70,7 +70,7 @@ def main() -> None:
     parser.add_argument(
         "--watch-root", action="append", type=Path, help="source directory (repeatable)"
     )
-    parser.add_argument("--watch-interval", type=float, default=0.2)
+    parser.add_argument("--watch-interval", type=float, default=0.05)
     parser.add_argument("--watch-debounce", type=float, default=0.15)
     parser.add_argument(
         "--no-preserve-state",

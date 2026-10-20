@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlsplit
 
-from test_hot_reload import COMPONENT, HOT_SOURCE, hot_project
+from test_hot_reload import COMPONENT, HOT_SOURCE, VOLATILE_SOURCE, hot_project
 
 from pysx.development import Supervisor, WatchConfig
 
@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 
 
 class Fixture(Supervisor):
+    volatile: bool = False
+
     async def http(self, _: ServerConnection, request: Request) -> Response | None:
         parsed = urlsplit(request.path)
         root = self.config.roots[0]
@@ -30,6 +32,7 @@ class Fixture(Supervisor):
                 name: len((root / name).read_text().splitlines()) if (root / name).exists() else 0
                 for name in (".effects", ".mounts", ".starts", ".stops")
             }
+            counts["volatile"] = int(self.volatile)
 
             return self.response(200, json.dumps(counts).encode(), "application/json")
 
@@ -51,9 +54,17 @@ class Fixture(Supervisor):
             elif action == "template":
                 (root / "note.txt").write_text("template two")
             elif action == "incompatible":
-                (root / "user_app.py").write_text(HOT_SOURCE.replace("SCHEMA = 1", "SCHEMA = 2"))
+                source = (
+                    VOLATILE_SOURCE.replace(
+                        'signal({"count": 0, "draft": "initial"})',
+                        'signal(dict(count=0, draft="initial"))',
+                    )
+                    if self.volatile
+                    else HOT_SOURCE.replace("SCHEMA = 1", "SCHEMA = 2")
+                )
+                (root / "user_app.py").write_text(source)
             elif action == "original":
-                hot_project(root)
+                hot_project(root, volatile=self.volatile)
             else:
                 source = COMPONENT.replace("STEP = 1", "STEP = 2").replace(
                     '"original"', repr(action)
@@ -71,21 +82,20 @@ class Fixture(Supervisor):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--volatile", action="store_true")
     args = parser.parse_args()
     original = Path.cwd()
 
     with tempfile.TemporaryDirectory(prefix="pysx-hot-") as directory:
         root = Path(directory)
-        hot_project(root)
+        hot_project(root, volatile=args.volatile)
         os.environ["PYTHONPATH"] = str(original)
         os.chdir(root)
 
         try:
-            asyncio.run(
-                Fixture(WatchConfig("user_app:app", (root,), interval=0.05)).run(
-                    "127.0.0.1", args.port
-                )
-            )
+            fixture = Fixture(WatchConfig("user_app:app", (root,), interval=0.05))
+            fixture.volatile = args.volatile
+            asyncio.run(fixture.run("127.0.0.1", args.port))
         finally:
             os.chdir(original)
 

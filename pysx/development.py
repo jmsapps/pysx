@@ -12,6 +12,7 @@ import secrets
 import signal
 import socket
 import sys
+import time
 from contextlib import AsyncExitStack, suppress
 from dataclasses import dataclass, field
 from http import HTTPStatus
@@ -50,38 +51,6 @@ _CLIENT = b"""
   if (!generation) return;
   let stopped = false;
   addEventListener('pagehide', () => { stopped = true; }, {once: true});
-  function panel() {
-    let box = document.getElementById('pysx-dev-state');
-    if (!box) {
-      box = document.createElement('aside');
-      box.id = 'pysx-dev-state';
-      box.style.cssText = 'position:fixed;bottom:0;left:0;z-index:2147483646;'
-        + 'max-width:32rem;background:#fff;color:#171717;border:1px solid #888;'
-        + 'padding:.4rem;font:12px monospace;white-space:pre-wrap';
-      const cold = document.createElement('button');
-      cold.type = 'button'; cold.id = 'pysx-dev-cold'; cold.textContent = 'Discard preserved state';
-      cold.addEventListener('click', async () => {
-        try { await fetch('/__pysx_dev__/cold', {cache: 'no-store'}); } catch (_) { /* ignore */ }
-        location.reload();
-      });
-      const text = document.createElement('div'); text.id = 'pysx-dev-state-text';
-      box.append(text, cold);
-      document.body.append(box);
-    }
-    return box;
-  }
-  function describe(status) {
-    const reset = Array.isArray(status.reset) ? status.reset : [];
-    if (!status.carried_slots && !status.dropped_slots && !reset.length) {
-      document.getElementById('pysx-dev-state')?.remove();
-      return;
-    }
-    const text = panel().querySelector('#pysx-dev-state-text');
-    const lines = [`preserved ${status.preserved ?? 0} | carried ${status.carried_slots ?? 0}`
-      + ` | dropped ${status.dropped_slots ?? 0} | reset ${reset.length}`];
-    for (const entry of reset.slice(0, 8)) lines.push(`reset ${entry.slot} - ${entry.reason}`);
-    text.textContent = lines.join('\\n');
-  }
   function apply(status) {
     if (String(status.generation) !== generation) {
       if (status.fresh_generation > Number(generation)) { location.reload(); return; }
@@ -96,7 +65,7 @@ _CLIENT = b"""
       }
       display.textContent = status.error;
     } else if (display) display.remove();
-    describe(status);
+    window.dispatchEvent(new CustomEvent('pysx:development', {detail: status}));
   }
   async function poll() {
     try {
@@ -125,8 +94,8 @@ _CLIENT = b"""
 class WatchConfig:
     app: str
     roots: tuple[Path, ...]
-    interval: float = 0.2
-    debounce: float = 0.15
+    interval: float = 0.05
+    debounce: float = 0.03
     timeout: float = 10
     max_files: int = 10000
     inspect: bool = False
@@ -254,6 +223,7 @@ class Worker:
     info: dict[str, JSONValue] = field(default_factory=lambda: dict[str, JSONValue]())
     output: str = ""
     reader: asyncio.Task[None] | None = None
+    retiring: bool = False
 
     def control(self) -> connect:
         return connect(
@@ -349,6 +319,8 @@ class Supervisor:
     carried_slots: int = 0
     dropped_slots: int = 0
     bounded: JSONValue = None
+    stages: dict[str, JSONValue] = field(default_factory=dict[str, JSONValue])
+    detected_at: float = 0
 
     def __post_init__(self) -> None:
         self.traffic.set()
@@ -382,6 +354,8 @@ class Supervisor:
             "carried_slots": self.carried_slots,
             "dropped_slots": self.dropped_slots,
             "bounded": self.bounded,
+            "stages": self.stages,
+            "detected_at": self.detected_at,
         }
 
     def request_analysis(self, paths: list[str], *, changed: bool = False) -> None:
@@ -454,6 +428,7 @@ class Supervisor:
                 return
 
     async def candidate(self) -> Worker:
+        started = time.perf_counter()
         with socket.socket() as listener, socket.socket() as control_listener:
             listener.bind(("127.0.0.1", 0))
             control_listener.bind(("127.0.0.1", 0))
@@ -494,28 +469,17 @@ class Supervisor:
                     )
 
                     if ready is not None:
-                        info = await worker.command({"op": "probe"})
+                        self.stages["startup_seconds"] = time.perf_counter() - started
+                        probe_started = time.perf_counter()
+                        info = await worker.command({"op": "probe", "render": self.active is None})
+                        self.stages["initial_probe_seconds"] = time.perf_counter() - probe_started
 
                         if not isinstance(info, dict):
                             raise RuntimeError("invalid candidate metadata")
                         worker.info = info
 
-                        if not info.get("durable"):
-                            path = urlsplit(ready.removeprefix("pysx ready -> ")).path or "/"
-                            status, _, _ = await asyncio.to_thread(
-                                _request,
-                                port,
-                                path,
-                                [("Host", f"127.0.0.1:{port}")],
-                                "GET",
-                                self.config.timeout,
-                            )
-
-                            if status >= 500:
-                                raise RuntimeError(f"candidate render returned HTTP {status}")
-
                         return worker
-                    await asyncio.sleep(0.025)
+                    await asyncio.sleep(0.01)
 
                 raise RuntimeError(f"candidate exited {process.returncode}")
         except BaseException as error:
@@ -531,6 +495,10 @@ class Supervisor:
         candidate: Worker | None = None
         adopted = False
         started = asyncio.get_running_loop().time()
+        self.stages = {}
+        self.stages["quiet_seconds"] = (
+            max(0, time.time() - self.detected_at) if self.detected_at else 0
+        )
 
         try:
             candidate = await self.candidate()
@@ -542,6 +510,8 @@ class Supervisor:
                 self.request_analysis([path for path in sources if isinstance(path, str)])
             previous = self.active
             mode = "fresh"
+            validated = previous is None
+            preflight_started = time.perf_counter()
             self.traffic.clear()
 
             async with AsyncExitStack() as transaction:
@@ -578,6 +548,7 @@ class Supervisor:
                         if len(json.dumps(combined).encode()) > 16 * 1024 * 1024:
                             raise RuntimeError("development snapshots exceed 16 MiB")
                         mode_value = await candidate.command({"op": "validate", "rows": combined})
+                        validated = True
 
                         if mode_value not in ("hot", "fresh"):
                             raise RuntimeError("invalid development recovery decision")
@@ -587,8 +558,17 @@ class Supervisor:
                     else:
                         self.retained.clear()
 
-                        if previous is not None and self.config.preserve:
-                            carried = await previous.command({"op": "freeze_local"})
+                        if (
+                            previous is not None
+                            and self.config.preserve
+                            and previous.info.get("local")
+                            and candidate.info.get("local")
+                            and candidate.info.get("base_path") == previous.info.get("base_path")
+                        ):
+                            connection = await transaction.enter_async_context(previous.control())
+                            frozen_at = time.perf_counter()
+                            carried = await previous.exchange(connection, {"op": "freeze_local"})
+                            self.stages["snapshot_seconds"] = time.perf_counter() - frozen_at
 
                             if isinstance(carried, dict):
                                 self.bounded = carried.get("bounded")
@@ -597,21 +577,39 @@ class Supervisor:
 
                                 if isinstance(held, list):
                                     self.carried_slots = sum(
-                                        len(cast("dict[str, object]", row.get("scopes", {})))
+                                        sum(
+                                            len(cast("dict[str, object]", scope))
+                                            for scope in cast(
+                                                "dict[str, object]", row.get("scopes", {})
+                                            ).values()
+                                        )
                                         for row in held
                                         if isinstance(row, dict)
                                     )
+                                    restore_at = time.perf_counter()
                                     seeded = await candidate.command(
                                         {"op": "seed_local", "rows": held}
                                     )
+                                    self.stages["restore_preflight_seconds"] = (
+                                        time.perf_counter() - restore_at
+                                    )
+                                    validated = True
 
                                     if seeded == "seeded" and held:
                                         mode = "hot"
 
+                    if not validated:
+                        await candidate.command({"op": "probe"})
+
+                self.stages["preflight_seconds"] = time.perf_counter() - preflight_started
+
                 # Validation may roll back; retirement is the commit point and
                 # has its own process/pipe deadlines rather than a rollback timer.
                 if previous is not None:
+                    retired_at = time.perf_counter()
+                    previous.retiring = True
                     await previous.close()
+                    self.stages["retirement_seconds"] = time.perf_counter() - retired_at
 
             self.active = candidate
             self.generation += 1
@@ -625,6 +623,7 @@ class Supervisor:
                 self.workers.remove(previous)
         except Exception as error:
             self.error = f"{type(error).__name__}: {error}"
+            self.traffic.set()
         finally:
             if candidate is not None and not adopted:
                 await candidate.close()
@@ -652,6 +651,7 @@ class Supervisor:
                 continue
 
             if current != snapshot:
+                self.detected_at = time.time()
                 self.request_analysis(
                     [
                         path
@@ -808,16 +808,21 @@ class Supervisor:
             while not self.stopping.is_set():
                 pending = self.changed
                 await client.send(json.dumps(await self.status_report()))
-                waiting = [
+                waiting: list[asyncio.Task[object]] = [
                     asyncio.create_task(pending.wait()),
                     asyncio.create_task(self.stopping.wait()),
+                    asyncio.create_task(client.wait_closed()),
                 ]
 
                 try:
-                    await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+                    done, _ = await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+
+                    if waiting[-1] in done:
+                        return
                 finally:
                     for task in waiting:
                         task.cancel()
+                    await asyncio.gather(*waiting, return_exceptions=True)
 
     async def websocket(self, client: ServerConnection) -> None:
         if client.request is not None and (
@@ -873,7 +878,12 @@ class Supervisor:
                     sending.cancel()
                     with suppress(asyncio.CancelledError, ConnectionClosed):
                         await sending
-                    await client.close(1012, "development reload")
+                    await client.close(
+                        4000 if worker.retiring else 1012,
+                        "development reload"
+                        if worker.retiring
+                        else "development worker unavailable",
+                    )
         except OSError, ConnectionClosed:
             await client.close(1012, "development worker unavailable")
 

@@ -18,12 +18,16 @@ for (let i = 0; i < args.length; i += 2) {
 const registry = [
   { suite: "development", cases: [
     [0, "development_fixture", "browser_development.mjs", "DEVELOPMENT EXAMPLE BROWSER PASSED"],
+    [1, "development_no_inspector_fixture", "browser_development.mjs", "DEVELOPMENT EXAMPLE BROWSER PASSED"],
   ] },
   { suite: "inspector_tracing", cases: [
     [0, "inspector_fixture", "browser_inspector.mjs", "INSPECTOR TRACING BROWSER PASSED"],
   ] },
   { suite: "state_preserving", cases: [
     [0, "hot_fixture", "browser_hot.mjs", "STATE PRESERVING BROWSER PASSED"],
+  ] },
+  { suite: "volatile_preserving", cases: [
+    [0, "volatile_hot_fixture", "browser_hot.mjs", "VOLATILE PRESERVING BROWSER PASSED"],
   ] },
   { suite: "installed_serve", cases: [
     [0, "dev_fixture", "browser_dev.mjs", "INSTALLED SERVE BROWSER PASSED"],
@@ -301,10 +305,14 @@ try {
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
     const server = name ? start(interpreter, name === "development_fixture" ?
       ["tests/browser_development_fixture.py", "--port", String(port)] :
+      name === "development_no_inspector_fixture" ?
+      ["tests/browser_development_fixture.py", "--port", String(port), "--no-inspect"] :
       name === "inspector_fixture" ?
       ["tests/browser_inspector_fixture.py", "--port", String(port)] :
       name === "hot_fixture" ?
       ["tests/browser_hot_fixture.py", "--port", String(port)] :
+      name === "volatile_hot_fixture" ?
+      ["tests/browser_hot_fixture.py", "--port", String(port), "--volatile"] :
       name === "dev_fixture" ?
       ["tests/browser_dev_fixture.py", "--port", String(port)] :
       name === "durable_state_fixture" ?

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -25,6 +26,8 @@ from pysx.development import Supervisor, WatchConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
+
+    from websockets.asyncio.server import ServerConnection
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = """from pathlib import Path
@@ -627,6 +630,51 @@ def test_swap_deadlines_slow_proxied_render_is_not_dropped(tmp_path: Path) -> No
             assert b"slow every time" in response.read()
 
 
+def test_watch_latency_closed_notification_clients_release_handlers(tmp_path: Path) -> None:
+    from websockets.asyncio.client import connect
+    from websockets.asyncio.server import serve
+
+    async def run() -> None:
+        supervisor = Supervisor(WatchConfig("user_app:app", (tmp_path,)))
+        handlers: set[asyncio.Task[object]] = set()
+
+        async def handler(client: ServerConnection) -> None:
+            task = asyncio.current_task()
+            assert task is not None
+            handlers.add(task)
+
+            try:
+                await supervisor.events(client)
+            finally:
+                handlers.remove(task)
+
+        async with serve(handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            baseline = asyncio.all_tasks()
+
+            for _ in range(10):
+                async with connect(f"ws://127.0.0.1:{port}") as client:
+                    assert json.loads(await client.recv())["generation"] == 0
+
+                async with asyncio.timeout(2):
+                    while handlers or asyncio.all_tasks() - baseline:
+                        await asyncio.sleep(0.001)
+
+            assert not supervisor.changed.is_set()
+            assert supervisor.generation == 0
+
+            async with connect(f"ws://127.0.0.1:{port}") as client:
+                assert json.loads(await client.recv())["generation"] == 0
+                supervisor.generation = 1
+                supervisor.notify()
+                assert json.loads(await client.recv())["generation"] == 1
+
+                with pytest.raises(TimeoutError):
+                    await asyncio.wait_for(client.recv(), 0.05)
+
+    asyncio.run(run())
+
+
 def test_watch_latency_push_channel_reports_generations(tmp_path: Path) -> None:
     project(tmp_path)
 
@@ -675,7 +723,10 @@ def test_volatile_preserving_reconciles_without_a_browser_reload(tmp_path: Path)
     (tmp_path / "user_app.py").write_text(COUNTER)
 
     with serving(tmp_path) as (port, log):
-        assert b'id="count"' in get(port, "/")
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as response:
+            cookie = response.headers.get("Set-Cookie", "").split(";")[0]
+            assert b'id="count"' in response.read()
+        asyncio.run(resume_attachment(port, cookie))
         before = json.loads(get(port, "/__pysx_dev__/status"))
         assert before["fresh_generation"] == before["generation"]
         (tmp_path / "component.py").write_text('def label():\n    return "swapped"\n')
@@ -692,7 +743,13 @@ def test_volatile_preserving_reconciles_without_a_browser_reload(tmp_path: Path)
         assert after["fresh_generation"] < after["generation"]
 
 
-async def _resume(port: int, cookie: str) -> dict[str, object]:
+async def resume_attachment(
+    port: int,
+    cookie: str,
+    *,
+    attachment: dict[str, object] | None = None,
+    clicks: int = 0,
+) -> dict[str, object]:
     from websockets.asyncio.client import connect
 
     url = f"ws://127.0.0.1:{port}/ws?protocol=3&resume=1&location=%2F"
@@ -703,14 +760,81 @@ async def _resume(port: int, cookie: str) -> dict[str, object]:
                 {
                     "t": "hello",
                     "version": 3,
-                    "resume": "stale-token",
-                    "epoch": "stale-epoch",
-                    "state_rev": 0,
+                    "resume": attachment["resume"] if attachment else "stale-token",
+                    "epoch": attachment["epoch"] if attachment else "stale-epoch",
+                    "state_rev": attachment["state_rev"] if attachment else 0,
                 }
             )
         )
 
-        return cast("dict[str, object]", json.loads(await asyncio.wait_for(socket.recv(), 15)))
+        initial = cast("dict[str, object]", json.loads(await asyncio.wait_for(socket.recv(), 15)))
+        handler = re.search(r'data-pysx-click="([^"]+)"', str(initial.get("html", "")))
+
+        for sequence in range(1, clicks + 1):
+            assert handler is not None
+            await socket.send(
+                json.dumps(
+                    {
+                        "t": "event",
+                        "h": handler[1],
+                        "version": 3,
+                        "epoch": initial["epoch"],
+                        "state_rev": initial["state_rev"],
+                        "seq": sequence,
+                    }
+                )
+            )
+
+            async with asyncio.timeout(5):
+                while True:
+                    message = json.loads(await socket.recv())
+                    initial["state_rev"] = message["state_rev"]
+                    assert message["t"] != "result", message
+
+                    if message["t"] == "ack":
+                        assert message["status"] == "success"
+
+                        break
+
+        return initial
+
+
+def test_volatile_resume_handoff_is_single_use_and_http_pages_are_fresh(tmp_path: Path) -> None:
+    project(tmp_path)
+    (tmp_path / "user_app.py").write_text(COUNTER)
+
+    with serving(tmp_path) as (port, log):
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as response:
+            cookie = response.headers.get("Set-Cookie", "").split(";")[0]
+            response.read()
+        original = asyncio.run(resume_attachment(port, cookie, clicks=1))
+        before = generation(port)
+        (tmp_path / "component.py").write_text('def label():\n    return "changed"\n')
+        wait_for(lambda: generation(port) > before, log)
+
+        def fresh_http() -> None:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/",
+                headers={"Cookie": cookie, "Cache-Control": "no-cache"},
+            )
+
+            with urllib.request.urlopen(request, timeout=10) as response:
+                assert b">0</pysx-slot>" in response.read()
+
+        fresh_http()
+        wrong_browser = asyncio.run(
+            resume_attachment(port, "pysx_browser=other", attachment=original)
+        )
+        assert ">0</pysx-slot>" in cast("str", wrong_browser["html"])
+        restored = asyncio.run(resume_attachment(port, cookie, attachment=original, clicks=1))
+        assert restored.get("recovered") is True
+        assert "fresh" not in restored
+        assert ">1</pysx-slot>" in cast("str", restored["html"])
+        fresh_http()
+        fresh_tab = asyncio.run(resume_attachment(port, cookie))
+        assert ">0</pysx-slot>" in cast("str", fresh_tab["html"])
+        replay = asyncio.run(resume_attachment(port, cookie, attachment=original))
+        assert ">0</pysx-slot>" in cast("str", replay["html"])
 
 
 def test_volatile_resume_rebuilds_a_reconcilable_attachment(tmp_path: Path) -> None:
@@ -720,14 +844,14 @@ def test_volatile_resume_rebuilds_a_reconcilable_attachment(tmp_path: Path) -> N
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as response:
             cookie = response.headers.get("Set-Cookie", "").split(";")[0]
             assert b"original" in response.read()
-        cold = asyncio.run(_resume(port, cookie))
+        cold = asyncio.run(resume_attachment(port, cookie))
         assert cold["t"] == "init"
         assert cold["fresh"] is True
         assert "original" in cast("str", cold["html"])
         before = generation(port)
         (tmp_path / "component.py").write_text('def label():\n    return "repaired"\n')
         wait_for(lambda: generation(port) > before, log)
-        swapped = asyncio.run(_resume(port, cookie))
+        swapped = asyncio.run(resume_attachment(port, cookie))
         assert swapped["t"] == "init"
         assert swapped["fresh"] is True
         assert "repaired" in cast("str", swapped["html"])
@@ -762,7 +886,7 @@ def test_volatile_resume_outside_development_still_closes(tmp_path: Path) -> Non
                 response.read()
 
             with pytest.raises(ConnectionClosed) as failure:
-                asyncio.run(_resume(port, cookie))
+                asyncio.run(resume_attachment(port, cookie))
             assert failure.value.rcvd is not None
             assert failure.value.rcvd.code == 4004
         finally:
@@ -775,7 +899,10 @@ def test_preservation_report_lists_resets_and_cold_discards_state(tmp_path: Path
     (tmp_path / "user_app.py").write_text(COUNTER)
 
     with serving(tmp_path) as (port, log):
-        assert b'id="count"' in get(port, "/")
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as response:
+            cookie = response.headers.get("Set-Cookie", "").split(";")[0]
+            assert b'id="count"' in response.read()
+        asyncio.run(resume_attachment(port, cookie))
         before = generation(port)
         (tmp_path / "component.py").write_text('def label():\n    return "swapped"\n')
         wait_for(lambda: generation(port) > before, log)

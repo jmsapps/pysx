@@ -192,6 +192,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     recovering = modern and parse_qs(urlsplit(request.path).query).get("recover") == ["1"]
     rebuilt = False
     volatile_rebuild = False
+    local_handoff = False
     hello: dict[str, object] | None = None
 
     def reconstruct(message: dict[str, object]) -> Session:
@@ -223,7 +224,13 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                     request,
                     cast("str", message["epoch"]),
                     cast("int", message["state_rev"]),
+                    location=supplied[0],
                 )
+
+                if session.transport.epoch != message["epoch"]:
+                    rebuilt = True
+                    volatile_rebuild = True
+                    local_handoff = True
             except ValueError, KeyError:
                 try:
                     session = reconstruct(message)
@@ -710,9 +717,12 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             session.pending.clear()
             attachment[
                 "recovered"
-                if not volatile_rebuild
-                and hello is not None
-                and runtime.recovery_token(session) == hello.get("recovery")
+                if local_handoff
+                or (
+                    not volatile_rebuild
+                    and hello is not None
+                    and runtime.recovery_token(session) == hello.get("recovery")
+                )
                 else "fresh"
             ] = True
 

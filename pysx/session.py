@@ -13,7 +13,7 @@ from .async_runtime import MutationRuntime, active_runtime
 from .errors import ErrorInfo, FailureCapture, failure_context, report_error
 from .events import decode_event
 from .forms import PayloadError
-from .lifecycle import begin_restore, end_restore, resources_preparing
+from .lifecycle import resources_preparing
 from .reactive import Effect, batch, write_guard
 from .render import Fragment, Watcher, render
 from .request import RequestContext, browser_id, request_context
@@ -77,9 +77,6 @@ class Session:
         runtime_token = active_runtime.set(self.runtime)
         guard_token = write_guard.set(self.runtime.check_write)
         trace_token = tracing.active.set(self.trace) if tracing.enabled else None
-        restore_token = (
-            begin_restore(self.browser, self.request.principal, location) if development else None
-        )
 
         try:
             self.rendered = render(app_fn, development=development)
@@ -96,8 +93,6 @@ class Session:
             if trace_token is not None:
                 tracing.active.reset(trace_token)
 
-            if restore_token is not None:
-                end_restore(restore_token)
         # The first run of each effect registers its subscription; watchers were
         # seeded with the rendered value, so it produces ops only where setup
         # wrote a signal after its hole had already been emitted.

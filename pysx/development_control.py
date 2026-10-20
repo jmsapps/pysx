@@ -4,23 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import secrets
 import sys
+import time
 import traceback
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from urllib.parse import urlsplit
 
 from websockets.asyncio.server import serve
 
-from . import lifecycle, tracing
+from . import tracing
 from .durable import DurableSession
 from .durable_host import DurableApplication
 from .hosting import request_from_headers
-from .lifecycle import capture_local_state, stage_resources
+from .lifecycle import capture_local_state, local_value_kind, restoring_local_state, stage_resources
 from .ownership import SQLiteOwnershipStore
 from .persistence import (
     IncompatibleState,
@@ -32,7 +33,7 @@ from .persistence import (
 )
 from .request import RequestContext, browser_id
 from .security import AccessDenied
-from .session import close_session
+from .session import Session, close_session
 from .wire import JSONValue
 
 if TYPE_CHECKING:
@@ -46,15 +47,17 @@ if TYPE_CHECKING:
 
 _MAX_LOCAL_SLOTS = 4096
 _MAX_LOCAL_BYTES = 4 * 1024 * 1024
+_MAX_LOCAL_SESSIONS = 256
 
 
 @dataclass
 class Control:
     application: Application
     import_seconds: float = 0
-    seeded: dict[str, dict[str, dict[str, object]]] = field(
-        default_factory=lambda: dict[str, dict[str, dict[str, object]]]()
+    seeded: dict[str, dict[str, JSONValue]] = field(
+        default_factory=lambda: dict[str, dict[str, JSONValue]]()
     )
+    local_resets: list[JSONValue] = field(default_factory=list[JSONValue])
 
     def durable(self) -> DurableApplication[object] | None:
         app = self.application
@@ -66,7 +69,12 @@ class Control:
 
     def info(self) -> dict[str, JSONValue]:
         app = self.durable()
-        result: dict[str, JSONValue] = {"durable": False, "import_seconds": self.import_seconds}
+        result: dict[str, JSONValue] = {
+            "durable": False,
+            "local": not isinstance(self.application, DurableApplication),
+            "base_path": self.application.config.base_path,
+            "import_seconds": self.import_seconds,
+        }
 
         if app is not None:
             assert isinstance(app.backend, SQLiteOwnershipStore)
@@ -97,17 +105,17 @@ class Control:
 
         return result
 
-    @staticmethod
-    def local_identity(browser: str, principal: str | None, location: str) -> str:
-        return json.dumps([browser, principal, urlsplit(location).path])
-
     def freeze_local(self) -> JSONValue:
-        rows: list[JSONValue] = []
+        now = time.monotonic()
+        retained = {
+            token: row for token, row in self.seeded.items() if cast("float", row["expires"]) > now
+        }
         dropped = 0
-        slots = 0
 
-        for session in tuple(self.application.runtime.graphs):
-            if session.closed:
+        for token, handle in tuple(self.application.runtime.resume_handles.items()):
+            session = handle.session
+
+            if session.closed or not handle.browser:
                 continue
             scopes: dict[str, JSONValue] = {}
 
@@ -116,54 +124,217 @@ class Control:
 
                 for slot, created in owner.slots.items():
                     value = created.published()
+                    metadata: dict[str, JSONValue] = {"kind": owner.kinds.get(slot, "unsupported")}
 
                     try:
-                        json.dumps(value)
-                    except TypeError, ValueError:
-                        dropped += 1
+                        kind = local_value_kind(value)
+                        restored: object = json.loads(json.dumps(value, allow_nan=False))
 
-                        continue
-                    held[slot] = [cast("JSONValue", value), owner.marks.get(slot, "")]
-                    slots += 1
+                        if kind != local_value_kind(restored) or value != restored:
+                            raise ValueError("value did not round-trip")
+                    except (TypeError, ValueError, OverflowError, RecursionError) as error:
+                        dropped += 1
+                        metadata["reason"] = (
+                            str(error)
+                            if isinstance(error, ValueError)
+                            else "unsupported value type"
+                        )
+                        value = None
+                    held[slot] = [cast("JSONValue", value), owner.marks.get(slot, ""), metadata]
 
                 if held:
                     scopes[path] = cast("JSONValue", held)
 
-            if scopes:
-                rows.append(
-                    {
-                        "identity": self.local_identity(
-                            session.browser, session.request.principal, session.location
-                        ),
-                        "scopes": scopes,
-                    }
-                )
+            retained[token] = {
+                "resume": token,
+                "browser": handle.browser,
+                "principal": handle.principal,
+                "epoch": session.transport.epoch,
+                "revision": session.transport.revision,
+                "location": session.routes.location.url,
+                "path": session.request.path,
+                "headers": dict(session.request.headers),
+                "scopes": scopes,
+                "expires": now + 30,
+            }
+
+        rows = cast("list[JSONValue]", list(retained.values()))
+        slots = sum(
+            len(cast("dict[str, JSONValue]", scope))
+            for row in retained.values()
+            for scope in cast("dict[str, JSONValue]", row["scopes"]).values()
+        )
+
+        if len(rows) > _MAX_LOCAL_SESSIONS:
+            return {"rows": [], "dropped": slots, "bounded": "session limit"}
 
         if slots > _MAX_LOCAL_SLOTS:
-            return {"rows": [], "dropped": dropped, "bounded": "slot limit"}
+            return {"rows": [], "dropped": slots, "bounded": "slot limit"}
         size = len(json.dumps(rows).encode())
 
         if size > _MAX_LOCAL_BYTES:
-            return {"rows": [], "dropped": dropped, "bounded": "size limit"}
+            return {"rows": [], "dropped": slots, "bounded": "size limit"}
 
         return {"rows": rows, "dropped": dropped, "bytes": size}
 
-    def seed_local(self, rows: list[JSONValue]) -> str:
-        self.seeded.clear()
+    @staticmethod
+    def checked_local(rows: list[JSONValue]) -> dict[str, dict[str, JSONValue]]:
+        if len(rows) > _MAX_LOCAL_SESSIONS or len(json.dumps(rows).encode()) > _MAX_LOCAL_BYTES:
+            raise ValueError("development handoffs exceed their bounds")
+        checked: dict[str, dict[str, JSONValue]] = {}
+        slots = 0
 
         for row in rows:
-            if not isinstance(row, dict):
-                continue
-            identity, scopes = row.get("identity"), row.get("scopes")
+            if not isinstance(row, dict) or not all(
+                isinstance(row.get(name), str) and row[name]
+                for name in ("resume", "browser", "epoch", "location", "path")
+            ):
+                raise ValueError("invalid development handoff identity")
+            scopes, headers = row.get("scopes"), row.get("headers")
+            expires, revision = row.get("expires"), row.get("revision")
 
-            if isinstance(identity, str) and isinstance(scopes, dict):
-                self.seeded[identity] = cast("dict[str, dict[str, object]]", scopes)
-        lifecycle.restore_source = self.lookup_local
+            if (
+                not isinstance(scopes, dict)
+                or not all(isinstance(scope, dict) for scope in scopes.values())
+                or not isinstance(headers, dict)
+                or not all(isinstance(value, str) for value in headers.values())
+                or (row.get("principal") is not None and not isinstance(row["principal"], str))
+                or type(revision) is not int
+                or revision < 0
+                or type(expires) not in (int, float)
+                or not math.isfinite(cast("float", expires))
+            ):
+                raise ValueError("invalid development handoff snapshot")
+            slots += sum(len(cast("dict[str, JSONValue]", scope)) for scope in scopes.values())
+
+            if slots > _MAX_LOCAL_SLOTS:
+                raise ValueError("development handoffs exceed their slot limit")
+
+            if cast("float", expires) > time.monotonic():
+                token = cast("str", row["resume"])
+
+                if token in checked:
+                    raise ValueError("duplicate development handoff")
+                checked[token] = row
+
+        return checked
+
+    def seed_local(self, rows: list[JSONValue]) -> str:
+        self.seeded = self.checked_local(rows)
+        self.application.runtime.development_resume = self.resume_local if self.seeded else None
 
         return "seeded"
 
+    def resume_local(
+        self,
+        token: str,
+        request: RequestContext,
+        epoch: str,
+        revision: int,
+        location: str,
+    ) -> Session | None:
+        row = self.seeded.get(token)
+
+        if row is None:
+            return None
+
+        if cast("float", row["expires"]) <= time.monotonic():
+            self.seeded.pop(token)
+
+            return None
+
+        if (
+            row["browser"] != browser_id(request)
+            or row["principal"] != request.principal
+            or row["epoch"] != epoch
+            or revision > cast("int", row["revision"])
+            or row["location"] != location
+        ):
+            raise ValueError("unknown or mismatched development handoff")
+        runtime = self.application.runtime
+
+        if not runtime.reserve():
+            raise ValueError("development graph capacity")
+
+        try:
+            with restoring_local_state(cast("dict[str, dict[str, object]]", row["scopes"])):
+                graph = runtime.create_reserved(
+                    request, browser=browser_id(request), location=location
+                )
+        finally:
+            runtime.unreserve()
+        self.seeded.pop(token)
+
+        return graph
+
+    async def validate_local(self, rows: list[JSONValue]) -> None:
+        checked = self.checked_local(rows)
+        app = self.application
+        self.local_resets.clear()
+
+        probes: list[dict[str, JSONValue] | None] = list(checked.values())
+
+        for row in probes or [None]:
+            try:
+                request = app.prepare(
+                    request_from_headers(
+                        cast("str", row["path"]) if row else app.path("/"),
+                        list(cast("dict[str, str]", row["headers"]).items()) if row else [],
+                        peer="127.0.0.1",
+                    )
+                )
+
+                if row is not None and request.principal != row["principal"]:
+                    continue
+
+                if request.access is not None:
+                    request.access("http", request.path)
+            except AccessDenied:
+                continue
+
+            with (
+                stage_resources(),
+                restoring_local_state(
+                    cast("dict[str, dict[str, object]]", row["scopes"]) if row else None,
+                ),
+            ):
+                graph: Session | None = None
+
+                try:
+                    graph = Session(
+                        app.runtime.app,
+                        request=request,
+                        development=True,
+                        browser=cast("str", row["browser"]) if row else "",
+                        location=cast("str", row["location"]) if row else request.path,
+                        mutation_capacity=app.config.mutation_capacity,
+                        task_capacity=app.config.task_capacity,
+                    )
+
+                    if row is not None:
+                        scopes = cast("dict[str, dict[str, object]]", row["scopes"])
+
+                        for path, held in scopes.items():
+                            owner = graph.rendered.scopes.owners.get(path)
+
+                            for slot in held:
+                                if (owner is None or slot not in owner.slots) and len(
+                                    self.local_resets
+                                ) < 64:
+                                    self.local_resets.append(
+                                        {
+                                            "slot": slot.rpartition("#")[0],
+                                            "reason": "scope removed"
+                                            if owner is None
+                                            else "slot removed",
+                                        }
+                                    )
+                finally:
+                    if graph is not None:
+                        await close_session(graph, None, None)
+
     def local_report(self) -> JSONValue:
-        entries: list[JSONValue] = []
+        entries: list[JSONValue] = list(self.local_resets)
         preserved = 0
 
         for session in tuple(self.application.runtime.graphs):
@@ -171,7 +342,7 @@ class Control:
                 continue
 
             for owner in session.rendered.scopes.owners.values():
-                preserved += len(owner.slots) - len(owner.reset)
+                preserved += len(owner.preserved)
 
                 for slot, reason in owner.reset.items():
                     if len(entries) >= 64:
@@ -179,12 +350,25 @@ class Control:
                     site, _, _ = slot.rpartition("#")
                     entries.append({"slot": site, "reason": reason})
 
-        return {"preserved": preserved, "reset": entries}
+        for value in entries:
+            entry = cast("dict[str, JSONValue]", value)
+            slot = str(entry["slot"])
+            filename, _, number = slot.rpartition(":")
 
-    def lookup_local(
-        self, browser: str, principal: str | None, location: str
-    ) -> dict[str, dict[str, object]] | None:
-        return self.seeded.get(self.local_identity(browser, principal, location))
+            if number.isdecimal() and any(
+                Path(filename).resolve().is_relative_to(root) for root in tracing.roots
+            ):
+                source = tracing.source_link(Path(filename), int(number))
+                entry["source"] = {
+                    "file": source["file"],
+                    "line": source["line"],
+                    "uri": source["uri"],
+                }
+                entry["slot"] = f"{source['file']}:{number}"
+            else:
+                entry["slot"] = slot[:256] if slot.startswith("named:") else Path(slot).name[:256]
+
+        return {"preserved": preserved, "reset": entries, "scope": "workspace"}
 
     def inspect(self, headers: dict[str, str]) -> dict[str, JSONValue]:
         app = self.application
@@ -234,8 +418,7 @@ class Control:
         return {"status": 200 if sessions else 403, "sessions": sessions}
 
     async def validate(self, rows: list[JSONValue]) -> str:
-        app = self.durable()
-        assert app is not None
+        app = cast("DurableApplication[object]", self.application)
         runtime = app.runtime
         mode = "hot"
         passthrough = StateCodec[JSONValue](
@@ -342,8 +525,8 @@ class Control:
 
         monitor = asyncio.create_task(disconnected())
         app = self.durable()
-        runtime = app.runtime if app is not None else None
-        draining = runtime.draining if runtime is not None else False
+        runtime = self.application.runtime
+        draining = runtime.draining
         owns_drain = False
 
         try:
@@ -358,15 +541,31 @@ class Control:
                         if op == "local_report":
                             result = self.local_report()
                         elif op == "freeze_local":
+                            owns_drain = True
+                            runtime.draining = True
+
+                            for graph in tuple(runtime.graphs):
+                                if not graph.closed:
+                                    await frozen.enter_async_context(graph.runtime.turn())
                             result = self.freeze_local()
                         elif op == "seed_local":
                             seeds = message.get("rows")
-                            result = self.seed_local(seeds if isinstance(seeds, list) else [])
+                            local_rows = seeds if isinstance(seeds, list) else []
+                            await self.validate_local(local_rows)
+                            result = self.seed_local(local_rows)
                         elif op == "probe":
-                            if app is not None and not app.config.security.require_principal:
-                                await self.validate([])
+                            application = self.application
+
+                            if (
+                                message.get("render", True) is not False
+                                and not application.config.security.require_principal
+                            ):
+                                if isinstance(application, DurableApplication):
+                                    await self.validate([])
+                                else:
+                                    await self.validate_local([])
                             result = self.info()
-                        elif op == "freeze" and app is not None and runtime is not None:
+                        elif op == "freeze" and app is not None:
                             owns_drain = True
                             runtime.draining = True
                             graphs = tuple(runtime.graphs)
@@ -424,7 +623,7 @@ class Control:
         except asyncio.CancelledError:
             pass
         finally:
-            if runtime is not None and owns_drain:
+            if owns_drain:
                 runtime.draining = draining
             monitor.cancel()
             with suppress(asyncio.CancelledError):

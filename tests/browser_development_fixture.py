@@ -38,6 +38,7 @@ class Fixture(Supervisor):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--no-inspect", action="store_true")
     args = parser.parse_args()
     original = Path.cwd()
 
@@ -53,7 +54,12 @@ def main() -> None:
         try:
             asyncio.run(
                 Fixture(
-                    WatchConfig("examples.development:app", (root,), interval=0.05, inspect=True)
+                    WatchConfig(
+                        "examples.development:app",
+                        (root,),
+                        interval=0.05,
+                        inspect=not args.no_inspect,
+                    )
                 ).run("127.0.0.1", args.port)
             )
         finally:

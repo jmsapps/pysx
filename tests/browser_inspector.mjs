@@ -44,6 +44,8 @@ try {
   await page.locator("#pysx-inspector button").click();
   await page.waitForFunction(() => document.getElementById("pysx-inspector-content").textContent.includes("noSuchAttribute"));
   assert.equal(await page.locator("#count").textContent(), "40");
+  assert.equal(await page.locator("#pysx-dev-state").count(), 0);
+  assert.equal(await page.locator("#pysx-dev-cold").count(), 0);
   assert.deepEqual(errors, []);
   console.log("  ok  current-source checker diagnostics appear with exact codes/ranges while the hot app retains state");
   console.log("INSPECTOR TRACING BROWSER PASSED");

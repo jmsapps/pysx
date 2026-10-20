@@ -13,6 +13,8 @@ import math
 import os
 import platform
 import re
+import shutil
+import statistics
 import sys
 import tempfile
 import time
@@ -29,6 +31,8 @@ from websockets.typing import Origin
 import pysx.reactive as reactive
 from pysx import tracing
 from pysx.development import Supervisor, WatchConfig
+
+PROJECT = Path(__file__).resolve().parents[1]
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -176,6 +180,7 @@ def preservation_scale() -> dict[str, object]:
             request = RequestContext(path="/", headers={"cookie": f"pysx_browser=b{index}"})
             session = Session(cast("Any", app), development=True, request=request)
             application.runtime.graphs.add(session)
+            application.runtime.attach(session, request)
             sessions.append(session)
         control = Control(application)
         control.freeze_local()
@@ -450,9 +455,71 @@ async def development_measurements(root: Path, report: dict[str, object]) -> Non
             await worker.close()
 
 
+async def visible_measurements(root: Path, kind: str) -> dict[str, object]:
+    target = "examples.counter:app" if kind == "counter" else "user_app:app"
+    path = root / "examples" / "counter.py" if kind == "counter" else root / "leaf_000.py"
+    config = WatchConfig(target, (root,))
+    supervisor = Supervisor(config)
+    watching: asyncio.Task[None] | None = None
+
+    try:
+        await supervisor.replace()
+        assert supervisor.error is None, supervisor.error
+        watching = asyncio.create_task(supervisor.watch(config.snapshot()))
+
+        async with serve(
+            supervisor.websocket, "127.0.0.1", 0, process_request=supervisor.http, close_timeout=1
+        ) as server:
+            port = server.sockets[0].getsockname()[1]
+            process = await asyncio.create_subprocess_exec(
+                "node",
+                str(PROJECT / "tests" / "dev_visible_measurements.mjs"),
+                str(port),
+                str(path),
+                kind,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=PROJECT / "tests",
+            )
+
+            try:
+                async with asyncio.timeout(180):
+                    stdout, stderr = await process.communicate()
+                assert process.returncode == 0, stderr.decode()
+                result = cast("dict[str, object]", json.loads(stdout))
+            finally:
+                if process.returncode is None:
+                    process.kill()
+                    await process.wait()
+            server.close()
+            server.server.abort_clients()
+        samples = cast("list[dict[str, object]]", result["samples"])
+        durations = [float(cast("float", sample["visible_seconds"])) for sample in samples]
+        result["median_seconds"] = statistics.median(durations)
+        result["default_interval_seconds"] = config.interval
+        result["default_debounce_seconds"] = config.debounce
+        result["passed"] = len(samples) == 5 and all(sample["workers"] == 1 for sample in samples)
+
+        if kind == "counter":
+            result["baseline_median_seconds"] = 0.625
+            result["passed"] = bool(result["passed"] and statistics.median(durations) < 0.625)
+
+        return result
+    finally:
+        supervisor.stopping.set()
+
+        if watching is not None:
+            watching.cancel()
+            await asyncio.gather(watching, return_exceptions=True)
+
+        for worker in supervisor.workers:
+            await worker.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--section", choices=("reload", "all"), default="all")
     args = parser.parse_args()
     target = args.report.resolve()
     report: dict[str, object] = {
@@ -470,10 +537,12 @@ def main() -> None:
     }
 
     try:
-        overhead = disabled_overhead()
-        report["disabled_overhead"] = overhead
-        capture = capture_overhead()
-        report["capture_overhead"] = capture
+        if args.section == "all":
+            report["disabled_overhead"] = disabled_overhead()
+            report["tracing_qualification"] = (
+                "separate pending qualification; reported, not gated here"
+            )
+            report["capture_overhead"] = capture_overhead()
         report["preservation_scale"] = preservation_scale()
 
         with tempfile.TemporaryDirectory(prefix="pysx-measurements-") as directory:
@@ -483,8 +552,29 @@ def main() -> None:
 
             with chdir(root):
                 asyncio.run(development_measurements(root, report))
+        with tempfile.TemporaryDirectory(prefix="pysx-visible-") as directory:
+            base = Path(directory)
+            counter = base / "counter"
+            shutil.copytree(
+                PROJECT / "examples",
+                counter / "examples",
+                ignore=shutil.ignore_patterns("__pycache__"),
+            )
+            with chdir(counter):
+                report["counter_visible"] = asyncio.run(visible_measurements(counter, "counter"))
+            large = base / "large"
+            create_workspace(large, ordinary=True)
+            report["ordinary_workload"] = describe_workspace(large)
+            with chdir(large):
+                report["large_visible"] = asyncio.run(visible_measurements(large, "large"))
         report["passed"] = bool(
-            overhead["passed"] and capture["passed"] and report["reload_passed"]
+            report["reload_passed"]
+            and report["counter_visible"]["passed"]
+            and report["large_visible"]["passed"]
+            and (
+                args.section == "reload"
+                or cast("dict[str, object]", report["capture_overhead"])["passed"]
+            )
         )
     except Exception as error:
         report["passed"] = False

@@ -15,6 +15,7 @@ try {
   const label = (target, value) => target.waitForFunction(value => document.getElementById("label").textContent === value, value);
   const status = async () => (await page.request.get(base + "/__pysx_dev__/status")).json();
   const metrics = async () => (await page.request.get(base + "/__fixture__/metrics")).json();
+  const volatile = Boolean((await metrics()).volatile);
   await page.goto(base); await other.goto(base);
   await connected(page); await connected(other);
   await page.locator("#increment").click(); await count(page, 1);
@@ -28,7 +29,10 @@ try {
   await page.locator("#uncommitted-check").check();
   await page.locator("#uncommitted-choice").selectOption("b");
   await page.locator("#field").focus();
-  await page.evaluate(() => { window.retainedField = document.getElementById("field"); });
+  await page.evaluate(() => {
+    window.retainedField = document.getElementById("field");
+    window.retainedField.setSelectionRange(2, 4);
+  });
   const before = await metrics();
   await edit("updated");
   await label(page, "updated"); await label(other, "updated");
@@ -38,6 +42,7 @@ try {
   assert.equal(await other.locator("#field").inputValue(), "second draft");
   assert.equal(await page.evaluate(() => window.retainedField === document.getElementById("field")), true);
   assert.equal(await page.locator("#field").evaluate(el => el === document.activeElement), true);
+  assert.deepEqual(await page.locator("#field").evaluate(el => [el.selectionStart, el.selectionEnd]), [2, 4]);
   assert.equal(await page.locator("#field").evaluate(el => el.defaultValue), "first draft");
   assert.equal(await page.locator("#uncommitted-check").isChecked(), false);
   assert.equal(await page.locator("#uncommitted-choice").inputValue(), "a");
@@ -83,6 +88,15 @@ try {
   await edit("original"); await label(page, "original"); await label(other, "original");
   await connected(page); await connected(other);
   assert.deepEqual(errors, []);
-  console.log("  ok  incompatible schema follows the declared fresh-session reload fallback");
-  console.log("STATE PRESERVING BROWSER PASSED");
+  console.log("  ok  incompatible state follows the declared reset fallback");
+  if (volatile) {
+    await page.locator("#increment").click(); await count(page, 1);
+    await page.reload(); await connected(page); await count(page, 0);
+    await count(other, 0);
+    const fresh = await context.newPage();
+    await fresh.goto(base); await connected(fresh); await count(fresh, 0);
+    await fresh.close();
+    console.log("  ok  ordinary components need no persistence configuration and refresh/new tabs use defaults");
+  }
+  console.log(volatile ? "VOLATILE PRESERVING BROWSER PASSED" : "STATE PRESERVING BROWSER PASSED");
 } finally { await browser.close(); }

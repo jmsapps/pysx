@@ -665,7 +665,7 @@ function connectionState(state, retryMs = 0) {
   root.dataset.pysxConnection = state;
   connectionStatus.hidden = state === "connected" && !freshSession && !restoredSession;
   const text = state === "connected" ? (restoredSession ?
-    "Connected. Declared session state was restored; uncommitted edits were discarded." :
+    "Connected. Session state was restored; uncommitted edits were discarded." :
     "Connected. A fresh session started; previous session state was lost.") :
     state === "reconnecting" ? "Disconnected. Reconnecting; offline edits are rejected." :
     state === "fresh" ? "Previous session expired. Starting a fresh session." :
@@ -734,6 +734,11 @@ function closeSocket(event) {
   root.dataset.pysxAttached = "false";
   window.dispatchEvent(new CustomEvent("pysx:disconnected"));
   if (stopped) return;
+  if (developing && event.code === 4000 && event.reason === "development reload") {
+    retryAttempt = 0;
+    reconnect(false);
+    return;
+  }
   if (event.code === 4010 && /^[A-Za-z0-9_-]{1,64}$/.test(event.reason)) ownerHint = event.reason;
   if (event.code === 4004 || event.code === 4009 || (event.code === 1008 && epoch === null)) {
     resetSession();
