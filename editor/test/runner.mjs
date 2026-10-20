@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { pylanceHost } from "../../tests/pylance_host.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const SUITES = ["diagnostics", "packaging", "authoring", "client_verify", "editor_surface", "template_import_usage", "interpreter_routing"];
+const SUITES = ["diagnostics", "packaging", "authoring", "client_verify", "editor_surface", "template_import_usage", "interpreter_routing", "save_latency"];
 const args = process.argv.slice(2);
 if (!args.length && process.env.PYSX_EDITOR_PROBE !== "1") {
   for (const registered of SUITES) {
@@ -127,7 +127,7 @@ try {
       // buffered when "exit" fires.
       child.once("close", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`editor host exited ${code}: ${output}`)); });
     });
-    const cases = suite === "interpreter_routing" ? 8 : suite === "authoring" ? 11 : suite === "client_verify" ? 12 : suite === "editor_surface" ? 11 : suite === "template_import_usage" ? 7 : 3;
+    const cases = suite === "save_latency" ? 6 : suite === "interpreter_routing" ? 8 : suite === "authoring" ? 11 : suite === "client_verify" ? 12 : suite === "editor_surface" ? 11 : suite === "template_import_usage" ? 7 : 3;
     if (suite === "client_verify") {
       const failures = /Client is stopping but no stop promise|rejected promise not handled|unhandled rejection|Handling connection close failed|Restarting server failed|Stopping server failed|Stopping the server timed out/i;
       const inspect = (directory) => {
@@ -145,7 +145,7 @@ try {
       inspect(path.join(workspace, "profile", "logs"));
     }
     if (!output.includes(`PYSX EDITOR CASES PASSED: ${cases}`)) throw new Error(`missing host assertions: ${output}`);
-    console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR PERFORMANCE") || line.startsWith("PYSX EDITOR ROUTING:")).join("\n"));
+    console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR SAVE:") || line.startsWith("PYSX EDITOR PERFORMANCE") || line.startsWith("PYSX EDITOR ROUTING:")).join("\n"));
     console.log(`EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, ${cases} cases)`);
   }
 } finally {

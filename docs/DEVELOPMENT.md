@@ -97,14 +97,28 @@ therefore shows 5, while an unrelated edit keeps the current count.
 The `development` example explicitly composes a shared state panel; ordinary watch
 applications and the separate inspector receive no preservation panel. The example
 shows workspace aggregate counts of values actually restored, carried, dropped and
-reset, with bounded reset reasons and source links. It never displays slot values.
+reset, with bounded reset reasons and source links. Runtime metadata never exposes
+private slot values; the example separately binds its deliberately public sample count.
 Its **Discard development snapshots** control clears pending development handoffs
 and starts that page fresh; the endpoint is `/__pysx_dev__/cold`. This does not
-delete the example's declared-state SQLite store or reset other live tabs. Run
+reset other live tabs. This ordinary reactive example uses no persistence store. Run
 `uv run --project . pysx --app examples.development:app --watch` and optionally add
 `--inspect` for the separate inspector. Pass `--no-preserve-state` to disable
 preservation for a whole session, which restores the previous behaviour of
 reloading the browser on every successful edit.
+
+In `examples/development.py`, increment from 0 to 1, edit its title and save:
+the count stays 1. Increment to 2 and refresh: it returns to 0, as does a new tab.
+Changing `count = signal(0)` to `signal(1)` instead resets the slot to 1 with an
+initializer-change reason. Explicit persistence is a separate application choice,
+demonstrated by `examples/durable_state.py`.
+
+Watch mode responds to files written by either manual save or autosave. An editor's
+autosave delay comes before watcher detection. The pysx import-on-save action returns
+promptly when analysis is pending and leaves imports unchanged for that save; it
+does not hold the disk write waiting for workspace analysis. The default editor setup
+runs that action on explicit saves; configuring it as `always` includes focus/window
+autosave. VSCode's delayed autosave bypasses save actions.
 
 ## Declared-state hot replacement
 

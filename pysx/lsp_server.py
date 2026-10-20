@@ -1229,19 +1229,24 @@ def create_server() -> ResidentServer:
             }
         )
 
-    async def import_action(uri: str) -> types.CodeAction | None:
+    def import_action(uri: str) -> types.CodeAction | None:
         """Offer the removal only against complete, current, coherent analysis."""
         session = server.session(uri)
         filename = str(path_for_uri(uri))
         document = server.workspace.get_text_document(uri)
         buffer = session.buffers.get(filename)
 
-        if buffer is None:
-            return None
+        snapshot = session.snapshot
 
-        try:
-            snapshot = await session.current(filename, complete=True)
-        except JsonRpcContentModified, AnalysisUnavailable:
+        # Save participants must not wait for a workspace sweep. Only use a
+        # completed current result; otherwise leave imports untouched this save.
+        if (
+            buffer is None
+            or not session.ready.is_set()
+            or session.error is not None
+            or snapshot is None
+            or snapshot.stamp != session.stamp
+        ):
             return None
         item = snapshot.file(filename)
 
@@ -1274,7 +1279,11 @@ def create_server() -> ResidentServer:
     async def code_actions(params: types.CodeActionParams) -> list[types.CodeAction]:
         requested = params.context.only
         actions: list[types.CodeAction] = []
-        selected = await structure(params.text_document.uri)
+        selected = (
+            await structure(params.text_document.uri)
+            if requested is None or TEMPLATE_FIX in requested
+            else None
+        )
 
         if selected is not None and (requested is None or TEMPLATE_FIX in requested):
             _session, item, calls = selected
@@ -1295,7 +1304,7 @@ def create_server() -> ResidentServer:
                 )
 
         if requested is None or ORGANIZE_IMPORTS in requested:
-            organize = await import_action(params.text_document.uri)
+            organize = import_action(params.text_document.uri)
 
             if organize is not None:
                 actions.append(organize)

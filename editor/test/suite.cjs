@@ -12,6 +12,7 @@ async function until(predicate, label, timeout = 15000) {
   throw new Error(`timeout waiting for ${label}`);
 }
 exports.run = async function () {
+  if (process.env.PYSX_EDITOR_SUITE === "save_latency") return require("./save_suite.cjs").run();
   if (process.env.PYSX_EDITOR_SUITE === "authoring") return require("./authoring_suite.cjs").run();
   if (process.env.PYSX_EDITOR_SUITE === "client_verify") return require("./client_suite.cjs").run();
   if (process.env.PYSX_EDITOR_SUITE === "interpreter_routing") return require("./routing_suite.cjs").run();

@@ -561,16 +561,18 @@ def main() -> None:
                 ignore=shutil.ignore_patterns("__pycache__"),
             )
             with chdir(counter):
-                report["counter_visible"] = asyncio.run(visible_measurements(counter, "counter"))
+                counter_visible = asyncio.run(visible_measurements(counter, "counter"))
+                report["counter_visible"] = counter_visible
             large = base / "large"
             create_workspace(large, ordinary=True)
             report["ordinary_workload"] = describe_workspace(large)
             with chdir(large):
-                report["large_visible"] = asyncio.run(visible_measurements(large, "large"))
+                large_visible = asyncio.run(visible_measurements(large, "large"))
+                report["large_visible"] = large_visible
         report["passed"] = bool(
             report["reload_passed"]
-            and report["counter_visible"]["passed"]
-            and report["large_visible"]["passed"]
+            and counter_visible["passed"]
+            and large_visible["passed"]
             and (
                 args.section == "reload"
                 or cast("dict[str, object]", report["capture_overhead"])["passed"]

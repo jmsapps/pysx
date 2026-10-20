@@ -22,26 +22,24 @@ uv run --project . example run
 ```
 
 The last command lists available apps. Examples serve at http://127.0.0.1:8750.
-The `development` entry reuses the shared-component durable-state view and explicitly
-composes its own development snapshot panel. Ordinary watch apps have no such panel.
-The panel reports workspace aggregates and redacted reset reasons/source links;
-discard starts this page fresh without deleting the declared-state store or resetting
-other live tabs. It works with or without the separate `--inspect` inspector. For live
-editing and inspection, use the watch launcher instead:
+The `development` entry is a simple reactive counter with its own shared state
+panel. It needs no database or custom hot-reload wiring. Ordinary watch apps have
+no such panel. The panel shows this tab's sample count plus workspace aggregates
+and redacted reset reasons/source links. Discard starts this page fresh while other
+live tabs keep their state. For live editing, use the watch launcher:
 
 ```sh
-uv run --project . pysx --app examples.development:app --watch --inspect
+uv run --project . pysx --app examples.development:app --watch
 ```
 
-Open two tabs, increment their counters independently and enter different saved
-drafts. Edit the title or increment handler in `examples/durable_state.py` and
-save. Each tab retains its declared state while the setup marker changes and new
-handlers take effect. Open the inspector at the bottom for redacted runtime
-events, source links and current-source diagnostics. A broken edit displays an
-error while the previous worker remains usable; repair it to resume replacement.
-Ctrl+C stops the supervisor and its workers. The local SQLite file is stored in
-`.artifacts/development/`; set `PYSX_STATE_PATH` to select another location.
-This example uses a local demonstration identity. See
+Start at 0, increment to 1, edit the title in `examples/development.py` and save:
+the count stays 1. Increment to 2, then refresh: it returns to 0. A new tab also
+starts at 0. Separately, changing `count = signal(0)` to `signal(1)` resets that
+slot to 1; restore `signal(0)` afterward. The page includes these steps.
+Add `--inspect` for the separate inspector's redacted events, source links and
+diagnostics. A broken edit leaves the previous worker usable; repair it to resume
+replacement. Ctrl+C stops the supervisor and its workers. Explicit persistence
+is demonstrated separately by `durable_state`. See
 [development hosting](../docs/DEVELOPMENT.md) for configuration and limits.
 
 Choose another port with `--port` or `PSX_PORT`:

@@ -9,7 +9,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from pysx.development import Supervisor, WatchConfig
 
@@ -20,15 +20,31 @@ if TYPE_CHECKING:
 
 class Fixture(Supervisor):
     async def http(self, _: ServerConnection, request: Request) -> Response | None:
-        if urlsplit(request.path).path == "/__fixture__/edit":
-            source = self.config.roots[0] / "examples" / "durable_state.py"
+        parsed = urlsplit(request.path)
+
+        if parsed.path == "/__fixture__/persistence":
+            stores = list(self.config.roots[0].rglob("*.sqlite3"))
+
+            return self.response(200, b"unexpected store" if stores else b"no store")
+
+        if parsed.path == "/__fixture__/edit":
+            source = self.config.roots[0] / "examples" / "development.py"
             content = source.read_text()
-            before, after = (
-                ("Edited live", "Durable state")
-                if 'Title: "Edited live"' in content
-                else ("Durable state", "Edited live")
-            )
-            source.write_text(content.replace(f'Title: "{before}"', f'Title: "{after}"'))
+
+            action = parse_qs(parsed.query).get("action")
+
+            if action == ["initializer"]:
+                content = content.replace("count = signal(0)", "count = signal(1)")
+            elif action == ["restore"]:
+                content = content.replace("count = signal(1)", "count = signal(0)")
+            else:
+                before, after = (
+                    ("Edited live", "Hot reload")
+                    if 'Title: "Edited live"' in content
+                    else ("Hot reload", "Edited live")
+                )
+                content = content.replace(f'Title: "{before}"', f'Title: "{after}"')
+            source.write_text(content)
 
             return self.response(200, b"edited")
 
@@ -48,7 +64,6 @@ def main() -> None:
             original / "examples", root / "examples", ignore=shutil.ignore_patterns("__pycache__")
         )
         os.environ["PYTHONPATH"] = str(original)
-        os.environ["PYSX_STATE_PATH"] = str(root / "state.sqlite3")
         os.chdir(root)
 
         try:

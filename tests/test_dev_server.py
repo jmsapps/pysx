@@ -209,6 +209,27 @@ def test_installed_serve_initial_errors_timeout_and_repair(tmp_path: Path, broke
         wait_for(lambda: b"original" in get(port), log)
 
 
+def test_watch_latency_installed_cli_uses_the_default_quiet_period(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pysx import development
+    from pysx.server import main
+
+    seen: list[WatchConfig] = []
+
+    def observed(config: WatchConfig, _host: str, _port: int) -> None:
+        seen.append(config)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["pysx", "--app", "user_app:app", "--watch"])
+    monkeypatch.setattr(development, "run", observed)
+    main()
+    defaults = WatchConfig("user_app:app", (tmp_path,))
+    assert len(seen) == 1
+    assert seen[0].interval == defaults.interval
+    assert seen[0].debounce == defaults.debounce
+
+
 def test_installed_serve_configuration_and_occupied_port(tmp_path: Path) -> None:
     env = {**os.environ, "PYTHONPATH": str(ROOT)}
     base = [sys.executable, "-m", "pysx.server", "--app", "missing:app", "--watch"]

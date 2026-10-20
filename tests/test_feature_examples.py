@@ -959,17 +959,10 @@ def test_session_security_cli_startup_interaction_and_ctrl_c_exit() -> None:
         assert server.wait(timeout=5) == 0
 
 
-@pytest.mark.parametrize("module", ["durable_state", "development"])
-def test_durable_state_development_reconstruction_and_session_isolation(
-    tmp_path: Path, module: str
-) -> None:
+def test_durable_state_reconstruction_and_session_isolation(tmp_path: Path) -> None:
     from typing import cast
 
-    from examples.development import create_application as development_application
-    from examples.durable_state import CODEC, ExampleState
-    from examples.durable_state import create_application as durable_application
-
-    create_application = development_application if module == "development" else durable_application
+    from examples.durable_state import CODEC, ExampleState, create_application
 
     async def exercise() -> None:
         host = create_application(tmp_path / "state.db", worker="example-worker")
@@ -1041,7 +1034,9 @@ def test_development_cli_startup_and_ctrl_c_exit() -> None:
     with ready_server(command) as server:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
             assert response.status == 200
-            assert b"Declared session state" in response.read()
+            body = response.read()
+            assert b"Try a hot update" in body
+            assert b"development-state-count" in body
         server.send_signal(signal.SIGINT)
         assert server.wait(timeout=5) == 0
 
