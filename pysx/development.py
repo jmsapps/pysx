@@ -49,12 +49,18 @@ _CLIENT = b"""
   const source = new URL(script.src);
   let generation = source.searchParams.get('pysx-dev');
   if (!generation) return;
+  let instance = source.searchParams.get('pysx-dev-instance');
   let stopped = false;
   addEventListener('pagehide', () => { stopped = true; }, {once: true});
   function apply(status) {
-    if (String(status.generation) !== generation) {
-      if (status.fresh_generation > Number(generation)) { location.reload(); return; }
-      generation = String(status.generation);
+    if (status.generation > 0) {
+      if (status.instance !== instance) {
+        instance = status.instance;
+        generation = String(status.generation);
+      } else if (status.generation > Number(generation)) {
+        if (status.fresh_generation > Number(generation)) { location.reload(); return; }
+        generation = String(status.generation);
+      }
     }
     let display = document.getElementById('pysx-dev-error');
     if (status.error) {
@@ -296,6 +302,7 @@ class Worker:
 @dataclass
 class Supervisor:
     config: WatchConfig
+    instance: str = field(default_factory=lambda: secrets.token_urlsafe(16), init=False)
     active: Worker | None = None
     generation: int = 0
     fresh_generation: int = 0
@@ -345,6 +352,7 @@ class Supervisor:
 
     def status(self) -> dict[str, JSONValue]:
         return {
+            "instance": self.instance,
             "generation": self.generation,
             "fresh_generation": self.fresh_generation,
             "error": self.error,
@@ -769,7 +777,10 @@ class Supervisor:
             inspection = "&pysx-inspect=1" if self.config.inspect else ""
             body = body.replace(
                 b'/client.js" defer',
-                f'/client.js?pysx-dev={self.generation}{inspection}" defer'.encode(),
+                (
+                    f"/client.js?pysx-dev={self.generation}"
+                    f'&pysx-dev-instance={self.instance}{inspection}" defer'
+                ).encode(),
                 1,
             )
         clean = Headers(

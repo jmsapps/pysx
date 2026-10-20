@@ -32,6 +32,9 @@ const registry = [
   { suite: "installed_serve", cases: [
     [0, "dev_fixture", "browser_dev.mjs", "INSTALLED SERVE BROWSER PASSED"],
   ] },
+  { suite: "watch_restart", cases: [
+    [0, null, "browser_watch_restart.mjs", "WATCH RESTART BROWSER PASSED"],
+  ] },
   { suite: "diagnostics_example", cases: [
     [0, "diagnostics", "browser_diagnostics_example.mjs", "DIAGNOSTICS EXAMPLE BROWSER PASSED"],
   ] },

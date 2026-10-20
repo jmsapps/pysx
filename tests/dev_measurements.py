@@ -96,7 +96,16 @@ class WithoutCaptureHook(ast.NodeTransformer):
             and test.left.id == "created"
             and len(test.ops) == 1
             and isinstance(test.ops[0], ast.IsNot)
+            and len(test.comparators) == 1
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value is None
         ):
+            expected = ast.parse('created(cast("Signal[object]", out))').body
+
+            if node.orelse or [ast.dump(item) for item in node.body] != [
+                ast.dump(item) for item in expected
+            ]:
+                raise ValueError("baseline would remove non-capture behavior")
             self.removed += 1
 
             return None
@@ -115,6 +124,7 @@ def construction_work(engine: ModuleType, iterations: int) -> float:
 
 
 def capture_overhead() -> dict[str, object]:
+    assert reactive.created is None, "capture must be disabled for this measurement"
     path = Path(reactive.__file__ or "")
     source = path.read_text()
     transform = WithoutCaptureHook()
@@ -127,22 +137,32 @@ def capture_overhead() -> dict[str, object]:
 
     try:
         exec(compile(tree, str(path), "exec"), baseline.__dict__)
+        # Both arms must preserve graph outcomes and release their observers.
+        graph_work(reactive, 1000)
+        graph_work(baseline, 1000)
         construction_work(reactive, 50000)
         construction_work(baseline, 50000)
-        samples: list[dict[str, float]] = []
+        samples: list[dict[str, object]] = []
 
         for run in range(5):
-            if run % 2:
-                disabled = construction_work(reactive, 200000)
-                unhooked = construction_work(baseline, 200000)
-            else:
-                unhooked = construction_work(baseline, 200000)
-                disabled = construction_work(reactive, 200000)
+            blocks: list[dict[str, float]] = []
+
+            for block in range(100):
+                if (run + block) % 2:
+                    disabled = construction_work(reactive, 100000)
+                    unhooked = construction_work(baseline, 100000)
+                else:
+                    unhooked = construction_work(baseline, 100000)
+                    disabled = construction_work(reactive, 100000)
+                blocks.append({"unhooked_seconds": unhooked, "disabled_seconds": disabled})
+            unhooked = sum(block["unhooked_seconds"] for block in blocks)
+            disabled = sum(block["disabled_seconds"] for block in blocks)
             samples.append(
                 {
                     "unhooked_seconds": unhooked,
                     "disabled_seconds": disabled,
                     "overhead_percent": 100 * (disabled / unhooked - 1),
+                    "blocks": blocks,
                 }
             )
     finally:
@@ -150,13 +170,17 @@ def capture_overhead() -> dict[str, object]:
 
     return {
         "samples": samples,
-        "iterations_per_sample": 200000,
+        "iterations_per_sample": 10000000,
+        "blocks_per_sample": 100,
+        "iterations_per_block": 100000,
+        "sampling": "alternating paired blocks; every block retained in each of five samples",
+        "graph_outcomes_and_observer_cleanup": "both arms verified before timing",
         "warmup_iterations": 50000,
         "baseline": "same source with the disabled capture hook removed",
         "measures": "signal construction, where the capture hook lives",
         "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
         "limit_percent": 5,
-        "passed": all(sample["overhead_percent"] <= 5 for sample in samples),
+        "passed": all(cast("float", sample["overhead_percent"]) <= 5 for sample in samples),
     }
 
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from dev_measurements import WithoutTraceGuards, count_html
+from dev_measurements import WithoutCaptureHook, WithoutTraceGuards, count_html
 from dev_workload import (
     COMPONENTS,
     FILES,
@@ -363,3 +363,19 @@ def test_inspector_tracing_measurement_baseline_cannot_strip_behavior() -> None:
 
     with pytest.raises(ValueError, match="non-tracing behavior"):
         WithoutTraceGuards().visit(tree)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'if created is not None:\n    created(cast("Signal[object]", out))\n    state.set(3)\n',
+        (
+            'if created is not None:\n    created(cast("Signal[object]", out))\n'
+            "else:\n    state.set(3)\n"
+        ),
+        "if created is not None:\n    state.set(3)\n",
+    ],
+)
+def test_capture_measurement_baseline_cannot_strip_behavior(source: str) -> None:
+    with pytest.raises(ValueError, match="non-capture behavior"):
+        WithoutCaptureHook().visit(ast.parse(source))

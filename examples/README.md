@@ -68,6 +68,11 @@ recovery; the setup marker changes and a new resource loads. Another tab and a p
 reload start independent sessions. Healthy socket reconnect retains the live graph.
 Unsent edits are discarded on reconstruction, rather than replayed.
 
+The same restart test works with `uv run --project . pysx --app
+examples.durable_state:app --watch`: keep the tab open, press Ctrl+C, and restart
+that command. The open page reconnects and recovers its count/draft without
+navigating. Refreshing it still starts a new session.
+
 The default SQLite file is `pysx-durable-example.sqlite3` in the OS temporary directory.
 It survives process restart until removed by local cleanup. For an explicit local
 file, set `PYSX_STATE_PATH` to an existing directory's file path before launching.

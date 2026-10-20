@@ -57,6 +57,14 @@ that pair as planned; actual network/worker failures retain bounded randomized
 backoff. Warm candidates validate the restored graph once. Failed validation
 releases healthy traffic before the rejected process finishes bounded cleanup.
 
+Stopping and restarting the watch command leaves open pages free to reconnect.
+Startup notifications and generation numbers from a new supervisor do not reload
+the page. A `DurableApplication` with the same identity and SQLite path recovers
+its committed state through the normal recovery protocol. Ordinary component-local
+state has no persistence across a complete server restart. Refreshing a page or
+opening a new tab starts a new session. Within a running supervisor, an intentional
+incompatible edit still performs the declared fresh reload.
+
 ## Component-local state preservation
 
 Any application preserves component-local signal values across a source edit, with no
