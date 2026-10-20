@@ -22,6 +22,7 @@ from itertools import islice
 from string.templatelib import Interpolation, Template
 from typing import TYPE_CHECKING, cast
 
+from . import tracing as _tracing
 from ._compiler_runtime import MissingComponent
 from .bindings import MAX_ROWS, Deferred, Environment, resolve
 from .bindings import Binding as LexicalBinding
@@ -2197,6 +2198,8 @@ def render(
     namespace: Mapping[str, object] | None = None,
     development: bool = False,
 ) -> Rendered:
+    if _tracing.enabled:
+        _tracing.emit("template")
     out = Rendered(development=development)
     out.styles.shared = global_rules()
     token = dom_context.set(out.dom)

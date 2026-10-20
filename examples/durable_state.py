@@ -108,7 +108,10 @@ def view(state: Signal[ExampleState]) -> Fragment:
 
 
 def create_application(
-    path: Path, *, worker: str | None = None, origin: str | None = None
+    path: Path,
+    *,
+    worker: str | None = None,
+    origin: str | None = None,
 ) -> DurableApplication[ExampleState]:
     return DurableApplication(
         view,

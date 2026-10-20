@@ -9,6 +9,7 @@ from copy import deepcopy
 from threading import get_ident
 from typing import TYPE_CHECKING, Never, Protocol, cast, overload
 
+from . import tracing as _tracing
 from .errors import failure_context
 
 if TYPE_CHECKING:
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from .errors import ErrorPhase
 
 _current: ContextVar[Effect | None] = ContextVar("pysx_current_effect", default=None)
+trace_enabled = _tracing.enabled
 write_guard: ContextVar[Callable[[], None] | None] = ContextVar("pysx_write_guard", default=None)
 
 
@@ -191,6 +193,11 @@ class Signal[T]:
         self.initialized = True
         self._reader: Effect | None = None
 
+    def published(self) -> T:
+        """Read the current value without recording a dependency."""
+
+        return self._published
+
     def get(self) -> T:
         _scheduler.check_owner()
         eff = _current.get()
@@ -200,6 +207,8 @@ class Signal[T]:
             raise RuntimeError("cyclic reactive computation")
 
         if eff is not None:
+            if trace_enabled:
+                _tracing.emit("dependency", id(self), 1)
             self.observers[id(eff)] = eff
             eff.track(self)
 
@@ -227,6 +236,9 @@ class Signal[T]:
         self.initialized = True
         self._published = value
         self._value = deepcopy(value)
+
+        if trace_enabled:
+            _tracing.emit("signal.write", id(self), len(self.observers))
 
         for eff in tuple(self.observers.values()):
             # The reader this evaluation is serving returns the fresh value from
@@ -458,6 +470,8 @@ class Effect:
         if self.computed is not None and not self.computed.dirty:
             return
 
+        if trace_enabled:
+            _tracing.emit("effect", id(self))
         self.running = True
         _scheduler.depth += 1
         previous = self._deps
@@ -526,8 +540,16 @@ class Effect:
             dependency.unsubscribe(self)
 
 
+created: Callable[[Signal[object]], None] | None = None
+
+
 def signal[T](value: T, *, equal: Callable[[T, T], bool] | None = None) -> Signal[T]:
-    return Signal(value, equal=equal)
+    out = Signal(value, equal=equal)
+
+    if created is not None:
+        created(cast("Signal[object]", out))
+
+    return out
 
 
 def effect(fn: Callable[[], object]) -> Effect:

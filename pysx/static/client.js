@@ -10,6 +10,7 @@ endpoint.pathname = endpoint.pathname.replace(/client\.js$/, "ws");
 endpoint.search = `protocol=3&location=${encodeURIComponent(browserLocation())}${adoption ? `&adoption=${encodeURIComponent(adoption)}` : ""}${ownerHint ? `&owner=${encodeURIComponent(ownerHint)}` : ""}`;
 let socket = new WebSocket(endpoint);
 let resumeToken = null;
+let developing = false;
 let connected = false;
 let retryAttempt = 0;
 let transportTimer = null;
@@ -547,10 +548,11 @@ function receiveMessage(event) {
     socket.close(4002, "invalid envelope"); return;
   }
   if (message.t === "init" && (message.recovered === true || message.fresh === true)) {
-    if (!recoveryToken) { socket.close(4002, "unexpected reconstruction"); return; }
+    if (!recoveryToken && !developing) { socket.close(4002, "unexpected reconstruction"); return; }
     resetSession(message.recovered === true);
   }
   if (["init", "adopted"].includes(message.t)) {
+    if (message.development === true) developing = true;
     if (epoch !== null) { socket.close(4002, "repeated attachment"); return; }
     epoch = message.epoch;
   } else if (message.epoch !== epoch) { socket.close(4002, "wrong epoch"); return; }
@@ -583,10 +585,17 @@ function receiveMessage(event) {
   if (message.t === "init") {
     if (message.routing) enableRouting();
     style.textContent = message.css;
-    root.innerHTML = message.html;
+    if (message.recovered === true) {
+      const parser = document.createRange(); parser.selectNodeContents(root);
+      const fresh = parser.createContextualFragment(message.html);
+      hydrate(fresh);
+      preserveInteraction(() => morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true, true));
+    } else {
+      root.innerHTML = message.html;
+      hydrate(root);
+    }
     root.dataset.pysxAttached = "true";
     attachmentReady();
-    hydrate(root);
     syncDom();
     if (routing) queueRouteScroll(browserLocation());
   } else if (message.t === "adopted") {
@@ -656,7 +665,7 @@ function connectionState(state, retryMs = 0) {
   root.dataset.pysxConnection = state;
   connectionStatus.hidden = state === "connected" && !freshSession && !restoredSession;
   const text = state === "connected" ? (restoredSession ?
-    "Connected. Declared session state was restored; uncommitted edits were discarded." :
+    "Connected. Session state was restored; uncommitted edits were discarded." :
     "Connected. A fresh session started; previous session state was lost.") :
     state === "reconnecting" ? "Disconnected. Reconnecting; offline edits are rejected." :
     state === "fresh" ? "Previous session expired. Starting a fresh session." :
@@ -702,6 +711,7 @@ function resetSession(restored = false) {
     window.removeEventListener(type, listeners.bubble);
   }
   registeredEvents.clear();
+  for (const control of root.querySelectorAll("[data-pysx-binding]")) edits.delete(control);
   if (previousRestoration !== null) history.scrollRestoration = previousRestoration;
   routing = false; navigationRevision = 0;
   historyPositions.clear();
@@ -724,6 +734,11 @@ function closeSocket(event) {
   root.dataset.pysxAttached = "false";
   window.dispatchEvent(new CustomEvent("pysx:disconnected"));
   if (stopped) return;
+  if (developing && event.code === 4000 && event.reason === "development reload") {
+    retryAttempt = 0;
+    reconnect(false);
+    return;
+  }
   if (event.code === 4010 && /^[A-Za-z0-9_-]{1,64}$/.test(event.reason)) ownerHint = event.reason;
   if (event.code === 4004 || event.code === 4009 || (event.code === 1008 && epoch === null)) {
     resetSession();
@@ -881,32 +896,45 @@ function compatible(old, fresh) {
   return token === nextToken;
 }
 
-function morphNode(old, fresh, complete = false) {
+function morphNode(old, fresh, complete = false, resetDefaults = false) {
   if (old.nodeType !== Node.ELEMENT_NODE) {
     if (old.data !== fresh.data) old.data = fresh.data;
     return;
   }
+  const formState = resetDefaults ? {
+    value: fresh.value, checked: fresh.checked, selected: fresh.selected,
+    defaultValue: fresh.defaultValue,
+    options: fresh.tagName === "SELECT" ? [...fresh.options].map(option => option.selected) : null,
+  } : null;
   const incoming = new Map([...fresh.attributes].map(attr => [attr.name, attr.value]));
   const controlled = new Set([...old.attributes].filter(attr => PROPERTIES.has(attr.name)).map(attr => attr.name));
   for (const attr of [...old.attributes]) if (!incoming.has(attr.name) && !PROPERTIES.has(attr.name)) old.removeAttribute(attr.name);
   for (const [name, value] of incoming) {
     if (PROPERTIES.has(name)) {
+      if (resetDefaults) old.setAttribute(name, value);
       if (name === "value") setValue(old, value);
       else old[name] = true;
     } else if (old.getAttribute(name) !== value) old.setAttribute(name, value);
   }
   for (const name of controlled) if (!incoming.has(name)) {
-    if (name === "value") setValue(old, "");
+    if (resetDefaults) old.removeAttribute(name);
+    if (name === "value") { if (!resetDefaults) setValue(old, ""); }
     else old[name] = false;
   }
-  if (!old.hasAttribute("data-pysx-imperative")) morphChildren(old, [...old.childNodes], [...fresh.childNodes], null, complete);
+  if (!old.hasAttribute("data-pysx-imperative")) morphChildren(old, [...old.childNodes], [...fresh.childNodes], null, complete, resetDefaults);
+  if (formState) {
+    if (old.tagName === "INPUT") { setValue(old, formState.value); old.checked = formState.checked; }
+    if (old.tagName === "TEXTAREA") { old.defaultValue = formState.defaultValue; setValue(old, formState.value); }
+    if (old.tagName === "OPTION") old.selected = formState.selected;
+    if (formState.options) for (let index = 0; index < old.options.length; index++) old.options[index].selected = formState.options[index];
+  }
   if (complete && old.tagName === "SELECT") {
     if (fresh.hasAttribute("data-pysx-selected")) setSelected(old, JSON.parse(fresh.dataset.pysxSelected));
     else if (fresh.hasAttribute("value")) setSelected(old, [fresh.getAttribute("value")]);
   }
 }
 
-function morphChildren(parent, previousNodes, nextNodes, boundary = null, complete = false) {
+function morphChildren(parent, previousNodes, nextNodes, boundary = null, complete = false, resetDefaults = false) {
   const oldGroups = nodeGroups(previousNodes);
   const freshGroups = nodeGroups(nextNodes);
   const keyed = new Map(oldGroups.filter(group => group.key).map(group => [group.key, group]));
@@ -919,7 +947,7 @@ function morphChildren(parent, previousNodes, nextNodes, boundary = null, comple
     if (old) {
       used.add(old);
       if (old.kind) {
-        if (old.kind !== "list" || complete) morphChildren(parent, old.nodes.slice(1, -1), fresh.nodes.slice(1, -1), old.nodes.at(-1), complete);
+        if (old.kind !== "list" || complete) morphChildren(parent, old.nodes.slice(1, -1), fresh.nodes.slice(1, -1), old.nodes.at(-1), complete, resetDefaults);
         // Nested reconciliation may have changed the live range's length.
         const members = [];
         for (let node = old.nodes[0]; node; node = node.nextSibling) {
@@ -927,7 +955,7 @@ function morphChildren(parent, previousNodes, nextNodes, boundary = null, comple
           if (node === old.nodes.at(-1)) break;
         }
         resulting.push(...members);
-      } else { morphNode(old.nodes[0], fresh.nodes[0], complete); resulting.push(old.nodes[0]); }
+      } else { morphNode(old.nodes[0], fresh.nodes[0], complete, resetDefaults); resulting.push(old.nodes[0]); }
     } else resulting.push(...fresh.nodes);
   }
   for (const old of oldGroups) if (!used.has(old)) for (const node of old.nodes) node.remove();

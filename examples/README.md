@@ -17,10 +17,31 @@ uv run --project . example run events
 uv run --project . example run templates
 uv run --project . example run keyed_rows
 uv run --project . example run durable_state
+uv run --project . example run development
 uv run --project . example run
 ```
 
 The last command lists available apps. Examples serve at http://127.0.0.1:8750.
+The `development` entry is a simple reactive counter with its own shared state
+panel. It needs no database or custom hot-reload wiring. Ordinary watch apps have
+no such panel. The panel shows this tab's sample count plus workspace aggregates
+and redacted reset reasons/source links. Discard starts this page fresh while other
+live tabs keep their state. For live editing, use the watch launcher:
+
+```sh
+uv run --project . pysx --app examples.development:app --watch
+```
+
+Start at 0, increment to 1, edit the title in `examples/development.py` and save:
+the count stays 1. Increment to 2, then refresh: it returns to 0. A new tab also
+starts at 0. Separately, changing `count = signal(0)` to `signal(1)` resets that
+slot to 1; restore `signal(0)` afterward. The page includes these steps.
+Add `--inspect` for the separate inspector's redacted events, source links and
+diagnostics. A broken edit leaves the previous worker usable; repair it to resume
+replacement. Ctrl+C stops the supervisor and its workers. Explicit persistence
+is demonstrated separately by `durable_state`. See
+[development hosting](../docs/DEVELOPMENT.md) for configuration and limits.
+
 Choose another port with `--port` or `PSX_PORT`:
 
 ```sh
@@ -46,6 +67,11 @@ the same command. The browser restores committed count/draft state and reports t
 recovery; the setup marker changes and a new resource loads. Another tab and a page
 reload start independent sessions. Healthy socket reconnect retains the live graph.
 Unsent edits are discarded on reconstruction, rather than replayed.
+
+The same restart test works with `uv run --project . pysx --app
+examples.durable_state:app --watch`: keep the tab open, press Ctrl+C, and restart
+that command. The open page reconnects and recovers its count/draft without
+navigating. Refreshing it still starts a new session.
 
 The default SQLite file is `pysx-durable-example.sqlite3` in the OS temporary directory.
 It survives process restart until removed by local cleanup. For an explicit local

@@ -185,6 +185,8 @@ class _DurableRuntime[T](HTTPRuntime):
 class DurableApplication[T](Application):
     """One fresh declared-state graph per tab, with a single leased writer."""
 
+    runtime: _DurableRuntime[T]
+
     def __init__(
         self,
         app: Callable[[Signal[T]], Template | Fragment],

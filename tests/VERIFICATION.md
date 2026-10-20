@@ -48,6 +48,7 @@ npm --prefix tests run browser -- --suite accessible_keyboard
 npm --prefix tests run browser -- --suite events_example
 npm --prefix tests run grammar -- --suite injection
 npm --prefix editor test -- --suite diagnostics
+npm --prefix editor test -- --suite save_latency
 uv run --project . pytest -q tests/test_verification_harness.py
 ```
 
@@ -56,6 +57,13 @@ control bindings, server normalization with caret preservation, edit revisions,
 composition event sequences, reset/submit validation, successful-control
 serialization, session isolation and bounded delegated listeners. The forms example
 uses the real launcher and shared example components.
+
+The editor `save_latency` suite uses actual VSCode manual save and autosave with
+the resident import action, the installed watch CLI, and foreground Chromium DOM
+observation. It reports save-to-disk and save-to-visible samples for counter title
+and initializer edits. It does not qualify display paint or operating-system window
+switching. The framed `save_latency` Python cases separately force analysis to stay
+pending and verify that saves return promptly without stale import removals.
 
 The event suites verify immediate key/default/propagation policies, typed snapshots,
 custom events and native link eligibility. DOM suites exercise scoped asynchronous

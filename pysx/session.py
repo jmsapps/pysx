@@ -8,13 +8,15 @@ import json
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, cast
 
+from . import tracing
 from .async_runtime import MutationRuntime, active_runtime
 from .errors import ErrorInfo, FailureCapture, failure_context, report_error
 from .events import decode_event
 from .forms import PayloadError
+from .lifecycle import resources_preparing
 from .reactive import Effect, batch, write_guard
 from .render import Fragment, Watcher, render
-from .request import RequestContext, request_context
+from .request import RequestContext, browser_id, request_context
 from .routing import RouteHost, route_host
 from .styles import style_context
 from .transport import TransportState
@@ -37,6 +39,7 @@ class Session:
         app_fn: Callable[[], Template | Fragment],
         *,
         location: str = "/",
+        browser: str = "",
         development: bool = False,
         request: RequestContext | None = None,
         mutation_capacity: int = 64,
@@ -44,6 +47,8 @@ class Session:
         outbox_bytes: int = 2097152,
     ) -> None:
         self.request = request or RequestContext(path=location)
+        self.location = location
+        self.browser = browser or browser_id(self.request)
         self.closed = False
         self.revoked = False
         self.recovery_failed = False
@@ -61,11 +66,17 @@ class Session:
         self._live = False
         self._failed_callback: Exception | None = None
         self.development = development
+        self.trace = (
+            tracing.Trace()
+            if development and tracing.enabled and not resources_preparing()
+            else None
+        )
         self.routes = RouteHost(location, base_path=self.request.base_path)
         route_token = route_host.set(self.routes)
         request_token = request_context.set(self.request)
         runtime_token = active_runtime.set(self.runtime)
         guard_token = write_guard.set(self.runtime.check_write)
+        trace_token = tracing.active.set(self.trace) if tracing.enabled else None
 
         try:
             self.rendered = render(app_fn, development=development)
@@ -78,6 +89,10 @@ class Session:
             request_context.reset(request_token)
             active_runtime.reset(runtime_token)
             write_guard.reset(guard_token)
+
+            if trace_token is not None:
+                tracing.active.reset(trace_token)
+
         # The first run of each effect registers its subscription; watchers were
         # seeded with the rendered value, so it produces ops only where setup
         # wrote a signal after its hole had already been emitted.
@@ -107,11 +122,15 @@ class Session:
 
     def _watch(self, watcher: Watcher) -> Effect:
         token = failure_context.set(watcher.failure)
+        trace_token = tracing.active.set(self.trace) if tracing.enabled else None
 
         try:
             return Effect(lambda: self._collect(watcher), phase="render")
         finally:
             failure_context.reset(token)
+
+            if trace_token is not None:
+                tracing.active.reset(trace_token)
 
     def _owned_ops(self, ops: list[Op]) -> None:
         self._sync_styles()
@@ -142,6 +161,9 @@ class Session:
             self.pending.clear()
         else:
             self.pending.extend(ops)
+
+            if self.trace is not None:
+                self.trace.record("patch.queue", count=len(ops))
         self.changed.set()
 
     @contextmanager
@@ -152,6 +174,7 @@ class Session:
         request_token = request_context.set(self.request)
         runtime_token = active_runtime.set(self.runtime)
         guard_token = write_guard.set(self.runtime.check_write)
+        trace_token = tracing.active.set(self.trace) if tracing.enabled else None
 
         try:
             yield
@@ -162,8 +185,13 @@ class Session:
             write_guard.reset(guard_token)
             style_context.reset(style_token)
 
+            if trace_token is not None:
+                tracing.active.reset(trace_token)
+
     def _collect(self, watcher: Watcher) -> None:
         with self.context():
+            if self.trace is not None:
+                self.trace.record("render", id(watcher))
             ops = self.rendered.refresh(watcher)
         self._sync_styles()
 

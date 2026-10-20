@@ -124,6 +124,10 @@ class HTTPRuntime:
         self.graphs: set[Session] = set()
         self.reservations = 0
         self.closed = False
+        self.draining = False
+        self.development_resume: (
+            Callable[[str, RequestContext, str, int, str], Session | None] | None
+        ) = None
         self.cleanup_tasks: set[asyncio.Task[object]] = set()
         self.resume_handles: dict[str, ResumeHandle] = {}
         self.detached: OrderedDict[str, ResumeHandle] = OrderedDict()
@@ -165,11 +169,27 @@ class HTTPRuntime:
         while len(self.detached) > self.limits.detached:
             self.release(next(iter(self.detached.values())).session)
 
-    def resume(self, token: str, request: RequestContext, epoch: str, revision: int) -> Session:
+    def resume(
+        self,
+        token: str,
+        request: RequestContext,
+        epoch: str,
+        revision: int,
+        *,
+        location: str | None = None,
+    ) -> Session:
         from .request import browser_id
 
         self.reap()
         handle = self.detached.get(token)
+
+        if handle is None and self.development and self.development_resume is not None:
+            restored = self.development_resume(
+                token, request, epoch, revision, location or request.path
+            )
+
+            if restored is not None:
+                return restored
 
         if (
             self.closed
@@ -197,7 +217,11 @@ class HTTPRuntime:
     def reserve(self) -> bool:
         self.graphs = {session for session in self.graphs if not session.closed}
 
-        if self.closed or len(self.graphs) + self.reservations >= self.limits.graphs:
+        if (
+            self.closed
+            or self.draining
+            or len(self.graphs) + self.reservations >= self.limits.graphs
+        ):
             return False
         self.reservations += 1
 
@@ -213,11 +237,14 @@ class HTTPRuntime:
         request: RequestContext,
         *,
         location: str | None = None,
-        browser: str | None = None,  # noqa: ARG002 - durable factory hook
+        browser: str | None = None,
     ) -> Session:
+        if self.closed or self.draining:
+            raise ValueError("worker is not accepting new graphs")
         session = Session(
             self.app,
             location=location or request.path,
+            browser=browser or "",
             request=request,
             development=self.development,
             mutation_capacity=self.mutation_capacity,

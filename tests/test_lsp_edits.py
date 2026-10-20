@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
@@ -676,6 +677,7 @@ def test_resident_commands_organize_imports_keeps_template_only_imports(
     consumer.write_text(TEMPLATE_CONSUMER)
     client.open(library, TEMPLATE_LIBRARY)
     client.open(consumer, TEMPLATE_CONSUMER)
+    client.settled(lambda state: bool(state["workspaces"]) and state["workspaces"][0]["ready"])
     actions = organize(client, consumer)
     assert [action["title"] for action in actions] == ["pysx: remove unused imports"]
     assert actions[0]["kind"] == "source.organizeImports.pysx"
@@ -696,7 +698,59 @@ def test_resident_commands_organize_imports_refuses_incomplete_analysis(
     consumer.write_text(broken)
     client.open(library, TEMPLATE_LIBRARY)
     client.open(consumer, broken)
+    client.settled(lambda state: bool(state["workspaces"]) and state["workspaces"][0]["ready"])
     assert organize(client, consumer) == []
+
+
+@pytest.mark.parametrize("warmed", [False, True], ids=["cold", "warmed-edit"])
+def test_save_latency_import_action_does_not_wait_or_reuse_stale_findings(
+    tmp_path: Path, warmed: bool
+) -> None:
+    # Hold only this isolated server's background analysis. The original defect
+    # waits two seconds even though saving should return no edits immediately.
+    command = [
+        sys.executable,
+        "-c",
+        "import time\n"
+        "from pysx.lsp_workspace import WorkspaceIndex\n"
+        "original = WorkspaceIndex.build\n"
+        "def slow(self, buffers, *args, **kwargs):\n"
+        "    if any('# pending-save-analysis' in item['source'] for item in buffers.values()):\n"
+        "        time.sleep(3)\n"
+        "    return original(self, buffers, *args, **kwargs)\n"
+        "WorkspaceIndex.build = slow\n"
+        "from pysx.lsp import main\n"
+        "main()\n",
+    ]
+    library = tmp_path / "library.py"
+    consumer = tmp_path / "view.py"
+    library.write_text(TEMPLATE_LIBRARY)
+    source = TEMPLATE_CONSUMER.replace("Fragment, pysx", "Fragment, pysx, signal")
+    source += "\ncount = signal(0)\n"
+    changed = source.replace("signal(0)", "signal(1)")
+    changed += "keep = Spare\n# pending-save-analysis\n"
+    consumer.write_text(source if warmed else changed)
+    client = Client(tmp_path, command=command)
+
+    try:
+        client.open(consumer, source if warmed else changed)
+
+        if warmed:
+            client.settled(
+                lambda state: bool(state["workspaces"]) and state["workspaces"][0]["ready"]
+            )
+            assert len(organize(client, consumer)) == 1
+            client.change(consumer, changed, 2)
+        started = time.perf_counter()
+        assert organize(client, consumer) == []
+        assert time.perf_counter() - started < 0.75
+        readiness = cast(
+            "dict[str, Any]", client.request("pysx/readiness", {"uri": consumer.as_uri()})
+        )
+        assert readiness["ready"] is False
+        assert consumer.read_text() == (source if warmed else changed)
+    finally:
+        client.close()
 
 
 def test_resident_commands_readiness_reports_replacement_coverage(
@@ -706,6 +760,7 @@ def test_resident_commands_readiness_reports_replacement_coverage(
     path = tmp_path / "view.py"
     path.write_text(TEMPLATE_LIBRARY)
     client.open(path, TEMPLATE_LIBRARY)
+    client.settled(lambda state: bool(state["workspaces"]) and state["workspaces"][0]["ready"])
     client.request(
         "textDocument/codeAction",
         {

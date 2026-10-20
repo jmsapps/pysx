@@ -21,8 +21,7 @@ def app() -> Fragment:
     def increment(_e: object) -> None:
         count.set(count() + 1)
 
-    return pysx(
-        t"""
+    return pysx(t"""
         Page(id="container"):
             header:
                 Eyebrow: "pysx / examples"
@@ -33,5 +32,4 @@ def app() -> Fragment:
                 Value: {count}
             Actions:
                 Action(type="button", onClick={increment}): "Increment"
-    """,
-    )
+    """)

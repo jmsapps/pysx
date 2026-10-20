@@ -26,6 +26,10 @@ host serves HTTP and WebSockets on the same port. From a checkout, prefix this
 command with `uv run --project .`. Programmatic serving uses
 `async with host.listen("127.0.0.1", 8750)`.
 
+For local edit-and-reload development, add `--watch`; see the
+[development workflow](DEVELOPMENT.md) for source roots, candidate failure recovery,
+browser reloads and the separate local proxy's limits.
+
 Install `pysx[asgi]` to use `pysx --app user_app:host --asgi --port 8750`.
 The optional host pins Uvicorn 0.54.0; the core package has no Uvicorn dependency.
 For another ASGI server or middleware stack, expose `asgi_app = host.asgi()`.

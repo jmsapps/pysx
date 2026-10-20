@@ -75,12 +75,42 @@ epoch, `recovered:true`, authoritative HTML/CSS, a rotated live-resume handle an
 the recovery credential/worker hint. Only this authenticated attachment transition
 permits an already-attached client to accept a new `init` epoch. The client clears
 prior DOM capabilities, listeners and sequence/revision state before installation.
+Compatible elements are reconciled from the complete authoritative snapshot, retaining
+node identity, focus and caret where possible. Per-control edit metadata is reset;
+changed reference owners replace their nodes and cannot retain old capabilities.
+Reconstruction installs the new graph's native control defaults and canonical
+values, including uncontrolled checkboxes and selects. Same-graph repair retains
+its existing reset defaults.
 It displays that declared state was restored and uncommitted edits were discarded.
 No old event or changed-control payload is applied to fresh handlers.
 
 An explicit incompatible-schema fresh policy sends `init` with `fresh:true`, a new
 credential and the normal visible fresh-session notification. `fresh` and
-`recovered` cannot both be true. Unknown/revoked/mismatched credentials return 4004;
+`recovered` cannot both be true.
+
+A browser normally refuses a reconstructed `init` unless it already holds a recovery
+credential, closing 4002. Development hosts send `development:true` on the first
+`adopted`/`init` of a session; a browser that received it accepts a later
+`recovered:true` reconstruction for an authenticated local-state handoff, or a
+`fresh:true` fallback, without a durable credential. A compatible local handoff
+uses the same complete reconciliation and capability/default reset as declared
+recovery. The exemption
+is bound to a session that was established as a development session — it cannot be
+claimed by a later message alone — and production hosts never send the field.
+
+An established development client reconnects immediately for close code `4000`
+with reason `development reload`. This planned transition retains its live resume
+credential. All other disconnects keep the ordinary bounded retry policy.
+
+Development replacement hands component-local values to the existing tab through
+its original `hello` resume credential, epoch/revision and requested location.
+The candidate verifies browser and principal ownership before consuming this
+single-use, 30-second handoff and rotating the live handle. Independent tabs do
+not share handoffs. HTTP page creation never restores these snapshots: refreshes
+and new tabs use current initializers. This adds no application event fields or
+production persistence mechanism.
+
+Unknown/revoked/mismatched credentials return 4004;
 failed store/ownership/checkpoint operations return 1013. A live owner returns
 4010 with only a bounded worker identifier as its close reason; the client updates
 its routing hint and retries within the existing finite policy. A proxy resolves

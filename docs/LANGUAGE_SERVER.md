@@ -190,7 +190,10 @@ setting edited after pysx wrote it. Setup enables the `source.organizeImports.py
 action as the replacement for the editor actions it disables. That action removes only
 imports the template-aware analysis proves unused, is offered only against complete,
 current analysis of the unmodified buffer, and is withheld rather than guessed whenever
-analysis has moved on. Repeated setup keeps the original restoration baseline, so
+analysis has moved on. Save actions never wait for the workspace sweep: if current,
+complete analysis is unavailable, that save leaves imports unchanged. Once analysis
+finishes, a subsequent action can remove proven unused imports. This avoids delaying
+the disk write and hot reload behind language analysis. Repeated setup keeps the original restoration baseline, so
 `pysx: Restore Editor Settings pysx Changed` still returns the values the workspace had
 before pysx ever configured it.
 
