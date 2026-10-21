@@ -2,7 +2,7 @@
 
 from examples import examples
 from examples.reactive_state import app
-from pysx.server import Session
+from pysx.hosting.server import Session
 
 
 def test_reactive_state_example() -> None:

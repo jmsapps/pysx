@@ -21,14 +21,61 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
 from pysx import Application, Fragment, HostConfig, TransportLimits, native, on_cleanup, resource
-from pysx._uvicorn import websocket_protocol
-from pysx.hosting import request_from_headers
+from pysx.hosting._uvicorn import websocket_protocol
+from pysx.hosting.hosting import request_from_headers
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from pysx.wire import JSONValue
+    from pysx.runtime.wire import JSONValue
+
+
+async def http_method_parser(port: int) -> None:
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+
+    try:
+        writer.write(b"HE")
+        await writer.drain()
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(reader.read(1), 0.03)
+        writer.write(b"AD / HTTP/1.1\r\n")
+        await writer.drain()
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(reader.read(1), 0.03)
+        writer.write(b"Host: localhost\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        response = await asyncio.wait_for(reader.read(), 2)
+        headers, separator, body = response.partition(b"\r\n\r\n")
+        assert separator
+        assert headers.startswith(b"HTTP/1.1 200")
+        assert body == b""
+    finally:
+        writer.close()
+        await writer.wait_closed()
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+
+    try:
+        writer.write(b"X" * 8192)
+        await writer.drain()
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(reader.read(1), 0.03)
+        writer.write(b"X")
+        await writer.drain()
+        assert await asyncio.wait_for(reader.read(), 2) == b""
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
+def test_standalone_http_method_parser() -> None:
+    async def exercise() -> None:
+        application = Application(lambda: native.P("parser"))
+        async with application.listen(port=0) as server:
+            assert server.sockets is not None
+            await http_method_parser(server.sockets[0].getsockname()[1])
+
+    asyncio.run(exercise())
 
 
 def build_config(factory: Callable[..., object], field: str, value: float) -> object:
@@ -373,7 +420,7 @@ def test_bound_sends_real_signal_shutdown(
     command = [
         sys.executable,
         "-m",
-        "pysx.server",
+        "pysx.hosting.server",
         "--app",
         "tests.transport_limits_fixture:host",
         "--port",

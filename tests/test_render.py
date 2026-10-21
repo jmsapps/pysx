@@ -20,7 +20,7 @@ from pysx import (
     structured,
     styled,
 )
-from pysx.server import Session
+from pysx.hosting.server import Session
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -91,7 +91,7 @@ def test_platform_matrix_covers_every_command_this_phase_runs() -> None:
         "editor test -- --suite editor_surface",
         "editor test -- --suite template_import_usage",
         "grammar -- --suite client_verify",
-        "pysx.tooling",
+        "pysx.tooling.tools",
         "build_vsix.py",
     ):
         assert command in text, f"no matrix row covers {command}"

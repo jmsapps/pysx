@@ -231,7 +231,7 @@ def tree() -> Fragment:
   if (process.env.PYSX_EDITOR_PERFORMANCE === "1") {
     const checkout = process.env.PYSX_EDITOR_CHECKOUT;
     const result = spawnSync(process.env.PYSX_EDITOR_PYTHON, ["-c",
-      "import json,sys; from pathlib import Path; from pysx.quality import source_files; root=Path(sys.argv[1]); print(json.dumps([str(path.relative_to(root)) for path in source_files(root)]))", checkout],
+      "import json,sys; from pathlib import Path; from pysx.tooling.quality import source_files; root=Path(sys.argv[1]); print(json.dumps([str(path.relative_to(root)) for path in source_files(root)]))", checkout],
       { encoding: "utf8", timeout: 30000 });
     assert.equal(result.status, 0, result.stderr);
     const files = JSON.parse(result.stdout);

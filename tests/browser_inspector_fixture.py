@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from browser_hot_fixture import Fixture as HotFixture
 from test_hot_reload import hot_project
 
-from pysx.development import WatchConfig
+from pysx.development.development import WatchConfig
 
 if TYPE_CHECKING:
     from websockets.asyncio.server import ServerConnection

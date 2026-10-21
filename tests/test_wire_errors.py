@@ -3,10 +3,10 @@
 import json
 from typing import TYPE_CHECKING
 
-from pysx.errors import ErrorInfo
+from pysx.components.errors import ErrorInfo
 
 if TYPE_CHECKING:
-    from pysx.wire import ResultMessage
+    from pysx.runtime.wire import ResultMessage
 
 
 def test_boundary_error_safe_metadata_and_distinct_outcomes() -> None:

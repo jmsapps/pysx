@@ -23,8 +23,8 @@ from pysx import (
     StateSnapshot,
     StoreUnavailable,
 )
-from pysx.connection import serve_connection
-from pysx.ownership import LeasedStateStore, OwnerMoved
+from pysx.runtime.connection import serve_connection
+from pysx.runtime.ownership import LeasedStateStore, OwnerMoved
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

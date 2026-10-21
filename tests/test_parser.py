@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pysx.parser import (
+from pysx.compiler.parser import (
     Element,
     Hole,
     HoleKind,
@@ -16,7 +16,7 @@ def test_positioned_multiline_coordinates_immutable_structure_and_cache() -> Non
     from dataclasses import FrozenInstanceError
 
     from pysx import native
-    from pysx.parser import LiteralText, Position
+    from pysx.compiler.parser import LiteralText, Position
 
     template = t"""
         {native.Div}(
@@ -166,7 +166,7 @@ def test_rejects_quote_line_content() -> None:
 
 
 def test_single_line_markup_and_positioned_attribute_names() -> None:
-    from pysx.parser import LiteralText
+    from pysx.compiler.parser import LiteralText
 
     skeleton = parse(t'''Panel(title="Hello"): "Content"'''.strings)
     panel = skeleton.root[0]
@@ -192,7 +192,7 @@ def test_attribute_hole_kinds() -> None:
 
 
 def test_conditional_with_else() -> None:
-    from pysx.parser import Conditional
+    from pysx.compiler.parser import Conditional
 
     sk = parse(
         t"""
@@ -215,7 +215,7 @@ def test_conditional_with_else() -> None:
 
 
 def test_conditional_without_else() -> None:
-    from pysx.parser import Conditional
+    from pysx.compiler.parser import Conditional
 
     sk = parse(
         t"""

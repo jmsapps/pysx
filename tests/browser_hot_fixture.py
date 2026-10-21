@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from test_hot_reload import COMPONENT, HOT_SOURCE, VOLATILE_SOURCE, hot_project
 
-from pysx.development import Supervisor, WatchConfig
+from pysx.development.development import Supervisor, WatchConfig
 
 if TYPE_CHECKING:
     from websockets.asyncio.server import ServerConnection

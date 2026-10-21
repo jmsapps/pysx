@@ -99,7 +99,7 @@ class Workers:
             [
                 sys.executable,
                 "-m",
-                "pysx.server",
+                "pysx.hosting.server",
                 "--app",
                 "tests.recovery_workload_fixture:host"
                 if self.workload

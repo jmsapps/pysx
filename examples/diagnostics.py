@@ -1,7 +1,7 @@
 """Inspect and repair static template samples without executing their source."""
 
 from pysx import Fragment, component, derived, pysx, signal
-from pysx.check import apply_fix, diagnostics_for_source
+from pysx.tooling.check import apply_fix, diagnostics_for_source
 
 from .components import Action, Actions, Card, Description, Eyebrow, Metric, Page, Title, Value
 from .components.diagnostics import SourceCode

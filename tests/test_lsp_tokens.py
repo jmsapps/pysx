@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 from test_lsp import Client
 
-from pysx.lsp_features import (
+from pysx.tooling.lsp.features import (
     SEMANTIC_TOKEN_MODIFIERS,
     SEMANTIC_TOKEN_TYPES,
     semantic_tokens,
     template_calls,
 )
-from pysx.lsp_workspace import position
+from pysx.tooling.lsp.workspace import position
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -171,8 +171,8 @@ def test_buffer_readiness_structure_does_not_wait_for_any_model(tmp_path: Path) 
         f"""
 import time
 from pathlib import Path
-from pysx.lsp_workspace import WorkspaceIndex
-from pysx.lsp_server import create_server
+from pysx.tooling.lsp.workspace import WorkspaceIndex
+from pysx.tooling.lsp.server import create_server
 original = WorkspaceIndex.build
 def blocked(self, *args, **kwargs):
     while not Path({str(release)!r}).exists():
@@ -396,7 +396,7 @@ def test_editor_surface_tokens_cover_native_styled_and_callable_tags(
     path = tmp_path / "view.py"
     source = (
         "from pysx import Fragment, pysx, styled\n"
-        "from pysx.native import div\n"
+        "from pysx.components.native import div\n"
         "\n"
         "\n"
         "Box = styled(div)(t'padding: 4px')\n"

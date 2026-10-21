@@ -9,8 +9,8 @@ if TYPE_CHECKING:
 import pytest
 
 from pysx import Fragment, derived, native, pysx, signal
-from pysx.forms import PayloadError, form_edits
-from pysx.server import Session
+from pysx.hosting.server import Session
+from pysx.runtime.forms import PayloadError, form_edits
 
 
 def test_bindings_form_payloads_projections_and_echo() -> None:

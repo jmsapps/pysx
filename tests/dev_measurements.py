@@ -28,9 +28,9 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 from websockets.typing import Origin
 
-import pysx.reactive as reactive
-from pysx import tracing
-from pysx.development import Supervisor, WatchConfig
+from pysx.development import tracing
+from pysx.development.development import Supervisor, WatchConfig
+from pysx.reactive import reactive
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -131,7 +131,7 @@ def capture_overhead() -> dict[str, object]:
     tree = transform.visit(ast.parse(source))
     assert transform.removed == 1
     baseline = ModuleType("pysx._measurement_capture_baseline")
-    baseline.__package__ = "pysx"
+    baseline.__package__ = reactive.__package__
     baseline.__file__ = str(path)
     sys.modules[baseline.__name__] = baseline
 
@@ -186,11 +186,11 @@ def capture_overhead() -> dict[str, object]:
 
 def preservation_scale() -> dict[str, object]:
     from pysx import native, signal
-    from pysx.development_control import Control
-    from pysx.hosting import Application, HostConfig
-    from pysx.lifecycle import capture_local_state
-    from pysx.request import RequestContext
-    from pysx.session import Session
+    from pysx.components.lifecycle import capture_local_state
+    from pysx.development.control import Control
+    from pysx.hosting.hosting import Application, HostConfig
+    from pysx.hosting.request import RequestContext
+    from pysx.runtime.session import Session
 
     def app() -> object:
         return native.Main(*[native.P(signal(index), id=f"s{index}") for index in range(64)])
@@ -257,7 +257,7 @@ def disabled_overhead() -> dict[str, object]:
     tree = transform.visit(ast.parse(source))
     assert transform.removed == 3
     baseline = ModuleType("pysx._measurement_baseline")
-    baseline.__package__ = "pysx"
+    baseline.__package__ = reactive.__package__
     baseline.__file__ = str(path)
     sys.modules[baseline.__name__] = baseline
 

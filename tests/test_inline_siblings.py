@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from pysx.parser import Element, Hole, HoleKind, Node, PysxSyntaxError, parse
+from pysx.compiler.parser import Element, Hole, HoleKind, Node, PysxSyntaxError, parse
 
 MATRIX = Path(__file__).parent / "fixtures" / "inline_siblings.json"
 

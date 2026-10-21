@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlsplit
 
-from pysx.development import Supervisor, WatchConfig
+from pysx.development.development import Supervisor, WatchConfig
 
 if TYPE_CHECKING:
     from websockets.asyncio.server import ServerConnection

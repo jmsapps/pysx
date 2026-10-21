@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from pysx import ErrorInfo, Fragment, native, signal
-from pysx.connection import serve_connection
-from pysx.http import HTTPRuntime
-from pysx.request import RequestContext
+from pysx.hosting.http import HTTPRuntime
+from pysx.hosting.request import RequestContext
+from pysx.runtime.connection import serve_connection
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

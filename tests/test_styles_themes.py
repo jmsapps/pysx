@@ -6,8 +6,8 @@ from string.templatelib import Template
 import pytest
 
 from pysx import Fragment, Themes, batch, div, each, global_style, pysx, render, signal, styled
-from pysx.server import Session
-from pysx.styles import css_name, variable_name, variable_values
+from pysx.hosting.server import Session
+from pysx.styling.styles import css_name, variable_name, variable_values
 
 
 def handler(session: Session, identifier: str) -> str:

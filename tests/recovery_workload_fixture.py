@@ -32,8 +32,8 @@ from pysx import (
 )
 
 if TYPE_CHECKING:
-    from pysx.request import RequestContext
-    from pysx.wire import JSONValue
+    from pysx.hosting.request import RequestContext
+    from pysx.runtime.wire import JSONValue
 
 
 def principal(request: RequestContext) -> str:

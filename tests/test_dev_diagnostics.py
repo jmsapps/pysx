@@ -20,23 +20,54 @@ from dev_workload import (
     describe_workspace,
 )
 
-from pysx import Application, HostConfig, SecurityPolicy, native, signal, tracing
-from pysx.check import diagnostics_for_source
-from pysx.development import Supervisor, WatchConfig
-from pysx.development_control import Control, control_server
-from pysx.development_diagnostics import analyse
-from pysx.hosting import request_from_headers
-from pysx.session import Session
+from pysx import Application, HostConfig, SecurityPolicy, native, signal
+from pysx.development import tracing
+from pysx.development.control import Control, control_server
+from pysx.development.development import Supervisor, WatchConfig
+from pysx.development.diagnostics import analyse
+from pysx.hosting.hosting import request_from_headers
+from pysx.runtime.session import Session
+from pysx.tooling.check import diagnostics_for_source
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from pysx import Fragment, Signal
-    from pysx.wire import JSONValue
+    from pysx.runtime.wire import JSONValue
+
+
+def test_inspector_tracing_excludes_other_nested_sdk_frames() -> None:
+    root = Path(__file__).resolve().parents[1]
+    tracing.configure(enable=True, source_roots=(root,))
+    namespace: dict[str, object] = {"signal": signal}
+    exec(
+        compile(
+            "def nested():\n    return signal(0)\n",
+            str(root / "pysx/runtime/nested_frame.py"),
+            "exec",
+        ),
+        namespace,
+    )
+    trace = tracing.Trace()
+    token = tracing.active.set(trace)
+
+    try:
+        value = cast("Callable[[], Signal[int]]", namespace["nested"])()
+        value.set(1)
+        assert trace.events
+        assert all(event["source"] is not None for event in trace.events)
+        assert all(
+            event["source"]["file"] == "tests/test_dev_diagnostics.py"
+            for event in trace.events
+            if event["source"] is not None
+        )
+    finally:
+        tracing.active.reset(token)
+        tracing.configure(enable=False)
 
 
 def test_inspector_tracing_local_reports_redact_values_and_count_actual_restores() -> None:
-    from pysx.lifecycle import capture_local_state
+    from pysx.components.lifecycle import capture_local_state
 
     def view() -> Fragment:
         keep = signal(0)

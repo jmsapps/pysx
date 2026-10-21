@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from pysx.wire import JSONValue
+    from pysx.runtime.wire import JSONValue
 
 FILES = 200
 COMPONENTS = 500
@@ -52,7 +52,7 @@ def create_workspace(root: Path, *, ordinary: bool = False) -> None:
             )
             source += """from pathlib import Path
 from pysx import DurableApplication, Signal, SQLiteOwnershipStore, StateCodec, native
-from pysx.wire import JSONValue
+from pysx.runtime.wire import JSONValue
 def decode(value: JSONValue) -> int:
     if type(value) is not int:
         raise ValueError("expected integer")

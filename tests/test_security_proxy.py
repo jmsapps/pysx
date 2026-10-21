@@ -13,7 +13,7 @@ from websockets.asyncio.client import connect
 from websockets.typing import Origin
 
 from pysx import Application, Fragment, HostConfig, SecurityPolicy
-from pysx.hosting import request_from_headers
+from pysx.hosting.hosting import request_from_headers
 
 if TYPE_CHECKING:
     from pathlib import Path

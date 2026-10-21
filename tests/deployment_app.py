@@ -23,7 +23,7 @@ from pysx import (
 
 if TYPE_CHECKING:
     from pysx import Fragment
-    from pysx.wire import JSONValue
+    from pysx.runtime.wire import JSONValue
 
 
 def decode(value: JSONValue) -> int:

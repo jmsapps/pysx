@@ -17,7 +17,7 @@ domain shape. Stored data never selects imports or Python callables.
 ```python
 from pathlib import Path
 from pysx import DurableSession, Fragment, Signal, SQLiteStateStore, StateCodec, StateIdentity, native
-from pysx.wire import JSONValue
+from pysx.runtime.wire import JSONValue
 
 def decode(value: JSONValue) -> int:
     if type(value) is not int:

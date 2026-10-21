@@ -4,7 +4,7 @@ import re
 
 from examples import examples
 from examples.operators import app
-from pysx.server import Session
+from pysx.hosting.server import Session
 
 CARDS = {
     "t1": ["t1-count-value", "doubled", "nested", "positional", "head"],

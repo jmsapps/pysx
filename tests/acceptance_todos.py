@@ -12,7 +12,7 @@ from websockets.asyncio.client import ClientConnection, connect
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from pysx.wire import AttrOp, ListOp, Op, PatchMessage, ServerMessage
+    from pysx.runtime.wire import AttrOp, ListOp, Op, PatchMessage, ServerMessage
 
 PORT = 8753
 
@@ -169,7 +169,15 @@ async def run() -> None:
 
 def main() -> None:
     with ready_server(
-        [sys.executable, "-m", "pysx.server", "--app", "examples.todos:app", "--port", str(PORT)],
+        [
+            sys.executable,
+            "-m",
+            "pysx.hosting.server",
+            "--app",
+            "examples.todos:app",
+            "--port",
+            str(PORT),
+        ],
     ):
         asyncio.run(run())
         print("TODOS ACCEPTANCE PASSED")

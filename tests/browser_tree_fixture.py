@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from pysx.loader import install_loader
+from pysx.compiler.loader import install_loader
 
 if TYPE_CHECKING:
     from collections.abc import Callable

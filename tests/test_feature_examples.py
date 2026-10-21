@@ -27,16 +27,16 @@ from examples.session_security import app as security_app
 from examples.templates import app as templates_app
 from examples.themes import app as themes_app
 from pysx import BrowserEvent
-from pysx.check import diagnostics
-from pysx.http import HTTPRuntime, reconcile
-from pysx.render_tree import apply, snapshot
-from pysx.request import RequestContext
-from pysx.server import Session
+from pysx.hosting.http import HTTPRuntime, reconcile
+from pysx.hosting.request import RequestContext
+from pysx.hosting.server import Session
+from pysx.rendering.tree import apply, snapshot
+from pysx.tooling.check import diagnostics
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from pysx.durable import DurableSession
+    from pysx.runtime.durable import DurableSession
 
 
 def test_diagnostics_example_fix_warning_reset_isolation_and_cleanup() -> None:
@@ -881,7 +881,7 @@ def test_reconnect_cli_startup_and_ctrl_c_exit() -> None:
 
 def test_session_security_principals_authorization_isolation_and_cleanup() -> None:
     async def exercise() -> None:
-        from pysx.hosting import request_from_headers
+        from pysx.hosting.hosting import request_from_headers
 
         writer = await security_app.http(request_from_headers("/?principal=alice", []))
         reader = await security_app.http(request_from_headers("/?principal=reader", []))
@@ -1113,7 +1113,7 @@ def test_editor_features_demonstrates_every_advertised_interaction() -> None:
         tokens_report,
     )
     from pysx import render
-    from pysx.lsp_features import document_symbols, template_calls
+    from pysx.tooling.lsp.features import document_symbols, template_calls
 
     completion = completion_report()
     assert "tone" in completion, completion

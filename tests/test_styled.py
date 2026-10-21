@@ -247,7 +247,7 @@ def test_styling_diagnostics_literal_css_and_signal_rejection() -> None:
 
 def test_styling_diagnostics_styled_effect_parity() -> None:
     from pysx import effect, signal
-    from pysx.server import Session
+    from pysx.hosting.server import Session
 
     source = signal("red")
     variable = signal("")

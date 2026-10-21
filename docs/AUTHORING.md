@@ -27,7 +27,7 @@ their application scope before collection/imports. For another launcher, install
 the loader before any application imports:
 
 ```python
-from pysx.loader import install_loader
+from pysx.compiler.loader import install_loader
 
 install_loader(packages=("myapp",))
 from myapp.view import app
@@ -159,10 +159,10 @@ obfuscate source: embedded traceback text is part of the artifact.
 Run the template-aware tools from the project root:
 
 ```sh
-uv run --project . python -m pysx.quality ruff
-uv run --project . python -m pysx.quality ruff --fix-imports
-uv run --project . python -m pysx.quality mypy
-uv run --project . python -m pysx.quality pyright
+uv run --project . python -m pysx.tooling.quality ruff
+uv run --project . python -m pysx.tooling.quality ruff --fix-imports
+uv run --project . python -m pysx.tooling.quality mypy
+uv run --project . python -m pysx.tooling.quality pyright
 ```
 
 The [static diagnostic contract](DIAGNOSTICS.md) documents buffer/CLI analysis,

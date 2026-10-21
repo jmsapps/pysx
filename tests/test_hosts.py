@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from pysx import Application, Fragment, HostConfig, StaticAsset, current_request, native, on_cleanup
-from pysx.hosting import request_from_headers
+from pysx.hosting.hosting import request_from_headers
 
 if TYPE_CHECKING:
-    from pysx.asgi import ASGI, Event
-    from pysx.request import RequestContext
+    from pysx.hosting.asgi import ASGI, Event
+    from pysx.hosting.request import RequestContext
 
 
 async def http(

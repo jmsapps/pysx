@@ -27,8 +27,8 @@ from pysx import (
     pysx,
     signal,
 )
-from pysx.render import ListWatcher
-from pysx.server import Session, close_session
+from pysx.hosting.server import Session, close_session
+from pysx.rendering.render import ListWatcher
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -331,7 +331,7 @@ def test_stable_component_setup_patch_and_mount_follow_a_failed_event() -> None:
     command = [
         sys.executable,
         "-m",
-        "pysx.server",
+        "pysx.hosting.server",
         "--app",
         "tests.mount_protocol_fixture:app",
         "--port",

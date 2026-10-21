@@ -1,6 +1,6 @@
 from pathlib import Path
 from pysx import DurableApplication, Fragment, Signal, SQLiteOwnershipStore, StateCodec
-from pysx.wire import JSONValue
+from pysx.runtime.wire import JSONValue
 def decode(value: JSONValue) -> int:
     return 0
 def wrong(state: Signal[str]) -> Fragment:

@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pysx import Application, Dom, DomError, Fragment, TrustedHTML, each, native, render, signal
-from pysx.hosting import request_from_headers
-from pysx.output import attribute_name, attribute_value
-from pysx.server import Session
-from pysx.styles import css_text, variable_values
+from pysx.hosting.hosting import request_from_headers
+from pysx.hosting.server import Session
+from pysx.rendering.output import attribute_name, attribute_value
+from pysx.styling.styles import css_text, variable_values
 
 if TYPE_CHECKING:
     from pysx import DomRef

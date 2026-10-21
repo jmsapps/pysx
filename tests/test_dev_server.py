@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from test_server_limits import http_method_parser
 
-from pysx.development import Supervisor, WatchConfig
+from pysx.development.development import Supervisor, WatchConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
@@ -83,7 +84,7 @@ def serving(
 
     if command is None:
         env["PYTHONPATH"] = str(ROOT)
-    args = command or [sys.executable, "-m", "pysx.server"]
+    args = command or [sys.executable, "-m", "pysx.hosting.server"]
     args = [
         *args,
         "--app",
@@ -212,8 +213,8 @@ def test_installed_serve_initial_errors_timeout_and_repair(tmp_path: Path, broke
 def test_watch_latency_installed_cli_uses_the_default_quiet_period(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pysx import development
-    from pysx.server import main
+    from pysx.development import development
+    from pysx.hosting.server import main
 
     seen: list[WatchConfig] = []
 
@@ -232,7 +233,7 @@ def test_watch_latency_installed_cli_uses_the_default_quiet_period(
 
 def test_installed_serve_configuration_and_occupied_port(tmp_path: Path) -> None:
     env = {**os.environ, "PYTHONPATH": str(ROOT)}
-    base = [sys.executable, "-m", "pysx.server", "--app", "missing:app", "--watch"]
+    base = [sys.executable, "-m", "pysx.hosting.server", "--app", "missing:app", "--watch"]
 
     for options in (
         ["--watch-interval", "nan"],
@@ -337,6 +338,12 @@ def test_installed_serve_rejected_import_reaps_descendants(tmp_path: Path) -> No
         wait_for(lambda: b"original" in get(port), log)
 
 
+def test_development_http_method_parser(tmp_path: Path) -> None:
+    project(tmp_path)
+    with serving(tmp_path) as (port, _log):
+        asyncio.run(http_method_parser(port))
+
+
 def test_installed_serve_prefixed_application_and_http_methods(tmp_path: Path) -> None:
     project(tmp_path)
     (tmp_path / "user_app.py").write_text(
@@ -438,7 +445,7 @@ def test_dev_control_config_rejects_half_configured_environment(
         [
             sys.executable,
             "-m",
-            "pysx.server",
+            "pysx.hosting.server",
             "--app",
             "user_app:app",
             "--port",
@@ -476,7 +483,7 @@ def test_dev_control_config_token_without_port_starts_normally(tmp_path: Path) -
             [
                 sys.executable,
                 "-m",
-                "pysx.server",
+                "pysx.hosting.server",
                 "--app",
                 "user_app:app",
                 "--port",
@@ -892,7 +899,15 @@ def test_volatile_resume_outside_development_still_closes(tmp_path: Path) -> Non
 
     with log.open("w") as stream:
         process = subprocess.Popen(
-            [sys.executable, "-m", "pysx.server", "--app", "user_app:app", "--port", str(port)],
+            [
+                sys.executable,
+                "-m",
+                "pysx.hosting.server",
+                "--app",
+                "user_app:app",
+                "--port",
+                str(port),
+            ],
             cwd=tmp_path,
             env=env,
             stdout=stream,
@@ -940,7 +955,7 @@ def test_preservation_report_lists_resets_and_cold_discards_state(tmp_path: Path
 def test_preservation_opt_out_restores_the_reloading_contract(tmp_path: Path) -> None:
     project(tmp_path)
     (tmp_path / "user_app.py").write_text(COUNTER)
-    command = [sys.executable, "-m", "pysx.server", "--no-preserve-state"]
+    command = [sys.executable, "-m", "pysx.hosting.server", "--no-preserve-state"]
 
     with serving(tmp_path, command=command) as (port, log):
         assert b'id="count"' in get(port, "/")

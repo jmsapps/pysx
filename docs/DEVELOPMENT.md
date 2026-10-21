@@ -1,5 +1,7 @@
 # Local development
 
+For SDK code navigation and module ownership, see the [repository structure](ARCHITECTURE.md).
+
 Install the package in a Python 3.14+ environment, then run from your application's
 directory:
 

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pysx import pysx, render, signal
-from pysx.template import dedent_fragments
+from pysx.compiler.template import dedent_fragments
 
 
 def test_positioned_multiline_snapshot_conversion_format_and_adjacent_holes() -> None:
@@ -54,7 +54,7 @@ def test_positioned_multiline_raw_quoted_crlf_assigned_and_assembled() -> None:
     ],
 )
 def test_positioned_multiline_incompatible_metadata_is_positioned(template: Template) -> None:
-    from pysx.parser import InterpolationError
+    from pysx.compiler.parser import InterpolationError
 
     with pytest.raises(InterpolationError, match="metadata") as caught:
         render(lambda: pysx(template))
@@ -63,6 +63,43 @@ def test_positioned_multiline_incompatible_metadata_is_positioned(template: Temp
 
 if TYPE_CHECKING:
     from string.templatelib import Template
+
+
+@pytest.mark.parametrize("entry", ["root", "fragment", "component", "row"])
+def test_metadata_validation_precedes_formatting_for_all_entry_paths(entry: str) -> None:
+    from pysx import Fragment, each
+    from pysx.compiler.parser import InterpolationError
+
+    formatted: list[str] = []
+
+    class Value:
+        def __format__(self, spec: str) -> str:
+            formatted.append(spec)
+
+            return "value"
+
+    value = Value()
+    fragment = pysx(t'\np: {value:>2}\nif {True!s}:\n  p: "bad"')
+
+    def child() -> Fragment:
+        return fragment
+
+    def app() -> Fragment:
+        if entry == "fragment":
+            return pysx(t"\n{fragment}")
+
+        if entry == "component":
+            return pysx(t"\nChild()", namespace={"Child": child})
+
+        if entry == "row":
+            return pysx(t"\n{each([1], lambda _row: fragment, key=lambda row: row)}")
+
+        return fragment
+
+    with pytest.raises(InterpolationError, match="metadata") as caught:
+        render(app)
+    assert caught.value.position is not None
+    assert formatted == []
 
 
 def _counter_template(count: object, handler: object) -> Template:

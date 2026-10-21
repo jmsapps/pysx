@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pysx import Dom, Fragment, Signal, each, local_state, on_cleanup, own_effect, pysx, signal
-from pysx.dom import DomError, DomRef
-from pysx.render import ListWatcher
-from pysx.server import Session
+from pysx.hosting.server import Session
+from pysx.rendering.render import ListWatcher
+from pysx.runtime.dom import DomError, DomRef
 
 if TYPE_CHECKING:
-    from pysx.wire import Op
+    from pysx.runtime.wire import Op
 
 
 @dataclass(frozen=True)

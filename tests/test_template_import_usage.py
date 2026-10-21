@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pysx.analysis import projection_for_source, utf16_offsets
-from pysx.check import diagnostics_for_source
-from pysx.compiler import analyze
-from pysx.lint import lint_source
-from pysx.quality import type_project
+from pysx.compiler.compiler import analyze
+from pysx.tooling.analysis import projection_for_source, utf16_offsets
+from pysx.tooling.check import diagnostics_for_source
+from pysx.tooling.lint import lint_source
+from pysx.tooling.quality import type_project
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from pysx import Fragment
 
 SOURCE = """from pysx import pysx
-from pysx.native import Strong, Em
+from pysx.components.native import Strong, Em
 view = pysx(t"br; Strong: 'Hello'")
 """
 
@@ -133,7 +133,7 @@ def test_template_import_usage_actual_cli_cleanup_and_render(
     source = """from usage_components import Card, Decorated
 
 from pysx import Fragment, pysx
-from pysx.native import Em, Strong as Bold
+from pysx.components.native import Em, Strong as Bold
 
 
 def app() -> Fragment:
@@ -141,7 +141,7 @@ def app() -> Fragment:
 """.replace("\n", "\r\n")
     path = tmp_path / "view.py"
     path.write_bytes(source.encode())
-    command = [sys.executable, "-m", "pysx.quality", "ruff", str(tmp_path)]
+    command = [sys.executable, "-m", "pysx.tooling.quality", "ruff", str(tmp_path)]
     before = subprocess.run(command, capture_output=True, text=True, check=False)
     assert before.returncode == 1, before.stdout + before.stderr
     assert "F401" in before.stdout
@@ -185,7 +185,7 @@ def test_template_import_usage_unresolved_names_withhold_cli_edits(tmp_path: Pat
     path = tmp_path / "view.py"
     path.write_bytes(source.encode())
     result = subprocess.run(
-        [sys.executable, "-m", "pysx.quality", "ruff", str(tmp_path), "--fix-imports"],
+        [sys.executable, "-m", "pysx.tooling.quality", "ruff", str(tmp_path), "--fix-imports"],
         capture_output=True,
         text=True,
         check=False,
@@ -206,7 +206,7 @@ def test_template_import_usage_prose_and_shadowing_retain_genuine_unused_checks(
     )
     shadowed = """from collections.abc import Callable
 from pysx import Fragment, pysx
-from pysx.native import Strong as Tag
+from pysx.components.native import Strong as Tag
 def app(Tag: Callable[[], Fragment]) -> Fragment:
     return pysx(t"Tag")
 """

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from websockets.asyncio.client import ClientConnection
 
-    from pysx.wire import ServerMessage
+    from pysx.runtime.wire import ServerMessage
 
 ROOT = Path(__file__).resolve().parents[1]
 

@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 
-from pysx.parser import (
+from pysx.compiler.parser import (
     Case,
     Conditional,
     Element,

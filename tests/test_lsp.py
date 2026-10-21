@@ -16,16 +16,16 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 from lsprotocol import types
 
-from pysx.compiler import analyze
-from pysx.editor_types import diagnostics
-from pysx.lsp_backend import Stamp
-from pysx.lsp_workspace import WorkspaceIndex, position
+from pysx.compiler.compiler import analyze
+from pysx.tooling.editor.types import diagnostics
+from pysx.tooling.lsp.backend import Stamp
+from pysx.tooling.lsp.workspace import WorkspaceIndex, position
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
 
-    from pysx.compiler import Compilation
-    from pysx.editor_model import Buffer
+    from pysx.compiler.compiler import Compilation
+    from pysx.tooling.editor.model import Buffer
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (
@@ -45,7 +45,7 @@ class Client:
         command: list[str] | None = None,
     ) -> None:
         self.process = subprocess.Popen(
-            command or [sys.executable, "-m", "pysx.lsp"],
+            command or [sys.executable, "-m", "pysx.tooling.lsp.lsp"],
             cwd=ROOT,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -568,7 +568,7 @@ def test_resident_protocol_missing_extra_is_actionable() -> None:
         "import importlib.util, runpy\n"
         "original = importlib.util.find_spec\n"
         "importlib.util.find_spec = lambda name: None if name == 'pygls' else original(name)\n"
-        "runpy.run_module('pysx.lsp', run_name='__main__')\n"
+        "runpy.run_module('pysx.tooling.lsp.lsp', run_name='__main__')\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -715,7 +715,7 @@ def test_client_verify_server_starts_from_an_arbitrary_working_directory(
 ) -> None:
     """The client launches the selected interpreter, never a checkout-relative path."""
     process = subprocess.Popen(
-        [sys.executable, "-m", "pysx.lsp"],
+        [sys.executable, "-m", "pysx.tooling.lsp.lsp"],
         cwd=tmp_path,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -885,7 +885,7 @@ def test_buffer_readiness_selective_models_reuse_full_cache(
             source, filename, workspace_roots=workspace_roots, buffers=buffers, package=package
         )
 
-    monkeypatch.setattr("pysx.editor_model.analyze", recorded)
+    monkeypatch.setattr("pysx.tooling.editor.model.analyze", recorded)
     index = WorkspaceIndex(tmp_path)
 
     try:
@@ -968,7 +968,7 @@ def test_buffer_readiness_sdk_imports_keep_canonical_identity(tmp_path: Path) ->
         snapshot = index.build({}, Stamp(1, 0), selected={str(consumer)})
         projected = snapshot.files[0].text
         assert "from pysx import Fragment, pysx" in projected
-        assert "import pysx._compiler_runtime" in projected
+        assert "import pysx.compiler.runtime" in projected
         assert index.revision + ".pysx" not in projected
         assert index.revision + ".library" in projected
         assert index.dependencies(str(consumer)) == {str(library)}

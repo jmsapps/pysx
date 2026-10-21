@@ -1,7 +1,7 @@
 """Example registry.
 
 Values are complete server app specs, so a caller can pass one straight to
-`python -m pysx.server --app`.
+`python -m pysx.hosting.server --app`.
 """
 
 from pathlib import Path

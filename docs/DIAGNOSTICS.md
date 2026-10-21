@@ -1,12 +1,12 @@
 # Static diagnostics and source edits
 
-`uv run --project . python -m pysx.check examples/counter.py` prints JSON (`[]`
+`uv run --project . python -m pysx.tooling.check examples/counter.py` prints JSON (`[]`
 for clean source). Findings are advisory: unknown native attributes can still
 render. Invalid grammar and runtime values retain their ordinary runtime errors.
 Analysis never imports application modules or evaluates interpolations.
 
 For an unsaved buffer, use `diagnostics_for_source(source, filename,
-workspace_roots=(root,), buffers={absolute_filename: source})` from `pysx.check`.
+workspace_roots=(root,), buffers={absolute_filename: source})` from `pysx.tooling.check`.
 The path wrapper is `diagnostics(Path(filename))`. `compiler.analyze` returns a
 reusable compilation containing lexical scopes, parsed syntax, maps and workspace
 bindings; pass it as `compilation=` when requesting diagnostics for the same buffer.
@@ -52,7 +52,7 @@ facts; a clean advisory result alone is not a strict type-checking result.
 Some findings provide `fixes`, each containing a title, `source_digest` and raw
 source edits (`start`, `end`, `text`, `expected`). Edit offsets are Unicode code
 points, **not UTF-16 columns**. Apply a selected fix with
-`pysx.check.apply_fix(source, fix)`, then analyze the returned source again. This
+`pysx.tooling.check.apply_fix(source, fix)`, then analyze the returned source again. This
 rejects stale source, invalid ranges and overlapping edits before changing text.
 
 Fixes currently cover a direct frozen Signal call and a single literal f-string

@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Required, TypedDict, cast
 
-from pysx.reactive import Effect, Signal, effect, signal
+from pysx.reactive.reactive import Effect, Signal, effect, signal
 
 if TYPE_CHECKING:
     from collections.abc import Callable

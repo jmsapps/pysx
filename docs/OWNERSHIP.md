@@ -15,7 +15,7 @@ from pathlib import Path
 from pysx import (
     DurableApplication, Fragment, Signal, SQLiteOwnershipStore, StateCodec, native,
 )
-from pysx.wire import JSONValue
+from pysx.runtime.wire import JSONValue
 
 def decode(value: JSONValue) -> int:
     if type(value) is not int:

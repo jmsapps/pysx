@@ -13,9 +13,9 @@ npm --prefix tests exec -- playwright install chromium firefox webkit
 On Linux, install browser system libraries with
 `npm --prefix tests exec -- playwright install --with-deps chromium firefox webkit`.
 VSCode needs a display (use `xvfb-run -a` in headless Linux), GTK/NSS/audio libraries
-and the standard Electron runtime dependencies. macOS and Windows need their native
-desktop session. The setup is platform-specific; only local macOS results have been
-observed. Do not infer Linux/Windows passes from configuration.
+and the standard Electron runtime dependencies. macOS needs a native desktop session.
+Windows is currently unsupported. Setup is platform-specific; retain actual run
+provenance and do not infer platform passes from configuration.
 
 The grammar harness resolves Pylance through the installed VSCode extension registry.
 For managed CI, provision the exact official host in the ignored repository cache:
@@ -106,12 +106,17 @@ the pinned version; `PYSX_VSCODE_EXECUTABLE` explicitly selects a managed execut
 Inherited VSCode/Node-host environment variables are removed. Activation, saved-file
 diagnostic contents/range and Python-document close cleanup are asserted in the actual
 host; the launcher has a 120-second deadline and removes its profile and process group.
-The checkout/interpreter requirement remains the baseline client contract. Windows
-currently requires the baseline client's compatible `.venv/bin/python` layout; native
-Scripts-path support remains unverified and must not be represented as a portable
-installed-client pass.
+The worker client is the default; the resident language-server client is enabled with
+`pysx.useLanguageServer`. Both use the configured or selected Python environment,
+with the worker retaining workspace-interpreter fallbacks. The resident router probes
+the selected environment for its required extras before launching the server. Extracted
+VSIX and fresh-wheel consumer tests verify operation outside the checkout; a checkout
+path baked into the extension is not required. Keep Python 3.14+ and the appropriate
+tooling extras in that selected environment. Existing Windows Scripts-path handling
+does not establish a supported or verified Windows installation.
 
-The quality workflow provisions these inputs before full pytest. Release qualification must
+The manually dispatched quality workflow provisions these inputs before full pytest.
+Release qualification must
 collect actual remote platform output, selected versions, assertions, exit codes and
 artifacts. Neither the workflow nor this local harness constitutes remote execution evidence.
 

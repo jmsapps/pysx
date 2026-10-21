@@ -192,6 +192,21 @@ def test_structured_state_objects_and_dynamic_paths() -> None:
     observer.dispose()
 
 
+def test_projection_update_writes_selected_parent_and_preserves_other_fields() -> None:
+    root = structured({"selected": [1], "other": [9]})
+    selected = dict_key(root, "selected")
+    seen: list[list[int]] = []
+    stop = selected.subscribe(seen.append)
+    selected.update(lambda values: [*values, 2])
+    root.update(lambda values: values | {"other": [10]})
+    assert root() == {"selected": [1, 2], "other": [10]}
+    assert seen == [[1], [1, 2]]
+    selected.get().append(8)
+    assert selected() == [1, 2]
+    stop()
+    assert not root.observers
+
+
 def test_structured_state_missing_key() -> None:
     root = structured({"a": 1})
     missing = dict_key(root, "b")

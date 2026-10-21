@@ -72,7 +72,7 @@ exports.activate = function (context) {
 
   function worker(python, args, root, input, token) {
     return new Promise((resolve, reject) => {
-      const child = execFile(python, args, { cwd: root, detached: process.platform !== "win32", maxBuffer: 128 * 1024 * 1024, timeout: args.includes("pysx.editor_model") ? 180000 : 30000 }, (error, stdout, stderr) => {
+      const child = execFile(python, args, { cwd: root, detached: process.platform !== "win32", maxBuffer: 128 * 1024 * 1024, timeout: args.includes("pysx.tooling.editor.model") ? 180000 : 30000 }, (error, stdout, stderr) => {
         children.delete(child);
         if (error?.killed) stop(child);
         if (disposed || pending.get(root) !== token) return resolve(null);
@@ -165,7 +165,7 @@ exports.activate = function (context) {
     const revision = `_pysx_revision_${crypto.randomBytes(8).toString("hex")}`;
     const existing = states.get(root);
     const previous = states.get(root)?.models;
-    const models = await worker(python, ["-m", "pysx.editor_model"], root, JSON.stringify({ root, revision, buffers, previous }), token);
+    const models = await worker(python, ["-m", "pysx.tooling.editor.model"], root, JSON.stringify({ root, revision, buffers, previous }), token);
     if (!models || disposed || pending.get(root) !== token) return null;
     for (const [filename, buffer] of Object.entries(buffers)) {
       const current = vscode.workspace.textDocuments.find((doc) => canonical(doc.fileName) === filename && managed(doc));
@@ -184,7 +184,7 @@ exports.activate = function (context) {
       fs.writeFileSync(model.target, model.text);
     }
     let types;
-    try { types = await worker(python, ["-m", "pysx.editor_types", directory, root], root, undefined, token); }
+    try { types = await worker(python, ["-m", "pysx.tooling.editor.types", directory, root], root, undefined, token); }
     catch (error) { await release(state); throw error; }
     if (!types || disposed || pending.get(root) !== token) { await release(state); return null; }
     for (const item of types.generalDiagnostics) {
@@ -415,7 +415,7 @@ exports.activate = function (context) {
       return fail("pysx: The active file could not be completely analyzed. Resolve its pysx diagnostics before configuring template-aware imports.");
     }
     const pythonPath = await interpreter(doc);
-    const configuration = await worker(pythonPath, ["-m", "pysx.editor_config", state.root], state.root, undefined, state.token);
+    const configuration = await worker(pythonPath, ["-m", "pysx.tooling.editor.config", state.root], state.root, undefined, state.token);
     if (!valid(state)) return fail("pysx: Workspace changed during setup. Run Configure Template-Aware Imports again.");
     if (configuration) {
       const configDoc = await vscode.workspace.openTextDocument(configuration.filename);

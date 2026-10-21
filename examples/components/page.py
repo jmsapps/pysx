@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from pysx import styled
 
 if TYPE_CHECKING:
-    from pysx.styled_native import StyledDiv
+    from pysx.styling.styled_native import StyledDiv
 
 from .theme import PAGE_CSS
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast, overload
 
-from pysx.reactive import Signal, derived
-from pysx.structured import Structured
+from pysx.reactive.reactive import Signal, derived
+from pysx.reactive.structured import Structured
 
 if TYPE_CHECKING:
     from collections.abc import Callable

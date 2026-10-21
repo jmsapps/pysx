@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from pysx import Fragment, render
-from pysx.build import build_tree
-from pysx.loader import CodeCache, SourceLoader, import_app, install_loader
+from pysx.compiler.loader import CodeCache, SourceLoader, import_app, install_loader
+from pysx.tooling.build import build_tree
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -133,7 +133,8 @@ def test_source_scope_and_repeat_install(app_root: Path) -> None:
     _write(app_root, "view.py", "from pysx import pysx\ndef app(): return pysx(t\"p: 'Hi'\")\n")
     finder = install_loader(packages=("author_app",))
     assert install_loader(packages=("author_app",)) is finder
-    assert not finder.covers("pysx.render", Path("/work/pysx/render.py"))
+    assert not finder.covers("pysx.rendering.render", Path("/work/pysx/rendering/render.py"))
+    assert not finder.covers("pysx.compiler.parser", Path("/work/pysx/compiler/parser.py"))
     assert not finder.covers("outside", Path("/work/outside.py"))
     assert not finder.covers("author_app.vendor.x", Path("/work/vendor/x.py"))
     module = importlib.import_module("author_app.view")

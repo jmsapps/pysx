@@ -27,9 +27,9 @@ from pysx import (
     pysx,
     signal,
 )
-from pysx.forms import PayloadError
-from pysx.routing import match_route, resolve_navigation
-from pysx.server import Session
+from pysx.hosting.server import Session
+from pysx.runtime.forms import PayloadError
+from pysx.runtime.routing import match_route, resolve_navigation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -350,7 +350,7 @@ def test_pysx_12_st_2_navigation_native_commits_after_a_failed_handler() -> None
     command = [
         sys.executable,
         "-m",
-        "pysx.server",
+        "pysx.hosting.server",
         "--app",
         "tests.routing_regression_fixture:failing_navigation_app",
         "--port",
@@ -383,7 +383,7 @@ def test_pysx_12_st_2_navigation_native_deep_link_reload_serves_the_shell() -> N
     command = [
         sys.executable,
         "-m",
-        "pysx.server",
+        "pysx.hosting.server",
         "--app",
         "tests.routing_regression_fixture:failing_navigation_app",
         "--port",

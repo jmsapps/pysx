@@ -16,7 +16,7 @@ import pytest
 from prototypes.distribution import ROOT, clean_env, command, dependency_cache, installed, qualify
 from test_dev_server import get, project, serving, wait_for
 
-from pysx.tooling import RUFF_REQUIREMENT
+from pysx.tooling.tools import RUFF_REQUIREMENT
 
 
 def test_installed_serve_fresh_wheel_outside_checkout(tmp_path: Path) -> None:
@@ -44,7 +44,7 @@ def test_installed_serve_fresh_wheel_outside_checkout(tmp_path: Path) -> None:
 
     with zipfile.ZipFile(wheel) as archive:
         assert "pysx/static/development.js" in archive.namelist()
-        assert "pysx/development_diagnostics.py" in archive.namelist()
+        assert "pysx/development/diagnostics.py" in archive.namelist()
     python = installed(tmp_path, wheel, cache, extra=False)
     consumer = tmp_path / "consumer"
     consumer.mkdir()
@@ -103,8 +103,8 @@ def test_host_config_fresh_actual_wheel_user_app(tmp_path: Path, *, asgi: bool) 
             str(python),
             "-I",
             "-c",
-            "import sys; from pysx import Application; import pysx.check; "
-            'assert "uvicorn" not in sys.modules; assert "pysx.server" not in sys.modules; '
+            "import sys; from pysx import Application; import pysx.tooling.check; "
+            'assert "uvicorn" not in sys.modules; assert "pysx.hosting.server" not in sys.modules; '
             "import asyncio; "
             "assert asyncio._get_running_loop() is None",
         ],

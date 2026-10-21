@@ -10,4 +10,4 @@ COPY tests ./tests
 COPY run_example.py ./
 RUN uv sync --frozen --no-dev --extra asgi
 ENV UV_NO_SYNC=1 UV_PYTHON_DOWNLOADS=never
-ENTRYPOINT ["uv", "run", "--project", ".", "--no-dev", "python", "-m", "pysx.server"]
+ENTRYPOINT ["uv", "run", "--project", ".", "--no-dev", "python", "-m", "pysx.hosting.server"]

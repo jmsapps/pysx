@@ -75,8 +75,8 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
 
     if (!pending) {
       pending = (async () => ({
-        server: await probeEnvironment(python, ["-c", "import pysx.lsp_server; print('ok')"]),
-        tooling: await probeEnvironment(python, ["-m", "pysx.tooling"]),
+        server: await probeEnvironment(python, ["-c", "import pysx.tooling.lsp.server; print('ok')"]),
+        tooling: await probeEnvironment(python, ["-m", "pysx.tooling.tools"]),
       }))();
       probes.set(python, pending);
     }
@@ -106,7 +106,7 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
       entries.set(key, { key, folder, python, lifecycle: null, ruff: null,
         error: "pysx: the selected environment does not have the language server extra. " +
           "Install `pysx[lsp]` into it, then select it again. Diagnostics remain available " +
-          "through `python -m pysx.check`." });
+          "through `python -m pysx.tooling.check`." });
       output.appendLine(entries.get(key).error);
       return;
     }

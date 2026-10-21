@@ -18,7 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover - depends on install mode
 
 
 def _registry() -> dict[str, str]:
-    from pysx.loader import install_loader
+    from pysx.compiler.loader import install_loader
 
     install_loader(packages=("examples",))
     from examples import examples as registry
@@ -59,9 +59,9 @@ def run(
 
         raise typer.Exit(code=2)
 
-    from pysx.server import main as serve
+    from pysx.hosting.server import main as serve
 
-    sys.argv = ["pysx.server", "--app", examples[name], "--port", str(port), "--host", host]
+    sys.argv = ["pysx.hosting.server", "--app", examples[name], "--port", str(port), "--host", host]
     serve()
 
 

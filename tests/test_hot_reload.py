@@ -20,16 +20,16 @@ from pysx import (
     own_task,
     resource,
 )
-from pysx.development_control import Control, control_server
-from pysx.hosting import request_from_headers
+from pysx.development.control import Control, control_server
+from pysx.hosting.hosting import request_from_headers
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     from pysx import Fragment, Signal
-    from pysx.durable import DurableSession
-    from pysx.wire import JSONValue
+    from pysx.runtime.durable import DurableSession
+    from pysx.runtime.wire import JSONValue
 
 HOT_SOURCE = """from pathlib import Path
 from uuid import uuid4
@@ -179,8 +179,8 @@ def test_local_preservation_restored_render_timeout_keeps_old_worker_usable(tmp_
 
 def test_local_preservation_repeated_comprehension_sites_reset_conservatively() -> None:
     from pysx import signal
-    from pysx.lifecycle import capture_local_state, restoring_local_state
-    from pysx.session import Session
+    from pysx.components.lifecycle import capture_local_state, restoring_local_state
+    from pysx.runtime.session import Session
 
     def app() -> Fragment:
         values = [signal(index) for index in range(2)]
@@ -489,7 +489,7 @@ def test_state_preserving_disconnect_during_partial_freeze_releases_all_turns(
 
 def test_local_preservation_keys_signals_by_call_site() -> None:
     from pysx import signal
-    from pysx.lifecycle import Scopes, capture_local_state
+    from pysx.components.lifecycle import Scopes, capture_local_state
 
     def body(branch: bool) -> None:
         signal(0)
@@ -534,10 +534,10 @@ def test_local_preservation_keys_signals_by_call_site() -> None:
 
 def test_local_preservation_round_trips_component_signals() -> None:
     from pysx import local_state, native, signal
-    from pysx.development_control import Control
-    from pysx.hosting import Application, HostConfig
-    from pysx.lifecycle import capture_local_state
-    from pysx.request import RequestContext
+    from pysx.components.lifecycle import capture_local_state
+    from pysx.development.control import Control
+    from pysx.hosting.hosting import Application, HostConfig
+    from pysx.hosting.request import RequestContext
 
     def app() -> Fragment:
         count = signal(0)
@@ -597,9 +597,9 @@ def test_local_preservation_resets_when_the_initializer_changes(tmp_path: Path) 
     import importlib.util
     import sys
 
-    from pysx.lifecycle import capture_local_state, restoring_local_state
-    from pysx.request import RequestContext
-    from pysx.session import Session
+    from pysx.components.lifecycle import capture_local_state, restoring_local_state
+    from pysx.hosting.request import RequestContext
+    from pysx.runtime.session import Session
 
     module_path = tmp_path / "widget.py"
     template = (
@@ -658,11 +658,11 @@ def test_local_preservation_resets_when_the_initializer_changes(tmp_path: Path) 
 
 def test_local_preservation_drops_values_that_cannot_be_serialized() -> None:
     from pysx import native, signal
-    from pysx.development_control import Control
-    from pysx.hosting import Application, HostConfig
-    from pysx.lifecycle import capture_local_state
-    from pysx.request import RequestContext
-    from pysx.session import Session
+    from pysx.components.lifecycle import capture_local_state
+    from pysx.development.control import Control
+    from pysx.hosting.hosting import Application, HostConfig
+    from pysx.hosting.request import RequestContext
+    from pysx.runtime.session import Session
 
     def app() -> Fragment:
         keep = signal(3)
@@ -708,11 +708,11 @@ def test_local_preservation_bounds_degrade_to_a_fresh_reload(
     monkeypatch: pytest.MonkeyPatch, limit: str, reason: str
 ) -> None:
     from pysx import native, signal
-    from pysx.development_control import Control
-    from pysx.hosting import Application, HostConfig
-    from pysx.lifecycle import capture_local_state
-    from pysx.request import RequestContext
-    from pysx.session import Session
+    from pysx.components.lifecycle import capture_local_state
+    from pysx.development.control import Control
+    from pysx.hosting.hosting import Application, HostConfig
+    from pysx.hosting.request import RequestContext
+    from pysx.runtime.session import Session
 
     def app() -> Fragment:
         first = signal(1)
@@ -721,7 +721,7 @@ def test_local_preservation_bounds_degrade_to_a_fresh_reload(
         return native.Main(native.P(first, id="a"), native.P(second, id="b"))
 
     monkeypatch.setattr(
-        f"pysx.development_control.{limit}", 0 if limit == "_MAX_LOCAL_SESSIONS" else 1
+        f"pysx.development.control.{limit}", 0 if limit == "_MAX_LOCAL_SESSIONS" else 1
     )
     request = RequestContext(path="/", headers={"cookie": "pysx_browser=abc"})
     capture_local_state(enable=True)
@@ -745,9 +745,9 @@ def test_local_preservation_handoff_rejects_wrong_owner_without_consuming(mismat
     from dataclasses import replace
 
     from pysx import signal
-    from pysx.hosting import Application
-    from pysx.lifecycle import capture_local_state
-    from pysx.request import RequestContext
+    from pysx.components.lifecycle import capture_local_state
+    from pysx.hosting.hosting import Application
+    from pysx.hosting.request import RequestContext
 
     def app() -> Fragment:
         count = signal(0)
@@ -794,9 +794,9 @@ def test_local_preservation_handoff_rejects_wrong_owner_without_consuming(mismat
 
 def test_local_preservation_same_cookie_tabs_and_unconsumed_generations() -> None:
     from pysx import signal
-    from pysx.hosting import Application
-    from pysx.lifecycle import capture_local_state
-    from pysx.request import RequestContext
+    from pysx.components.lifecycle import capture_local_state
+    from pysx.hosting.hosting import Application
+    from pysx.hosting.request import RequestContext
 
     def app() -> Fragment:
         count = signal(0)
@@ -856,9 +856,9 @@ def test_local_preservation_same_cookie_tabs_and_unconsumed_generations() -> Non
 
 def test_local_preservation_preflight_disposes_without_activating_resources() -> None:
     from pysx import on_cleanup, own_subscription, signal
-    from pysx.hosting import Application
-    from pysx.lifecycle import capture_local_state
-    from pysx.request import RequestContext
+    from pysx.components.lifecycle import capture_local_state
+    from pysx.hosting.hosting import Application
+    from pysx.hosting.request import RequestContext
 
     async def run() -> None:
         events: list[str] = []
@@ -956,11 +956,11 @@ def test_local_preservation_lossless_types_and_unchanged_call_line(
     reason: str | None,
 ) -> None:
     from pysx import native, signal
-    from pysx.development_control import Control
-    from pysx.hosting import Application, HostConfig
-    from pysx.lifecycle import capture_local_state, restoring_local_state
-    from pysx.request import RequestContext
-    from pysx.session import Session
+    from pysx.components.lifecycle import capture_local_state, restoring_local_state
+    from pysx.development.control import Control
+    from pysx.hosting.hosting import Application, HostConfig
+    from pysx.hosting.request import RequestContext
+    from pysx.runtime.session import Session
 
     def app() -> Fragment:
         signal(initial)
@@ -1001,8 +1001,8 @@ def test_local_preservation_lossless_types_and_unchanged_call_line(
 @pytest.mark.parametrize("change", ["absent", "malformed", "ambiguous"])
 def test_local_preservation_refuses_uncertain_slot_metadata(change: str) -> None:
     from pysx import native, signal
-    from pysx.lifecycle import capture_local_state, restoring_local_state
-    from pysx.session import Session
+    from pysx.components.lifecycle import capture_local_state, restoring_local_state
+    from pysx.runtime.session import Session
 
     def app() -> Fragment:
         count = signal(0)
@@ -1046,9 +1046,9 @@ def test_local_preservation_refuses_uncertain_slot_metadata(change: str) -> None
 
 def test_local_preservation_reports_removed_scopes_and_slots() -> None:
     from pysx import signal
-    from pysx.hosting import Application
-    from pysx.lifecycle import capture_local_state
-    from pysx.request import RequestContext
+    from pysx.components.lifecycle import capture_local_state
+    from pysx.hosting.hosting import Application
+    from pysx.hosting.request import RequestContext
 
     def app() -> Fragment:
         signal(0)
@@ -1085,9 +1085,9 @@ def test_local_preservation_reports_removed_scopes_and_slots() -> None:
 
 def test_local_preservation_disconnect_thaws_partial_freeze() -> None:
     from pysx import signal
-    from pysx.hosting import Application
-    from pysx.lifecycle import capture_local_state
-    from pysx.request import RequestContext
+    from pysx.components.lifecycle import capture_local_state
+    from pysx.hosting.hosting import Application
+    from pysx.hosting.request import RequestContext
 
     def app() -> Fragment:
         count = signal(0)

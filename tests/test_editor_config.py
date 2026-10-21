@@ -11,8 +11,8 @@ from typing import Any, cast
 
 import pytest
 
-from pysx.editor_config import MIRRORS, RULES, configuration_edit
-from pysx.editor_ownership import (
+from pysx.tooling.editor.config import MIRRORS, RULES, configuration_edit
+from pysx.tooling.editor.ownership import (
     PROJECTION_GLOB,
     RUFF_IGNORED,
     SUPPRESSED,
@@ -229,7 +229,7 @@ def test_edits_formatting_restoration_refuses_keys_the_user_edited(tmp_path: Pat
 def test_edits_formatting_setup_cli_round_trips_plan_and_restore(tmp_path: Path) -> None:
     def run(command: str, payload: dict[str, object]) -> dict[str, Any]:
         result = subprocess.run(
-            [sys.executable, "-m", "pysx.editor_config", command, str(tmp_path)],
+            [sys.executable, "-m", "pysx.tooling.editor.config", command, str(tmp_path)],
             input=json.dumps(payload),
             capture_output=True,
             text=True,

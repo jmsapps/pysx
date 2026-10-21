@@ -12,9 +12,9 @@ from websockets.asyncio.client import connect
 
 from examples.todos import app as todos_app
 from pysx import native, signal
-from pysx.forms import PayloadError
-from pysx.render_tree import apply, snapshot
-from pysx.server import Session
+from pysx.hosting.server import Session
+from pysx.rendering.tree import apply, snapshot
+from pysx.runtime.forms import PayloadError
 
 if TYPE_CHECKING:
     from pysx import Fragment
@@ -175,7 +175,7 @@ def test_local_failure_real_wire_outcomes_keep_connection_and_other_session() ->
     command = [
         sys.executable,
         "-m",
-        "pysx.server",
+        "pysx.hosting.server",
         "--app",
         "tests.browser_recovery_fixture:app",
         "--port",

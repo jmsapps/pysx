@@ -28,7 +28,7 @@ from pysx import (
 from .components import Action, Actions, Card, Description, Eyebrow, Field, Page, Title, Value
 
 if TYPE_CHECKING:
-    from pysx.wire import JSONValue
+    from pysx.runtime.wire import JSONValue
 
 
 @dataclass(frozen=True)

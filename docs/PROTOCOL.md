@@ -241,7 +241,7 @@ reset clears its error on successful reconstruction.
 An uncontained structural rendering failure that cannot produce a consistent
 repair sends its safe error outcome and closes with code 1011; place an
 ErrorBoundary around fallible rendering to enable local retry. The default server
-logs only correlation ID and phase. `python -m pysx.server --dev ...`,
+logs only correlation ID and phase. `python -m pysx.hosting.server --dev ...`,
 `Session(..., development=True)` and `render(..., development=True)` retain source
 tracebacks in server logs. Client messages remain safe in either mode.
 

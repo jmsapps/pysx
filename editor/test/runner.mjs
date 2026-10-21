@@ -88,7 +88,7 @@ try {
     // Fault injection affects only actual language-server starts, leaving
     // environment discovery and the missing-extra checks intact.
     const delay = startupDelay ?
-      `if [ "$1" = "-m" ] && [ "$2" = "pysx.lsp" ]; then sleep ${startupDelay / 1000}; fi\n` : "";
+      `if [ "$1" = "-m" ] && [ "$2" = "pysx.tooling.lsp.lsp" ]; then sleep ${startupDelay / 1000}; fi\n` : "";
     writeFileSync(alternate, `#!/bin/sh\n${delay}exec ${JSON.stringify(interpreter)} "$@"\n`, { mode: 0o755 });
     bare = path.join(workspace, "bare");
     const created = spawnSync("uv", ["venv", "--python", interpreter, bare], { cwd: root, encoding: "utf8", timeout: 120000 });
