@@ -145,7 +145,7 @@ def ownership_plan(
 
     if missing:
         raise SetupRefusedError(
-            "pysx cannot replace "
+            "PYSX cannot replace "
             + ", ".join(missing)
             + " yet, so those checks will not be disabled. Install the pinned developer "
             "tooling and restart analysis, then run setup again."

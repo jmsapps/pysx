@@ -1,4 +1,4 @@
-# pysx wire protocol (v3)
+# PYSX wire protocol (v3)
 
 Standalone and ASGI adapters share this protocol and session engine; see
 [hosting](HOSTING.md) for configuration, prefix and process affinity requirements.

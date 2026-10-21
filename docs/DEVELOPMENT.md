@@ -124,7 +124,7 @@ initializer-change reason. Explicit persistence is a separate application choice
 demonstrated by `examples/durable_state.py`.
 
 Watch mode responds to files written by either manual save or autosave. An editor's
-autosave delay comes before watcher detection. The pysx import-on-save action returns
+autosave delay comes before watcher detection. The PYSX import-on-save action returns
 promptly when analysis is pending and leaves imports unchanged for that save; it
 does not hold the disk write waiting for workspace analysis. The default editor setup
 runs that action on explicit saves; configuring it as `always` includes focus/window
@@ -185,7 +185,7 @@ in explicit development mode.
 pysx --app my_app:app --watch --inspect
 ```
 
-Open the “pysx inspector” panel in the browser. It shows source links, per-session
+Open the “PYSX inspector” panel in the browser. It shows source links, per-session
 owner/resource/task/handler counts and the last 256 metadata events. Writes,
 dependency reads, effect runs, template/render work and queued/sent patch batches
 have opaque identities and counts. Values are always `[redacted]`; no signal value,

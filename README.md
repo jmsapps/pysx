@@ -1,8 +1,8 @@
-# pysx
+# PYSX
 
 **Reactive interfaces, written in Python.**
 
-pysx brings the feel of a reactive web app to Python. Write your interface with
+PYSX brings the feel of a reactive web app to Python. Write your interface with
 readable, indentation-based templates, keep state in signals, and let the page
 update as that state changes.
 
@@ -39,7 +39,7 @@ Changing `count` updates the displayed value. The browser applies targeted patch
 and keyed lists preserve unchanged rows so focus, selection, and scroll survive
 updates.
 
-## Build with pysx
+## Build with PYSX
 
 - **Reactive state:** signals, derived values, batched updates, and writable views into structured data.
 - **Readable interfaces:** t-string templates and composable, typed native elements.

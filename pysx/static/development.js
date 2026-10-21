@@ -4,7 +4,7 @@
   const panel = document.createElement("details");
   panel.id = "pysx-inspector";
   panel.style.cssText = "position:fixed;bottom:0;right:0;z-index:2147483647;max-height:60vh;overflow:auto;width:min(44rem,100vw);background:#fff;color:#171717;border:1px solid #888;padding:.6rem;font:13px monospace";
-  const summary = document.createElement("summary"); summary.textContent = "pysx inspector";
+  const summary = document.createElement("summary"); summary.textContent = "PYSX inspector";
   const refresh = document.createElement("button"); refresh.type = "button"; refresh.textContent = "Refresh inspector";
   const content = document.createElement("div"); content.id = "pysx-inspector-content";
   panel.append(summary, refresh, content); document.body.append(panel);

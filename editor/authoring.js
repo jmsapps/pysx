@@ -58,7 +58,7 @@ function generatedOffsetAt(model, position) {
 
 exports.activate = function (context) {
   const collection = vscode.languages.createDiagnosticCollection("pysx");
-  const output = vscode.window.createOutputChannel("pysx");
+  const output = vscode.window.createOutputChannel("PYSX");
   const states = new Map(), entries = new Map(), pending = new Map(), children = new Set(), inflight = new Map(), timers = new Map(), directories = new Set();
   let sequence = 0, disposed = false;
   context.subscriptions.push(collection, output);
@@ -387,7 +387,7 @@ exports.activate = function (context) {
       const state = await refresh(doc);
       const model = state?.models.find((item) => item.filename === canonical(doc.fileName));
       if (!model?.complete || !model.edits.length || !valid(state)) return [];
-      const action = new vscode.CodeAction("pysx: remove unused imports", vscode.CodeActionKind.Source.append("organizeImports.pysx"));
+      const action = new vscode.CodeAction("PYSX: remove unused imports", vscode.CodeActionKind.Source.append("organizeImports.pysx"));
       action.command = { title: action.title, command: "pysx.applyImports", arguments: [doc.uri, doc.version, state.token] };
       return [action];
     },

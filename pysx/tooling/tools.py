@@ -51,7 +51,7 @@ def resolve_ruff(interpreter: Path | None = None) -> Tool:
         raise ToolingError(
             f"Ruff {RUFF_REQUIREMENT} is not installed in {selected.parent}. "
             f"Install it with `pip install 'pysx[dev]'` into that environment. "
-            "pysx does not fall back to a Ruff found elsewhere on PATH."
+            "PYSX does not fall back to a Ruff found elsewhere on PATH."
         )
 
     try:
@@ -68,8 +68,8 @@ def resolve_ruff(interpreter: Path | None = None) -> Tool:
 
     if version != RUFF_REQUIREMENT:
         raise ToolingError(
-            f"{found} is Ruff {version}, but this pysx requires {RUFF_REQUIREMENT}. "
-            "Install the pinned version into the selected environment; pysx will not "
+            f"{found} is Ruff {version}, but this PYSX requires {RUFF_REQUIREMENT}. "
+            "Install the pinned version into the selected environment; PYSX will not "
             "use a different one."
         )
 

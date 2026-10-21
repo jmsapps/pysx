@@ -1,4 +1,4 @@
-# pysx DSL grammar of record
+# PYSX DSL grammar of record
 
 The indentation-based markup grammar carried inside a PEP 750 t-string. `parser.py`
 implements this; `check.py` validates against it.

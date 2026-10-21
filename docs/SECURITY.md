@@ -62,7 +62,7 @@ address. Any other Forwarded/X-Forwarded-* header, and any of them from an untru
 peer, is rejected. Preserve the externally visible base
 path and Origin, forward upgrades, and bound headers, handshake, tunnel queues and
 timeouts. Do not expose the trusted backend directly to remote peers. The packaged
-ASGI host disables its independent proxy-header rewriting so pysx checks the actual
+ASGI host disables its independent proxy-header rewriting so PYSX checks the actual
 peer. Configure other servers equivalently. HTTPS certificate provisioning and
 authentication are deployment-owner configuration, outside the framework.
 

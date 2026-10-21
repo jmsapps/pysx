@@ -276,7 +276,7 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
 exports.createClient = createClient;
 
 exports.activate = async function (context) {
-  const output = vscode.window.createOutputChannel("pysx language server", { log: true });
+  const output = vscode.window.createOutputChannel("PYSX language server", { log: true });
   context.subscriptions.push(output);
 
   const router = require("./workspaces.js").createRouter({

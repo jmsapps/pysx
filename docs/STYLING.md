@@ -41,7 +41,7 @@ variables for theme-dependent appearance.
 
 Each inheritance chain flattens its declarations into one rule, preserving their order.
 Later declarations override earlier declarations independently of registration order.
-When several pysx classes land on one element, the stylesheet emits them in the order
+When several PYSX classes land on one element, the stylesheet emits them in the order
 they are applied, innermost first, so a wrapping styled callable or a runtime `css`
 rule overrides the element's own styled base at equal specificity.
 `css_class` exposes the final scoped class as an opaque identifier; inheritance can
