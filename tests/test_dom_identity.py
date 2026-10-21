@@ -5,9 +5,9 @@ import re
 import pytest
 
 from pysx import Fragment, each, pysx, signal
-from pysx.identity import OwnerPath, key_segment
-from pysx.render import render
-from pysx.render_tree import diff, snapshot
+from pysx.rendering.identity import OwnerPath, key_segment
+from pysx.rendering.render import render
+from pysx.rendering.tree import diff, snapshot
 
 
 @pytest.mark.parametrize("key", ["", "a:b", 'quote"{λ}-->', "~6162", "a", "ab", "😀"])

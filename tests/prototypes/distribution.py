@@ -66,7 +66,7 @@ if __name__ == "__main__":
 '''
 
 CLI_SOURCE = '''"""Scratch installed standalone serve entrypoint."""
-from pysx.server import main as serve
+from pysx.hosting.server import main as serve
 
 def main():
     serve()
@@ -96,7 +96,7 @@ async function launch(explicitPython) {
   if (!python || !fs.existsSync(python)) {
     throw new Error("select an installed Python 3.14+ with pysx");
   }
-  const child = spawn(python, ["-I", "-m", "pysx.lsp", "--stdio"], {
+  const child = spawn(python, ["-I", "-m", "pysx._lsp_proof", "--stdio"], {
     cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
     stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, PYTHONPATH: "" },
   });
@@ -318,7 +318,7 @@ def candidate(destination: Path) -> None:
 
     for name, source in (
         ("cli.py", CLI_SOURCE),
-        ("lsp.py", LSP_SOURCE),
+        ("_lsp_proof.py", LSP_SOURCE),
         ("_distribution_demo.py", DEMO_SOURCE),
     ):
         (destination / "pysx" / name).write_text(source)
@@ -326,9 +326,9 @@ def candidate(destination: Path) -> None:
     metadata = metadata.replace(
         'example = "run_example:app"',
         '''example = "pysx._example_runner:app"
-pysx-lsp = "pysx.lsp:main"''',
+pysx-lsp = "pysx._lsp_proof:main"''',
     )
-    metadata = metadata.replace('pysx = "pysx.server:main"', 'pysx = "pysx.cli:main"')
+    metadata = metadata.replace('pysx = "pysx.hosting.server:main"', 'pysx = "pysx.cli:main"')
     metadata = metadata.replace(
         "[project.optional-dependencies]",
         f"""[project.optional-dependencies]
@@ -438,12 +438,12 @@ def inspect_wheel(wheel: Path) -> dict[str, str]:
             "pysx/static/client.js",
             "pysx/static/index.html",
             "pysx/cli.py",
-            "pysx/lsp.py",
+            "pysx/_lsp_proof.py",
             "pysx/_example_runner.py",
             "examples/counter.py",
         }
 
-        if "pysx/tooling.py" not in names:
+        if not {"pysx/tooling/__init__.py", "pysx/tooling/tools.py"} <= set(names):
             raise ProofError("the wheel omits the developer tooling resolver")
 
         if not required <= set(names):
@@ -474,7 +474,7 @@ def stdio_probe(python: Path, consumer: Path) -> dict[str, object]:
         {"jsonrpc": "2.0", "method": "exit"},
     ]
     result = subprocess.run(
-        [str(python), "-I", "-m", "pysx.lsp", "--stdio"],
+        [str(python), "-I", "-m", "pysx._lsp_proof", "--stdio"],
         cwd=consumer,
         env=clean_env(),
         input=b"".join(framed(message) for message in messages),

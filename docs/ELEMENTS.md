@@ -1,6 +1,6 @@
 # Native elements
 
-Lowercase markers in `pysx.elements` are frozen `ElementTag` objects. Their string
+Lowercase markers in `pysx.components.elements` are frozen `ElementTag` objects. Their string
 form is the canonical HTML name, and they work with `styled(Base)(css)`.
 `styled.<tag>(css)` declares a typed styled native directly, without a marker import;
 write `Card:` in the template and include `use=(Card,)` in `pysx()` so Python
@@ -8,12 +8,12 @@ import tools see the component reference.
 Every marker is named for its HTML tag; Python uses `del_` for the delete
 element, whose HTML name is a keyword.
 
-`pysx.native` provides typed constructors such as `Div`, `Input`, `A` and
+`pysx.components.native` provides typed constructors such as `Div`, `Input`, `A` and
 `Select`. They return composable fragments, accept positional children and
 provide tag-specific attribute completions. For example:
 
 ```python
-from pysx.native import A, Div
+from pysx.components.native import A, Div
 
 view = Div(A("Home", href="/"), class_name="navigation")
 ```
@@ -29,7 +29,7 @@ native attribute typing. `custom_element("my-widget", custom_attrs={...})`
 constructs an open custom element. Attribute names are validated; inline event
 strings and reserved runtime markers cannot use this escape.
 
-`pysx.schema` exposes immutable baseline rows, native tag names, families,
+`pysx.components.schema` exposes immutable baseline rows, native tag names, families,
 events, `tag_info()`, `allowed_attr()` and `normalize_attr()`.
 Template schema validation is advisory; typed Python constructors let static
 checkers reject wrong native combinations. `fragment` emits children without a

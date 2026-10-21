@@ -17,8 +17,8 @@ from pysx import (
     render,
     signal,
 )
-from pysx.parser import InterpolationError, PysxSyntaxError, parse
-from pysx.server import Session
+from pysx.compiler.parser import InterpolationError, PysxSyntaxError, parse
+from pysx.hosting.server import Session
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -29,16 +29,16 @@ from pysx import (
     on_setup,
     resource,
 )
-from pysx.connection import serve_connection
-from pysx.http import HTTPRuntime
-from pysx.persistence import StateStore, migrate_state
-from pysx.session import Session
-from pysx.wire import JSONValue
+from pysx.hosting.http import HTTPRuntime
+from pysx.runtime.connection import serve_connection
+from pysx.runtime.persistence import StateStore, migrate_state
+from pysx.runtime.session import Session
+from pysx.runtime.wire import JSONValue
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from pysx.request import RequestContext
+    from pysx.hosting.request import RequestContext
 
 
 def integer(value: JSONValue) -> int:

@@ -6,9 +6,41 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pysx.analysis import projection_for_source, utf16_offsets
-from pysx.editor_model import workspace_model
-from pysx.editor_types import diagnostics
+from pysx.tooling.analysis import projection_for_source, utf16_offsets
+from pysx.tooling.editor.model import workspace_model
+from pysx.tooling.editor.types import diagnostics
+
+
+def test_model_cache_invalidates_nested_sdk_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pysx.tooling.editor import model
+
+    sdk = tmp_path / "sdk"
+    nested = sdk / "compiler" / "compiler.py"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("VERSION = 1\n")
+    module = sdk / "tooling" / "editor" / "model.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("# SDK entry\n")
+    monkeypatch.setattr(model, "__file__", str(module))
+    root = tmp_path / "app"
+    root.mkdir()
+    (root / "view.py").write_text("value = 1\n")
+    before = model.workspace_model(
+        {"root": str(root), "revision": "_pysx_revision_before", "buffers": {}}
+    )[0]
+    nested.write_text("VERSION = 2\n")
+    after = model.workspace_model(
+        {
+            "root": str(root),
+            "revision": "_pysx_revision_after",
+            "buffers": {},
+            "previous": [before],
+        }
+    )[0]
+    assert after["configuration"] != before["configuration"]
+    assert after["source"] == before["source"]
 
 
 def test_callable_prop_spelling_does_not_make_it_a_native_site() -> None:
@@ -57,7 +89,7 @@ def app() -> Fragment:
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from pysx.editor_model import Request
+    from pysx.tooling.editor.model import Request
 
 
 def test_model_cache_rebases_utf16_and_refreshes_versions(tmp_path: Path) -> None:

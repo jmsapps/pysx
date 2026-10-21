@@ -1,9 +1,9 @@
 # Resident language server
 
 Install `pysx[lsp]` in the selected Python 3.14+ environment, then launch that
-environment's Python with `-m pysx.lsp`. The optional extra includes the pinned
+environment's Python with `-m pysx.tooling.lsp.lsp`. The optional extra includes the pinned
 language framework, Pyright and Ruff. Node.js must be available to the server.
-The base renderer and `python -m pysx.check` do not require the extra.
+The base renderer and `python -m pysx.tooling.check` do not require the extra.
 
 The server uses stdio JSON-RPC. Stdout contains protocol messages only; logging
 goes to stderr. Clients should send explicit workspace folders during initialization. The VSCode
@@ -108,7 +108,7 @@ Shadowed bindings of the same spelling are left alone.
 pysx can take ownership of unused-symbol reporting so that template-only imports,
 locals and nested functions stop being reported as dead while genuinely unused
 code is still flagged. Ownership is computed, not assumed: `python -m
-pysx.editor_config plan <root>` reads the observed settings, the readiness of
+pysx.tooling.editor.config plan <root>` reads the observed settings, the readiness of
 analysis and which replacement checks are available, and returns an ordered list
 of steps, a matching rollback list, any project configuration edit and a retained
 state record. Setup is refused with a reason when analysis is not ready or when a
@@ -116,7 +116,7 @@ check pysx would silence is not yet replaced.
 
 Applying the steps preserves unrelated user values, and running the plan again on
 a configured workspace produces no steps. If an apply is interrupted, replaying
-the rollback list restores the original values. `python -m pysx.editor_config
+the rollback list restores the original values. `python -m pysx.tooling.editor.config
 restore <root>` gives ownership back, and it skips any setting whose current value
 no longer matches what pysx wrote, so a later user edit is reported rather than
 overwritten.
@@ -141,7 +141,7 @@ window must be reloaded for the change to take effect. Each workspace folder get
 and a document is always served by its nearest owning folder, so nested roots
 never produce duplicate providers or duplicate results; file-backed documents
 outside any folder are served by a separate client. The client launches the
-selected environment's interpreter with `-m pysx.lsp`, resolving it from the
+selected environment's interpreter with `-m pysx.tooling.lsp.lsp`, resolving it from the
 folder's `pysx.pythonPath` when set and otherwise from the Python extension's
 environment selected for that folder. Changing either — through settings, the
 Python extension, or adding and removing folders — restarts only the affected
@@ -149,7 +149,7 @@ clients and resolves the executable afresh, including for a manual restart.
 Rapid changes are coalesced and the latest selection always wins. A folder whose
 interpreter or `lsp` extra is missing reports the reason and stays recoverable
 through a later selection or restart; the other folders keep working. If that environment lacks the `lsp` extra, the client reports it and
-stops rather than failing silently — `python -m pysx.check` still works. A language
+stops rather than failing silently — `python -m pysx.tooling.check` still works. A language
 server that crashes is recovered at most four times, after which the output channel
 explains how to reproduce the failure; `pysx: Restart Language Server` clears that
 budget. Intentional restart and shutdown are serialized and do not trigger crash
@@ -167,7 +167,7 @@ against the active document's owning client; a command implemented only by the
 other integration says so rather than failing as unknown.
 
 Developer tooling is resolved from the selected environment only. Install
-`pysx[dev]` there for the pinned Ruff; `python -m pysx.tooling` reports the
+`pysx[dev]` there for the pinned Ruff; `python -m pysx.tooling.tools` reports the
 resolved path and version, and both the editor and the CLI use that same
 executable. A Ruff found elsewhere on `PATH` is never substituted, and a version
 other than the pinned one is rejected with an explanation rather than used.
@@ -180,7 +180,7 @@ other than the pinned one is rejected with an explanation rather than used.
    the pinned Ruff. Node.js must be available to that environment.
 2. Install the extension, then set `pysx.useLanguageServer` to `true` and reload the
    window. Without the setting the extension keeps using its worker integration.
-3. Run `python -m pysx.tooling` in that environment to confirm which Ruff is resolved.
+3. Run `python -m pysx.tooling.tools` in that environment to confirm which Ruff is resolved.
 
 Unused-symbol reporting is handed to pysx by `pysx: Configure Template-Aware Imports`.
 Setup is refused, with the reason shown, if analysis is not ready or if a check pysx
@@ -206,7 +206,7 @@ reported there explicitly rather than failing silently.
 **Diagnostics stop updating.** The server makes at most two recovery attempts for a
 crashed type backend; the editor separately permits four language-server crash
 recoveries. Exhaustion is reported in the output channel. `pysx: Restart Language
-Server` starts a fresh server and clears its crash budget. `python -m pysx.lsp` run
+Server` starts a fresh server and clears its crash budget. `python -m pysx.tooling.lsp.lsp` run
 in a terminal shows the underlying error.
 
 **An import used only inside markup is reported unused.** Ownership setup has not been
@@ -216,7 +216,7 @@ open configuration file.
 
 **A genuinely unused import is not reported.** That is the other half of the contract and
 should still appear, as `F401` from the pinned Ruff. If it does not, confirm
-`python -m pysx.tooling` resolves the expected Ruff and that it is installed in the
+`python -m pysx.tooling.tools` resolves the expected Ruff and that it is installed in the
 selected environment rather than only on `PATH`.
 
 **Ruff disagrees between the editor and the command line.** Both must resolve the same

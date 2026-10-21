@@ -225,7 +225,7 @@ exports.run = async function () {
     // 5. CLI and editor agree about which import is dead.
     const { execFileSync } = require("node:child_process");
     const reported = JSON.parse(execFileSync(python,
-      ["-m", "pysx.check", path.join(root, "plain.py")], { encoding: "utf8" }));
+      ["-m", "pysx.tooling.check", path.join(root, "plain.py")], { encoding: "utf8" }));
     assert(Array.isArray(reported), "the CLI returned a diagnostic list");
     // Nothing may be advertised in the manifest without something answering it.
     const manifest = JSON.parse(

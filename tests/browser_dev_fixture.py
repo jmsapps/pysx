@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from test_dev_server import project
 
-from pysx.development import Supervisor, WatchConfig
+from pysx.development.development import Supervisor, WatchConfig
 
 if TYPE_CHECKING:
     from websockets.asyncio.server import ServerConnection

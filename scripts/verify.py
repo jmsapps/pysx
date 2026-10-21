@@ -1,6 +1,6 @@
 """The verification gate manifest. CI and local runs execute this same list.
 
-Adding a gate here is the only supported way to add one: `tests/test_verification_manifest.py`
+Adding a gate here is the only supported way to add one: `tests/test_quality_configuration.py`
 fails if `.github/workflows/quality.yml` grows a step that this file does not declare.
 """
 
@@ -52,12 +52,20 @@ GATES: tuple[Gate, ...] = (
     Gate("setup", "playwright", _playwright_install()),
     Gate("setup", "vscode-host", ("npm", "--prefix", "editor", "run", "setup:host")),
     Gate("python", "lockfile", ("uv", "lock", "--check")),
-    Gate("python", "ruff", ("uv", "run", "--project", ".", "python", "-m", "pysx.quality", "ruff")),
-    Gate("python", "mypy", ("uv", "run", "--project", ".", "python", "-m", "pysx.quality", "mypy")),
+    Gate(
+        "python",
+        "ruff",
+        ("uv", "run", "--project", ".", "python", "-m", "pysx.tooling.quality", "ruff"),
+    ),
+    Gate(
+        "python",
+        "mypy",
+        ("uv", "run", "--project", ".", "python", "-m", "pysx.tooling.quality", "mypy"),
+    ),
     Gate(
         "python",
         "pyright",
-        ("uv", "run", "--project", ".", "python", "-m", "pysx.quality", "pyright"),
+        ("uv", "run", "--project", ".", "python", "-m", "pysx.tooling.quality", "pyright"),
     ),
     Gate(
         "python",

@@ -10,8 +10,8 @@ import pytest
 from deployment_topology import Deployment, linux_containers
 
 from pysx import DurableApplication, HostConfig, SQLiteOwnershipStore, StateCodec, native
-from pysx.request import RequestContext
-from pysx.security import SecurityPolicy
+from pysx.hosting.request import RequestContext
+from pysx.hosting.security import SecurityPolicy
 
 if TYPE_CHECKING:
     from pathlib import Path

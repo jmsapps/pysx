@@ -11,9 +11,9 @@ import pytest
 
 from examples.counter import app as imported_app
 from pysx import Children, Fragment, pysx, render
-from pysx.composition import namespace_for
-from pysx.elements import em, strong
-from pysx.parser import Element
+from pysx.compiler.parser import Element
+from pysx.components.composition import namespace_for
+from pysx.components.elements import em, strong
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -340,7 +340,7 @@ def test_template_import_usage_real_checkers(tmp_path: Path, form: str) -> None:
 
 def test_composition_recursive_shared_panel_and_checker(tmp_path: Path) -> None:
     from examples.components.composition import tree_controls
-    from pysx.check import diagnostics
+    from pysx.tooling.check import diagnostics
 
     result = render(tree_controls)
 

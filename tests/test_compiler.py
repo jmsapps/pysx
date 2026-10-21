@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pysx.compiler import analyze
-from pysx.render import Fragment
+from pysx.compiler.compiler import analyze
+from pysx.rendering.render import Fragment
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -39,7 +39,7 @@ def app():
 
 def test_inline_sibling_lowering_lexical_shadowing_and_exact_projection() -> None:
     source = r"""from pysx import pysx, styled
-from pysx.native import Strong as lower
+from pysx.components.native import Strong as lower
 def app():
     Local = styled.section(t"color: red")
     def row():
@@ -79,7 +79,7 @@ def shadow(lower):
 def test_inline_sibling_raw_assembled_source_map(raw: bool) -> None:
     prefix = "rt" if raw else "t"
     source = (
-        "from pysx import pysx\nfrom pysx.native import Strong as Lower\n"
+        "from pysx import pysx\nfrom pysx.components.native import Strong as Lower\n"
         f"head = {prefix}\"p: '😀 {{{{brace}}}} \\t'; \"\n"
         "tail = t\"Lower(title={'valid'}); br\"\n"
         "view = pysx(head + tail)\n"
@@ -100,9 +100,9 @@ def test_inline_sibling_raw_assembled_source_map(raw: bool) -> None:
     [
         ("from pysx import pysx", "pysx", True),
         ("from pysx import pysx as template", "template", True),
-        ("from pysx.render import pysx", "pysx", True),
+        ("from pysx.rendering.render import pysx", "pysx", True),
         ("import pysx as px", "px.pysx", True),
-        ("import pysx.render as renderer", "renderer.pysx", True),
+        ("import pysx.rendering.render as renderer", "renderer.pysx", True),
         ("from pysx import pysx\ntemplate = pysx", "template", True),
         ("from unrelated import pysx", "pysx", False),
         ("def pysx(value): return value", "pysx", False),
@@ -222,7 +222,7 @@ view = pysx(t"Panel: 'hi'")
     ],
 )
 def test_helper_hygiene_for_exception_and_pattern_bindings(body: str) -> None:
-    from pysx.render import render
+    from pysx.rendering.render import render
 
     source = f"from pysx import pysx\ndef app():\n    {body}\n"
     compilation = analyze(source)
@@ -235,7 +235,7 @@ def test_helper_hygiene_for_exception_and_pattern_bindings(body: str) -> None:
 
 
 def test_class_body_capture_preserves_locals_closures_and_missing_branches() -> None:
-    from pysx.render import render
+    from pysx.rendering.render import render
 
     source = '''from pysx import pysx, styled
 def build():
@@ -497,7 +497,7 @@ view = template(t"Panel: 'hi'")
 def test_factory_native_children_projection(tmp_path: Path, checker: str, invalid: bool) -> None:
     (tmp_path / "surfaces.py").write_text(
         "from typing import TYPE_CHECKING\nfrom pysx import styled\n"
-        "if TYPE_CHECKING:\n    from pysx.styled_native import StyledDiv\n"
+        "if TYPE_CHECKING:\n    from pysx.styling.styled_native import StyledDiv\n"
         'def page() -> StyledDiv:\n    return styled.div(t"color: red")\n'
         'Page = page()\nShell = styled(Page)(t"padding: 2px")\n'
     )

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pysx.reactive import Signal, batch, derived, effect, signal
+from pysx.reactive.reactive import Signal, batch, derived, effect, signal
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -138,7 +138,7 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
   function makeClient() {
     return new LanguageClient(
       "pysx", "pysx language server",
-      serverOptions ?? { command: python, args: ["-m", "pysx.lsp"], options: { env: process.env } },
+      serverOptions ?? { command: python, args: ["-m", "pysx.tooling.lsp.lsp"], options: { env: process.env } },
       {
         documentSelector: documentSelector ?? [{ language: "python", scheme: "file" }],
         workspaceFolder,

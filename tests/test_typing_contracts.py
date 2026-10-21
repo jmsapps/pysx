@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.mark.parametrize("valid", [True, False])
 def test_resident_protocol_generation_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = (
-        "from typing import assert_type\nfrom pysx.lsp_backend import Stamp\n"
+        "from typing import assert_type\nfrom pysx.tooling.lsp.backend import Stamp\n"
         "stamp = Stamp(1, 2)\nassert_type(stamp.generation, int)\n"
         "assert_type(stamp.backend, int)\nstamp.require_current(Stamp(1, 2))\n"
         if valid
@@ -49,7 +49,7 @@ def test_owner_routing_types(tmp_path: Path, checker: str, valid: bool) -> None:
         "from typing import assert_type\n"
         "from pysx import (DurableApplication, Fragment, Signal, SQLiteOwnershipStore, "
         "OwnershipStore, StateCodec, native)\n"
-        "from pysx.wire import JSONValue\n"
+        "from pysx.runtime.wire import JSONValue\n"
         "def decode(value: JSONValue) -> int:\n"
         "    if isinstance(value, int):\n        return value\n    raise ValueError\n"
         "def page(state: Signal[int]) -> Fragment:\n    return native.Div(state)\n"
@@ -85,7 +85,7 @@ def test_explicit_state_types(tmp_path: Path, checker: str, valid: bool) -> None
         "from typing import assert_type\n"
         "from pysx import (DurableSession, Fragment, Signal, StateCodec, StateIdentity, "
         "MemoryStateStore, native)\n"
-        "from pysx.wire import JSONValue\n"
+        "from pysx.runtime.wire import JSONValue\n"
         "def decode(value: JSONValue) -> int:\n"
         "    if isinstance(value, int):\n        return value\n    raise ValueError\n"
         "codec = StateCodec[int](lambda value: value, decode)\n"
@@ -473,7 +473,7 @@ def test_bindings_form_types(tmp_path: Path, checker: str, valid: bool) -> None:
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
 def test_schema_native_types(tmp_path: Path, checker: str, valid: bool) -> None:
-    from pysx.schema import BASELINE_TAGS, BOOLEAN_ATTRS, TAG_ATTRS
+    from pysx.components.schema import BASELINE_TAGS, BOOLEAN_ATTRS, TAG_ATTRS
     from scripts.generate_native import spelling
 
     source = "from pysx import native as n" + (", signal\n" if valid else "\n")
@@ -529,7 +529,7 @@ def test_schema_native_types(tmp_path: Path, checker: str, valid: bool) -> None:
 
 POSITIVE = '''from typing import assert_type
 from pysx import Each, Fragment, Signal, component, derived, each, pysx, signal
-from pysx.wire import Op, PatchMessage
+from pysx.runtime.wire import Op, PatchMessage
 
 count = signal(1)
 assert_type(count, Signal[int])
@@ -596,12 +596,14 @@ patch: PatchMessage = {"t": "patch", "ops": ops}
             id="payload",
         ),
         pytest.param(
-            'from pysx.wire import TextOp\nop: TextOp = {"op": "wrong", "id": "x", "v": "x"}\n',
+            "from pysx.runtime.wire import TextOp\n"
+            'op: TextOp = {"op": "wrong", "id": "x", "v": "x"}\n',
             "Literal",
             id="discriminant",
         ),
         pytest.param(
-            'from pysx.wire import TextOp\nop: TextOp = {"op": "text", "id": "x", "v": None}\n',
+            "from pysx.runtime.wire import TextOp\n"
+            'op: TextOp = {"op": "text", "id": "x", "v": None}\n',
             "None",
             id="text-value",
         ),

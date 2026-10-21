@@ -7,10 +7,11 @@ from typing import get_type_hints
 
 import pytest
 
-from pysx import Signal, elements, native, render, signal, styled
-from pysx.native_support import element
-from pysx.parser import Element, parse
-from pysx.schema import (
+from pysx import Signal, native, render, signal, styled
+from pysx.compiler.parser import Element, parse
+from pysx.components import elements
+from pysx.components.native_support import element
+from pysx.components.schema import (
     BASELINE_TAGS,
     EVENT_NAMES,
     PSEUDO_ATTRS,

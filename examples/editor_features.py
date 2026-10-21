@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from pysx import Fragment, component, derived, each, pysx, signal, when
-from pysx.lsp_edits import apply_edits, format_edits
-from pysx.lsp_features import (
+from pysx.tooling.lsp.edits import apply_edits, format_edits
+from pysx.tooling.lsp.features import (
     Context,
     TemplateCall,
     classify,

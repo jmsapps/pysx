@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from pysx import Fragment, Signal, each, each_indexed, local_state, on_cleanup, pysx, signal, when
-from pysx.compiler import analyze
-from pysx.render import ListWatcher
-from pysx.server import Session
+from pysx.compiler.compiler import analyze
+from pysx.hosting.server import Session
+from pysx.rendering.render import ListWatcher
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator

@@ -22,13 +22,13 @@ from pysx import (
     resource,
     signal,
 )
-from pysx.hosting import request_from_headers
+from pysx.hosting.hosting import request_from_headers
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
-    from pysx.asgi import Event
-    from pysx.request import RequestContext
+    from pysx.hosting.asgi import Event
+    from pysx.hosting.request import RequestContext
 
 
 async def wait_for(check: Callable[[], bool]) -> None:

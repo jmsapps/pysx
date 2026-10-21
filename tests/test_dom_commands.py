@@ -18,10 +18,10 @@ from pysx import (
     pysx,
     signal,
 )
-from pysx.server import Session
+from pysx.hosting.server import Session
 
 if TYPE_CHECKING:
-    from pysx.wire import JSONValue
+    from pysx.runtime.wire import JSONValue
 
 
 def make_session() -> tuple[Session, DomRef]:

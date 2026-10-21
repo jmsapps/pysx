@@ -14,7 +14,7 @@ from acceptance_support import ready_server, receive
 from websockets.asyncio.client import ClientConnection, connect
 
 if TYPE_CHECKING:
-    from pysx.wire import InitMessage, PatchMessage, ServerMessage
+    from pysx.runtime.wire import InitMessage, PatchMessage, ServerMessage
 
 PORT = 8751  # not 8750, so a dev server can stay up while this runs
 BASE = f"http://127.0.0.1:{PORT}"
@@ -81,7 +81,15 @@ async def run() -> None:
 
 def main() -> None:
     with ready_server(
-        [sys.executable, "-m", "pysx.server", "--app", "examples.counter:app", "--port", str(PORT)],
+        [
+            sys.executable,
+            "-m",
+            "pysx.hosting.server",
+            "--app",
+            "examples.counter:app",
+            "--port",
+            str(PORT),
+        ],
     ):
         with urllib.request.urlopen(BASE + "/", timeout=5) as r:
             assert r.status == 200, r.status

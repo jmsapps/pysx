@@ -71,9 +71,9 @@ def test_verification_manifest_covers_the_required_checks() -> None:
     manifest = {" ".join(gate.command) for gate in GATES}
 
     for command in (
-        "python -m pysx.quality ruff",
-        "python -m pysx.quality mypy",
-        "python -m pysx.quality pyright",
+        "python -m pysx.tooling.quality ruff",
+        "python -m pysx.tooling.quality mypy",
+        "python -m pysx.tooling.quality pyright",
         "pytest -q",
     ):
         assert f"uv run --project . {command}" in manifest

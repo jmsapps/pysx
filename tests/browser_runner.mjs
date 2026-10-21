@@ -321,7 +321,7 @@ try {
       name === "durable_state_fixture" ?
       ["tests/browser_deployment_fixture.py", "--port", String(port), "--example"] :
       name === "diagnostics_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_diagnostics_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_diagnostics_fixture:app", "--port", String(port)] :
       name === "deployment_fixture" ?
       ["tests/browser_deployment_fixture.py", "--port", String(port)] :
       name === "ownership_fixture" ?
@@ -329,55 +329,55 @@ try {
       name === "tls_proxy" ?
       ["tests/browser_security_proxy_fixture.py", "--port", String(port)] :
       name === "security_rendering" ?
-      ["-m", "pysx.server", "--app", "tests.browser_security_rendering_fixture:host", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_security_rendering_fixture:host", "--port", String(port)] :
       name?.startsWith("security_") ?
-      ["-m", "pysx.server", "--app", "tests.browser_security_fixture:host", "--port", String(port), ...(name === "security_asgi" ? ["--asgi"] : [])] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_security_fixture:host", "--port", String(port), ...(name === "security_asgi" ? ["--asgi"] : [])] :
       name?.startsWith("host_") ?
-      ["-m", "pysx.server", "--app", "tests.browser_host_fixture:host", "--port", String(port), ...(name === "host_asgi" ? ["--asgi"] : [])] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_host_fixture:host", "--port", String(port), ...(name === "host_asgi" ? ["--asgi"] : [])] :
       name === "keyed_snapshot_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_keyed_snapshot_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_keyed_snapshot_fixture:app", "--port", String(port)] :
       name === "resume_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_resume_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_resume_fixture:app", "--port", String(port)] :
       name === "reconnect_fixture" || name === "expired_reconnect_fixture" ?
-      ["-m", "pysx.server", "--app", `tests.browser_reconnect_fixture:${name === "reconnect_fixture" ? "host" : "expired_host"}`, "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", `tests.browser_reconnect_fixture:${name === "reconnect_fixture" ? "host" : "expired_host"}`, "--port", String(port)] :
       name === "http_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_http_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_http_fixture:app", "--port", String(port)] :
       name === "async_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_async_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_async_fixture:app", "--port", String(port)] :
       name === "keyed_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_keyed_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_keyed_fixture:app", "--port", String(port)] :
       name === "identity_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_identity_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_identity_fixture:app", "--port", String(port)] :
       name === "keyboard_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_keyboard_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_keyboard_fixture:app", "--port", String(port)] :
       name === "recovery_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_recovery_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_recovery_fixture:app", "--port", String(port)] :
       name === "routing_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_routing_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_routing_fixture:app", "--port", String(port)] :
       name === "fragments_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_fragments_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_fragments_fixture:app", "--port", String(port)] :
       name === "components_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_components_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_components_fixture:app", "--port", String(port)] :
       name === "tree_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_tree_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_tree_fixture:app", "--port", String(port)] :
       name === "snapshot_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_snapshot_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_snapshot_fixture:app", "--port", String(port)] :
       name === "control_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_control_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_control_fixture:app", "--port", String(port)] :
       name === "authoring_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_authoring_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_authoring_fixture:app", "--port", String(port)] :
       name === "styled_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_styled_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_styled_fixture:app", "--port", String(port)] :
       name === "styles_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_styles_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_styles_fixture:app", "--port", String(port)] :
       name === "dom_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_dom_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_dom_fixture:app", "--port", String(port)] :
       name === "events_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_events_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_events_fixture:app", "--port", String(port)] :
       name === "forms_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_forms_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_forms_fixture:app", "--port", String(port)] :
       name === "native_fixture" ?
-      ["-m", "pysx.server", "--app", "tests.browser_fixture:app", "--port", String(port)] :
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_fixture:app", "--port", String(port)] :
       name === "adoption" ?
       ["-m", "tests.prototypes.standalone_host", "--port", String(port)] :
       ["run_example.py", "run", name, "--port", String(port)]) : null;

@@ -1,11 +1,9 @@
-from .async_runtime import push
-from .bindings import Binding, Deferred, bounded_while, defer, defer2
-from .boundaries import ErrorBoundary
-from .composition import Children, Component
-from .dom import Dom, DomError, DomListener, DomNode, DomRef, Rect
-from .durable import DurableSession
-from .durable_host import DurableApplication
-from .elements import (
+from .compiler.bindings import Binding, Deferred, bounded_while, defer, defer2
+from .compiler.parser import PysxSyntaxError
+from .components import native
+from .components.boundaries import ErrorBoundary
+from .components.composition import Children, Component
+from .components.elements import (
     br,
     button,
     div,
@@ -21,10 +19,8 @@ from .elements import (
     strong,
     ul,
 )
-from .errors import ErrorInfo
-from .events import BrowserEvent, EventHandler, on_event
-from .hosting import Application, HostConfig, StaticAsset
-from .lifecycle import (
+from .components.errors import ErrorInfo
+from .components.lifecycle import (
     local_state,
     on_cleanup,
     on_mount,
@@ -34,7 +30,12 @@ from .lifecycle import (
     own_task,
     own_timer,
 )
-from .operators import (
+from .hosting.durable_host import DurableApplication
+from .hosting.hosting import Application, HostConfig, StaticAsset
+from .hosting.request import Document, RequestContext, current_request
+from .hosting.security import AccessDenied, SecurityPolicy, require_access
+from .hosting.telemetry import RequestEvent
+from .reactive.operators import (
     all_of,
     any_of,
     concat,
@@ -50,22 +51,10 @@ from .operators import (
     ne,
     not_,
 )
-from .output import TrustedHTML
-from .ownership import OwnerLease, OwnershipStore, SQLiteOwnershipStore
-from .parser import PysxSyntaxError
-from .persistence import (
-    IncompatibleState,
-    MemoryStateStore,
-    RecoveryUnavailable,
-    SQLiteStateStore,
-    StateCodec,
-    StateIdentity,
-    StateSnapshot,
-    StateStore,
-    StoreUnavailable,
-)
-from .reactive import Signal, batch, derived, effect, signal
-from .render import (
+from .reactive.reactive import Signal, batch, derived, effect, signal
+from .reactive.structured import Projection, Structured, dict_key, list_index, project, structured
+from .rendering.output import TrustedHTML
+from .rendering.render import (
     Each,
     Fragment,
     Rendered,
@@ -76,9 +65,24 @@ from .render import (
     render,
     when,
 )
-from .request import Document, RequestContext, current_request
-from .resources import Resource, ResourceState, resource
-from .routing import (
+from .runtime.async_runtime import push
+from .runtime.dom import Dom, DomError, DomListener, DomNode, DomRef, Rect
+from .runtime.durable import DurableSession
+from .runtime.events import BrowserEvent, EventHandler, on_event
+from .runtime.ownership import OwnerLease, OwnershipStore, SQLiteOwnershipStore
+from .runtime.persistence import (
+    IncompatibleState,
+    MemoryStateStore,
+    RecoveryUnavailable,
+    SQLiteStateStore,
+    StateCodec,
+    StateIdentity,
+    StateSnapshot,
+    StateStore,
+    StoreUnavailable,
+)
+from .runtime.resources import Resource, ResourceState, resource
+from .runtime.routing import (
     Link,
     Location,
     NavigationEvent,
@@ -88,12 +92,9 @@ from .routing import (
     RouteState,
     match_route,
 )
-from .security import AccessDenied, SecurityPolicy, require_access
-from .structured import Projection, Structured, dict_key, list_index, project, structured
-from .styled import StyledCallable, StyledTag, global_style, styled, stylesheet
-from .styles import Theme, Themes, css
-from .telemetry import RequestEvent
-from .transport import TransportLimits
+from .runtime.transport import TransportLimits
+from .styling.styled import StyledCallable, StyledTag, global_style, styled, stylesheet
+from .styling.styles import Theme, Themes, css
 
 __all__ = [
     "AccessDenied",
@@ -190,6 +191,7 @@ __all__ = [
     "local_state",
     "lt",
     "match_route",
+    "native",
     "nav",
     "ne",
     "not_",

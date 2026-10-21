@@ -8,12 +8,26 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 from test_lsp import Client
 
-from pysx.analysis import projection_for_source
-from pysx.lsp_workspace import position
+from pysx.compiler.compiler import analyze
+from pysx.tooling.analysis import projection_for_source
+from pysx.tooling.lsp.features import classify, template_calls
+from pysx.tooling.lsp.workspace import position
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+
+
+@pytest.mark.parametrize("namespace", [False, True])
+def test_render_marker_paths(tmp_path: Path, namespace: bool) -> None:
+    module = "pysx.rendering.render"
+    declaration = f"import {module} as renderer" if namespace else f"from {module} import pysx"
+    call = "renderer.pysx" if namespace else "pysx"
+    source = f'{declaration}\nview = {call}(t"Panel")\n'
+    filename = str(tmp_path / "view.py")
+    assert analyze(source, filename).calls
+    assert classify(source, source.index("Panel") + 2, filename, tmp_path, {}) is not None
+    assert template_calls(source, filename, tmp_path, {})
 
 
 @pytest.fixture
@@ -53,8 +67,8 @@ def test_buffer_readiness_definition_precedes_unrelated_sweep(tmp_path: Path) ->
         f"""
 import time
 from pathlib import Path
-from pysx.lsp_workspace import WorkspaceIndex
-from pysx.lsp_server import create_server
+from pysx.tooling.lsp.workspace import WorkspaceIndex
+from pysx.tooling.lsp.server import create_server
 original = WorkspaceIndex.build
 def blocked(self, *args, **kwargs):
     if {str(unrelated)!r} in kwargs.get("selected", set()):
@@ -107,8 +121,8 @@ def test_buffer_readiness_backend_failure_is_actionable_and_recovers(tmp_path: P
         "-c",
         f"""
 from pathlib import Path
-from pysx.lsp_backend import TypeBackend
-from pysx.lsp_server import create_server
+from pysx.tooling.lsp.backend import TypeBackend
+from pysx.tooling.lsp.server import create_server
 original = TypeBackend.start
 async def start(self, *args, **kwargs):
     if not Path({str(recovered)!r}).exists():
@@ -558,7 +572,7 @@ def test_editor_surface_requires_no_manual_configuration(tmp_path: Path, client:
 
 
 def test_editor_surface_cli_and_editor_agree_on_diagnostics(tmp_path: Path, client: Client) -> None:
-    """`python -m pysx.check` and the resident server must not disagree.
+    """`python -m pysx.tooling.check` and the resident server must not disagree.
 
     The CLI reports flat line/char fields and the protocol reports LSP ranges,
     so both are normalized before comparison.
@@ -592,7 +606,7 @@ def test_editor_surface_cli_and_editor_agree_on_diagnostics(tmp_path: Path, clie
         if "component" in str(item["code"])
     )
     result = subprocess.run(
-        [sys.executable, "-m", "pysx.check", str(path)],
+        [sys.executable, "-m", "pysx.tooling.check", str(path)],
         capture_output=True,
         text=True,
         check=True,

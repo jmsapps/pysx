@@ -5,9 +5,9 @@ from dataclasses import asdict
 import pytest
 
 from pysx import BrowserEvent, Fragment, native, on_event, pysx, signal
-from pysx.events import FIELD_LIMIT, VALUE_LIMIT, decode_event
-from pysx.forms import PayloadError
-from pysx.server import Session
+from pysx.hosting.server import Session
+from pysx.runtime.events import FIELD_LIMIT, VALUE_LIMIT, decode_event
+from pysx.runtime.forms import PayloadError
 
 
 @pytest.mark.parametrize("kind", ["click", "keydown", "pointerdown", "focus", "submit", "custom"])

@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from pysx.forms import PayloadError
-from pysx.wire import parse_message
+from pysx.runtime.forms import PayloadError
+from pysx.runtime.wire import parse_message
 
 
 @pytest.mark.parametrize(

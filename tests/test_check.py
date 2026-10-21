@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from pysx.check import Diagnostic, apply_fix, diagnostics, diagnostics_for_source
-from pysx.source_map import EditorPosition, Positions
+from pysx.compiler.source_map import EditorPosition, Positions
+from pysx.tooling.check import Diagnostic, apply_fix, diagnostics, diagnostics_for_source
 
 HEADER = "from pysx import component, div, pysx, signal, styled\n\n"
 
@@ -123,7 +123,7 @@ def test_diagnostics_actions_partial_buffer_recovery(source: str) -> None:
 
 def test_diagnostics_actions_aliases_defaults_dynamic_and_styled() -> None:
     source = '''from pysx import Fragment, pysx
-from pysx.styled import styled as decorate
+from pysx.styling.styled import styled as decorate
 from functools import partial
 def panel(*, title: str = "Default", **props: object) -> Fragment:
     return pysx(t"p: {title} {props}")
@@ -143,7 +143,7 @@ def app(unknown, factory):
 
 
 def test_diagnostics_actions_styling_identity_and_unrelated_names() -> None:
-    source = """from pysx.styled import styled as decorate
+    source = """from pysx.styling.styled import styled as decorate
 Card = decorate('div')(t"color: red")
 def styled(*args): return args
 unrelated = styled('text', t"value: {42}")
@@ -271,7 +271,10 @@ def test_diagnostics_actions_crlf_fixes_match_buffer_and_cli(tmp_path: Path) -> 
     findings = diagnostics_for_source(source, str(path))
     assert diagnostics(path) == findings
     result = subprocess.run(
-        [sys.executable, "-m", "pysx.check", str(path)], capture_output=True, text=True, check=False
+        [sys.executable, "-m", "pysx.tooling.check", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == findings
@@ -369,7 +372,10 @@ def test_exact_source_structural_buffer_and_cli_ranges(
     assert source[start:end] == selected
     assert end > start
     result = subprocess.run(
-        [sys.executable, "-m", "pysx.check", str(path)], capture_output=True, text=True, check=False
+        [sys.executable, "-m", "pysx.tooling.check", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == findings
@@ -447,7 +453,7 @@ def test_positioned_multiline_checker_assembled_templates_and_metadata() -> None
 def test_positioned_multiline_ast_fragments_match_runtime_strings() -> None:
     import ast
 
-    from pysx.check import template_fragments
+    from pysx.tooling.check import template_fragments
 
     left, right = "a", "b"
     template = t"\np: {left}{right}"
@@ -500,7 +506,7 @@ def decorate(base):
     assert not any("unknown variant" in item["message"] for item in diagnostics_for_source(source))
 
 
-@pytest.mark.parametrize("module", ["pysx", "pysx.styled"])
+@pytest.mark.parametrize("module", ["pysx", "pysx.styling.styled"])
 def test_variant_metadata_recognizes_styled_import_aliases(module: str) -> None:
     source = f"""from {module} import styled as style
 from pysx import pysx

@@ -17,12 +17,12 @@ from pysx import (
     on_setup,
     signal,
 )
-from pysx.forms import PayloadError
-from pysx.http import HTTPRuntime, reconcile
-from pysx.request import RequestContext
+from pysx.hosting.http import HTTPRuntime, reconcile
+from pysx.hosting.request import RequestContext
+from pysx.runtime.forms import PayloadError
 
 if TYPE_CHECKING:
-    from pysx.http import HTTPResult
+    from pysx.hosting.http import HTTPResult
 
 
 def handle(result: HTTPResult) -> str:

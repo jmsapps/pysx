@@ -19,9 +19,9 @@ from pysx import (
     pysx,
     signal,
 )
-from pysx.errors import BoundaryState
-from pysx.render_tree import apply, snapshot
-from pysx.server import Session
+from pysx.components.errors import BoundaryState
+from pysx.hosting.server import Session
+from pysx.rendering.tree import apply, snapshot
 
 if TYPE_CHECKING:
     from collections.abc import Callable

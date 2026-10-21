@@ -827,7 +827,7 @@ function apply(op) {
     if (op.name.startsWith("data-pysx-")) registerTyped(el);
     return;
   }
-  if (op.op === "list") reconcile(op);
+  if (op.op === "list") preserveInteraction(() => reconcileRanges(op));
 }
 
 function hex(value) {
@@ -965,10 +965,6 @@ function morphChildren(parent, previousNodes, nextNodes, boundary = null, comple
     if (node.nextSibling !== target || node.parentNode !== parent) parent.insertBefore(node, target);
     target = node;
   }
-}
-
-function reconcile(op) {
-  preserveInteraction(() => reconcileRanges(op));
 }
 
 function preserveInteraction(change) {

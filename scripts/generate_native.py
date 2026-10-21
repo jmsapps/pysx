@@ -8,7 +8,7 @@ import re
 import textwrap
 from pathlib import Path
 
-from pysx.schema import (
+from pysx.components.schema import (
     BASELINE_TAGS,
     BOOLEAN_ATTRS,
     EVENT_NAMES,
@@ -19,9 +19,9 @@ from pysx.schema import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = ROOT / "pysx" / "native.py"
+TARGET = ROOT / "pysx" / "components" / "native.py"
 CLIENT = ROOT / "pysx" / "static" / "client.js"
-STYLED = ROOT / "pysx" / "styled_native.py"
+STYLED = ROOT / "pysx" / "styling" / "styled_native.py"
 EVENTS_DECLARATION = re.compile(r"const EVENTS = \[[^\]]*\];")
 
 
@@ -53,12 +53,13 @@ def generate() -> str:
         "from string.templatelib import Template as StringTemplate",
         "from typing import TypedDict, Unpack",
         "",
-        "from .dom import DomRef",
-        "from .events import EventHandler",
+        "from pysx.reactive.reactive import Signal",
+        "from pysx.rendering.render import Fragment as RenderFragment",
+        "from pysx.runtime.dom import DomRef",
+        "from pysx.runtime.events import EventHandler",
+        "",
         "from .native_support import custom_element as custom_element",
         "from .native_support import element",
-        "from .reactive import Signal",
-        "from .render import Fragment as RenderFragment",
         "",
         "",
         "class GlobalAttrs(TypedDict, total=False):",
@@ -122,9 +123,9 @@ def generate_styled() -> str:
         "    from string.templatelib import Template",
         "    from typing import Protocol, Unpack",
         "",
-        "    from . import native",
-        "    from .reactive import Signal",
-        "    from .render import Fragment",
+        "    from pysx.components import native",
+        "    from pysx.reactive.reactive import Signal",
+        "    from pysx.rendering.render import Fragment",
         "    from .styled import Definition",
     ]
     tags = [tag for tag in dict.fromkeys([*BASELINE_TAGS, "math"]) if tag != "fragment"]
@@ -149,7 +150,7 @@ def generate_styled() -> str:
             f"    def {spelling(tag)}(",
             "        self, css: Template, *, variants: Mapping[str, Template] | None = None",
             f"    ) -> Styled{title}:",
-            "        from .elements import ElementTag",
+            "        from pysx.components.elements import ElementTag",
             "        from .styled import build_styled",
             "",
             f'        return cast("Styled{title}", '

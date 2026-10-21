@@ -37,7 +37,7 @@ async function write(resource, key, value) {
 
 function planner(python, command, root, request) {
   return new Promise((resolve, reject) => {
-    const child = execFile(python, ["-m", "pysx.editor_config", command, root],
+    const child = execFile(python, ["-m", "pysx.tooling.editor.config", command, root],
       { timeout: 30000 }, (error, stdout) => {
         if (error) reject(new Error(`ownership planning failed: ${error.message}`));
         else resolve(JSON.parse(stdout));

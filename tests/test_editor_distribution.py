@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import pytest
 
-from pysx.tooling import RUFF_REQUIREMENT, ToolingError, resolve_ruff
+from pysx.tooling.tools import RUFF_REQUIREMENT, ToolingError, resolve_ruff
 
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR = ROOT / "editor"
@@ -152,7 +152,7 @@ def test_client_verify_ruff_rejects_an_unsupported_version(tmp_path: Path) -> No
 
 def test_client_verify_cli_and_editor_resolve_the_same_ruff() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "pysx.tooling"],
+        [sys.executable, "-m", "pysx.tooling.tools"],
         capture_output=True,
         text=True,
         check=True,
@@ -166,7 +166,7 @@ def test_client_verify_cli_and_editor_resolve_the_same_ruff() -> None:
 def test_client_verify_cli_reports_a_failure_as_an_error(tmp_path: Path) -> None:
     (tmp_path / "python").touch()
     result = subprocess.run(
-        [sys.executable, "-m", "pysx.tooling", str(tmp_path / "python")],
+        [sys.executable, "-m", "pysx.tooling.tools", str(tmp_path / "python")],
         capture_output=True,
         text=True,
         check=False,

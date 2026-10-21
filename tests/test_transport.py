@@ -14,10 +14,10 @@ from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 from websockets.frames import Close
 
 from pysx import Application, Fragment, TransportLimits, each, native, on_cleanup, on_mount, signal
-from pysx.connection import BoundedConnection, serve_connection
-from pysx.http import HTTPRuntime
-from pysx.request import RequestContext
-from pysx.transport import TransportError, TransportState
+from pysx.hosting.http import HTTPRuntime
+from pysx.hosting.request import RequestContext
+from pysx.runtime.connection import BoundedConnection, serve_connection
+from pysx.runtime.transport import TransportError, TransportState
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable

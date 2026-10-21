@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pysx.source_map import EditorPosition, LiteralMapper, Positions, SourceSpan, compose
+from pysx.compiler.source_map import EditorPosition, LiteralMapper, Positions, SourceSpan, compose
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -104,7 +104,7 @@ def test_exact_source_projection_cli_preserves_crlf_file_and_stdin(tmp_path: Pat
     import subprocess
     import sys
 
-    from pysx.analysis import projection_for_source
+    from pysx.tooling.analysis import projection_for_source
 
     source = "from pysx import pysx\r\nview = pysx(t\"p: '😀'\")\r\n"
     path = tmp_path / "view.py"
@@ -113,7 +113,7 @@ def test_exact_source_projection_cli_preserves_crlf_file_and_stdin(tmp_path: Pat
 
     for flags in [[], ["--stdin"]]:
         result = subprocess.run(
-            [sys.executable, "-m", "pysx.analysis", str(path), *flags],
+            [sys.executable, "-m", "pysx.tooling.analysis", str(path), *flags],
             input=source,
             text=True,
             capture_output=True,

@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 from test_lsp import Client
 
-from pysx.lsp_edits import apply_edits, format_edits
-from pysx.lsp_features import template_calls
-from pysx.lsp_workspace import position
-from pysx.parser import Case, Conditional, Element, Hole, Local, Loop, Match, parse
+from pysx.compiler.parser import Case, Conditional, Element, Hole, Local, Loop, Match, parse
+from pysx.tooling.lsp.edits import apply_edits, format_edits
+from pysx.tooling.lsp.features import template_calls
+from pysx.tooling.lsp.workspace import position
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -520,7 +520,7 @@ def test_rename_binding_identity_refuses_generation_changed_while_waiting_for_fu
         f"""
 import asyncio
 from pathlib import Path
-from pysx.lsp_server import Session, create_server
+from pysx.tooling.lsp.server import Session, create_server
 original = Session.current
 async def blocked(self, *args, **kwargs):
     if kwargs.get("complete") and not Path({str(entered)!r}).exists():
@@ -712,14 +712,14 @@ def test_save_latency_import_action_does_not_wait_or_reuse_stale_findings(
         sys.executable,
         "-c",
         "import time\n"
-        "from pysx.lsp_workspace import WorkspaceIndex\n"
+        "from pysx.tooling.lsp.workspace import WorkspaceIndex\n"
         "original = WorkspaceIndex.build\n"
         "def slow(self, buffers, *args, **kwargs):\n"
         "    if any('# pending-save-analysis' in item['source'] for item in buffers.values()):\n"
         "        time.sleep(3)\n"
         "    return original(self, buffers, *args, **kwargs)\n"
         "WorkspaceIndex.build = slow\n"
-        "from pysx.lsp import main\n"
+        "from pysx.tooling.lsp.lsp import main\n"
         "main()\n",
     ]
     library = tmp_path / "library.py"
