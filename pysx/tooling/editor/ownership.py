@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 PROJECTION_GLOB = _editor_config.MIRRORS
 SUPPRESSED = _editor_config.RULES
-RUFF_IGNORED = ("F401", "F811", "F821", "F823", "F841", "TC")
+RUFF_IGNORED = ("F401", "F811", "F821", "F823", "F841", "N802", "N806", "TC")
 DISABLED_ACTIONS = (
     "source.fixAll",
     "source.fixAll.pylance",

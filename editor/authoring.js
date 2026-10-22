@@ -445,7 +445,7 @@ exports.activate = function (context) {
     if (ruffExtension) {
       await ruffExtension.activate();
       const ruff = vscode.workspace.getConfiguration("ruff", doc.uri);
-      await ruff.update("lint.ignore", [...new Set([...(ruff.get("lint.ignore") ?? []), "F401", "F811", "F821", "F823", "F841", "TC"])], target);
+      await ruff.update("lint.ignore", [...new Set([...(ruff.get("lint.ignore") ?? []), "F401", "F811", "F821", "F823", "F841", "N802", "N806", "TC"])], target);
     }
     const message = "pysx: Template-aware imports configured for this workspace folder.";
     output.appendLine(message);
