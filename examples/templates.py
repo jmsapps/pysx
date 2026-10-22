@@ -24,7 +24,7 @@ def app() -> Fragment:
     selected = signal("none")
     serial = signal(0)
     live_heading = signal("Live values")
-    local_heading = styled(GroupHeading)(t"letter-spacing: 0.02em")
+    LocalHeading = styled(GroupHeading)(t"letter-spacing: 0.02em")
 
     def advance_heading(_event: object) -> None:
         live_heading.update(
@@ -76,7 +76,7 @@ def app() -> Fragment:
 
         return pysx(t"""
             GroupPanel(data-group={group[0]}):
-              local_heading: {heading}
+              LocalHeading: {heading}
               Actions:
                 {each(child_sources[group[0]], child_row, key=str)}
         """)

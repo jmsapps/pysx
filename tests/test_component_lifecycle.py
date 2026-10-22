@@ -252,9 +252,9 @@ def test_stable_component_mount_can_own_cleanup() -> None:
 
 
 def test_composition_recursive_dispatch_isolation_and_owned_cleanup() -> None:
-    from examples.components.composition import tree_controls
+    from examples.components.composition import TreeControls
 
-    session, other = Session(tree_controls), Session(tree_controls)
+    session, other = Session(TreeControls), Session(TreeControls)
     initial = len(session.rendered.scopes.owners)
     match = re.search(r'id="tree-library"[^>]*data-pysx-click="([^"]+)"', session.rendered.body)
     assert match is not None

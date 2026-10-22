@@ -11,14 +11,14 @@ from .components import (
     example_app,
     example_title,
 )
-from .components.events import event_controls
+from .components.events import EventControls
 
 
 @component
 def app() -> Fragment:
     example_title("Events")
 
-    controls = event_controls()
+    controls = EventControls()
 
     return pysx(
         t"""

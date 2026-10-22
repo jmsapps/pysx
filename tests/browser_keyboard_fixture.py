@@ -1,5 +1,7 @@
 """Standalone keyboard verification reuses the shipped example controls."""
 
-from examples.components.events import event_controls as app
+from examples.components.events import EventControls
+
+app = EventControls
 
 __all__ = ["app"]

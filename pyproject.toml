@@ -85,7 +85,4 @@ select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "RUF", "PT", "TC", "ANN", 
 "tests/browser_deployment_fixture.py" = ["T201"]
 # HTML input is an intentional public element name.
 "pysx/components/elements.py" = ["A001"]
-# Capitalized component functions are referenced verbatim by the DSL.
-"examples/todos.py" = ["N802", "E501"]
-# Components are Python callables named like markup tags.
-"examples/editor_features.py" = ["N802"]
+"examples/todos.py" = ["E501"]

@@ -7,6 +7,7 @@ import json
 import shutil
 import subprocess
 import sys
+from bisect import bisect_right
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, cast
@@ -20,6 +21,8 @@ if TYPE_CHECKING:
     from pysx.compiler.compiler import Compilation
 
 LEXICAL_CODES = frozenset({"F401", "F811", "F821", "F823", "F841"})
+COMPONENT_RETURNS = frozenset({"Fragment", "Template"})
+CASING_CODES = frozenset({"N802", "N806"})
 
 
 class Location(TypedDict):
@@ -89,6 +92,34 @@ def _ruff(source: str, filename: str) -> list[RuffMessage]:
     return cast("list[RuffMessage]", payload)
 
 
+def _component_lines(tree: ast.AST) -> frozenset[int]:
+    """Lines defining a component, whose PascalCase names ruff must not report."""
+
+    lines: set[int] = set()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        returns = node.returns
+        name = None
+
+        if isinstance(returns, ast.Name):
+            name = returns.id
+        elif isinstance(returns, ast.Attribute):
+            name = returns.attr
+        elif isinstance(returns, ast.Constant) and isinstance(returns.value, str):
+            name = returns.value.strip().strip("\"'")
+
+        if name in COMPONENT_RETURNS:
+            lines.add(node.lineno)
+
+    return frozenset(lines)
+
+
+def _line_at(positions: Positions, offset: int) -> int:
+    return bisect_right(positions.starts, offset)
+
+
 def _span(positions: Positions, start: Location, end: Location) -> SourceSpan:
     return SourceSpan(
         positions.text_offset(start["row"], start["column"] - 1),
@@ -149,6 +180,8 @@ def lint_source(
         )
     projection = projection if projection is not None else compilation.projection()
     imports = _import_ranges(source)
+    components = _component_lines(compilation.tree)
+    tags = {reference.name for reference in compilation.references}
     out: dict[tuple[str, SourceSpan], Finding] = {}
     original_messages = _ruff(source, filename)
     projected_messages = _ruff(projection.text, filename)
@@ -170,6 +203,12 @@ def lint_source(
             try:
                 span = mapped.span(generated.start, generated.end)
             except ValueError:
+                continue
+
+            if item["code"] in CASING_CODES and (
+                mapped.text[generated.start : generated.end] in tags
+                or (item["code"] == "N802" and _line_at(positions, generated.start) in components)
+            ):
                 continue
             edits: list[Edit] = []
             fix = item["fix"]

@@ -85,7 +85,7 @@ def test_diagnostics_example_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["diagnostics"] == "examples.diagnostics:application"
+    assert examples["diagnostics"] == "examples.diagnostics:example"
     assert diagnostics(Path("examples/diagnostics.py")) == []
     assert diagnostics(Path("examples/components/diagnostics.py")) == []
 
@@ -177,7 +177,7 @@ def test_resources_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["resources"] == "examples.resources:application"
+    assert examples["resources"] == "examples.resources:example"
     assert diagnostics(Path("examples/resources.py")) == []
 
 
@@ -231,7 +231,7 @@ def test_recovery_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["recovery"] == "examples.recovery:application"
+    assert examples["recovery"] == "examples.recovery:example"
     assert diagnostics(Path("examples/recovery.py")) == []
 
 
@@ -329,7 +329,7 @@ def test_pysx_12_st_4navigation_report_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["navigation"] == "examples.navigation:application"
+    assert examples["navigation"] == "examples.navigation:example"
     assert diagnostics(Path("examples/navigation.py")) == []
     assert diagnostics(Path("examples/components/navigation.py")) == []
 
@@ -389,7 +389,7 @@ def test_templates_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["templates"] == "examples.templates:application"
+    assert examples["templates"] == "examples.templates:example"
     assert diagnostics(Path("examples/templates.py")) == []
     assert diagnostics(Path("examples/components/templates.py")) == []
 
@@ -864,7 +864,7 @@ def test_reconnect_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["reconnect"] == "examples.reconnect:application"
+    assert examples["reconnect"] == "examples.reconnect:example"
     assert diagnostics(Path("examples/reconnect.py")) == []
 
 
@@ -930,7 +930,7 @@ def test_session_security_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["session_security"] == "examples.session_security:application"
+    assert examples["session_security"] == "examples.session_security:example"
     assert diagnostics(Path("examples/session_security.py")) == []
 
 
@@ -1020,7 +1020,7 @@ def test_development_example_is_registered_and_clean() -> None:
 
     from examples import examples
 
-    assert examples["development"] == "examples.development:application"
+    assert examples["development"] == "examples.development:example"
     assert diagnostics(Path("examples/development.py")) == []
 
 
@@ -1058,7 +1058,7 @@ def test_durable_state_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["durable_state"] == "examples.durable_state:application"
+    assert examples["durable_state"] == "examples.durable_state:example"
     assert diagnostics(Path("examples/durable_state.py")) == []
 
 
@@ -1094,7 +1094,7 @@ def test_editor_features_example_is_registered_and_clean() -> None:
 
     from examples import examples
 
-    assert examples["editor_features"] == "examples.editor_features:application"
+    assert examples["editor_features"] == "examples.editor_features:example"
     assert diagnostics(Path("examples/editor_features.py")) == []
 
 

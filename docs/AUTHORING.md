@@ -21,6 +21,14 @@ def app():
     return pysx(t'''Panel(title="Hello"): "Content"''')
 ```
 
+Components are PascalCase by convention. A markup tag resolves to a component when it is
+not a native element and either starts with a capital or names a binding in the enclosing
+scope, so `tree_controls:` and `TreeControls:` both work; PascalCase is the recommended
+spelling. Because a component is an ordinary Python function, Ruff's `N802`/`N806` naming
+checks would normally reject that casing: pysx's own linting suppresses both for callables
+that return `Fragment`/`Template` and for names used as markup tags, so no per-file ignore
+is needed. Running Ruff directly, outside pysx, still reports them.
+
 The server installs the scoped loader before importing the module specified by
 `--app package.view:app`. The bundled example launcher and repository tests install
 their application scope before collection/imports. For another launcher, install

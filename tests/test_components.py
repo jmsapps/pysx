@@ -339,10 +339,10 @@ def test_template_import_usage_real_checkers(tmp_path: Path, form: str) -> None:
 
 
 def test_composition_recursive_shared_panel_and_checker(tmp_path: Path) -> None:
-    from examples.components.composition import tree_controls
+    from examples.components.composition import TreeControls
     from pysx.tooling.check import diagnostics
 
-    result = render(tree_controls)
+    result = render(TreeControls)
 
     try:
         assert result.body.startswith("<section")

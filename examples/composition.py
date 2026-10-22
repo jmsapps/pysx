@@ -3,7 +3,7 @@
 from pysx import Fragment, pysx
 
 from .components import Description, Eyebrow, Page, Title, example_app, example_title
-from .components.composition import tree_controls
+from .components.composition import TreeControls
 
 
 def app() -> Fragment:
@@ -19,7 +19,7 @@ def app() -> Fragment:
               Description: "Up/Down moves focus. Home/End reaches the first/last visible node."
               Description: "Enter activates a node. Reverse roots preserves its local count."
               Description: "Setup, browser mount and cleanup counters show separate lifetimes."
-              tree_controls:
+              TreeControls:
         """,
     )
 

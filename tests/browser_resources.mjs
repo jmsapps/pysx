@@ -12,7 +12,7 @@ try {
   const url = `http://127.0.0.1:${process.argv[2]}/`;
   const load = page.goto(url);
   await page.waitForSelector("#resource-draft");
-  assert.equal(await page.title(), "Async resources");
+  assert.equal(await page.title(), "PYSX - Async resources");
   assert.equal(await page.locator("#resource-setups").textContent(), "1");
   assert.equal(await page.locator("#resource-mounts").textContent(), "0");
   assert.equal(await page.locator("#resource-status").textContent(), "pending");
