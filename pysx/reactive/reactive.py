@@ -177,6 +177,8 @@ def _reject_nested_signals(value: object, seen: set[int] | None = None) -> None:
 
 
 class Signal[T]:
+    checkpoint_changed: Callable[[], None] | None = None
+
     def __init__(self, value: T, *, equal: Callable[[T, T], bool] | None = None) -> None:
         self._write_guard = write_guard.get()
         _reject_nested_signals(value)
@@ -197,6 +199,11 @@ class Signal[T]:
         """Read the current value without recording a dependency."""
 
         return self._published
+
+    def checkpoint_value(self) -> object:
+        """Internal borrowed read for bounded capture; callers must not mutate it."""
+
+        return self._value
 
     def get(self) -> T:
         _scheduler.check_owner()
@@ -236,6 +243,9 @@ class Signal[T]:
         self.initialized = True
         self._published = value
         self._value = deepcopy(value)
+
+        if self.checkpoint_changed is not None:
+            self.checkpoint_changed()
 
         if trace_enabled:
             _tracing.emit("signal.write", id(self), len(self.observers))
@@ -541,10 +551,14 @@ class Effect:
 
 
 created: Callable[[Signal[object]], None] | None = None
+checkpoint_created: Callable[[Signal[object]], None] | None = None
 
 
 def signal[T](value: T, *, equal: Callable[[T, T], bool] | None = None) -> Signal[T]:
     out = Signal(value, equal=equal)
+
+    if checkpoint_created is not None:
+        checkpoint_created(cast("Signal[object]", out))
 
     if created is not None:
         created(cast("Signal[object]", out))

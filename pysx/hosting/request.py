@@ -20,6 +20,24 @@ class Document:
 
 
 @dataclass(frozen=True)
+class AuthenticatedIdentity:
+    """Current principal and login-session generation supplied by trusted authentication."""
+
+    principal: str
+    session_id: str = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.principal) is not str
+            or type(self.session_id) is not str
+            or not self.principal
+            or not self.session_id
+            or len(self.session_id) > 4096
+        ):
+            raise ValueError("invalid authenticated identity")
+
+
+@dataclass(frozen=True)
 class RequestContext:
     path: str = "/"
     headers: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
@@ -30,6 +48,7 @@ class RequestContext:
     peer: str | None = None
     access: Callable[[str, str], None] | None = field(default=None, repr=False, compare=False)
     request_id: str = field(default_factory=lambda: uuid4().hex)
+    authentication_session: str | None = field(default=None, repr=False)
 
 
 request_context: ContextVar[RequestContext | None] = ContextVar("pysx_request", default=None)

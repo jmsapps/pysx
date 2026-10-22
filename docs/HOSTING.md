@@ -65,7 +65,17 @@ WebSocket upgrades and preserve externally visible paths.
 and mutable document metadata during rendering, events and cleanup. Configure
 `HostConfig.principal` to resolve trusted request identity, or set
 `scope["state"]["pysx_principal"]` in trusted ASGI middleware. The value must be a
-string or None. Both HTTP and WebSocket requests must resolve the same principal
+string or None. A resolver may also return
+`AuthenticatedIdentity(principal, session_id)`, where `session_id` is the current
+trusted login-session ID or generation, checked against revocation by the authentication
+service. ASGI middleware supplies the equivalent `pysx_authentication_session` field
+alongside `pysx_principal` in trusted scope state. Never copy an unverified request
+header into this field. Resolver-backed operation checks compare both fields, so
+logout and same-principal re-login invalidate the old context. Principal-only adapters
+remain supported for live sessions; they cannot authorize browser checkpoint recovery
+after graph loss because the login-session binding is unavailable.
+
+Both HTTP and WebSocket requests must resolve the same principal
 for adoption. Authentication is supplied by the application. Configure an immutable
 `SecurityPolicy` in `HostConfig.security` to enforce access:
 
@@ -122,6 +132,25 @@ queued mutations and `task_capacity` (1024) its owned tasks and resource loads.
 `secure_cookies=True` adds Secure to the browser cookie for
 HTTPS deployments. `development=True` or CLI `--dev` enables source tracebacks
 in server logs; client errors remain safe.
+
+Host startup also loads a constant-size recovery key ring. A single host generates
+it automatically, without import-time writes, under the application's hashed namespace
+in `~/Library/Application Support/pysx` on macOS or `$XDG_STATE_HOME/pysx` on Linux
+(falling back to `~/.local/state/pysx` when XDG is absent or relative). Keep this private
+state directory across deployments. Directories are owned with mode 0700, key files
+0600, and symlinks are rejected. Missing or unsafe configured keys fail startup.
+
+For multiple hosts, set a stable `HostConfig.recovery_namespace` and mount the same
+ring at `HostConfig.recovery_key_directory / "recovery.keys"` on each host. An explicit
+directory is read-only to the framework and must already exist with mode 0700; its
+regular key file may be 0400 or 0600. The bounded binary ring is `PSK1`, an 8-byte
+key ID and 32-byte root key, optionally followed by an 8-byte retiring ID, 32-byte
+retiring root and 8-byte unsigned big-endian retirement timestamp. Use platform
+secret management to generate random roots and distribute the ring atomically.
+Keep at most one issuing root and one retiring root; retain the latter for at most
+24 hours plus 60 seconds after rotation. Restart workers after installing a new ring.
+Losing keys loses the ability to decrypt their checkpoints. Keys contain no user
+snapshots; encrypted state and browser publication are separate runtime facilities.
 
 `production=True` validates secure hosting configuration and forbids development
 tracebacks. `observe` accepts a callback for redacted `RequestEvent` values; bounded

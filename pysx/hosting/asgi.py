@@ -52,9 +52,18 @@ class ASGI:
         ]
         state = scope.get("state", {})
         principal = cast("dict[str, object]", state).get("pysx_principal")
+        authentication_session = cast("dict[str, object]", state).get("pysx_authentication_session")
 
         if principal is not None and not isinstance(principal, str):
             raise ValueError("middleware principal must be a string or None")
+
+        if authentication_session is not None and (
+            not isinstance(authentication_session, str)
+            or not authentication_session
+            or len(authentication_session) > 4096
+            or principal is None
+        ):
+            raise ValueError("invalid middleware authentication session")
 
         client = scope.get("client")
         peer = (
@@ -65,7 +74,13 @@ class ASGI:
         scheme = "https" if scope.get("scheme") in ("https", "wss") else "http"
 
         return request_from_headers(
-            path, headers, base_path=prefix, principal=principal, scheme=scheme, peer=peer
+            path,
+            headers,
+            base_path=prefix,
+            principal=principal,
+            scheme=scheme,
+            peer=peer,
+            authentication_session=authentication_session,
         )
 
     async def __call__(self, scope: Event, receive: Receive, send: Send) -> None:

@@ -126,12 +126,15 @@ def current_scope() -> Scope:
 
 class Scopes:
     def __init__(self) -> None:
+        from .checkpoints import Checkpoints
+
+        self.checkpoints = Checkpoints()
         self.owners: dict[str, Scope] = {}
         self.closed = False
         self.traversals: list[set[str]] = []
 
     @contextmanager
-    def enter(self, path: str, identity: object) -> Generator[Scope]:
+    def enter(self, path: str, identity: object, component: str = "") -> Generator[Scope]:
         if self.closed:
             raise RuntimeError("component scopes are closed")
         owner = self.owners.get(path)
@@ -156,7 +159,8 @@ class Scopes:
         failure_token = failure_context.set(owner.failure)
 
         try:
-            yield owner
+            with self.checkpoints.enter(path, component):
+                yield owner
             owner.ready = True
         except BaseException as error:
             try:
@@ -176,6 +180,7 @@ class Scopes:
         )
 
         for path in paths:
+            self.checkpoints.release(path)
             errors.extend(self.owners.pop(path).close())
 
         if errors:
@@ -246,6 +251,7 @@ class Scopes:
     def close(self) -> None:
         self.closed = True
         self.release("")
+        self.checkpoints.close()
 
 
 @lru_cache(maxsize=128)
@@ -444,6 +450,10 @@ def local_state[T](key: str, initial: T) -> Signal[T]:
         owner.values[key] = _OwnedSignal(initial, owner)
 
     created = cast("Signal[T]", owner.values[key])
+
+    from .checkpoints import record_named
+
+    record_named(cast("Signal[object]", created), key, initial)
 
     if reactive.created is not None:
         frame = currentframe()

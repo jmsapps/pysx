@@ -32,7 +32,7 @@ from .components.lifecycle import (
 )
 from .hosting.durable_host import DurableApplication
 from .hosting.hosting import Application, HostConfig, StaticAsset
-from .hosting.request import Document, RequestContext, current_request
+from .hosting.request import AuthenticatedIdentity, Document, RequestContext, current_request
 from .hosting.security import AccessDenied, SecurityPolicy, require_access
 from .hosting.telemetry import RequestEvent
 from .reactive.operators import (
@@ -99,6 +99,7 @@ from .styling.styles import Theme, Themes, css
 __all__ = [
     "AccessDenied",
     "Application",
+    "AuthenticatedIdentity",
     "Binding",
     "BrowserEvent",
     "Children",

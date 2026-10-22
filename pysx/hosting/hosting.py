@@ -24,7 +24,7 @@ from pysx.runtime.routing import Location
 from pysx.runtime.transport import TransportError, TransportLimits
 
 from .http import HTTPResult, HTTPRuntime
-from .request import RequestContext, browser_id
+from .request import AuthenticatedIdentity, RequestContext, browser_id
 from .security import AccessDenied, SecurityPolicy
 from .telemetry import RequestEvent, record
 
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from websockets.http11 import Request, Response
 
     from pysx.rendering.render import Fragment
+    from pysx.runtime.capsule import CapsuleIssuer
     from pysx.runtime.connection import Connection
 
     from .asgi import ASGI
@@ -81,13 +82,15 @@ class HostConfig:
     health_path: str | None = "/health"
     shutdown_timeout: float = 5
     transport: TransportLimits = field(default_factory=TransportLimits)
-    principal: Callable[[RequestContext], str | None] | None = None
+    principal: Callable[[RequestContext], AuthenticatedIdentity | str | None] | None = None
     security: SecurityPolicy = field(default_factory=SecurityPolicy)
     production: bool = False
     observe: Callable[[RequestEvent], None] | None = None
     assets: Mapping[str, StaticAsset] = field(default_factory=lambda: dict[str, StaticAsset]())
     startup: tuple[Hook, ...] = ()
     shutdown: tuple[Hook, ...] = ()
+    recovery_namespace: str | None = None
+    recovery_key_directory: Path | None = None
 
     def __post_init__(self) -> None:
         if self.production and (
@@ -145,6 +148,7 @@ def request_from_headers(
     principal: str | None = None,
     scheme: str = "http",
     peer: str | None = None,
+    authentication_session: str | None = None,
 ) -> RequestContext:
     combined: dict[str, str] = {}
 
@@ -160,6 +164,7 @@ def request_from_headers(
         base_path=base_path,
         scheme=scheme,
         peer=peer,
+        authentication_session=authentication_session,
     )
 
 
@@ -169,6 +174,7 @@ class Application:
     ) -> None:
         self.app = app
         self.config = config or HostConfig()
+        self.recovery_issuer: CapsuleIssuer | None = None
         self.runtime = HTTPRuntime(
             app,
             capacity=self.config.render_capacity,
@@ -232,10 +238,27 @@ class Application:
 
             if resolved:
                 assert self.config.principal is not None
-                context = replace(context, principal=self.config.principal(context))
+                identity = self.config.principal(context)
+                context = replace(
+                    context,
+                    principal=identity.principal
+                    if isinstance(identity, AuthenticatedIdentity)
+                    else identity,
+                    authentication_session=identity.session_id
+                    if isinstance(identity, AuthenticatedIdentity)
+                    else None,
+                )
 
             if context.principal is not None and (
                 not isinstance(cast("object", context.principal), str) or not context.principal
+            ):
+                raise AccessDenied
+
+            if context.authentication_session is not None and (
+                type(context.authentication_session) is not str
+                or not context.authentication_session
+                or len(context.authentication_session) > 4096
+                or context.principal is None
             ):
                 raise AccessDenied
             self.config.security.check_network(context, websocket=websocket)
@@ -270,7 +293,13 @@ class Application:
                     resolved
                     and action != "command"
                     and self.config.principal is not None
-                    and self.config.principal(context) != context.principal
+                    and self.config.principal(context)
+                    != (
+                        AuthenticatedIdentity(context.principal, context.authentication_session)
+                        if context.principal is not None
+                        and context.authentication_session is not None
+                        else context.principal
+                    )
                 ):
                     raise AccessDenied
                 self.config.security.check(context, action, target)
@@ -329,6 +358,18 @@ class Application:
 
             if self.started:
                 return
+
+            # Keep compiler/checker imports free of the host's crypto startup cost.
+            from pysx.runtime.capsule import CapsuleIssuer
+
+            from .recovery_keys import default_directory, load_keys
+
+            qualified = getattr(self.app, "__qualname__", type(self.app).__qualname__)
+            namespace = self.config.recovery_namespace or f"{self.app.__module__}:{qualified}"
+            directory = self.config.recovery_key_directory or default_directory(namespace)
+            self.recovery_issuer = CapsuleIssuer(
+                load_keys(directory, provision=self.config.recovery_key_directory is None)
+            )
 
             for hook in self.config.startup:
                 result = hook()
