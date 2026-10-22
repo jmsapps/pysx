@@ -6,7 +6,7 @@ from pysx.hosting.server import Session
 
 
 def test_reactive_state_example() -> None:
-    assert examples["reactive_state"] == "examples.reactive_state:app"
+    assert examples["reactive_state"] == "examples.reactive_state:application"
     session = Session(app)
     handlers = list(session.rendered.handlers)
     assert len(handlers) == 6

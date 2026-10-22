@@ -2,11 +2,13 @@
 
 from pysx import Fragment, pysx
 
-from .components import Description, Eyebrow, Page, Title
+from .components import Description, Eyebrow, Page, Title, example_app, example_title
 from .components.composition import tree_controls
 
 
 def app() -> Fragment:
+    example_title("Composition")
+
     return pysx(
         t"""
             Page(id="composition-example"):
@@ -20,3 +22,6 @@ def app() -> Fragment:
               tree_controls:
         """,
     )
+
+
+example = example_app(app)

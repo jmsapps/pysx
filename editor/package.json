@@ -3,6 +3,7 @@
   "displayName": "PYSX",
   "description": "PYSX markup highlighting, diagnostics and an optional resident language server for templates inside t-strings",
   "publisher": "pysx-local",
+  "icon": "icon.png",
   "version": "0.1.0",
   "scripts": {
     "test": "node test/runner.mjs",

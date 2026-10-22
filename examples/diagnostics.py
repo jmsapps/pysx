@@ -3,7 +3,19 @@
 from pysx import Fragment, component, derived, pysx, signal
 from pysx.tooling.check import apply_fix, diagnostics_for_source
 
-from .components import Action, Actions, Card, Description, Eyebrow, Metric, Page, Title, Value
+from .components import (
+    Action,
+    Actions,
+    Card,
+    Description,
+    Eyebrow,
+    Metric,
+    Page,
+    Title,
+    Value,
+    example_app,
+    example_title,
+)
 from .components.diagnostics import SourceCode
 
 FROZEN = """from pysx import pysx, signal
@@ -26,6 +38,8 @@ def _report(source: str) -> str:
 
 @component
 def app() -> Fragment:
+    example_title("Diagnostics")
+
     sample = signal(FROZEN)
     count = signal(0)
     report = derived(lambda: _report(sample()))
@@ -77,3 +91,6 @@ def app() -> Fragment:
             Actions:
                 Action(id="increment-counter", onClick={increment}): "Increment"
     """)
+
+
+example = example_app(app)

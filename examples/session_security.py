@@ -15,7 +15,19 @@ from pysx import (
     signal,
 )
 
-from .components import Action, Actions, Card, Description, Eyebrow, Field, Page, Title, Value
+from .components import (
+    Action,
+    Actions,
+    Card,
+    Description,
+    Eyebrow,
+    Field,
+    Page,
+    Title,
+    Value,
+    example_app,
+    example_title,
+)
 
 if TYPE_CHECKING:
     from pysx import RequestContext
@@ -35,7 +47,7 @@ def authorize(request: RequestContext, action: str, target: str) -> bool:
 
 def view() -> Fragment:
     identity = current_request().principal
-    current_request().document.title = "Session security"
+    example_title("Session security")
     count = signal(0)
     draft = signal("My private draft")
     status = signal("Ready")
@@ -88,3 +100,6 @@ app = Application(
         security=SecurityPolicy(require_principal=True, authorize=authorize),
     ),
 )
+
+
+example = example_app(app)

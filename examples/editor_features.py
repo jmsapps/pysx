@@ -29,6 +29,8 @@ from .components import (
     Page,
     Title,
     Value,
+    example_app,
+    example_title,
 )
 from .components.diagnostics import SourceCode
 
@@ -137,6 +139,8 @@ def formatted_sample() -> str:
 
 @component
 def app() -> Fragment:
+    example_title("Editor features")
+
     view = signal("tokens")
     rows = signal(["alpha", "beta"])
     ready = signal(True)
@@ -205,3 +209,6 @@ def app() -> Fragment:
                 ul(id="rows"): {live_rows}
         """,
     )
+
+
+example = example_app(app)

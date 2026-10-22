@@ -9,7 +9,7 @@ from pathlib import Path
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 
 examples: dict[str, str] = {
-    path.stem: f"examples.{path.stem}:app"
+    path.stem: f"examples.{path.stem}:application"
     for path in sorted(_EXAMPLES_DIR.glob("*.py"))
     if path.name != "__init__.py"
 }

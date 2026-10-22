@@ -13,10 +13,12 @@ from .controls import (
     Value,
 )
 from .forms import Clear, Field, FilterButton, Filters, Form, Meta, Remove, SecondaryAction, Submit
+from .hosting import EXAMPLE_ASSETS, example_app, example_title
 from .lists import Checkbox, Item, List, Row, Text
 from .page import CompactPage, Page, page
 
 __all__ = [
+    "EXAMPLE_ASSETS",
     "Action",
     "Actions",
     "Card",
@@ -43,5 +45,7 @@ __all__ = [
     "Text",
     "Title",
     "Value",
+    "example_app",
+    "example_title",
     "page",
 ]

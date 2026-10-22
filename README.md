@@ -1,4 +1,6 @@
-# PYSX
+<p align="center">
+  <img src="assets/pysx-logo.png" alt="PYSX" width="260">
+</p>
 
 **Reactive interfaces, written in Python.**
 

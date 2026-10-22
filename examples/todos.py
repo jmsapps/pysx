@@ -29,6 +29,8 @@ from .components import (
     Submit,
     Text,
     Title,
+    example_app,
+    example_title,
 )
 
 if TYPE_CHECKING:
@@ -44,6 +46,8 @@ class Todo:
 
 @component
 def app() -> Fragment:
+    example_title("Todos")
+
     todos = signal(
         [
             Todo(1, "Wire up signals", False),
@@ -165,3 +169,6 @@ def app() -> Fragment:
                 Description(id="todo-empty", role="status"): {empty_message}
     """,
     )
+
+
+example = example_app(app)

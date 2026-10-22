@@ -24,11 +24,15 @@ from .components import (
     Page,
     SecondaryAction,
     Title,
+    example_app,
+    example_title,
 )
 
 
 @component
 def app() -> Fragment:
+    example_title("Reactive state")
+
     count = signal(1)
     doubled = count * 2
     tripled = 3 * count
@@ -117,3 +121,6 @@ def app() -> Fragment:
                         "The first score is in the list and the count is above 2.5."
     """,
     )
+
+
+example = example_app(app)

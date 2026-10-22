@@ -9,11 +9,15 @@ from .components import (
     Page,
     Title,
     Value,
+    example_app,
+    example_title,
 )
 
 
 @component
 def app() -> Fragment:
+    example_title("Counter")
+
     # Created per session. A module-scope signal would be shared by every
     # connected client.
     count = signal(0)
@@ -33,3 +37,6 @@ def app() -> Fragment:
             Actions:
                 Action(type="button", onClick={increment}): "Increment"
     """)
+
+
+example = example_app(app)

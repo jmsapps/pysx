@@ -54,6 +54,7 @@ CONTENT_TYPES = """<?xml version="1.0" encoding="utf-8"?>
 
 INCLUDE = (
     "package.json",
+    "icon.png",
     "extension.js",
     "authoring.js",
     "client.js",

@@ -8,12 +8,16 @@ from .components import (
     Eyebrow,
     Page,
     Title,
+    example_app,
+    example_title,
 )
 from .components.events import event_controls
 
 
 @component
 def app() -> Fragment:
+    example_title("Events")
+
     controls = event_controls()
 
     return pysx(
@@ -28,3 +32,6 @@ def app() -> Fragment:
                 {controls}
     """,
     )
+
+
+example = example_app(app)

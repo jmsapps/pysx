@@ -85,7 +85,7 @@ def test_diagnostics_example_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["diagnostics"] == "examples.diagnostics:app"
+    assert examples["diagnostics"] == "examples.diagnostics:application"
     assert diagnostics(Path("examples/diagnostics.py")) == []
     assert diagnostics(Path("examples/components/diagnostics.py")) == []
 
@@ -177,7 +177,7 @@ def test_resources_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["resources"] == "examples.resources:app"
+    assert examples["resources"] == "examples.resources:application"
     assert diagnostics(Path("examples/resources.py")) == []
 
 
@@ -231,7 +231,7 @@ def test_recovery_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["recovery"] == "examples.recovery:app"
+    assert examples["recovery"] == "examples.recovery:application"
     assert diagnostics(Path("examples/recovery.py")) == []
 
 
@@ -329,7 +329,7 @@ def test_pysx_12_st_4navigation_report_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["navigation"] == "examples.navigation:app"
+    assert examples["navigation"] == "examples.navigation:application"
     assert diagnostics(Path("examples/navigation.py")) == []
     assert diagnostics(Path("examples/components/navigation.py")) == []
 
@@ -389,7 +389,7 @@ def test_templates_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["templates"] == "examples.templates:app"
+    assert examples["templates"] == "examples.templates:application"
     assert diagnostics(Path("examples/templates.py")) == []
     assert diagnostics(Path("examples/components/templates.py")) == []
 
@@ -864,7 +864,7 @@ def test_reconnect_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["reconnect"] == "examples.reconnect:app"
+    assert examples["reconnect"] == "examples.reconnect:application"
     assert diagnostics(Path("examples/reconnect.py")) == []
 
 
@@ -930,7 +930,7 @@ def test_session_security_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["session_security"] == "examples.session_security:app"
+    assert examples["session_security"] == "examples.session_security:application"
     assert diagnostics(Path("examples/session_security.py")) == []
 
 
@@ -1020,7 +1020,7 @@ def test_development_example_is_registered_and_clean() -> None:
 
     from examples import examples
 
-    assert examples["development"] == "examples.development:app"
+    assert examples["development"] == "examples.development:application"
     assert diagnostics(Path("examples/development.py")) == []
 
 
@@ -1058,7 +1058,7 @@ def test_durable_state_checker_clean_and_registered() -> None:
 
     from examples import examples
 
-    assert examples["durable_state"] == "examples.durable_state:app"
+    assert examples["durable_state"] == "examples.durable_state:application"
     assert diagnostics(Path("examples/durable_state.py")) == []
 
 
@@ -1094,7 +1094,7 @@ def test_editor_features_example_is_registered_and_clean() -> None:
 
     from examples import examples
 
-    assert examples["editor_features"] == "examples.editor_features:app"
+    assert examples["editor_features"] == "examples.editor_features:application"
     assert diagnostics(Path("examples/editor_features.py")) == []
 
 
@@ -1165,3 +1165,20 @@ def test_editor_features_cli_startup_and_ctrl_c_exit() -> None:
             assert b"show-navigation" in body
         server.send_signal(signal.SIGINT)
         assert server.wait(timeout=5) == 0
+
+
+def test_examples_share_one_favicon_asset() -> None:
+    import importlib
+
+    from examples import examples
+    from examples.components import EXAMPLE_ASSETS
+
+    asset = EXAMPLE_ASSETS["/favicon.ico"]
+    assert asset.content_type == "image/png"
+    assert asset.body.startswith(b"\x89PNG\r\n\x1a\n")
+
+    for spec in examples.values():
+        module_name, _, attribute = spec.partition(":")
+        application = getattr(importlib.import_module(module_name), attribute)
+        assert application.assets["/favicon.ico"] is asset
+        assert "/client.js" in application.assets

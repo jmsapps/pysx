@@ -112,7 +112,7 @@ private slot values; the example separately binds its deliberately public sample
 Its **Discard development snapshots** control clears pending development handoffs
 and starts that page fresh; the endpoint is `/__pysx_dev__/cold`. This does not
 reset other live tabs. This ordinary reactive example uses no persistence store. Run
-`uv run --project . pysx --app examples.development:app --watch` and optionally add
+`uv run --project . pysx --app examples.development:application --watch` and optionally add
 `--inspect` for the separate inspector. Pass `--no-preserve-state` to disable
 preservation for a whole session, which restores the previous behaviour of
 reloading the browser on every successful edit.
