@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import suppress
+from time import monotonic
 from typing import TYPE_CHECKING, Protocol, cast
 from urllib.parse import parse_qs, urlsplit
 
@@ -17,7 +18,7 @@ from .ownership import OwnerMoved
 from .persistence import RecoveryUnavailable
 from .routing import Location
 from .session import close_session
-from .transport import TransportError, TransportLimits
+from .transport import RecoveryBusy, TransportError, TransportLimits
 from .wire import parse_message
 
 if TYPE_CHECKING:
@@ -145,6 +146,8 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
         await _serve_connection(runtime, bounded)
     except OwnerMoved as error:
         await bounded.close(4010, error.worker)
+    except RecoveryBusy:
+        await bounded.close(1013, "recovery capacity")
     except RecoveryUnavailable:
         await bounded.close(1013, "durable state unavailable")
     finally:
@@ -169,14 +172,16 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             request.access(action, target)
 
     protocol = parse_qs(urlsplit(request.path).query).get("protocol", ["2"])
-    modern = protocol == ["3"]
+    modern = protocol in (["3"], ["4"])
+    browser_recovery = runtime.browser_recovery if protocol == ["4"] else None
+    version = 4 if protocol == ["4"] else 3
 
-    if runtime.owner_hint is not None and not modern:
+    if runtime.owner_hint is not None and protocol != ["3"]:
         await connection.close(1008, "durable sessions require protocol 3")
 
         return
 
-    if protocol not in (["2"], ["3"]):
+    if protocol not in (["2"], ["3"], ["4"]) or (protocol == ["4"] and browser_recovery is None):
         await connection.close(code=1008, reason="unsupported protocol")
 
         return
@@ -197,8 +202,19 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     local_handoff = False
     hello: dict[str, object] | None = None
 
-    def reconstruct(message: dict[str, object]) -> Session:
+    async def reconstruct(message: dict[str, object]) -> Session:
         authorize("resume")
+
+        if browser_recovery is not None:
+            token = message.get("capsule")
+            document = message.get("document")
+
+            if not isinstance(token, str) or not isinstance(document, str):
+                raise ValueError("recovery capsule required")
+
+            return await browser_recovery.reconstruct(
+                runtime, request, token, document, supplied[0]
+            )
         token = message.get("recovery")
 
         if not isinstance(token, str):
@@ -212,6 +228,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             message = parse_message(
                 await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
                 limit=runtime.limits.max_frame_bytes,
+                version=version,
             )
 
             if message["t"] != "hello" or message.get("edits"):
@@ -227,6 +244,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                     cast("str", message["epoch"]),
                     cast("int", message["state_rev"]),
                     location=supplied[0],
+                    document=cast("str | None", message.get("document")),
                 )
 
                 if session.transport.epoch != message["epoch"]:
@@ -235,7 +253,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                     local_handoff = True
             except ValueError, KeyError:
                 try:
-                    session = reconstruct(message)
+                    session = await reconstruct(message)
                 except ValueError:
                     if not runtime.development:
                         raise
@@ -252,46 +270,80 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                         connection.reserved = False
                     volatile_rebuild = True
                 rebuilt = True
-        except PayloadError, ValueError, KeyError, TimeoutError, AccessDenied:
+        except AccessDenied:
+            await connection.close(1008, "access denied")
+
+            return
+        except PayloadError, ValueError, KeyError, TimeoutError:
             await connection.close(4004, "resume unavailable")
 
             return
     elif adopted:
         try:
             authorize("adoption")
-            session = runtime.claim(adoption[0], request, browser_id(request))
+
+            if browser_recovery is not None:
+                hello = parse_message(
+                    await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
+                    limit=runtime.limits.max_frame_bytes,
+                    version=version,
+                )
+
+                if hello["t"] != "hello":
+                    raise PayloadError("expected adoption hello")
+            session = runtime.claim(
+                adoption[0],
+                request,
+                browser_id(request),
+                document=cast("str | None", hello.get("document")) if hello is not None else None,
+            )
         except AccessDenied:
             await connection.close(code=1008, reason="invalid adoption")
 
             return
-        except ValueError:
-            if not modern or runtime.owner_hint is None:
+        except PayloadError, TimeoutError, ValueError:
+            if not modern or (runtime.owner_hint is None and browser_recovery is None):
                 await connection.close(1008, "invalid adoption")
 
                 return
 
             try:
-                hello = parse_message(
-                    await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
-                    limit=runtime.limits.max_frame_bytes,
+                hello = (
+                    hello
+                    if hello is not None
+                    else parse_message(
+                        await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
+                        limit=runtime.limits.max_frame_bytes,
+                        version=version,
+                    )
                 )
 
                 if hello["t"] != "hello":
                     raise PayloadError("expected recovery hello")
-                session = reconstruct(hello)
+                session = await reconstruct(hello)
                 rebuilt = True
                 adopted = False
-            except ValueError, PayloadError, AccessDenied, TimeoutError:
+            except AccessDenied:
+                await connection.close(1008, "access denied")
+
+                return
+            except ValueError, PayloadError, TimeoutError:
                 await connection.close(4004, "adoption recovery unavailable")
 
                 return
 
         if not rebuilt:
             try:
-                message = parse_message(
-                    await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
-                    limit=runtime.limits.max_frame_bytes,
+                message = (
+                    hello
+                    if hello is not None
+                    else parse_message(
+                        await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
+                        limit=runtime.limits.max_frame_bytes,
+                        version=version,
+                    )
                 )
+                hello = message
 
                 if message.get("t") != ("hello" if modern else "adopt"):
                     raise PayloadError("expected adoption edits")
@@ -330,7 +382,9 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                     message = parse_message(
                         await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
                         limit=runtime.limits.max_frame_bytes,
+                        version=version,
                     )
+                    hello = message
 
                     if message["t"] != "hello":
                         raise PayloadError("expected hello")
@@ -349,6 +403,21 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
         finally:
             runtime.unreserve()
             connection.reserved = False
+
+    if browser_recovery is not None:
+        state = browser_recovery.checkpoint(session)
+        document = hello.get("document") if hello is not None else None
+
+        if (adopted or (resuming and not rebuilt)) and document != state.document:
+            runtime.release(session)
+            await connection.close(1008, "document mismatch")
+
+            return
+
+        if isinstance(document, str):
+            state.document = document
+        state.attached = False
+    session.transport.protocol_version = version
     queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=runtime.limits.event_queue)
     announced_mounts: set[str] = set()
     send_lock = asyncio.Lock()
@@ -372,6 +441,9 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
             try:
                 authorize("command", str(message.get("t", "")))
+
+                if browser_recovery is not None:
+                    authorize("resume")
             except AccessDenied:
                 await connection.close(1008, "access denied")
 
@@ -384,6 +456,13 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
             if modern:
                 message = session.transport.envelope(message)
+
+            if browser_recovery is not None and not session.pending:
+                commands, session.routes.commands = session.routes.commands, []
+
+                if commands:
+                    message["navigations"] = commands
+                message.update(browser_recovery.publish(session, request))
             session.checkpoint()
             await connection.send(json.dumps(message))
 
@@ -398,6 +477,11 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
     async def send_repair() -> None:
         announced_mounts.clear()
+
+        if browser_recovery is not None:
+            # The repair tree already includes these operations. Publish its
+            # checkpoint now rather than exposing newer DOM before its capsule.
+            session.pending.clear()
         await send(session.transport.repair(session.rendered.css))
 
     async def send_mounts() -> None:
@@ -410,6 +494,11 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             announced_mounts.update(tokens[start : start + 1024])
 
     async def send_navigation() -> None:
+        if browser_recovery is not None:
+            if session.routes.commands:
+                await send({"t": "checkpoint"})
+
+            return
         commands, session.routes.commands = session.routes.commands, []
 
         for command in commands:
@@ -419,6 +508,8 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
         if session.pending:
             ops, session.pending = session.pending, []
             await send({"t": "patch", "ops": ops})
+        elif browser_recovery is not None and browser_recovery.due(session):
+            await send({"t": "checkpoint"})
 
     async def send_command(message: dict[str, JSONValue]) -> None:
         await send_patch()
@@ -613,7 +704,14 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
     async def push_worker() -> None:
         while True:
-            await session.changed.wait()
+            if browser_recovery is None:
+                await session.changed.wait()
+            else:
+                state = browser_recovery.checkpoint(session)
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(
+                        session.changed.wait(), max(0.01, state.renew_at - monotonic())
+                    )
             async with session.runtime.lock:
                 session.changed.clear()
 
@@ -658,7 +756,9 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     async def read_worker() -> None:
         async for raw in connection:
             try:
-                message = parse_message(raw, modern=modern, limit=runtime.limits.max_frame_bytes)
+                message = parse_message(
+                    raw, modern=modern, limit=runtime.limits.max_frame_bytes, version=version
+                )
             except PayloadError:
                 await send({"t": "result", "h": "", "status": "invalid", "ops": []})
 
@@ -719,9 +819,11 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             session.pending.clear()
             attachment[
                 "recovered"
-                if local_handoff
+                if (browser_recovery is not None and browser_recovery.checkpoint(session).restored)
+                or local_handoff
                 or (
-                    not volatile_rebuild
+                    browser_recovery is None
+                    and not volatile_rebuild
                     and hello is not None
                     and runtime.recovery_token(session) == hello.get("recovery")
                 )
@@ -735,10 +837,21 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
         if modern and recovery is not None:
             attachment["recovery"] = recovery
             attachment["owner"] = runtime.owner_hint
+
+        if browser_recovery is not None and resuming and session.routes.routers:
+            session.routes.commands.insert(
+                0,
+                {
+                    "t": "navigation",
+                    "url": session.routes.location.url,
+                    "rev": session.routes.revision,
+                    "mode": "replace",
+                },
+            )
         await send(attachment)
         await send_patch()
 
-        if resuming and session.routes.routers:
+        if resuming and session.routes.routers and browser_recovery is None:
             await send(
                 {
                     "t": "navigation",

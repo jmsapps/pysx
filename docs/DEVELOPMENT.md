@@ -62,8 +62,11 @@ releases healthy traffic before the rejected process finishes bounded cleanup.
 Stopping and restarting the watch command leaves open pages free to reconnect.
 Startup notifications and generation numbers from a new supervisor do not reload
 the page. A `DurableApplication` with the same identity and SQLite path recovers
-its committed state through the normal recovery protocol. Ordinary component-local
-state has no persistence across a complete server restart. Refreshing a page or
+its committed state through the normal recovery protocol. Ordinary components
+reconstruct compatible UI state from the open document's encrypted capsule when
+the same hosting key ring remains available. No recovery-specific app wiring is
+needed; see the [draft example](../examples/README.md#browser-held-draft-recovery).
+Refreshing a page or
 opening a new tab starts a new session. Within a running supervisor, an intentional
 incompatible edit still performs the declared fresh reload.
 
@@ -152,8 +155,11 @@ Focus/caret survive compatible elements. Canonical control values and reset defa
 come from the new graph; uncommitted edits and old events are discarded.
 
 Explicit schema migrations are honored. Incompatible state without a usable
-migration, changed identity/store/prefix, and volatile apps use a declared fresh
-reload. Watch workers also enable a fresh fallback for an incompatible recovery
+migration or changed identity/store/prefix uses a declared fresh reload for explicit
+durable hosts. Ordinary compatible watch handoffs retain their component-local
+contract, with browser-held recovery available after complete graph/supervisor loss.
+Intentional incompatible edits retain their declared fresh reload. Watch workers
+also enable a fresh fallback for an incompatible recovery
 outside the retained validation window; the normal production setting is unchanged.
 The browser's recovery status distinguishes restored and fresh sessions.
 Import/startup/setup code must be idempotent with explicit cleanup.

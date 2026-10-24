@@ -6,6 +6,7 @@ import ast
 import io
 import json
 import math
+import re
 import tokenize
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -32,6 +33,95 @@ MAX_DEPTH = 16
 MAX_SLOTS = 512
 MAX_METADATA = 128 * 1024
 MAX_SOURCE = 64 * 1024
+
+
+@dataclass
+class Restored:
+    entries: dict[str, tuple[str, str, object, str]]
+    excluded: set[str] = field(default_factory=set[str])
+    applied: set[str] = field(default_factory=set[str])
+    ambiguous: set[str] = field(default_factory=set[str])
+    resets: int = 0
+
+    def apply(self, key: str, slot: Slot) -> None:
+        row = self.entries.get(key)
+
+        if row is None:
+            return
+        mark, kind, value, reason = row
+
+        if (
+            key.rsplit(":", 1)[0] in self.excluded
+            or reason
+            or slot.reason
+            or mark != slot.mark
+            or kind != slot.kind
+            or value_kind(value) != kind
+        ):
+            self.resets += 1
+
+            return
+        slot.signal.set(value)
+        self.applied.add(key)
+
+
+_restored: ContextVar[Restored | None] = ContextVar("pysx_browser_restore", default=None)
+
+
+@contextmanager
+def restore_values(plan: Restored) -> Generator[None]:
+    token = _restored.set(plan)
+
+    try:
+        yield
+    finally:
+        _restored.reset(token)
+
+
+def decode_snapshot(plaintext: bytes) -> Restored:
+    if len(plaintext) > MAX_BYTES:
+        raise ValueError("recovery snapshot limit")
+
+    try:
+        rows: object = json.loads(plaintext)
+        encoder = Encoder()
+        encoder.value(rows)
+    except (ValueError, TypeError, RecursionError) as error:
+        raise ValueError("invalid recovery snapshot") from error
+
+    if type(rows) is not list or len(cast("list[object]", rows)) > MAX_SLOTS:
+        raise ValueError("invalid recovery slots")
+    entries: dict[str, tuple[str, str, object, str]] = {}
+
+    for row in cast("list[object]", rows):
+        if type(row) is not list or len(cast("list[object]", row)) != 5:
+            raise ValueError("invalid recovery slot")
+        key, mark, kind, value, reason = cast("list[object]", row)
+
+        if (
+            type(key) is not str
+            or len(key) > 64
+            or key in entries
+            or type(mark) is not str
+            or len(mark) > 16
+            or type(kind) is not str
+            or len(kind) > 32
+            or type(reason) is not str
+            or len(reason) > 128
+        ):
+            raise ValueError("invalid recovery metadata")
+
+        if (
+            re.fullmatch(r"[0-9a-f]{16}:[0-9a-f]{16}:[0-9]{1,3}", key) is None
+            or (mark and re.fullmatch(r"[0-9a-f]{16}", mark) is None)
+            or kind
+            not in {"NoneType", "bool", "int", "float", "str", "list", "dict", "unsupported"}
+            or (not reason and (not mark or value_kind(value) != kind))
+        ):
+            raise ValueError("invalid recovery compatibility")
+        entries[key] = (mark, kind, value, reason)
+
+    return Restored(entries)
 
 
 class Limit(ValueError):  # noqa: N818 - internal bounded-encoder outcome
@@ -297,6 +387,10 @@ class Checkpoints:
                 elif slot.owner == path and construction.counts.get(slot.site, 0) > 1:
                     slot.reason = "ambiguous call site"
                     self.changed()
+                    plan = _restored.get()
+
+                    if plan is not None and key in plan.applied:
+                        plan.ambiguous.add(key.rsplit(":", 1)[0])
         finally:
             _construction.reset(token)
 
@@ -459,6 +553,10 @@ def _record(
     registry.metadata_bytes += cost
     created.checkpoint_changed = registry.changed
     registry.changed()
+    plan = _restored.get()
+
+    if plan is not None:
+        plan.apply(key, registry.slots[key])
 
 
 def record_signal(created: Signal[object]) -> None:

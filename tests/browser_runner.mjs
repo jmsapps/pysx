@@ -16,6 +16,13 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "browser_recovery_example", cases: [
+    [0, "browser_recovery", "browser_checkpoint_example.mjs", "BROWSER RECOVERY EXAMPLE PASSED"],
+  ] },
+  { suite: "browser_recovery", cases: [
+    [0, "browser_checkpoint_fixture", "browser_checkpoint.mjs", "BROWSER RECOVERY PASSED"],
+    [1, null, "browser_checkpoint_restart.mjs", "CHECKPOINT RESTART BROWSER PASSED"],
+  ] },
   { suite: "development", cases: [
     [0, "development_fixture", "browser_development.mjs", "DEVELOPMENT EXAMPLE BROWSER PASSED"],
     [1, "development_no_inspector_fixture", "browser_development.mjs", "DEVELOPMENT EXAMPLE BROWSER PASSED"],
@@ -66,6 +73,7 @@ const registry = [
   { suite: "bounded_reconnect", cases: [
     [0, "reconnect_fixture", "browser_reconnect.mjs", "BOUNDED RECONNECT BROWSER PASSED"],
     [1, "expired_reconnect_fixture", "browser_reconnect.mjs", "BOUNDED RECONNECT BROWSER PASSED"],
+    [2, "legacy_expired_reconnect_fixture", "browser_reconnect.mjs", "BOUNDED RECONNECT BROWSER PASSED"],
   ] },
   { suite: "current_state", cases: [
     [0, "resume_fixture", "browser_resume.mjs", "CURRENT STATE BROWSER PASSED"],
@@ -338,8 +346,10 @@ try {
       ["-m", "pysx.hosting.server", "--app", "tests.browser_keyed_snapshot_fixture:app", "--port", String(port)] :
       name === "resume_fixture" ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_resume_fixture:app", "--port", String(port)] :
-      name === "reconnect_fixture" || name === "expired_reconnect_fixture" ?
-      ["-m", "pysx.hosting.server", "--app", `tests.browser_reconnect_fixture:${name === "reconnect_fixture" ? "host" : "expired_host"}`, "--port", String(port)] :
+      name === "browser_checkpoint_fixture" ?
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_checkpoint_fixture:app", "--port", String(port)] :
+      ["reconnect_fixture", "expired_reconnect_fixture", "legacy_expired_reconnect_fixture"].includes(name) ?
+      ["-m", "pysx.hosting.server", "--app", `tests.browser_reconnect_fixture:${name === "reconnect_fixture" ? "host" : name === "legacy_expired_reconnect_fixture" ? "legacy_expired_host" : "expired_host"}`, "--port", String(port)] :
       name === "http_fixture" ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_http_fixture:app", "--port", String(port)] :
       name === "async_fixture" ?

@@ -1,7 +1,57 @@
-# PYSX wire protocol (v3)
+# PYSX wire protocol (v3 and v4)
 
 Standalone and ASGI adapters share this protocol and session engine; see
 [hosting](HOSTING.md) for configuration, prefix and process affinity requirements.
+
+## Browser checkpoints (v4)
+
+Ordinary HTTP pages negotiate `protocol=4`; explicit durable hosts and old clients
+retain v3. A v4 hello requires a 32-character URL-safe `document` identifier and may
+include one URL-safe `capsule` of at most 36 KiB. Hello bodies are limited to 48 KiB.
+The document identifier and capsule travel in the body, never in routing URLs.
+V3 rejects these fields. Normal event/DOM envelopes use the negotiated version.
+
+Initial private, no-store HTML carries `data-pysx-protocol`, `data-pysx-document`
+and, when recoverable, `data-pysx-capsule`. The client removes these attributes and
+retains one current capsule in document closure memory. It writes no recovery state
+to Web Storage, IndexedDB or cookies. Refresh and new tabs start fresh documents.
+Adoption applies pre-attachment edits before issuing a new capsule.
+
+Ordered state frames may carry `document`, `capsule` (string or null), `reset`
+(bounded reason), and an ordered `navigations` array. DOM operations, navigation and
+the matching capsule share one accepted frame. Hidden state can use a `checkpoint`
+frame with the same epoch/base/state revision rules and no DOM operations. The
+client validates the complete frame before applying it and commits the capsule
+after successful application. Gaps request repair; retired socket frames are ignored.
+Overflow clears the previous token by publishing null. Unchanged turns reuse the
+bounded capture. Attached documents renew after 12 hours plus up to one hour of
+stable jitter; detached graphs have no renewal worker or offline publication queue.
+
+Live resume is attempted first. When a graph is unavailable, the same v4 hello can
+reconstruct a new graph from its capsule on a compatible worker. The host checks the
+current origin, application namespace, route, browser binder, principal and login
+session before constructing user code. A capsule never supplies authentication.
+Adoption and live resume also require the current login-session generation.
+
+Reconstruction uses a new epoch, handlers and owned resources. Compatible ordinary
+state is injected during construction; initializer/type changes and unsupported or
+ambiguous slots reset. Failed restored candidates dispose before one bounded retry.
+Managed effects, subscriptions, timers, tasks and async loads activate only for an
+accepted candidate. App setup is ordinary Python and may run for rejected candidates;
+business side effects still need their own transactional/idempotency rules.
+
+At most four reconstruction jobs execute and sixteen wait inside existing admission
+budgets. Excess or timed-out admission closes with 1013 while preserving the browser
+capsule for bounded retry. Invalid/context-mismatched/expired capsules run no setup;
+unavailable recovery closes with 4004 and the client visibly starts fresh. Authorization
+denials close with 1008. No old event, mount acknowledgement or DOM capability is replayed.
+
+Anonymous apps can dispatch `pysx:reset` on `window`. The client clears document
+recovery state and posts to the prefixed `/__pysx__/reset` endpoint, using a non-simple
+`x-pysx-reset: 1` header. The host requires the same Origin, normal authorization and
+an anonymous browser binder, rotates the HttpOnly cookie, expires local graphs for
+that binder and reloads the document. Authenticated logout uses normal authentication
+revocation. No per-user denylist or global stateless revocation is introduced.
 
 ## Current-state resume
 
@@ -31,7 +81,8 @@ current snapshot without retaining patches or notification queues. Outstanding
 DOM requests fail on disconnect. Pressure/deadline, protocol close, host shutdown,
 unrepaired render and application cancellation expire the graph. Legacy v2 graphs
 are disposed on disconnect and have no live resume contract. Live recovery needs
-affinity to the same worker; volatile graph loss requires a fresh app.
+affinity to the same worker. V3 volatile graph loss requires a fresh app; v4 can
+reconstruct compatible state from the document capsule.
 [Durable hosts](OWNERSHIP.md) can separately reconstruct explicitly declared state.
 
 A normal peer close retains a healthy graph even if it overlaps an outgoing

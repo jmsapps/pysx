@@ -1,27 +1,43 @@
 import assert from "node:assert/strict";
 import playwright from "playwright";
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
-const expired = process.env.PYSX_BROWSER_CASE === "expired_reconnect_fixture";
+const legacy = process.env.PYSX_BROWSER_CASE === "legacy_expired_reconnect_fixture";
+const expired = legacy || process.env.PYSX_BROWSER_CASE === "expired_reconnect_fixture";
 try {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => {
+    const status = /Unexpected response code: (\d+)/.exec(message.text());
+    if (status) errors.push(`handshake status ${status[1]}`);
+  });
   await page.addInitScript(() => {
     const Original = WebSocket;
     window.testSockets = [];
     window.testStates = [];
     window.testRejected = 0;
+    window.testCloses = [];
+    window.testEndpoints = [];
     Math.random = () => 1;
     window.addEventListener("pysx:connection", event => window.testStates.push(event.detail));
     window.addEventListener("pysx:rejected", () => window.testRejected++);
     window.WebSocket = class extends Original {
-      constructor(...args) { super(...args); window.testSocket = this; window.testSockets.push(this); }
+      constructor(...args) {
+        super(...args); window.testSocket = this; window.testSockets.push(this);
+        const address = new URL(args[0]);
+        window.testEndpoints.push({host: address.host, path: address.pathname, version: address.searchParams.get("protocol")});
+        this.addEventListener("close", event => window.testCloses.push({code: event.code, reason: event.reason}));
+      }
     };
   });
   const url = `http://127.0.0.1:${process.argv[2]}/`;
   await page.goto(url);
-  await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "connected");
+  await page.waitForFunction(() => document.getElementById("pysx-root")?.dataset.pysxConnection === "connected").catch(async error => {
+    const diagnostic = await page.evaluate(() => ({states: window.testStates, closes: window.testCloses, endpoints: window.testEndpoints,
+      ready: document.readyState, status: document.getElementById("pysx-connection-status")?.textContent}));
+    throw new Error(`${error.message}; ${JSON.stringify(diagnostic)}; errors=${JSON.stringify(errors)}`);
+  });
   const generation = await page.locator("#reconnect-generation").textContent();
   await page.locator("#reconnect-increment").click();
   await page.waitForFunction(() => document.querySelector("#reconnect-clicks").textContent === "1");
@@ -43,10 +59,11 @@ try {
   assert.ok(await page.evaluate(() => window.testStates.every(state => state.timers <= 1 && state.pendingBytes <= 65536)));
   if (expired) {
     assert.notEqual(await page.locator("#reconnect-generation").textContent(), generation);
-    assert.equal(await page.locator("#reconnect-clicks").textContent(), "0");
-    assert.match(await page.locator("#pysx-connection-status").textContent(), /fresh session/);
-    assert.equal(await page.evaluate(() => window.savedField.isConnected), false);
-    console.log("  ok  expired live graph visibly starts one fresh session and drops unsent events");
+    assert.equal(await page.locator("#reconnect-clicks").textContent(), legacy ? "0" : "1");
+    assert.match(await page.locator("#pysx-connection-status").textContent(), legacy ? /fresh session/ : /restored/);
+    assert.equal(await page.evaluate(() => window.savedField.isConnected), !legacy);
+    console.log(legacy ? "  ok  legacy v3 expiry visibly starts fresh and drops unsent events" :
+      "  ok  v4 expiry reconstructs delivered state into a new graph and drops unsent events");
   } else {
     assert.equal(await page.locator("#reconnect-generation").textContent(), generation);
     assert.equal(await page.locator("#reconnect-clicks").textContent(), "1");

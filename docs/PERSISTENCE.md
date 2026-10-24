@@ -2,7 +2,10 @@
 
 Ordinary `Session` graphs declare `durability="volatile"`; `DurableSession` declares
 `durability="durable"`. In-memory socket resume retains an existing
-graph for a bounded time; it does not survive process loss. `DurableSession[T]`
+graph for a bounded time. Ordinary hosted browser documents can additionally
+[reconstruct compatible UI state](PROTOCOL.md#browser-checkpoints-v4) from a bounded
+encrypted capsule retained in that document. This provides latest-delivered UI
+continuity; refresh and new tabs start fresh. `DurableSession[T]`
 provides an explicit lower-level reconstruction API. Use
 [DurableApplication](OWNERSHIP.md) for hosted lease ownership and authenticated
 browser reconstruction; a multi-worker deployment also requires owner-aware routing.

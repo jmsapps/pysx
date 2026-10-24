@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
     from pysx.rendering.render import Fragment
 
+    from .browser_recovery import BrowserRecovery
     from .request import RequestContext
 
 
@@ -42,6 +43,7 @@ class PendingRender:
     browser: str
     principal: str | None
     expiry: asyncio.TimerHandle
+    authentication_session: str | None = None
 
 
 @dataclass
@@ -51,6 +53,7 @@ class ResumeHandle:
     principal: str | None
     deadline: float | None = None
     expiry: asyncio.TimerHandle | None = None
+    authentication_session: str | None = None
 
 
 def _controls(node: Tree) -> None:
@@ -132,12 +135,18 @@ class HTTPRuntime:
         self.cleanup_tasks: set[asyncio.Task[object]] = set()
         self.resume_handles: dict[str, ResumeHandle] = {}
         self.detached: OrderedDict[str, ResumeHandle] = OrderedDict()
+        self.browser_recovery: BrowserRecovery | None = None
 
     def attach(self, session: Session, request: RequestContext) -> str:
         from .request import browser_id
 
         token = secrets.token_urlsafe(32)
-        self.resume_handles[token] = ResumeHandle(session, browser_id(request), request.principal)
+        self.resume_handles[token] = ResumeHandle(
+            session,
+            browser_id(request),
+            request.principal,
+            authentication_session=request.authentication_session,
+        )
         session.detached = False
 
         return token
@@ -178,6 +187,7 @@ class HTTPRuntime:
         revision: int,
         *,
         location: str | None = None,
+        document: str | None = None,
     ) -> Session:
         from .request import browser_id
 
@@ -197,10 +207,18 @@ class HTTPRuntime:
             or handle is None
             or handle.browser != browser_id(request)
             or handle.principal != request.principal
+            or handle.authentication_session != request.authentication_session
             or handle.session.transport.epoch != epoch
             or revision > handle.session.transport.revision
             or handle.session.rendered.unrepaired
             or handle.session.pressured
+            or (
+                document is not None
+                and (
+                    handle.session.browser_checkpoint is None
+                    or handle.session.browser_checkpoint.document != document
+                )
+            )
         ):
             raise ValueError("unknown or mismatched resume handle")
         self.detached.pop(token)
@@ -396,6 +414,14 @@ class HTTPRuntime:
                 if self.owner_hint is not None
                 else ""
             )
+
+            if self.browser_recovery is not None:
+                checkpoint = self.browser_recovery.publish(session, request, force=True)
+                attributes += ' data-pysx-protocol="4"'
+                attributes += f' data-pysx-document="{checkpoint["document"]}"'
+
+                if checkpoint["capsule"] is not None:
+                    attributes += f' data-pysx-capsule="{checkpoint["capsule"]}"'
             content = (
                 '<!doctype html><html lang="en"><head><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -410,7 +436,13 @@ class HTTPRuntime:
             )
             session.checkpoint()
             expiry = asyncio.get_running_loop().call_later(self.ttl, self.expire, token)
-            self.pending[token] = PendingRender(session, browser, request.principal, expiry)
+            self.pending[token] = PendingRender(
+                session,
+                browser,
+                request.principal,
+                expiry,
+                authentication_session=request.authentication_session,
+            )
 
             return HTTPResult(status, headers, content, token)
         except BaseException:
@@ -418,10 +450,24 @@ class HTTPRuntime:
 
             raise
 
-    def claim(self, token: str, request: RequestContext, browser: str) -> Session:
+    def claim(
+        self, token: str, request: RequestContext, browser: str, *, document: str | None = None
+    ) -> Session:
         pending = self.pending.get(token)
 
-        if pending is None or pending.browser != browser or pending.principal != request.principal:
+        if (
+            pending is None
+            or pending.browser != browser
+            or pending.principal != request.principal
+            or pending.authentication_session != request.authentication_session
+            or (
+                document is not None
+                and (
+                    pending.session.browser_checkpoint is None
+                    or pending.session.browser_checkpoint.document != document
+                )
+            )
+        ):
             raise ValueError("unknown or mismatched adoption handle")
         del self.pending[token]
         pending.expiry.cancel()

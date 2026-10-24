@@ -9,6 +9,7 @@ uv run --project . example run counter
 uv run --project . example run todos
 uv run --project . example run recovery
 uv run --project . example run reconnect
+uv run --project . example run browser_recovery
 uv run --project . example run resources
 uv run --project . example run reactive_state
 uv run --project . example run operators
@@ -58,6 +59,33 @@ example run counter
 
 The command is installed into the environment's bin directory. A new terminal
 needs activation again, or you can keep using the `uv run --project .` prefix.
+
+## Browser-held draft recovery
+
+Run `uv run --project . example run browser_recovery`. This ordinary callable uses
+shared controls and three local signals, with no state codec, database, recovery
+decorator or custom form wiring.
+
+1. Enter a name and notes, then add a revision.
+2. Keep the tab open, stop the server with Ctrl+C, and start the same command again.
+3. The open page restores its latest delivered fields/revision and reports recovery.
+4. Reload the page or open another tab to start a fresh draft.
+
+The same workflow works with these normal host commands:
+
+```sh
+uv run --project . pysx --app examples.browser_recovery:example
+uv run --project . pysx --app examples.browser_recovery:example --asgi
+uv run --project . pysx --app examples.browser_recovery:example --watch
+```
+
+The unchanged counter also recovers through `pysx --app examples.counter:app`, with
+`--asgi` or `--watch` when desired. Keep the framework's private application-state
+directory across restarts. Compatible deployments on other hosts need the same
+[hosting key ring and namespace](../docs/HOSTING.md), together with current authentication.
+Capsules last 24 hours and stay only in the open document's memory. Unsupported or
+changed state can reset; undelivered edits and uncertain actions are not replayed.
+Use normal business persistence for saved account data and cross-device access.
 
 ## Durable state
 

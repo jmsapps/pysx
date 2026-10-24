@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import pytest
 from acceptance_support import ready_server
 
+from examples.browser_recovery import app as browser_recovery_app
 from examples.composition import app as composition_app
 from examples.diagnostics import app as diagnostics_app
 from examples.events import app as events_app
@@ -26,7 +27,8 @@ from examples.resources import app as resources_app
 from examples.session_security import app as security_app
 from examples.templates import app as templates_app
 from examples.themes import app as themes_app
-from pysx import BrowserEvent
+from pysx import Application, BrowserEvent
+from pysx.hosting import recovery_keys
 from pysx.hosting.http import HTTPRuntime, reconcile
 from pysx.hosting.request import RequestContext
 from pysx.hosting.server import Session
@@ -37,6 +39,140 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from pysx.runtime.durable import DurableSession
+
+
+def test_browser_recovery_example_plain_state_restores_and_releases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def directory(_namespace: str) -> Path:
+        return tmp_path / "keys"
+
+    monkeypatch.setattr(recovery_keys, "default_directory", directory)
+
+    async def exercise() -> None:
+        request = RequestContext(headers={"host": "localhost", "cookie": "pysx_browser=example"})
+        first = Application(browser_recovery_app)
+        response = await first.http(request)
+        assert response.status == 200
+        assert response.adoption is not None
+        graph = first.runtime.claim(response.adoption, request, "example")
+        markup = graph.transport.tree.markup()
+
+        def handler(identifier: str, attribute: str) -> str:
+            element = re.search(rf'<[^>]*\bid="{identifier}"[^>]*>', markup)
+            assert element is not None
+            match = re.search(rf'{attribute}="([^"]+)"', element[0])
+            assert match is not None
+
+            return match[1]
+
+        for identifier, value in (
+            ("recovery-name", "Mira"),
+            ("recovery-notes", "line one\nline two"),
+        ):
+            result = await graph.dispatch_result_async(
+                handler(identifier, "data-pysx-binding"), value
+            )
+            assert result["status"] == "success"
+        assert (
+            await graph.dispatch_result_async(handler("add-revision", "data-pysx-click"), None)
+        )["status"] == "success"
+        service = first.runtime.browser_recovery
+        assert service is not None
+        published = service.publish(graph, request, force=True)
+        token, document = published["capsule"], published["document"]
+        assert isinstance(token, str)
+        assert isinstance(document, str)
+        assert graph.rendered.scopes.checkpoints.capture().resets == 0
+        epoch = graph.transport.epoch
+        await first.close()
+        second = Application(browser_recovery_app)
+
+        try:
+            await second.start()
+            service = second.runtime.browser_recovery
+            assert service is not None
+            restored = await service.reconstruct(second.runtime, request, token, document, "/")
+            values = [slot.signal() for slot in restored.rendered.scopes.checkpoints.slots.values()]
+            assert "Mira" in values
+            assert "line one\nline two" in values
+            assert 1 in values
+            assert restored.transport.epoch != epoch
+            assert service.checkpoint(restored).restored
+        finally:
+            await second.close()
+        assert not second.runtime.graphs
+        assert not restored.rendered.scopes.owners
+
+    asyncio.run(exercise())
+
+
+def test_browser_recovery_example_registered_and_checker_clean() -> None:
+    from pathlib import Path
+
+    from examples import examples
+
+    assert examples["browser_recovery"] == "examples.browser_recovery:example"
+    assert diagnostics(Path("examples/browser_recovery.py")) == []
+
+
+@pytest.mark.acceptance
+def test_browser_recovery_example_cli_startup_and_ctrl_c_exit() -> None:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    command = [
+        "uv",
+        "run",
+        "--project",
+        ".",
+        "example",
+        "run",
+        "browser_recovery",
+        "--port",
+        str(port),
+    ]
+    with ready_server(command) as server:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+            assert response.status == 200
+            assert b"recovery-name" in response.read()
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=5) == 0
+
+
+@pytest.mark.acceptance
+@pytest.mark.parametrize("mode", ["standalone", "asgi", "watch"])
+@pytest.mark.parametrize(
+    "application", ["examples.browser_recovery:example", "examples.counter:app"]
+)
+def test_browser_recovery_hosting_and_unchanged_counter(mode: str, application: str) -> None:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    command = ["uv", "run", "--project", ".", "pysx", "--app", application, "--port", str(port)]
+
+    if mode != "standalone":
+        command.append("--" + mode)
+    banner = "Uvicorn running" if mode == "asgi" else "pysx ready"
+    with ready_server(command, ready_banner=banner) as server:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+            markup = response.read()
+            assert response.status == 200
+            assert b'data-pysx-protocol="4"' in markup
+            assert b'data-pysx-capsule="' in markup
+            cookie = response.headers["set-cookie"].split(";", 1)[0]
+        reset = urllib.request.Request(
+            f"http://127.0.0.1:{port}/__pysx__/reset",
+            data=b"",
+            headers={"origin": f"http://127.0.0.1:{port}", "cookie": cookie, "x-pysx-reset": "1"},
+            method="POST",
+        )
+        with urllib.request.urlopen(reset, timeout=5) as response:
+            assert response.status == 204
+            assert response.headers["set-cookie"].split(";", 1)[0] != cookie
+        server.send_signal(signal.SIGINT)
+        assert server.wait(timeout=8) == 0
 
 
 def test_diagnostics_example_fix_warning_reset_isolation_and_cleanup() -> None:

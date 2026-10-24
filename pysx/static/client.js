@@ -1,13 +1,26 @@
+(() => {
+"use strict";
+
 const root = document.getElementById("pysx-root");
 const style = document.getElementById("pysx-style");
 const browserLocation = () => location.pathname + location.search + location.hash;
 const adoption = root.dataset.pysxAdoption;
 let ownerHint = root.dataset.pysxOwner ?? null;
 let recoveryToken = root.dataset.pysxRecovery ?? null;
+const validCapsule = value => typeof value === "string" && value.length > 0 && value.length <= 36864 &&
+  !/[^A-Za-z0-9_=-]/.test(value) && /^[A-Za-z0-9_-]+={0,2}$/.test(value);
+const protocolVersion = root.dataset.pysxProtocol === "4" ? 4 : 3;
+const capsuleDocument = root.dataset.pysxDocument ?? null;
+let capsule = root.dataset.pysxCapsule ?? null;
+if (capsuleDocument?.length !== 32 || !/^[A-Za-z0-9_-]{32}$/.test(capsuleDocument ?? "") ||
+    !validCapsule(capsule)) capsule = null;
+delete root.dataset.pysxCapsule;
+delete root.dataset.pysxDocument;
+delete root.dataset.pysxProtocol;
 const endpoint = new URL(document.currentScript?.src ?? "/client.js", location.href);
 endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 endpoint.pathname = endpoint.pathname.replace(/client\.js$/, "ws");
-endpoint.search = `protocol=3&location=${encodeURIComponent(browserLocation())}${adoption ? `&adoption=${encodeURIComponent(adoption)}` : ""}${ownerHint ? `&owner=${encodeURIComponent(ownerHint)}` : ""}`;
+endpoint.search = `protocol=${protocolVersion}&location=${encodeURIComponent(browserLocation())}${adoption ? `&adoption=${encodeURIComponent(adoption)}` : ""}${ownerHint ? `&owner=${encodeURIComponent(ownerHint)}` : ""}`;
 let socket = new WebSocket(endpoint);
 let resumeToken = null;
 let developing = false;
@@ -17,6 +30,7 @@ let transportTimer = null;
 let stopped = false;
 let freshSession = false;
 let restoredSession = false;
+let partialReset = false;
 const connectionStatus = document.createElement("p");
 connectionStatus.id = "pysx-connection-status";
 connectionStatus.setAttribute("role", "status");
@@ -233,7 +247,7 @@ function domCommand(message) {
   try {
     syncDom();
     const originalTokens = [...domNodes.keys()];
-    if (message.version !== 3) throw new Error("unsupported command version");
+    if (message.version !== protocolVersion) throw new Error("unsupported command version");
     const entry = domNodes.get(message.target);
     const owner = domNodes.get(message.root)?.node;
     if (!entry || entry.root !== message.root || !owner) throw new Error("stale DOM handle");
@@ -511,11 +525,19 @@ function validOperation(op) {
 }
 
 function validMessage(message) {
+  if (protocolVersion === 3 && ["capsule", "document", "reset", "navigations"].some(key => key in message)) return false;
+  if ("capsule" in message && (message.document !== capsuleDocument ||
+      (message.capsule !== null && !validCapsule(message.capsule)) ||
+      typeof message.reset !== "string" || message.reset.length > 128)) return false;
+  if (("document" in message || "reset" in message) && !("capsule" in message)) return false;
+  if ("navigations" in message && (!Array.isArray(message.navigations) || message.navigations.length > 1024 ||
+      !message.navigations.every(command => command.t === "navigation" && validMessage(command)))) return false;
   if (message.owner !== undefined && (typeof message.owner !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(message.owner))) return false;
   if (message.recovery !== undefined && (typeof message.recovery !== "string" || !/^[A-Za-z0-9_-]{32,128}$/.test(message.recovery))) return false;
   if (message.recovered !== undefined && (message.t !== "init" || message.recovered !== true)) return false;
   if (message.fresh !== undefined && (message.t !== "init" || message.fresh !== true)) return false;
   if (message.fresh && message.recovered) return false;
+  if (message.t === "checkpoint") return protocolVersion === 4;
   if (["init", "repair"].includes(message.t)) return typeof message.html === "string" && typeof message.css === "string" &&
     (message.t !== "repair" || (Number.isSafeInteger(message.expected) && message.expected > 0));
   if (message.t === "adopted") return typeof message.routing === "boolean";
@@ -538,24 +560,35 @@ function validMessage(message) {
 }
 
 function receiveMessage(event) {
+  try { acceptMessage(event); }
+  catch { capsule = null; socket.close(4002, "frame application failed"); }
+}
+
+function protocolFailure(reason) {
+  capsule = null;
+  socket.close(4002, reason);
+}
+
+function acceptMessage(event) {
   let message;
-  try { message = JSON.parse(event.data); } catch { socket.close(4002, "invalid JSON"); return; }
-  if (!message || typeof message !== "object" || Array.isArray(message) || message.version !== 3 ||
+  try { message = JSON.parse(event.data); } catch { protocolFailure("invalid JSON"); return; }
+  if (!message || typeof message !== "object" || Array.isArray(message) || message.version !== protocolVersion ||
       typeof message.epoch !== "string" || !Number.isSafeInteger(message.state_rev) ||
       !Number.isSafeInteger(message.base_rev) || message.state_rev !== message.base_rev + 1 ||
-      !["init", "adopted", "result", "patch", "dom", "mount", "navigation", "routing", "ack", "repair"].includes(message.t) ||
+      !["init", "adopted", "result", "patch", "dom", "mount", "navigation", "routing", "ack", "repair", "checkpoint"].includes(message.t) ||
       message.base_rev < 0 || !validMessage(message)) {
-    socket.close(4002, "invalid envelope"); return;
+    protocolFailure("invalid envelope"); return;
   }
   if (message.t === "init" && (message.recovered === true || message.fresh === true)) {
-    if (!recoveryToken && !developing) { socket.close(4002, "unexpected reconstruction"); return; }
+    if (!recoveryToken && !capsule && !developing) { protocolFailure("unexpected reconstruction"); return; }
     resetSession(message.recovered === true);
+    partialReset = message.recovered === true && Boolean(message.reset);
   }
   if (["init", "adopted"].includes(message.t)) {
     if (message.development === true) developing = true;
-    if (epoch !== null) { socket.close(4002, "repeated attachment"); return; }
+    if (epoch !== null) { protocolFailure("repeated attachment"); return; }
     epoch = message.epoch;
-  } else if (message.epoch !== epoch) { socket.close(4002, "wrong epoch"); return; }
+  } else if (message.epoch !== epoch) { protocolFailure("wrong epoch"); return; }
   if (message.t === "repair" && message.state_rev < stateRevision) return;
   if (message.t !== "repair" && !["init", "adopted"].includes(message.t) && message.base_rev !== stateRevision) {
     if (!repairing) { repairing = true; send({t: "repair"}); }
@@ -626,16 +659,19 @@ function receiveMessage(event) {
   } else if (message.t === "routing") {
     if (message.on) enableRouting();
   }
+  for (const navigation of message.navigations ?? []) commitNavigation(navigation);
+  if ("capsule" in message) capsule = message.capsule;
 }
 
 function openSocket() {
-  const recovery = recoveryToken ? {recovery: recoveryToken} : {};
+  const recovery = {...(recoveryToken ? {recovery: recoveryToken} : {}),
+    ...(protocolVersion === 4 ? {document: capsuleDocument, ...(capsule ? {capsule} : {})} : {})};
   if (resumeToken) {
-    socket.send(JSON.stringify({t: "hello", version: 3, resume: resumeToken, epoch, state_rev: stateRevision, ...recovery}));
+    socket.send(JSON.stringify({t: "hello", version: protocolVersion, resume: resumeToken, epoch, state_rev: stateRevision, ...recovery}));
     return;
   }
   if (!adoption || freshSession || endpoint.searchParams.get("recover") === "1") {
-    socket.send(JSON.stringify({t: "hello", version: 3, edits: [], ...recovery})); return;
+    socket.send(JSON.stringify({t: "hello", version: protocolVersion, edits: [], ...recovery})); return;
   }
   // HTTP controls already have their browser values; never hydrate over edits.
   const values = [...root.querySelectorAll("[data-pysx-binding]")]
@@ -653,7 +689,7 @@ function openSocket() {
       }
       return el.value !== el.defaultValue;
     }).map(edit);
-  socket.send(JSON.stringify({t: "hello", version: 3, edits: values, ...recovery}));
+  socket.send(JSON.stringify({t: "hello", version: protocolVersion, edits: values, ...recovery}));
 }
 
 function clearTransportTimer() {
@@ -664,8 +700,9 @@ function clearTransportTimer() {
 function connectionState(state, retryMs = 0) {
   root.dataset.pysxConnection = state;
   connectionStatus.hidden = state === "connected" && !freshSession && !restoredSession;
-  const text = state === "connected" ? (restoredSession ?
-    "Connected. Session state was restored; uncommitted edits were discarded." :
+  const text = state === "connected" ? (restoredSession ? (partialReset ?
+    "Connected. Session state was restored; some fields restarted with their defaults and uncommitted edits were discarded." :
+    "Connected. Session state was restored; uncommitted edits were discarded.") :
     "Connected. A fresh session started; previous session state was lost.") :
     state === "reconnecting" ? "Disconnected. Reconnecting; offline edits are rejected." :
     state === "fresh" ? "Previous session expired. Starting a fresh session." :
@@ -674,7 +711,7 @@ function connectionState(state, retryMs = 0) {
   connectionStatus.textContent = text;
   retryButton.hidden = state !== "disconnected";
   window.dispatchEvent(new CustomEvent("pysx:connection", {detail: {
-    state, attempt: retryAttempt, retryMs, fresh: freshSession,
+    state, attempt: retryAttempt, retryMs, fresh: freshSession, partialReset,
     timers: transportTimer === null ? 0 : 1,
     listeners: registeredEvents.size * 2 + domListeners.size,
     pendingBytes: socket.bufferedAmount,
@@ -703,6 +740,8 @@ function blockInteraction(event, owned = false) {
 function resetSession(restored = false) {
   resumeToken = null; epoch = null; stateRevision = 0; eventSequence = 0;
   recoveryToken = null;
+  capsule = null;
+  partialReset = false;
   repairing = false; freshSession = !restored; restoredSession = restored;
   for (const listener of domListeners.values()) listener.target.removeEventListener(listener.type, listener.fn, listener.capture);
   domListeners.clear(); domNodes.clear();
@@ -744,6 +783,7 @@ function closeSocket(event) {
     resetSession();
     connectionState("fresh");
   } else if ([4002, 1002, 1008, 1009].includes(event.code)) {
+    capsule = null;
     stopped = true;
     connectionState("stopped");
     return;
@@ -767,7 +807,7 @@ function reconnect(manual = true) {
   if (socket.readyState !== WebSocket.CLOSED || stopped) return;
   clearTransportTimer();
   if (manual) retryAttempt = 0;
-  endpoint.search = `protocol=3${resumeToken ? "&resume=1" : recoveryToken ? "&recover=1" : ""}&location=${encodeURIComponent(browserLocation())}${ownerHint ? `&owner=${encodeURIComponent(ownerHint)}` : ""}`;
+  endpoint.search = `protocol=${protocolVersion}${resumeToken ? "&resume=1" : recoveryToken || capsule ? "&recover=1" : ""}&location=${encodeURIComponent(browserLocation())}${ownerHint ? `&owner=${encodeURIComponent(ownerHint)}` : ""}`;
   socket = new WebSocket(endpoint);
   attachSocket();
   connectionState(freshSession ? "fresh" : "reconnecting");
@@ -775,12 +815,34 @@ function reconnect(manual = true) {
 
 attachSocket();
 window.addEventListener("pysx:reconnect", () => reconnect());
+let resetting = false;
+window.addEventListener("pysx:reset", async () => {
+  if (resetting) return;
+  resetting = true; stopped = true;
+  clearTransportTimer();
+  resetSession();
+  socket.close();
+  const target = new URL(endpoint);
+  target.protocol = location.protocol;
+  target.pathname = target.pathname.replace(/ws$/, "__pysx__/reset");
+  target.search = "";
+  try {
+    const response = await fetch(target, {method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: {"x-pysx-reset": "1"}, signal: AbortSignal.timeout(5000)});
+    if (response.ok) location.reload();
+    else connectionState("stopped");
+  } catch { connectionState("stopped"); }
+  finally { resetting = false; }
+});
 retryButton.addEventListener("click", () => reconnect());
 window.addEventListener("pagehide", () => {
   stopped = true;
   clearTransportTimer();
   cancelRouteScroll();
   socket.close();
+});
+window.addEventListener("pageshow", event => {
+  if (event.persisted) { stopped = false; reconnect(false); }
 });
 
 function apply(op) {
@@ -1076,7 +1138,7 @@ function send(payload) {
   if (routing && payload.t === "event") payload.nav_rev = navigationRevision;
   if (socket.readyState === WebSocket.OPEN && epoch) {
     if (["event", "location", "mounted"].includes(payload.t)) payload.seq = ++eventSequence;
-    payload.version = 3; payload.epoch = epoch; payload.state_rev = stateRevision;
+    payload.version = protocolVersion; payload.epoch = epoch; payload.state_rev = stateRevision;
     const encoded = JSON.stringify(payload);
     if (new TextEncoder().encode(encoded).length + socket.bufferedAmount > 65536) {
       connected = false;
@@ -1158,3 +1220,5 @@ for (const type of EVENTS) {
     send(payload);
   }, true);
 }
+
+})();

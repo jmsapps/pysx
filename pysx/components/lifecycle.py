@@ -23,6 +23,9 @@ from pysx.runtime.async_runtime import active_runtime
 from .errors import FailureCapture, failure_context
 
 _preparing: ContextVar[bool] = ContextVar("pysx_preparing_resources", default=False)
+_deferred: ContextVar[list[Callable[[], object]] | None] = ContextVar(
+    "pysx_deferred_resources", default=None
+)
 _restoring: ContextVar[dict[str, dict[str, object]] | None] = ContextVar(
     "pysx_restoring_local_state", default=None
 )
@@ -46,6 +49,27 @@ def stage_resources() -> Generator[None]:
         yield
     finally:
         _preparing.reset(token)
+
+
+def defer_resource(callback: Callable[[], object]) -> None:
+    pending = _deferred.get()
+
+    if pending is not None:
+        if len(pending) >= 1024:
+            raise RuntimeError("recovery resource activation limit")
+        pending.append(callback)
+
+
+@contextmanager
+def deferred_resources() -> Generator[list[Callable[[], object]]]:
+    pending: list[Callable[[], object]] = []
+    token = _deferred.set(pending)
+
+    try:
+        with stage_resources():
+            yield pending
+    finally:
+        _deferred.reset(token)
 
 
 @dataclass
@@ -502,7 +526,18 @@ def own_subscription(key: str, subscribe: Callable[[], Callable[[], object]]) ->
         if len(owner.resources) >= 1024:
             raise RuntimeError("component resource limit exceeded")
 
-        if not _preparing.get():
+        if _preparing.get():
+            def activate() -> None:
+                if owner.alive:
+                    token = failure_context.set(owner.failure)
+
+                    try:
+                        owner.cleanups.append(subscribe())
+                    finally:
+                        failure_context.reset(token)
+
+            defer_resource(activate)
+        else:
             cleanup = subscribe()
             owner.cleanups.append(cleanup)
         owner.resources.add(resource_key)

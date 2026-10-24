@@ -47,6 +47,7 @@ updates.
 - **Readable interfaces:** t-string templates and composable, typed native elements.
 - **Live forms:** two-way bindings, native validation, reset and submit handling, and caret-preserving server corrections.
 - **Async applications:** owned resources, timers and server push update pages without another browser event.
+- **Document continuity:** open pages restore compatible UI state after server loss. See [recovery](docs/RECOVERY.md).
 - **Hosting:** shared standalone and optional ASGI serving, request context, static assets and lifecycle hooks. See [hosting](docs/HOSTING.md).
 - **Scoped styling:** typed styled bases, inherited rules, live CSS variables and isolated
   themes. See the [styling guide](docs/STYLING.md).
@@ -54,7 +55,8 @@ updates.
 
 ## Supported platforms
 
-Python 3.14 or newer, on macOS and Linux. Both are verified on every change. The reference
+Python 3.14 or newer, on macOS and Linux. Ordinary changes use local verification;
+release platform qualification runs separately. The reference
 deployment topology needs a Linux container runtime; where a machine has not got one, the
 suites that assert it report themselves as skipped rather than passing.
 

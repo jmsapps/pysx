@@ -39,17 +39,23 @@ Importing the public APIs or checker starts no listener or event loop.
 
 Healthy modern socket loss retains the live graph within the configured
 `TransportLimits.resume_ttl` and `detached` limits. Resume needs worker affinity
-and the same browser cookie and authenticated principal. Expiry/eviction/shutdown
+and the same browser cookie, authenticated principal and login-session generation. Expiry/eviction/shutdown
 dispose the graph; see [current-state recovery](PROTOCOL.md#current-state-resume).
 The shipped browser retries within finite backoff/deadline bounds, rejects offline
 events, and reports when an expired graph requires a fresh session. It never
 replays business actions after uncertain delivery. Retry exhaustion offers manual
-recovery. [DurableApplication](OWNERSHIP.md) adds explicit declared-state
-reconstruction with leased worker ownership; ordinary `Application` stays volatile.
+recovery. Normal `Application` documents also retain one encrypted capsule in memory
+and reconstruct compatible ordinary UI state after graph loss. Refresh/new tabs start
+fresh; capsules expire after 24 hours. Multiple workers share only the hosting key ring
+and authentication authority, with a stable namespace. See [browser checkpoints](PROTOCOL.md#browser-checkpoints-v4).
+[DurableApplication](OWNERSHIP.md) separately adds declared-state persistence and
+leased worker ownership. Ordinary graphs retain no historical server snapshot store.
 
 Both hosts share request handling, rendering, graph adoption and the connection
 protocol. GET renders content immediately; HEAD returns metadata and disposes its
-render. Other methods return 405. Unknown static files return 404. ASGI request
+render. Anonymous reset uses a same-origin POST to the prefixed `/__pysx__/reset`
+endpoint with `x-pysx-reset: 1`; the client exposes the `pysx:reset` window event.
+Other methods return 405. Unknown static files return 404. ASGI request
 bodies are unsupported. Assets contain bytes and an explicit MIME type; `from_path`
 loads once at configuration time and infers MIME. Assets support HEAD, ETag and
 If-None-Match (304), with configurable public `cache_seconds`. Personalized pages
@@ -97,7 +103,7 @@ headers fail closed before graph allocation. Origin is a browser CSRF boundary,
 not an identity provider. Nonbrowser clients must supply the same allowed Origin
 and application authentication. The authorizer must return exactly `True`; an
 exception produces a safe denial. HTTP, websocket, adoption, resume, event,
-resource, command, dom_reply and repair are operation names. Targets are paths,
+resource, command, dom_reply, repair and reset are operation names. Targets are paths,
 handler IDs, resource keys or outgoing message types. Use `require_access(action,
 target)` inside a session for additional business service checks. Resource access
 is checked before loading and before publishing a successful value. The principal
@@ -133,7 +139,9 @@ queued mutations and `task_capacity` (1024) its owned tasks and resource loads.
 HTTPS deployments. `development=True` or CLI `--dev` enables source tracebacks
 in server logs; client errors remain safe.
 
-Host startup also loads a constant-size recovery key ring. A single host generates
+Ordinary host startup also loads a constant-size recovery key ring. Explicit durable
+hosts keep their existing store/lease credentials and require no browser key ring.
+A single ordinary host generates
 it automatically, without import-time writes, under the application's hashed namespace
 in `~/Library/Application Support/pysx` on macOS or `$XDG_STATE_HOME/pysx` on Linux
 (falling back to `~/.local/state/pysx` when XDG is absent or relative). Keep this private

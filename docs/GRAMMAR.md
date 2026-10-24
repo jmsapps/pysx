@@ -286,9 +286,10 @@ ambiguous repeated call sites carry reset reasons. They remain usable live. Deri
 projected, shared/global state, callbacks and resources are not duplicated as local slots.
 The aggregate snapshot, metadata and traversal budgets can make a revision
 unrecoverable; an older snapshot must not represent it as current. Scope disposal
-releases captured slots and change callbacks. This metadata does not itself provide
-browser restart recovery; browser publication and authenticated graph restoration
-are separate facilities.
+releases captured slots and change callbacks. Normal hosted documents publish this
+state as an encrypted browser checkpoint and can reconstruct compatible ordinary
+state after graph loss; see [the wire contract](PROTOCOL.md#browser-checkpoints-v4).
+Bare `Session` objects remain volatile and have no browser custody of their own.
 
 Keyed reorder preserves scopes. Removing a key, changing a conditional branch or changing
 the component callable identity disposes its subtree; a subsequent remount starts fresh.

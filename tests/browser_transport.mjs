@@ -46,6 +46,10 @@ try {
   console.log("  ok  negotiated epoch rejects duplicate/gap events and repairs actual state");
   console.log("  ok  invalid shapes are acknowledged without invoking handlers");
   const repairPage = await browser.newPage();
+  await repairPage.route(`http://127.0.0.1:${process.argv[2]}/`, async route => {
+    const response = await route.fetch();
+    await route.fulfill({response, body: (await response.text()).replace('data-pysx-protocol="4"', 'data-pysx-protocol="3"')});
+  });
   repairPage.on("pageerror", error => errors.push(error.message));
   let mock;
   let resolveClose;

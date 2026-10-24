@@ -2,7 +2,10 @@
 
 `DurableApplication[T]` hosts a typed root-state factory through the same standalone
 and ASGI adapters as `Application`. Its state codec and migrations follow the
-[persistence contract](PERSISTENCE.md). The ordinary `Application` remains volatile.
+[persistence contract](PERSISTENCE.md). Ordinary `Application` graphs are volatile,
+but open documents can [reconstruct compatible UI state](PROTOCOL.md#browser-checkpoints-v4)
+from browser-held capsules. That continuity has no persistent owner, lease, fencing
+or globally latest writer guarantee.
 See the [Linux deployment runbook](DEPLOYMENT.md) for a tested TLS proxy/two-worker
 topology, operational probes, metrics and restart procedures.
 The runnable [durable-state example](../examples/durable_state.py) demonstrates a

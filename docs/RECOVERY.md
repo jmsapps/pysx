@@ -1,4 +1,38 @@
-# Local error recovery
+# Recovery
+
+## Open-document continuity
+
+Ordinary hosted components and signals recover compatible UI state automatically
+after graph loss. The browser holds one bounded encrypted capsule in its document
+closure. Refresh and new tabs start fresh; recovery does not write Web Storage,
+IndexedDB or recovery payload cookies. The [ordinary draft example](../examples/browser_recovery.py)
+and [launch instructions](../examples/README.md#browser-held-draft-recovery) demonstrate
+restart recovery without a store, codec or required decorator.
+
+Recovery first tries the retained live graph. Otherwise it authenticates the capsule
+against today's browser, principal/login session, origin, namespace and route, and
+constructs a new graph. Supported exact built-in values restore only when their
+owner, call identity, initializer and root type match. See [state boundaries](GRAMMAR.md#component-ownership)
+and [the bounded wire contract](PROTOCOL.md#browser-checkpoints-v4). Unsupported,
+ambiguous or changed state restarts with defaults; the connection status reports
+fresh or partially reset recovery. Aggregate overflow clears the previous token.
+
+The capsule represents the latest state delivered with an accepted frame. It cannot
+recover an unacknowledged action that never reached the server, guarantee globally
+latest revisions, or make business effects exactly once. Old events and imperative
+capabilities are discarded. Managed resources belong to the new graph; arbitrary app
+setup may run for rejected candidates. Keep transactional/idempotency authority in
+normal application services. [Explicit persistence](PERSISTENCE.md) and
+[leased ownership](OWNERSHIP.md) provide separate contracts.
+
+Anonymous `pysx:reset` rotates the HttpOnly browser binder and clears document
+recovery. Authenticated logout must invalidate the login-session identity through
+normal authentication. Copying an old anonymous cookie together with its capsule
+cannot be globally revoked without an authoritative service; no per-user recovery
+denylist is retained. Shared-host keys, rotation and legacy principal-only adapters
+are documented in [hosting](HOSTING.md).
+
+## Local error recovery
 
 Create an `ErrorBoundary(content, fallback)` inside your app and render it as a
 component, for example `Boundary:` where `Boundary` holds the instance. Content is

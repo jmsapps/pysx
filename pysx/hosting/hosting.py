@@ -25,7 +25,7 @@ from pysx.runtime.transport import TransportError, TransportLimits
 
 from .http import HTTPResult, HTTPRuntime
 from .request import AuthenticatedIdentity, RequestContext, browser_id
-from .security import AccessDenied, SecurityPolicy
+from .security import AccessDenied, SecurityPolicy, origin
 from .telemetry import RequestEvent, record
 
 if TYPE_CHECKING:
@@ -359,17 +359,20 @@ class Application:
             if self.started:
                 return
 
-            # Keep compiler/checker imports free of the host's crypto startup cost.
-            from pysx.runtime.capsule import CapsuleIssuer
+            if self.runtime.owner_hint is None:
+                # Keep compiler/checker imports free of the host's crypto startup cost.
+                from pysx.components.composition import portable_identity_for
+                from pysx.runtime.capsule import CapsuleIssuer
 
-            from .recovery_keys import default_directory, load_keys
+                from .browser_recovery import BrowserRecovery
+                from .recovery_keys import default_directory, load_keys
 
-            qualified = getattr(self.app, "__qualname__", type(self.app).__qualname__)
-            namespace = self.config.recovery_namespace or f"{self.app.__module__}:{qualified}"
-            directory = self.config.recovery_key_directory or default_directory(namespace)
-            self.recovery_issuer = CapsuleIssuer(
-                load_keys(directory, provision=self.config.recovery_key_directory is None)
-            )
+                namespace = self.config.recovery_namespace or portable_identity_for(self.app)
+                directory = self.config.recovery_key_directory or default_directory(namespace)
+                self.recovery_issuer = CapsuleIssuer(
+                    load_keys(directory, provision=self.config.recovery_key_directory is None)
+                )
+                self.runtime.browser_recovery = BrowserRecovery(self.recovery_issuer, namespace)
 
             for hook in self.config.startup:
                 result = hook()
@@ -412,6 +415,13 @@ class Application:
     async def _http(self, request: RequestContext, *, method: str = "GET") -> HTTPResult:
         if self.closed:
             return HTTPResult(503, (), b"application closed")
+
+        reset_path = (request.base_path or self.config.base_path) + "/__pysx__/reset"
+
+        if method == "POST" and urlsplit(request.path).path == reset_path:
+            await self.start()
+
+            return self.reset_browser(request)
 
         if method not in ("GET", "HEAD"):
             return HTTPResult(405, (("allow", "GET, HEAD"),), b"method not allowed")
@@ -478,6 +488,61 @@ class Application:
             )
 
         return result
+
+    def reset_browser(self, request: RequestContext) -> HTTPResult:
+        """Reset anonymous browser custody without retaining a recovery denylist."""
+        headers = (("cache-control", "private, no-store"),)
+
+        try:
+            context = self.prepare(request)
+
+            if (
+                self.runtime.browser_recovery is None
+                or context.principal is not None
+                or not browser_id(context)
+                or context.headers.get("x-pysx-reset") != "1"
+                or origin(context.headers.get("origin", ""))
+                != origin(context.scheme + "://" + context.headers.get("host", ""))
+            ):
+                raise AccessDenied("access denied")
+            assert context.access is not None
+            context.access("reset", context.path)
+        except AccessDenied, ValueError:
+            return HTTPResult(403, headers, b"access denied")
+        browser = browser_id(context)
+        errors: list[Exception] = []
+
+        for token, pending in tuple(self.runtime.pending.items()):
+            if pending.browser == browser:
+                try:
+                    self.runtime.expire(token)
+                except Exception as error:
+                    errors.append(error)
+
+        for session in tuple(self.runtime.graphs):
+            if session.browser == browser:
+                try:
+                    self.runtime.release(session)
+                except Exception as error:
+                    errors.append(error)
+                finally:
+                    session.changed.set()
+        cookie = f"pysx_browser={secrets.token_urlsafe(32)}; Path=/; HttpOnly; SameSite=Lax" + (
+            "; Secure" if self.config.secure_cookies else ""
+        )
+
+        if errors:
+            report_error(
+                ErrorInfo(None, "cleanup"),
+                ExceptionGroup("reset cleanup failed", errors),
+                development=self.config.development,
+            )
+
+        return HTTPResult(
+            500 if errors else 204,
+            (*headers, ("set-cookie", cookie)),
+            b"session reset incomplete" if errors else b"",
+        )
 
     async def websocket(self, connection: Connection) -> None:
         from websockets.exceptions import ConnectionClosedOK
