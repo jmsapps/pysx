@@ -2,11 +2,13 @@
 
 from pysx import Fragment, pysx
 
-from .components import Description, Eyebrow, Page, Title
-from .components.composition import tree_controls
+from .components import Description, Eyebrow, Page, Title, example_app, example_title
+from .components.composition import TreeControls
 
 
 def app() -> Fragment:
+    example_title("Composition")
+
     return pysx(
         t"""
             Page(id="composition-example"):
@@ -17,6 +19,9 @@ def app() -> Fragment:
               Description: "Up/Down moves focus. Home/End reaches the first/last visible node."
               Description: "Enter activates a node. Reverse roots preserves its local count."
               Description: "Setup, browser mount and cleanup counters show separate lifetimes."
-              tree_controls:
+              TreeControls:
         """,
     )
+
+
+example = example_app(app)

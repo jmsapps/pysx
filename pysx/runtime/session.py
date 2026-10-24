@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from string.templatelib import Template
     from typing import Literal
 
+    from pysx.hosting.browser_recovery import BrowserCheckpoint
+
     from .wire import Op, ResultMessage
 
 
@@ -50,6 +52,7 @@ class Session:
         self.request = request or RequestContext(path=location)
         self.location = location
         self.browser = browser or browser_id(self.request)
+        self.browser_checkpoint: BrowserCheckpoint | None = None
         self.closed = False
         self.revoked = False
         self.recovery_failed = False
@@ -116,6 +119,7 @@ class Session:
             raise
         self._live = True
         self.routes.live = True
+        self.browser_candidate_failed = bool(self.rendered.failures) or self.rendered.unrepaired
         self.rendered.failures.clear()
 
     def checkpoint(self) -> None:

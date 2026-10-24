@@ -15,6 +15,8 @@ from .components import (
     Page,
     SecondaryAction,
     Title,
+    example_app,
+    example_title,
 )
 
 
@@ -25,6 +27,8 @@ class Entry:
 
 
 def app() -> Fragment:
+    example_title("Keyed rows")
+
     rows = signal([Entry("alpha", "Alpha"), Entry("beta", "Beta")])
     chosen = signal("none")
     dom = Dom()
@@ -111,3 +115,6 @@ def app() -> Fragment:
           Meta(id="keyed-chosen", role="status"): {chosen}
           div(id="keyed-example-rows"): {each(rows, row, key=lambda item: item.key)}
     """)
+
+
+example = example_app(app)

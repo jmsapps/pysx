@@ -104,6 +104,8 @@ def test_host_config_fresh_actual_wheel_user_app(tmp_path: Path, *, asgi: bool) 
             "-I",
             "-c",
             "import sys; from pysx import Application; import pysx.tooling.check; "
+            "assert 'cryptography' not in sys.modules; "
+            "import cryptography; assert cryptography.__version__ == '50.0.2'; "
             'assert "uvicorn" not in sys.modules; assert "pysx.hosting.server" not in sys.modules; '
             "import asyncio; "
             "assert asyncio._get_running_loop() is None",
@@ -189,7 +191,7 @@ def test_client_verify_dev_extra_is_separate_from_the_runtime_set() -> None:
     project = metadata["project"]
     runtime = project["dependencies"]
     extras = project["optional-dependencies"]
-    assert runtime == ["websockets==17.1"]
+    assert runtime == ["cryptography==50.0.2", "websockets==17.1"]
     assert extras["dev"] == [f"ruff=={RUFF_REQUIREMENT}"]
     assert not any(item.startswith("ruff") for item in runtime)
 

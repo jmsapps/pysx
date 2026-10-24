@@ -4,6 +4,10 @@ import playwright from "playwright";
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
 try {
   const page = await browser.newPage();
+  await page.route(`http://127.0.0.1:${process.argv[2]}/`, async route => {
+    const response = await route.fetch();
+    await route.fulfill({response, body: (await response.text()).replace('data-pysx-protocol="4"', 'data-pysx-protocol="3"')});
+  });
   const failures = [];
   page.on("pageerror", error => failures.push(error.message));
   let connection;

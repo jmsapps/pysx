@@ -101,7 +101,7 @@ try {
   console.log("  ok  stale authoritative replies cannot overwrite newer edits");
   await page.evaluate(() => new Promise(resolve => {
     window.addEventListener("pysx:repair", resolve, {once: true});
-    window.liveSocket.send(JSON.stringify({t: "repair", version: 3,
+    window.liveSocket.send(JSON.stringify({t: "repair", version: window.lastEnvelope.version,
       epoch: window.lastEnvelope.epoch, state_rev: window.lastEnvelope.state_rev}));
   }));
   await page.locator("#text").fill("");

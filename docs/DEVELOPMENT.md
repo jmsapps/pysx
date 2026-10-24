@@ -62,8 +62,11 @@ releases healthy traffic before the rejected process finishes bounded cleanup.
 Stopping and restarting the watch command leaves open pages free to reconnect.
 Startup notifications and generation numbers from a new supervisor do not reload
 the page. A `DurableApplication` with the same identity and SQLite path recovers
-its committed state through the normal recovery protocol. Ordinary component-local
-state has no persistence across a complete server restart. Refreshing a page or
+its committed state through the normal recovery protocol. Ordinary components
+reconstruct compatible UI state from the open document's encrypted capsule when
+the same hosting key ring remains available. No recovery-specific app wiring is
+needed; see the [draft example](../examples/README.md#browser-held-draft-recovery).
+Refreshing a page or
 opening a new tab starts a new session. Within a running supervisor, an intentional
 incompatible edit still performs the declared fresh reload.
 
@@ -112,7 +115,7 @@ private slot values; the example separately binds its deliberately public sample
 Its **Discard development snapshots** control clears pending development handoffs
 and starts that page fresh; the endpoint is `/__pysx_dev__/cold`. This does not
 reset other live tabs. This ordinary reactive example uses no persistence store. Run
-`uv run --project . pysx --app examples.development:app --watch` and optionally add
+`uv run --project . pysx --app examples.development:example --watch` and optionally add
 `--inspect` for the separate inspector. Pass `--no-preserve-state` to disable
 preservation for a whole session, which restores the previous behaviour of
 reloading the browser on every successful edit.
@@ -124,7 +127,7 @@ initializer-change reason. Explicit persistence is a separate application choice
 demonstrated by `examples/durable_state.py`.
 
 Watch mode responds to files written by either manual save or autosave. An editor's
-autosave delay comes before watcher detection. The pysx import-on-save action returns
+autosave delay comes before watcher detection. The PYSX import-on-save action returns
 promptly when analysis is pending and leaves imports unchanged for that save; it
 does not hold the disk write waiting for workspace analysis. The default editor setup
 runs that action on explicit saves; configuring it as `always` includes focus/window
@@ -152,8 +155,11 @@ Focus/caret survive compatible elements. Canonical control values and reset defa
 come from the new graph; uncommitted edits and old events are discarded.
 
 Explicit schema migrations are honored. Incompatible state without a usable
-migration, changed identity/store/prefix, and volatile apps use a declared fresh
-reload. Watch workers also enable a fresh fallback for an incompatible recovery
+migration or changed identity/store/prefix uses a declared fresh reload for explicit
+durable hosts. Ordinary compatible watch handoffs retain their component-local
+contract, with browser-held recovery available after complete graph/supervisor loss.
+Intentional incompatible edits retain their declared fresh reload. Watch workers
+also enable a fresh fallback for an incompatible recovery
 outside the retained validation window; the normal production setting is unchanged.
 The browser's recovery status distinguishes restored and fresh sessions.
 Import/startup/setup code must be idempotent with explicit cleanup.
@@ -185,7 +191,7 @@ in explicit development mode.
 pysx --app my_app:app --watch --inspect
 ```
 
-Open the “pysx inspector” panel in the browser. It shows source links, per-session
+Open the “PYSX inspector” panel in the browser. It shows source links, per-session
 owner/resource/task/handler counts and the last 256 metadata events. Writes,
 dependency reads, effect runs, template/render work and queued/sent patch batches
 have opaque identities and counts. Values are always `[redacted]`; no signal value,

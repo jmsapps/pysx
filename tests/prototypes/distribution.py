@@ -205,6 +205,9 @@ def dependency_cache(destination: Path) -> Path:
     fetched silently.
     """
     names = (
+        "cryptography",
+        "cffi",
+        "pycparser",
         "websockets",
         "typer",
         "shellingham",

@@ -23,6 +23,9 @@ from pysx.runtime.async_runtime import active_runtime
 from .errors import FailureCapture, failure_context
 
 _preparing: ContextVar[bool] = ContextVar("pysx_preparing_resources", default=False)
+_deferred: ContextVar[list[Callable[[], object]] | None] = ContextVar(
+    "pysx_deferred_resources", default=None
+)
 _restoring: ContextVar[dict[str, dict[str, object]] | None] = ContextVar(
     "pysx_restoring_local_state", default=None
 )
@@ -46,6 +49,27 @@ def stage_resources() -> Generator[None]:
         yield
     finally:
         _preparing.reset(token)
+
+
+def defer_resource(callback: Callable[[], object]) -> None:
+    pending = _deferred.get()
+
+    if pending is not None:
+        if len(pending) >= 1024:
+            raise RuntimeError("recovery resource activation limit")
+        pending.append(callback)
+
+
+@contextmanager
+def deferred_resources() -> Generator[list[Callable[[], object]]]:
+    pending: list[Callable[[], object]] = []
+    token = _deferred.set(pending)
+
+    try:
+        with stage_resources():
+            yield pending
+    finally:
+        _deferred.reset(token)
 
 
 @dataclass
@@ -126,12 +150,15 @@ def current_scope() -> Scope:
 
 class Scopes:
     def __init__(self) -> None:
+        from .checkpoints import Checkpoints
+
+        self.checkpoints = Checkpoints()
         self.owners: dict[str, Scope] = {}
         self.closed = False
         self.traversals: list[set[str]] = []
 
     @contextmanager
-    def enter(self, path: str, identity: object) -> Generator[Scope]:
+    def enter(self, path: str, identity: object, component: str = "") -> Generator[Scope]:
         if self.closed:
             raise RuntimeError("component scopes are closed")
         owner = self.owners.get(path)
@@ -156,7 +183,8 @@ class Scopes:
         failure_token = failure_context.set(owner.failure)
 
         try:
-            yield owner
+            with self.checkpoints.enter(path, component):
+                yield owner
             owner.ready = True
         except BaseException as error:
             try:
@@ -176,6 +204,7 @@ class Scopes:
         )
 
         for path in paths:
+            self.checkpoints.release(path)
             errors.extend(self.owners.pop(path).close())
 
         if errors:
@@ -246,6 +275,7 @@ class Scopes:
     def close(self) -> None:
         self.closed = True
         self.release("")
+        self.checkpoints.close()
 
 
 @lru_cache(maxsize=128)
@@ -445,6 +475,10 @@ def local_state[T](key: str, initial: T) -> Signal[T]:
 
     created = cast("Signal[T]", owner.values[key])
 
+    from .checkpoints import record_named
+
+    record_named(cast("Signal[object]", created), key, initial)
+
     if reactive.created is not None:
         frame = currentframe()
 
@@ -492,7 +526,18 @@ def own_subscription(key: str, subscribe: Callable[[], Callable[[], object]]) ->
         if len(owner.resources) >= 1024:
             raise RuntimeError("component resource limit exceeded")
 
-        if not _preparing.get():
+        if _preparing.get():
+            def activate() -> None:
+                if owner.alive:
+                    token = failure_context.set(owner.failure)
+
+                    try:
+                        owner.cleanups.append(subscribe())
+                    finally:
+                        failure_context.reset(token)
+
+            defer_resource(activate)
+        else:
             cleanup = subscribe()
             owner.cleanups.append(cleanup)
         owner.resources.add(resource_key)

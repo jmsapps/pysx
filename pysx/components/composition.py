@@ -35,6 +35,21 @@ def identity_for(fn: Component) -> object:
     return type(target)
 
 
+def portable_identity_for(fn: Component) -> str:
+    target: object = fn
+
+    while isinstance(target, partial):
+        target = target.func
+
+    if ismethod(target):
+        target = target.__func__
+
+    if not isfunction(target):
+        target = type(target)
+
+    return f"{getattr(target, '__module__', '')}:{getattr(target, '__qualname__', '')}"
+
+
 @dataclass(frozen=True)
 class Children:
     """A child block keeps the caller's values and namespace, without a frame."""

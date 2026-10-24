@@ -8,12 +8,25 @@ from pathlib import Path
 
 from pysx import Application, Fragment, StaticAsset, component, pysx, signal
 
-from .components import Action, Actions, Card, Description, Eyebrow, Page, Title, Value
-from .components.development import state_panel
+from .components import (
+    Action,
+    Actions,
+    Card,
+    Description,
+    Eyebrow,
+    Page,
+    Title,
+    Value,
+    example_app,
+    example_title,
+)
+from .components.development import StatePanel
 
 
 @component
 def view() -> Fragment:
+    example_title("Development")
+
     count = signal(0)
 
     def increment(_event: object) -> None:
@@ -42,7 +55,7 @@ def view() -> Fragment:
                 Description:
                     "Separately, change count = signal(0) to signal(1) and save. "
                     "The initializer change resets the count to 1. Restore signal(0) afterward."
-            {state_panel(count)}
+            {StatePanel(count)}
             script(src="/development-panel.js", defer={True})
     """)
 
@@ -51,3 +64,6 @@ app = Application(view)
 app.assets["/development-panel.js"] = StaticAsset.from_path(
     Path(__file__).parent / "components" / "development.js", content_type="text/javascript"
 )
+
+
+example = example_app(app)

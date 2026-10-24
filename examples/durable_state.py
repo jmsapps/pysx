@@ -18,14 +18,25 @@ from pysx import (
     Signal,
     SQLiteOwnershipStore,
     StateCodec,
-    current_request,
     derived,
     project,
     pysx,
     resource,
 )
 
-from .components import Action, Actions, Card, Description, Eyebrow, Field, Page, Title, Value
+from .components import (
+    Action,
+    Actions,
+    Card,
+    Description,
+    Eyebrow,
+    Field,
+    Page,
+    Title,
+    Value,
+    example_app,
+    example_title,
+)
 
 if TYPE_CHECKING:
     from pysx.runtime.wire import JSONValue
@@ -56,7 +67,7 @@ CODEC = StateCodec[ExampleState](encode, decode)
 
 
 def view(state: Signal[ExampleState]) -> Fragment:
-    current_request().document.title = "Durable state"
+    example_title("Durable state")
     setup = uuid4().hex[:12]
     count = derived(lambda: state().count)
     draft = project(
@@ -140,3 +151,6 @@ app = create_application(
     worker=os.environ.get("PYSX_WORKER"),
     origin=os.environ.get("PYSX_ORIGIN"),
 )
+
+
+example = example_app(app)

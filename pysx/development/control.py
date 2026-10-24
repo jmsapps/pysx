@@ -155,6 +155,7 @@ class Control:
                 "resume": token,
                 "browser": handle.browser,
                 "principal": handle.principal,
+                "authentication_session": handle.authentication_session,
                 "epoch": session.transport.epoch,
                 "revision": session.transport.revision,
                 "location": session.routes.location.url,
@@ -205,6 +206,14 @@ class Control:
                 or not isinstance(headers, dict)
                 or not all(isinstance(value, str) for value in headers.values())
                 or (row.get("principal") is not None and not isinstance(row["principal"], str))
+                or (
+                    row.get("authentication_session") is not None
+                    and (
+                        not isinstance(row["authentication_session"], str)
+                        or not row["authentication_session"]
+                        or len(row["authentication_session"]) > 4096
+                    )
+                )
                 or type(revision) is not int
                 or revision < 0
                 or type(expires) not in (int, float)
@@ -252,6 +261,7 @@ class Control:
         if (
             row["browser"] != browser_id(request)
             or row["principal"] != request.principal
+            or row.get("authentication_session") != request.authentication_session
             or row["epoch"] != epoch
             or revision > cast("int", row["revision"])
             or row["location"] != location
@@ -290,7 +300,10 @@ class Control:
                     )
                 )
 
-                if row is not None and request.principal != row["principal"]:
+                if row is not None and (
+                    request.principal != row["principal"]
+                    or request.authentication_session != row.get("authentication_session")
+                ):
                     continue
 
                 if request.access is not None:
@@ -398,7 +411,10 @@ class Control:
         allowed = {
             handle.session
             for handle in handles
-            if browser and handle.browser == browser and handle.principal == request.principal
+            if browser
+            and handle.browser == browser
+            and handle.principal == request.principal
+            and handle.authentication_session == request.authentication_session
         }
         sessions: list[JSONValue] = []
 

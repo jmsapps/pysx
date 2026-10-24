@@ -15,7 +15,7 @@ ColorSwatch = styled.span(t"""
 """)
 
 
-def event_controls() -> Fragment:
+def EventControls() -> Fragment:
     dom = Dom()
     combo = dom.ref()
     refs = [dom.ref() for _ in range(3)]

@@ -58,7 +58,7 @@ ROOTS = (
 )
 
 
-def tree_controls() -> Fragment:
+def TreeControls() -> Fragment:
     dom = Dom()
     root_ref = dom.ref()
     roots = signal(list(ROOTS))
@@ -104,7 +104,7 @@ def tree_controls() -> Fragment:
         if target is not None:
             await target.focus()
 
-    def branch(*, node: Entry) -> Fragment:
+    def Branch(*, node: Entry) -> Fragment:
         visits = local_state("visits", 0)
         opened = expanded[node.key]
         on_setup(lambda: setups.set(setups() + 1))
@@ -175,7 +175,7 @@ def tree_controls() -> Fragment:
         )
 
     def row(node: Entry) -> Fragment:
-        return pysx(t"\nbranch(node={node}):")
+        return pysx(t"\nBranch(node={node}):")
 
     def reverse(_event: BrowserEvent) -> None:
         roots.set(list(reversed(roots())))

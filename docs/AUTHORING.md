@@ -21,6 +21,14 @@ def app():
     return pysx(t'''Panel(title="Hello"): "Content"''')
 ```
 
+Components are PascalCase by convention. A markup tag resolves to a component when it is
+not a native element and either starts with a capital or names a binding in the enclosing
+scope, so `tree_controls:` and `TreeControls:` both work; PascalCase is the recommended
+spelling. Because a component is an ordinary Python function, Ruff's `N802`/`N806` naming
+checks would normally reject that casing: pysx's own linting suppresses both for callables
+that return `Fragment`/`Template` and for names used as markup tags, so no per-file ignore
+is needed. Running Ruff directly, outside pysx, still reports them.
+
 The server installs the scoped loader before importing the module specified by
 `--app package.view:app`. The bundled example launcher and repository tests install
 their application scope before collection/imports. For another launcher, install
@@ -144,7 +152,7 @@ pysx-build myapp deployment/myapp
 For a directory containing multiple packages, pass that directory as the source
 and preserve its layout on the output import path. The build copies resources and
 emits standard sourceless `.pyc` modules using the same lowering pass as the loader.
-Install pysx in the deployment interpreter and import the compiled application
+Install PYSX in the deployment interpreter and import the compiled application
 normally; the original application source and development loader are unnecessary.
 The output includes compiler/interpreter metadata and source hashes.
 
@@ -181,18 +189,18 @@ template-aware path; plain Python import-removal tools cannot see textual tags.
 
 ## VS Code authoring
 
-Install the pysx extension, Microsoft Python and Pylance. Select Python 3.14+ with
-pysx, Ruff and Pyright installed. The extension uses the selected environment’s executable;
+Install the PYSX extension, Microsoft Python and Pylance. Select Python 3.14+ with
+PYSX, Ruff and Pyright installed. The extension uses the selected environment’s executable;
 `pysx.pythonPath` is a resource-specific override. It does not invoke `uv` from the
 editor or depend on the checkout used to build the extension.
 
-Run **pysx: Configure Template-Aware Imports** after opening a Python file. It first
+Run **PYSX: Configure Template-Aware Imports** after opening a Python file. It first
 requires successful workspace analysis and complete analysis of the active file. It
-reports progress and failures in the **pysx** Output channel, and displays a
+reports progress and failures in the **PYSX** Output channel, and displays a
 confirmation when setup succeeds. If analysis is interrupted, wait for it to finish
 and run the command again. Unsupported active files must be corrected first.
 The command configures this workspace
-folder to use the pysx unused-import diagnostics and save action. It preserves the
+folder to use the PYSX unused-import diagnostics and save action. It preserves the
 existing type-checking level and other diagnostic overrides, disables Pylance unused
 hints and overlapping import/unused-local/function checks, and excludes overlapping Ruff
 rules when that extension is installed. Ordinary Python typing remains with
@@ -216,16 +224,16 @@ The diagnostic-path setting is installed after the owned backend succeeds.
 The original project configuration, selected interpreter and coherent snapshot are
 used for these checks. Ordinary Python errors remain on their original documents.
 
-The supported cleanup routes are **pysx: remove unused imports** and
+The supported cleanup routes are **PYSX: remove unused imports** and
 `source.organizeImports.pysx` on explicit save. Generic Pylance/Ruff remove-unused
 and fix-all save actions are disabled because they inspect the original t-string
-as text. Their manual commands are not template-aware; use the pysx action for
-deletion. Formatting and import sorting can still run separately. Keep the pysx
+as text. Their manual commands are not template-aware; use the PYSX action for
+deletion. Formatting and import sorting can still run separately. Keep the PYSX
 extension enabled in workspaces configured this way; restore the prior settings
 if removing it.
 
 Hover, tag/prop completion, definitions and references use typed Python projections
-of current unsaved buffers. **F2** and **pysx: Rename Python and Markup Symbol**
+of current unsaved buffers. **F2** and **PYSX: Rename Python and Markup Symbol**
 coordinate Python declarations/imports and their matching markup tags across files.
 Generic rename commands invoked by other extensions bypass this route. Quoted
 markup text is preserved. Edits are rejected if any participating source changes,
@@ -236,7 +244,7 @@ including `src/` package layouts. The extension hides these directories and remo
 them when replaced or deactivated. Navigation and edits return original source
 locations. Late results from obsolete revisions are discarded. Analysis is bounded
 to 512 Python sources and 8 MiB per workspace folder; ambiguous source-root layouts
-or larger workspaces fail with an explanation in the pysx output channel.
+or larger workspaces fail with an explanation in the PYSX output channel.
 
 Unchanged projections are reused only when source, static dependencies, configuration,
 interpreter and library fingerprints match. New revisions keep their own generated

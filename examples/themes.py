@@ -2,11 +2,14 @@
 
 from pysx import Fragment, Themes, derived, pysx, signal
 
+from .components import example_app, example_title
 from .components.controls import Actions, Description, Eyebrow, Title
 from .components.themes import Preview, ThemeAction, ThemePage
 
 
 def app() -> Fragment:
+    example_title("Themes")
+
     themes = Themes()
     themes.register(
         "light",
@@ -101,3 +104,6 @@ def app() -> Fragment:
     """,
         themes=themes,
     )
+
+
+example = example_app(app)

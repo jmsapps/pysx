@@ -777,3 +777,21 @@ def test_parser_error_is_reported() -> None:
     )
     diags, _ = check(body)
     assert any("without a matching" in d["message"] for d in diags), diags
+
+
+def test_component_names_escape_ruff_function_casing() -> None:
+    from pysx.tooling.lint import lint_source
+
+    source = (
+        "from pysx import Fragment, pysx\n\n\n"
+        "def TreeControls(*children: object, title: str) -> Fragment:\n"
+        '    return pysx(t"""section: {title}""")\n\n\n'
+        "def BadHelper() -> int:\n"
+        "    return 1\n"
+    )
+    codes = {
+        (finding.code, finding.message.split("`")[1])
+        for finding in lint_source(source, str(Path.cwd() / "pysx" / "_casing.py"))
+        if finding.code == "N802"
+    }
+    assert codes == {("N802", "BadHelper")}

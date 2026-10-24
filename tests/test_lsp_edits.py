@@ -256,7 +256,7 @@ def test_edits_formatting_code_action_offers_template_normalization(
     )
     assert isinstance(result, list)
     actions = cast("list[dict[str, Any]]", result)
-    assert [action["title"] for action in actions] == ["pysx: normalize template indentation"]
+    assert [action["title"] for action in actions] == ["PYSX: normalize template indentation"]
     assert actions[0]["kind"].endswith(".pysx")
     assert actions[0]["edit"]["changes"][path.as_uri()]
 
@@ -679,7 +679,7 @@ def test_resident_commands_organize_imports_keeps_template_only_imports(
     client.open(consumer, TEMPLATE_CONSUMER)
     client.settled(lambda state: bool(state["workspaces"]) and state["workspaces"][0]["ready"])
     actions = organize(client, consumer)
-    assert [action["title"] for action in actions] == ["pysx: remove unused imports"]
+    assert [action["title"] for action in actions] == ["PYSX: remove unused imports"]
     assert actions[0]["kind"] == "source.organizeImports.pysx"
     changed = applied(TEMPLATE_CONSUMER, actions[0]["edit"]["changes"][consumer.as_uri()])
     assert "Card" in changed
