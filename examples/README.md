@@ -62,8 +62,11 @@ needs activation again, or you can keep using the `uv run --project .` prefix.
 
 ## Browser-held draft recovery
 
+Add two revisions, then use **Reverse revisions** to move the same keyed rows.
+**Check draft** completes asynchronously while your name and notes stay editable.
+
 Run `uv run --project . example run browser_recovery`. This ordinary callable uses
-shared controls and three local signals, with no state codec, database, recovery
+shared controls and ordinary local signals, with no state codec, database, recovery
 decorator or custom form wiring.
 
 1. Enter a name and notes, then add a revision.

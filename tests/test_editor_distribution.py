@@ -20,6 +20,66 @@ ROOT = Path(__file__).resolve().parents[1]
 EDITOR = ROOT / "editor"
 
 
+@pytest.mark.parametrize("consumer", ["cli", "worker"])
+def test_lint_qualification_rejects_selected_environment_decoy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, consumer: str
+) -> None:
+    from pysx.tooling.editor.model import workspace_model
+    from pysx.tooling.quality import main
+
+    environment = tmp_path / "bin"
+    environment.mkdir()
+    fake = environment / "ruff"
+    fake.write_text("#!/bin/sh\necho 'ruff 0.1.0'\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "view.py").write_text("value = undefined_name\n")
+    monkeypatch.setattr(sys, "executable", str(environment / "python"))
+    monkeypatch.setattr(sys, "argv", ["quality", "ruff", str(root)])
+
+    def run() -> object:
+        if consumer == "cli":
+            return main()
+
+        return workspace_model(
+            {"root": str(root), "revision": "_pysx_revision_lint", "buffers": {}}
+        )
+
+    with pytest.raises(ToolingError, match=f"requires {RUFF_REQUIREMENT}"):
+        run()
+
+
+@pytest.mark.parametrize("consumer", ["cli", "worker"])
+def test_lint_qualification_ignores_path_decoy_and_preserves_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    consumer: str,
+) -> None:
+    from pysx.tooling.editor.model import workspace_model
+    from pysx.tooling.quality import main
+
+    decoy = tmp_path / "ruff"
+    decoy.write_text("#!/bin/sh\nexit 99\n")
+    decoy.chmod(decoy.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "view.py").write_text("value = undefined_name\n")
+
+    if consumer == "cli":
+        monkeypatch.setattr(sys, "argv", ["quality", "ruff", str(root)])
+        assert main() == 1
+        assert "F821 Undefined name `undefined_name`" in capsys.readouterr().out
+    else:
+        models = workspace_model(
+            {"root": str(root), "revision": "_pysx_revision_lint", "buffers": {}}
+        )
+        assert "F821" in str(models)
+        assert "undefined_name" in str(models)
+
+
 @pytest.fixture(scope="module")
 def vsix() -> zipfile.ZipFile:
     built = subprocess.run(

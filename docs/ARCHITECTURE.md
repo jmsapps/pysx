@@ -56,6 +56,7 @@ pysx/
 │   ├── routing.py
 │   ├── wire.py
 │   ├── transport.py
+│   ├── capsule.py              # bounded authenticated browser-held state
 │   ├── persistence.py
 │   ├── durable.py
 │   └── ownership.py
@@ -67,6 +68,8 @@ pysx/
 │   ├── http.py
 │   ├── request.py
 │   ├── security.py
+│   ├── browser_recovery.py     # publication and bounded graph reconstruction
+│   ├── recovery_keys.py        # host-owned recovery key ring
 │   ├── durable_host.py
 │   ├── telemetry.py
 │   ├── _http_connection.py      # shared HTTP parser, loaded by active adapters

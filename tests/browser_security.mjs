@@ -15,6 +15,12 @@ try {
   await bob.addCookies([{ name: "fixture_user", value: "bob", url: base }]);
   const first = await alice.newPage();
   const second = await bob.newPage();
+  await first.addInitScript(() => {
+    const Original = WebSocket;
+    window.WebSocket = class extends Original {
+      constructor(...args) { super(...args); window.authSocket = this; }
+    };
+  });
   await Promise.all([first.goto(base), second.goto(base)]);
   await first.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxAttached === "true");
   await second.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxAttached === "true");
@@ -39,5 +45,22 @@ try {
   }), base);
   assert.equal(rejected, true);
   console.log("  ok  actual cross-origin browser upgrade fails before attachment");
+  // Public cookies stand in for application credentials in this local fixture.
+  // Keep the document and its capsule while changing the login generation.
+  await alice.addCookies([{name: "fixture_login", value: "second-login", url: base}]);
+  await first.evaluate(() => window.authSocket.close());
+  await first.waitForFunction(() => document.getElementById("count").textContent === "0" &&
+    document.getElementById("pysx-root").dataset.pysxAttached === "true");
+  assert.equal(await first.locator("#principal").textContent(), "alice");
+  await first.click("#increment");
+  await first.waitForFunction(() => document.getElementById("count").textContent === "1");
+  await alice.clearCookies({name: "fixture_user"});
+  assert.equal((await alice.request.get(base)).status(), 403);
+  await alice.addCookies([{name: "fixture_user", value: "bob", url: base}]);
+  await first.evaluate(() => window.authSocket.close());
+  await first.waitForFunction(() => document.getElementById("principal").textContent === "bob" &&
+    document.getElementById("pysx-root").dataset.pysxAttached === "true");
+  assert.equal(await first.locator("#count").textContent(), "0");
+  console.log("  ok  same-account re-login and logout/login as another account cannot import the previous delivered state");
   console.log("PRINCIPAL ORIGIN BROWSER PASSED");
 } finally { await browser.close(); }

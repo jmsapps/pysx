@@ -4,19 +4,18 @@ from __future__ import annotations
 
 import ast
 import json
-import shutil
 import subprocess
-import sys
 from bisect import bisect_right
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, cast
 
 from pysx.compiler.compiler import analyze
 from pysx.compiler.source_map import MappedText, Positions, SourceSpan
+from pysx.tooling.tools import resolve_ruff
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
 
     from pysx.compiler.compiler import Compilation
 
@@ -64,11 +63,10 @@ class Finding:
 
 
 def _ruff(source: str, filename: str) -> list[RuffMessage]:
-    binary = shutil.which("ruff", path=str(Path(sys.executable).parent))
-    command = [binary] if binary is not None else [sys.executable, "-m", "ruff"]
+    tool = resolve_ruff()
     result = subprocess.run(
         [
-            *command,
+            str(tool.path),
             "check",
             "--output-format=json",
             "--stdin-filename",

@@ -12,6 +12,7 @@ from test_lsp import Client
 from pysx.tooling.lsp.features import (
     SEMANTIC_TOKEN_MODIFIERS,
     SEMANTIC_TOKEN_TYPES,
+    folding_ranges,
     semantic_tokens,
     template_calls,
 )
@@ -46,6 +47,29 @@ def view(items, flag, mode):
     """,
     )
 '''
+
+
+@pytest.mark.parametrize(
+    ("declaration", "call", "expected"),
+    [
+        ("from pysx import pysx", "pysx", True),
+        ("from pysx.rendering.render import pysx as render", "render", True),
+        ("import pysx.rendering.render as renderer", "renderer.pysx", True),
+        ("from unrelated import pysx", "pysx", False),
+        ("from pysx.compiler.template import pysx", "pysx", False),
+    ],
+)
+def test_marker_structure_ownership(
+    tmp_path: Path, declaration: str, call: str, expected: bool
+) -> None:
+    from pysx.tooling.lsp.edits import format_edits
+
+    source = f'{declaration}\nview = {call}(t"""\n  div:\n        span: "hello"\n""")\n'
+    filename = str(tmp_path / "view.py")
+    calls = template_calls(source, filename, tmp_path, {})
+    assert bool(semantic_tokens(calls)) is expected
+    assert bool(folding_ranges(calls, source)) is expected
+    assert bool([edit for item in calls for edit in format_edits(item)]) is expected
 
 
 @pytest.fixture

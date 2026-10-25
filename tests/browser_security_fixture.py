@@ -4,6 +4,7 @@ from http.cookies import SimpleCookie
 
 from pysx import (
     Application,
+    AuthenticatedIdentity,
     Fragment,
     HostConfig,
     RequestContext,
@@ -14,12 +15,16 @@ from pysx import (
 )
 
 
-def principal(request: RequestContext) -> str | None:
+def principal(request: RequestContext) -> AuthenticatedIdentity | None:
     cookies = SimpleCookie()
     cookies.load(request.headers.get("cookie", ""))
     value = cookies.get("fixture_user")
 
-    return value.value if value is not None and value.value in ("alice", "bob") else None
+    if value is None or value.value not in ("alice", "bob"):
+        return None
+    generation = cookies.get("fixture_login")
+
+    return AuthenticatedIdentity(value.value, generation.value if generation else "initial")
 
 
 def authorize(request: RequestContext, action: str, target: str) -> bool:
