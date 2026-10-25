@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
+from pysx.hosting.security import AccessDenied
 from pysx.rendering.output import safe_url
 from pysx.rendering.tree import Tree, apply, snapshot
 from pysx.runtime.forms import PayloadError
@@ -277,6 +278,19 @@ class HTTPRuntime:
     def recovery_token(self, session: Session) -> str | None:  # noqa: ARG002 - durable hook
         return None
 
+    def publishable(self, session: Session, request: RequestContext) -> bool:
+        """An application that refuses the resume operation gets no browser capsule."""
+
+        if request.access is None:
+            return True
+
+        try:
+            request.access("resume", session.routes.location.url)
+        except AccessDenied:
+            return False
+
+        return True
+
     def recover(self, token: str, request: RequestContext, *, location: str) -> Session:
         del token, request, location
 
@@ -415,7 +429,7 @@ class HTTPRuntime:
                 else ""
             )
 
-            if self.browser_recovery is not None:
+            if self.browser_recovery is not None and self.publishable(session, request):
                 checkpoint = self.browser_recovery.publish(session, request, force=True)
                 attributes += ' data-pysx-protocol="4"'
                 attributes += f' data-pysx-document="{checkpoint["document"]}"'

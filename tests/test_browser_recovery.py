@@ -4,6 +4,7 @@ import asyncio
 import base64
 import importlib.util
 import json
+import os
 import re
 import stat
 import sys
@@ -275,6 +276,24 @@ def test_keys_default_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
     assert recovery_keys.default_directory("app").parent == tmp_path / "xdg" / "pysx"
     assert recovery_keys.default_directory("other") != recovery_keys.default_directory("app")
+
+
+def test_keys_require_posix_descriptor_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(os, "supports_dir_fd", frozenset[object]())
+    with pytest.raises(RuntimeError, match="POSIX"):
+        load_keys(tmp_path, provision=True)
+    assert not list(tmp_path.iterdir())
+
+    async def exercise() -> None:
+        app = Application(lambda: native.P("hello"), config=HostConfig(recovery=False))
+        await app.start()
+        assert app.recovery_issuer is None
+        assert app.runtime.browser_recovery is None
+        await app.close()
+
+    asyncio.run(exercise())
 
 
 def test_auth_binding_logout_and_same_principal_relogin() -> None:
@@ -667,6 +686,96 @@ def test_publication_http_adoption_and_hidden_turn() -> None:
             pump.cancel()
             await asyncio.gather(pump, return_exceptions=True)
             runtime.close()
+
+    asyncio.run(exercise())
+
+
+def test_publication_recovery_denied_attaches_without_capsule() -> None:
+    def deny_resume(action: str, _target: str) -> None:
+        if action == "resume":
+            raise AccessDenied("access denied")
+
+    async def exercise() -> None:
+        runtime = HTTPRuntime(capture_fixture.native_app)
+        runtime.browser_recovery = BrowserRecovery(issuer(), "test:app")
+        request = replace(recovery_request(), access=deny_resume)
+        response = runtime.render(request, "b1")
+        assert b"data-pysx-protocol" not in response.body
+        assert b"data-pysx-capsule" not in response.body
+        connection = FakeConnection(
+            "/ws?protocol=4",
+            [json.dumps({"t": "hello", "version": 4, "document": "d" * 32})],
+        )
+        connection.request = replace(
+            connection.request, headers=request.headers, access=deny_resume
+        )
+        pump = asyncio.create_task(serve_connection(runtime, connection))
+
+        try:
+            async with asyncio.timeout(3):
+                while not connection.frames("init"):
+                    await asyncio.sleep(0.001)
+            assert connection.closed is None
+            session = next(iter(runtime.graphs))
+            before = len(connection.sent)
+            async with session.runtime.turn():
+                with session.context():
+                    capture_fixture.held["count"].set(3)
+            async with asyncio.timeout(3):
+                while not connection.frames("patch"):
+                    await asyncio.sleep(0.001)
+            assert len(connection.sent) > before
+            assert all("capsule" not in frame for frame in connection.sent)
+            assert connection.closed is None
+        finally:
+            pump.cancel()
+            await asyncio.gather(pump, return_exceptions=True)
+            await close_runtime(runtime)
+
+    asyncio.run(exercise())
+
+
+def test_publication_capsule_route_fragment_opens_after_restart() -> None:
+    async def exercise() -> None:
+        request = recovery_request()
+        first = HTTPRuntime(capture_fixture.native_app)
+        first.browser_recovery = BrowserRecovery(issuer(), "test:app")
+        response = first.render(request, "b1")
+        assert response.adoption is not None
+        state = first.browser_recovery.checkpoint(first.pending[response.adoption].session)
+        token, document = state.token, state.document
+        assert token is not None
+        await close_runtime(first)
+        second = HTTPRuntime(capture_fixture.native_app)
+        service = BrowserRecovery(issuer(), "test:app")
+        second.browser_recovery = service
+
+        try:
+            # The HTTP render never sees the fragment the client reconnects with.
+            session = await service.reconstruct(second, request, token, document, "/#notes")
+            assert session.routes.location.hash == "#notes"
+
+            with pytest.raises(CapsuleError):
+                await service.reconstruct(second, request, token, document, "/elsewhere")
+        finally:
+            await close_runtime(second)
+
+    asyncio.run(exercise())
+
+
+def test_publication_reset_reason_clears_after_delivery() -> None:
+    async def exercise() -> None:
+        request = recovery_request()
+        runtime = HTTPRuntime(capture_fixture.native_app)
+        service = BrowserRecovery(issuer(), "test:app")
+        runtime.browser_recovery = service
+        session = runtime.create_reserved(request)
+        state = service.checkpoint(session)
+        state.reset = "some state reset"
+        assert service.publish(session, request)["reset"] == "some state reset"
+        state.renew_at = 0
+        assert service.publish(session, request)["reset"] == ""
+        await close_runtime(runtime)
 
     asyncio.run(exercise())
 
@@ -1104,6 +1213,50 @@ def test_reconstruction_anonymous_reset_requires_same_origin_and_rotates_binder(
         assert not cookie.startswith("pysx_browser=b1;")
         assert not host.runtime.graphs
         assert not host.runtime.pending
+        await host.close()
+
+    asyncio.run(exercise())
+
+
+def test_reconstruction_reset_cleanup_failure_keeps_binder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def directory(_namespace: str) -> Path:
+        return tmp_path / "keys"
+
+    monkeypatch.setattr(recovery_keys, "default_directory", directory)
+
+    async def exercise() -> None:
+        host = Application(capture_fixture.native_app)
+        request = request_from_headers("/", [("host", "localhost"), ("cookie", "pysx_browser=b1")])
+        response = await host.http(request)
+        assert response.adoption is not None
+        failing = [True]
+        expire = host.runtime.expire
+
+        def unreliable(token: str) -> None:
+            if failing:
+                raise RuntimeError("cleanup failed")
+            expire(token)
+
+        monkeypatch.setattr(host.runtime, "expire", unreliable)
+        reset = await host.http(
+            request_from_headers(
+                "/__pysx__/reset",
+                [
+                    ("host", "localhost"),
+                    ("cookie", "pysx_browser=b1"),
+                    ("origin", "http://localhost"),
+                    ("x-pysx-reset", "1"),
+                ],
+            ),
+            method="POST",
+        )
+        assert reset.status == 500
+        assert "set-cookie" not in dict(reset.headers)
+        assert response.adoption in host.runtime.pending
+        failing.clear()
         await host.close()
 
     asyncio.run(exercise())

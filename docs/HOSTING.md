@@ -104,7 +104,9 @@ not an identity provider. Nonbrowser clients must supply the same allowed Origin
 and application authentication. The authorizer must return exactly `True`; an
 exception produces a safe denial. HTTP, websocket, adoption, resume, event,
 resource, command, dom_reply, repair and reset are operation names. Targets are paths,
-handler IDs, resource keys or outgoing message types. Use `require_access(action,
+handler IDs, resource keys or outgoing message types; every resume check carries the
+route. Refusing resume declines browser checkpoints and reconstruction while ordinary
+attachment continues. Use `require_access(action,
 target)` inside a session for additional business service checks. Resource access
 is checked before loading and before publishing a successful value. The principal
 callback is rechecked before connected operations; a changed identity ends access.
@@ -139,14 +141,17 @@ queued mutations and `task_capacity` (1024) its owned tasks and resource loads.
 HTTPS deployments. `development=True` or CLI `--dev` enables source tracebacks
 in server logs; client errors remain safe.
 
-Ordinary host startup also loads a constant-size recovery key ring. Explicit durable
+Ordinary host startup also loads a constant-size recovery key ring. `recovery=False`
+declines browser checkpoints for the application and builds no ring. Explicit durable
 hosts keep their existing store/lease credentials and require no browser key ring.
 A single ordinary host generates
 it automatically, without import-time writes, under the application's hashed namespace
 in `~/Library/Application Support/pysx` on macOS or `$XDG_STATE_HOME/pysx` on Linux
 (falling back to `~/.local/state/pysx` when XDG is absent or relative). Keep this private
 state directory across deployments. Directories are owned with mode 0700, key files
-0600, and symlinks are rejected. Missing or unsafe configured keys fail startup.
+0600, and symlinks are rejected. Missing or unsafe configured keys fail startup. The
+ring needs POSIX directory descriptors and file ownership; a host without them reports
+that requirement at startup and must set `recovery=False`.
 
 For multiple hosts, set a stable `HostConfig.recovery_namespace` and mount the same
 ring at `HostConfig.recovery_key_directory / "recovery.keys"` on each host. An explicit

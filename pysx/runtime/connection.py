@@ -188,7 +188,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     supplied = parse_qs(urlsplit(request.path).query).get("location", [request.base_path or "/"])
 
     try:
-        Location.parse(supplied[0])
+        resume_target = Location.parse(supplied[0]).url
     except ValueError:
         await connection.close(code=1008, reason="invalid initial location")
 
@@ -203,7 +203,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     hello: dict[str, object] | None = None
 
     async def reconstruct(message: dict[str, object]) -> Session:
-        authorize("resume")
+        authorize("resume", resume_target)
 
         if browser_recovery is not None:
             token = message.get("capsule")
@@ -224,7 +224,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
     if resuming or recovering:
         try:
-            authorize("resume")
+            authorize("resume", resume_target)
             message = parse_message(
                 await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
                 limit=runtime.limits.max_frame_bytes,
@@ -405,6 +405,14 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             connection.reserved = False
 
     if browser_recovery is not None:
+        try:
+            # Refusing the resume operation declines recovery for this connection;
+            # it never refuses the attachment itself.
+            authorize("resume", resume_target)
+        except AccessDenied:
+            browser_recovery = None
+
+    if browser_recovery is not None:
         state = browser_recovery.checkpoint(session)
         document = hello.get("document") if hello is not None else None
 
@@ -439,11 +447,17 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
                 raise TransportError("session closed")
 
+            publishing = (
+                browser_recovery is not None
+                and not session.pending
+                and browser_recovery.due(session)
+            )
+
             try:
                 authorize("command", str(message.get("t", "")))
 
-                if browser_recovery is not None:
-                    authorize("resume")
+                if publishing:
+                    authorize("resume", session.routes.location.url)
             except AccessDenied:
                 await connection.close(1008, "access denied")
 
@@ -462,7 +476,9 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
                 if commands:
                     message["navigations"] = commands
-                message.update(browser_recovery.publish(session, request))
+
+                if publishing:
+                    message.update(browser_recovery.publish(session, request))
             session.checkpoint()
             await connection.send(json.dumps(message))
 

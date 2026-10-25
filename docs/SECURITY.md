@@ -45,7 +45,9 @@ principal header nor the framework browser cookie authenticates a user by itself
 When middleware supplies the principal, `HostConfig.principal` is not consulted; when
 the callback resolves it, the identity is rechecked before each admission, event,
 resource and DOM reply. V4 browser publications recheck the complete identity before
-private output. Other outgoing commands use the authorizer; use
+private output, and only on a frame that actually carries a capsule; refusing the
+resume operation declines those publications instead of ending the session. Other
+outgoing commands use the authorizer; use
 `Application.revoke(principal)` to retire a live graph. An
 authorizer or principal callback that raises is reported as a server failure and
 still denies.

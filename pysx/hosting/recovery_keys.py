@@ -46,6 +46,17 @@ def default_directory(namespace: str) -> Path:
     return root / hashlib.sha256(namespace.encode("utf-8")).hexdigest()
 
 
+def posix_key_storage() -> bool:
+    """Descriptor traversal and file ownership are what make the ring safe to read."""
+
+    return (
+        hasattr(os, "getuid")
+        and hasattr(os, "O_DIRECTORY")
+        and hasattr(os, "O_NOFOLLOW")
+        and {os.open, os.mkdir, os.link, os.unlink} <= os.supports_dir_fd
+    )
+
+
 def _directory(path: Path, *, create: bool) -> int:
     """Traverse by directory descriptor: no symlink following or path races."""
 
@@ -97,6 +108,12 @@ def _read(directory: int, name: str) -> KeyRing:
 
 def load_keys(directory: Path, *, provision: bool = False) -> KeyRing:
     """Read a platform mount, or atomically provision the local single-host ring."""
+
+    if not posix_key_storage():
+        raise RuntimeError(
+            "recovery keys require POSIX directory descriptors and file ownership; "
+            "host this platform with HostConfig(recovery=False)"
+        )
     parent = _directory(directory, create=provision)
     temporary = ".key-" + secrets.token_hex(16)
 

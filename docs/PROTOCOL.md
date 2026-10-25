@@ -18,7 +18,9 @@ to Web Storage, IndexedDB or cookies. Refresh and new tabs start fresh documents
 Adoption applies pre-attachment edits before issuing a new capsule.
 
 Ordered state frames may carry `document`, `capsule` (string or null), `reset`
-(bounded reason), and an ordered `navigations` array. DOM operations, navigation and
+(bounded reason) and an ordered `navigations` array. A reason describes the
+reconstruction that produced the document; it travels with the first publication
+after it and is not repeated. DOM operations, navigation and
 the matching capsule share one accepted frame. Hidden state can use a `checkpoint`
 frame with the same epoch/base/state revision rules and no DOM operations. The
 client validates the complete frame before applying it and commits the capsule
@@ -30,7 +32,9 @@ stable jitter; detached graphs have no renewal worker or offline publication que
 Live resume is attempted first. When a graph is unavailable, the same v4 hello can
 reconstruct a new graph from its capsule on a compatible worker. The host checks the
 current origin, application namespace, route, browser binder, principal and login
-session before constructing user code. A capsule never supplies authentication.
+session before constructing user code. The bound route is the path and query, never
+the fragment, because an HTTP render cannot observe one. A capsule never supplies
+authentication.
 Adoption and live resume also require the current login-session generation.
 
 Reconstruction uses a new epoch, handlers and owned resources. Compatible ordinary
@@ -46,11 +50,18 @@ capsule for bounded retry. Invalid/context-mismatched/expired capsules run no se
 unavailable recovery closes with 4004 and the client visibly starts fresh. Authorization
 denials close with 1008. No old event, mount acknowledgement or DOM capability is replayed.
 
+An application that refuses the `resume` operation declines checkpoints rather than
+connections. Initial HTML then omits `data-pysx-protocol`, so the client negotiates v3;
+a client that still negotiates v4 attaches normally and receives no capsule. Explicit
+resume and reconstruction requests remain 1008 denials.
+
 Anonymous apps can dispatch `pysx:reset` on `window`. The client clears document
 recovery state and posts to the prefixed `/__pysx__/reset` endpoint, using a non-simple
 `x-pysx-reset: 1` header. The host requires the same Origin, normal authorization and
 an anonymous browser binder, rotates the HttpOnly cookie, expires local graphs for
-that binder and reloads the document. Authenticated logout uses normal authentication
+that binder and reloads the document. Incomplete cleanup answers 500 and leaves the
+binder alone, so the unreloaded document can still address its surviving graphs.
+Authenticated logout uses normal authentication
 revocation. No per-user denylist or global stateless revocation is introduced.
 
 ## Current-state resume

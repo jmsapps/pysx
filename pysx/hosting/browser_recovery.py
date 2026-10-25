@@ -24,6 +24,12 @@ if TYPE_CHECKING:
     from pysx.runtime.session import Session
 
 
+def route_binding(location: Location) -> str:
+    """Bind capsules to the route an HTTP render can observe, which omits the fragment."""
+
+    return location.path + location.search
+
+
 @dataclass(slots=True, repr=False)
 class BrowserCheckpoint:
     document: str = field(default_factory=lambda: secrets.token_urlsafe(24))
@@ -59,7 +65,7 @@ class BrowserRecovery:
             request.principal,
             request.authentication_session,
             document,
-            session.routes.location.url,
+            route_binding(session.routes.location),
         )
 
     def due(self, session: Session) -> bool:
@@ -98,6 +104,7 @@ class BrowserRecovery:
         jitter = int.from_bytes(hashlib.sha256(state.document.encode()).digest()[:2]) % 3601
         state.renew_at = time.monotonic() + 12 * 60 * 60 + jitter
         state.attached = True
+        state.reset = ""
 
         return {"document": state.document, "capsule": token, "reset": reason}
 
@@ -125,7 +132,7 @@ class BrowserRecovery:
             request.principal,
             request.authentication_session,
             document,
-            route.url,
+            route_binding(route),
         )
         # Authenticate before queueing, but retain no plaintext or decoded tree
         # while waiting. Admitted work opens again under its scratch budget.

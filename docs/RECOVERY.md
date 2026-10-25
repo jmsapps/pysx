@@ -11,8 +11,9 @@ restart recovery without a store, codec or required decorator.
 
 Recovery first tries the retained live graph. Otherwise it authenticates the capsule
 against today's browser, principal/login session, origin, namespace and route, and
-constructs a new graph. Supported exact built-in values restore only when their
-owner, call identity, initializer and root type match. See [state boundaries](GRAMMAR.md#component-ownership)
+constructs a new graph. The bound route is the path and query; an HTTP render never
+observes a fragment, so none is bound. Supported exact built-in values restore only
+when their owner, call identity, initializer and root type match. See [state boundaries](GRAMMAR.md#component-ownership)
 and [the bounded wire contract](PROTOCOL.md#browser-checkpoints-v4). Unsupported,
 ambiguous or changed state restarts with defaults; the connection status reports
 fresh or partially reset recovery. Aggregate overflow clears the previous token.
@@ -26,7 +27,8 @@ normal application services. [Explicit persistence](PERSISTENCE.md) and
 [leased ownership](OWNERSHIP.md) provide separate contracts.
 
 Anonymous `pysx:reset` rotates the HttpOnly browser binder and clears document
-recovery. Authenticated logout must invalidate the login-session identity through
+recovery; incomplete cleanup reports failure and leaves the binder in place.
+Authenticated logout must invalidate the login-session identity through
 normal authentication. Copying an old anonymous cookie together with its capsule
 cannot be globally revoked without an authoritative service; no per-user recovery
 denylist is retained. Shared-host keys, rotation and legacy principal-only adapters

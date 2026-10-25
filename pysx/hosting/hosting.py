@@ -89,6 +89,7 @@ class HostConfig:
     assets: Mapping[str, StaticAsset] = field(default_factory=lambda: dict[str, StaticAsset]())
     startup: tuple[Hook, ...] = ()
     shutdown: tuple[Hook, ...] = ()
+    recovery: bool = True
     recovery_namespace: str | None = None
     recovery_key_directory: Path | None = None
 
@@ -359,7 +360,7 @@ class Application:
             if self.started:
                 return
 
-            if self.runtime.owner_hint is None:
+            if self.runtime.owner_hint is None and self.config.recovery:
                 # Keep compiler/checker imports free of the host's crypto startup cost.
                 from pysx.components.composition import portable_identity_for
                 from pysx.runtime.capsule import CapsuleIssuer
@@ -527,22 +528,22 @@ class Application:
                     errors.append(error)
                 finally:
                     session.changed.set()
-        cookie = f"pysx_browser={secrets.token_urlsafe(32)}; Path=/; HttpOnly; SameSite=Lax" + (
-            "; Secure" if self.config.secure_cookies else ""
-        )
 
         if errors:
+            # The client only reloads on success, so rotating the binder here would
+            # strand the surviving graphs behind a value the document no longer holds.
             report_error(
                 ErrorInfo(None, "cleanup"),
                 ExceptionGroup("reset cleanup failed", errors),
                 development=self.config.development,
             )
 
-        return HTTPResult(
-            500 if errors else 204,
-            (*headers, ("set-cookie", cookie)),
-            b"session reset incomplete" if errors else b"",
+            return HTTPResult(500, headers, b"session reset incomplete")
+        cookie = f"pysx_browser={secrets.token_urlsafe(32)}; Path=/; HttpOnly; SameSite=Lax" + (
+            "; Secure" if self.config.secure_cookies else ""
         )
+
+        return HTTPResult(204, (*headers, ("set-cookie", cookie)), b"")
 
     async def websocket(self, connection: Connection) -> None:
         from websockets.exceptions import ConnectionClosedOK
