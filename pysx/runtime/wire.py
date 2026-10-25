@@ -2,6 +2,7 @@
 
 import json
 import math
+import re
 from typing import Literal, NotRequired, TypedDict, cast
 
 from .forms import PayloadError, form_edits
@@ -50,7 +51,11 @@ def _strings(value: object, limit: int = 1024) -> bool:
 
 
 def parse_message(
-    raw: str | bytes, *, modern: bool = False, limit: int = MAX_FRAME_BYTES
+    raw: str | bytes,
+    *,
+    modern: bool = False,
+    limit: int = MAX_FRAME_BYTES,
+    version: int = PROTOCOL_VERSION,
 ) -> dict[str, object]:
     """Reject unsupported shapes before ownership checks or any user code runs."""
 
@@ -66,6 +71,9 @@ def parse_message(
         raise PayloadError("expected bounded JSON object")
     message = cast("dict[str, object]", value)
     kind = message.get("t")
+
+    if version not in (3, 4):
+        raise PayloadError("unsupported protocol version")
     fields: dict[str, set[str]] = {
         "hello": {"version", "edits", "resume", "epoch", "state_rev", "recovery"},
         "adopt": {"edits"},
@@ -79,6 +87,23 @@ def parse_message(
     if not isinstance(kind, str) or kind not in fields:
         raise PayloadError("unknown message")
 
+    if kind == "hello" and version == 4:
+        if len(raw.encode() if isinstance(raw, str) else raw) > 48 * 1024:
+            raise PayloadError("hello size limit")
+        fields["hello"] |= {"document", "capsule"}
+        document = message.get("document")
+        capsule = message.get("capsule")
+
+        if not isinstance(document, str) or re.fullmatch(r"[A-Za-z0-9_-]{32}", document) is None:
+            raise PayloadError("invalid document")
+
+        if "capsule" in message and (
+            not isinstance(capsule, str)
+            or not 1 <= len(capsule) <= 36 * 1024
+            or re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", capsule) is None
+        ):
+            raise PayloadError("invalid capsule")
+
     if modern and kind in ("hello", "adopt"):
         raise PayloadError("unexpected handshake message")
     allowed = fields[kind] | {"t"}
@@ -86,7 +111,7 @@ def parse_message(
     if modern and kind != "hello":
         allowed |= {"version", "epoch", "state_rev", "seq"}
 
-        if message.get("version") != PROTOCOL_VERSION or type(message.get("version")) is not int:
+        if message.get("version") != version or type(message.get("version")) is not int:
             raise PayloadError("unsupported protocol version")
 
         if not isinstance(message.get("epoch"), str) or not _integer(message.get("state_rev")):
@@ -99,7 +124,7 @@ def parse_message(
         raise PayloadError("unknown message fields")
 
     if kind == "hello":
-        if type(message.get("version")) is not int or message.get("version") != PROTOCOL_VERSION:
+        if type(message.get("version")) is not int or message.get("version") != version:
             raise PayloadError("unsupported protocol version")
 
         for name in ("resume", "epoch", "recovery"):
@@ -169,7 +194,7 @@ def parse_message(
         raise PayloadError("invalid mount acknowledgements")
 
     if kind == "dom_reply" and (
-        message.get("version") != (PROTOCOL_VERSION if modern else 1)
+        message.get("version") != (version if modern else 1)
         or type(message.get("version")) is not int
         or not isinstance(message.get("id"), str)
         or ("error" in message and not isinstance(message["error"], str))
@@ -311,18 +336,29 @@ class BindingEdit(TypedDict):
 
 
 class Envelope(TypedDict):
-    version: Literal[3]
+    version: Literal[3, 4]
     epoch: str
     state_rev: int
 
 
 class HelloMessage(TypedDict):
     t: Literal["hello"]
-    version: Literal[3]
+    version: Literal[3, 4]
     edits: NotRequired[list[BindingEdit]]
     resume: NotRequired[str]
     epoch: NotRequired[str]
     state_rev: NotRequired[int]
+    document: NotRequired[str]
+    capsule: NotRequired[str]
+
+
+class CheckpointMessage(Envelope):
+    t: Literal["checkpoint"]
+    base_rev: int
+    document: NotRequired[str]
+    capsule: NotRequired[str | None]
+    reset: NotRequired[str]
+    navigations: NotRequired[list[NavigationMessage]]
 
 
 class AdoptionMessage(TypedDict):
@@ -376,6 +412,7 @@ type ServerMessage = (
     | ResultMessage
     | AckMessage
     | RepairMessage
+    | CheckpointMessage
 )
 
 type ClientMessage = (

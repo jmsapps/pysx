@@ -1,8 +1,10 @@
-# pysx
+<p align="center">
+  <img src="assets/pysx-logo.png" alt="PYSX" width="260">
+</p>
 
 **Reactive interfaces, written in Python.**
 
-pysx brings the feel of a reactive web app to Python. Write your interface with
+PYSX brings the feel of a reactive web app to Python. Write your interface with
 readable, indentation-based templates, keep state in signals, and let the page
 update as that state changes.
 
@@ -39,12 +41,13 @@ Changing `count` updates the displayed value. The browser applies targeted patch
 and keyed lists preserve unchanged rows so focus, selection, and scroll survive
 updates.
 
-## Build with pysx
+## Build with PYSX
 
 - **Reactive state:** signals, derived values, batched updates, and writable views into structured data.
 - **Readable interfaces:** t-string templates and composable, typed native elements.
 - **Live forms:** two-way bindings, native validation, reset and submit handling, and caret-preserving server corrections.
 - **Async applications:** owned resources, timers and server push update pages without another browser event.
+- **Document continuity:** open pages restore compatible UI state after server loss. See [recovery](docs/RECOVERY.md).
 - **Hosting:** shared standalone and optional ASGI serving, request context, static assets and lifecycle hooks. See [hosting](docs/HOSTING.md).
 - **Scoped styling:** typed styled bases, inherited rules, live CSS variables and isolated
   themes. See the [styling guide](docs/STYLING.md).
@@ -52,7 +55,8 @@ updates.
 
 ## Supported platforms
 
-Python 3.14 or newer, on macOS and Linux. Both are verified on every change. The reference
+Python 3.14 or newer, on macOS and Linux. Ordinary changes use local verification;
+release platform qualification runs separately. The reference
 deployment topology needs a Linux container runtime; where a machine has not got one, the
 suites that assert it report themselves as skipped rather than passing.
 

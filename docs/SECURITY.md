@@ -44,14 +44,28 @@ through verified application credentials or trusted ASGI middleware; neither a
 principal header nor the framework browser cookie authenticates a user by itself.
 When middleware supplies the principal, `HostConfig.principal` is not consulted; when
 the callback resolves it, the identity is rechecked before each admission, event,
-resource and DOM reply. Outbound commands are not rechecked, so the callback is never
-called at frame rate; use `Application.revoke(principal)` to retire a live graph. An
+resource and DOM reply. V4 browser publications recheck the complete identity before
+private output, and only on a frame that actually carries a capsule; refusing the
+resume operation declines those publications instead of ending the session. Other
+outgoing commands use the authorizer; use
+`Application.revoke(principal)` to retire a live graph. An
 authorizer or principal callback that raises is reported as a server failure and
 still denies.
 For cookie-based authentication, validate credentials on HTTP and WS, use secure
 HttpOnly cookies, revoke the credential in the application and call
 `Application.revoke(principal)` at logout. Production browser ownership cookies
 must be unambiguous opaque values; malformed or duplicate ownership cookies fail.
+
+Browser-held recovery additionally binds the encrypted UI capsule to the current
+login-session generation supplied through `AuthenticatedIdentity` or trusted ASGI
+state. Principal-only adapters keep live behavior but cannot reconstruct capsules.
+Same-principal re-login must use a new generation. Capsules contain no handlers or
+service authority, and verification precedes application setup. The framework keeps
+only a bounded host key ring and admitted live graphs, with no per-user recovery
+denylist. Anonymous reset rotates its HttpOnly binder; a copied old binder together
+with its valid capsule cannot be globally revoked without authoritative state.
+See [hosting](HOSTING.md) for key management and [recovery](RECOVERY.md) for the
+latest-delivered-state and business-effect boundaries.
 
 The supported termination topology is HTTPS/WSS at a reverse proxy, a loopback
 HTTP/WS backend and explicit `trusted_proxies` peer addresses. The proxy must strip
@@ -62,7 +76,7 @@ address. Any other Forwarded/X-Forwarded-* header, and any of them from an untru
 peer, is rejected. Preserve the externally visible base
 path and Origin, forward upgrades, and bound headers, handshake, tunnel queues and
 timeouts. Do not expose the trusted backend directly to remote peers. The packaged
-ASGI host disables its independent proxy-header rewriting so pysx checks the actual
+ASGI host disables its independent proxy-header rewriting so PYSX checks the actual
 peer. Configure other servers equivalently. HTTPS certificate provisioning and
 authentication are deployment-owner configuration, outside the framework.
 

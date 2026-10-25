@@ -66,6 +66,10 @@ class TransportLimits:
             raise ValueError("detached/outbound batch limits must fit graph/outbox limits")
 
 
+class RecoveryBusy(OSError):  # noqa: N818 - internal bounded-admission outcome
+    """Finite reconstruction admission refused or expired."""
+
+
 class TransportError(OSError):
     """A finite transport deadline or capacity has been exceeded."""
 
@@ -75,6 +79,7 @@ class TransportState:
         self.epoch = secrets.token_urlsafe(24)
         self.revision = 0
         self.sequence = 0
+        self.protocol_version = PROTOCOL_VERSION
         self.acknowledgements: OrderedDict[int, str] = OrderedDict()
         self.tree = snapshot(markup, unwrap_row=False)
 
@@ -113,7 +118,7 @@ class TransportState:
 
         return {
             **message,
-            "version": PROTOCOL_VERSION,
+            "version": self.protocol_version,
             "epoch": self.epoch,
             "base_rev": base,
             "state_rev": self.revision,

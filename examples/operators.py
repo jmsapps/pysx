@@ -35,11 +35,15 @@ from .components import (
     Reading,
     Result,
     Title,
+    example_app,
+    example_title,
 )
 
 
 @component
 def app() -> Fragment:
+    example_title("Operators")
+
     count = signal(2)
     name = signal("ada")
     # Separate signals keep each payload type concrete, so projections stay typed.
@@ -235,3 +239,6 @@ def app() -> Fragment:
                     Action(type="button", id="t4-reset", onClick={reset}): "reset state"
     """,
     )
+
+
+example = example_app(app)

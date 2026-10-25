@@ -39,17 +39,23 @@ Importing the public APIs or checker starts no listener or event loop.
 
 Healthy modern socket loss retains the live graph within the configured
 `TransportLimits.resume_ttl` and `detached` limits. Resume needs worker affinity
-and the same browser cookie and authenticated principal. Expiry/eviction/shutdown
+and the same browser cookie, authenticated principal and login-session generation. Expiry/eviction/shutdown
 dispose the graph; see [current-state recovery](PROTOCOL.md#current-state-resume).
 The shipped browser retries within finite backoff/deadline bounds, rejects offline
 events, and reports when an expired graph requires a fresh session. It never
 replays business actions after uncertain delivery. Retry exhaustion offers manual
-recovery. [DurableApplication](OWNERSHIP.md) adds explicit declared-state
-reconstruction with leased worker ownership; ordinary `Application` stays volatile.
+recovery. Normal `Application` documents also retain one encrypted capsule in memory
+and reconstruct compatible ordinary UI state after graph loss. Refresh/new tabs start
+fresh; capsules expire after 24 hours. Multiple workers share only the hosting key ring
+and authentication authority, with a stable namespace. See [browser checkpoints](PROTOCOL.md#browser-checkpoints-v4).
+[DurableApplication](OWNERSHIP.md) separately adds declared-state persistence and
+leased worker ownership. Ordinary graphs retain no historical server snapshot store.
 
 Both hosts share request handling, rendering, graph adoption and the connection
 protocol. GET renders content immediately; HEAD returns metadata and disposes its
-render. Other methods return 405. Unknown static files return 404. ASGI request
+render. Anonymous reset uses a same-origin POST to the prefixed `/__pysx__/reset`
+endpoint with `x-pysx-reset: 1`; the client exposes the `pysx:reset` window event.
+Other methods return 405. Unknown static files return 404. ASGI request
 bodies are unsupported. Assets contain bytes and an explicit MIME type; `from_path`
 loads once at configuration time and infers MIME. Assets support HEAD, ETag and
 If-None-Match (304), with configurable public `cache_seconds`. Personalized pages
@@ -65,7 +71,17 @@ WebSocket upgrades and preserve externally visible paths.
 and mutable document metadata during rendering, events and cleanup. Configure
 `HostConfig.principal` to resolve trusted request identity, or set
 `scope["state"]["pysx_principal"]` in trusted ASGI middleware. The value must be a
-string or None. Both HTTP and WebSocket requests must resolve the same principal
+string or None. A resolver may also return
+`AuthenticatedIdentity(principal, session_id)`, where `session_id` is the current
+trusted login-session ID or generation, checked against revocation by the authentication
+service. ASGI middleware supplies the equivalent `pysx_authentication_session` field
+alongside `pysx_principal` in trusted scope state. Never copy an unverified request
+header into this field. Resolver-backed operation checks compare both fields, so
+logout and same-principal re-login invalidate the old context. Principal-only adapters
+remain supported for live sessions; they cannot authorize browser checkpoint recovery
+after graph loss because the login-session binding is unavailable.
+
+Both HTTP and WebSocket requests must resolve the same principal
 for adoption. Authentication is supplied by the application. Configure an immutable
 `SecurityPolicy` in `HostConfig.security` to enforce access:
 
@@ -87,8 +103,10 @@ headers fail closed before graph allocation. Origin is a browser CSRF boundary,
 not an identity provider. Nonbrowser clients must supply the same allowed Origin
 and application authentication. The authorizer must return exactly `True`; an
 exception produces a safe denial. HTTP, websocket, adoption, resume, event,
-resource, command, dom_reply and repair are operation names. Targets are paths,
-handler IDs, resource keys or outgoing message types. Use `require_access(action,
+resource, command, dom_reply, repair and reset are operation names. Targets are paths,
+handler IDs, resource keys or outgoing message types; every resume check carries the
+route. Refusing resume declines browser checkpoints and reconstruction while ordinary
+attachment continues. Use `require_access(action,
 target)` inside a session for additional business service checks. Resource access
 is checked before loading and before publishing a successful value. The principal
 callback is rechecked before connected operations; a changed identity ends access.
@@ -122,6 +140,30 @@ queued mutations and `task_capacity` (1024) its owned tasks and resource loads.
 `secure_cookies=True` adds Secure to the browser cookie for
 HTTPS deployments. `development=True` or CLI `--dev` enables source tracebacks
 in server logs; client errors remain safe.
+
+Ordinary host startup also loads a constant-size recovery key ring. `recovery=False`
+declines browser checkpoints for the application and builds no ring. Explicit durable
+hosts keep their existing store/lease credentials and require no browser key ring.
+A single ordinary host generates
+it automatically, without import-time writes, under the application's hashed namespace
+in `~/Library/Application Support/pysx` on macOS or `$XDG_STATE_HOME/pysx` on Linux
+(falling back to `~/.local/state/pysx` when XDG is absent or relative). Keep this private
+state directory across deployments. Directories are owned with mode 0700, key files
+0600, and symlinks are rejected. Missing or unsafe configured keys fail startup. The
+ring needs POSIX directory descriptors and file ownership; a host without them reports
+that requirement at startup and must set `recovery=False`.
+
+For multiple hosts, set a stable `HostConfig.recovery_namespace` and mount the same
+ring at `HostConfig.recovery_key_directory / "recovery.keys"` on each host. An explicit
+directory is read-only to the framework and must already exist with mode 0700; its
+regular key file may be 0400 or 0600. The bounded binary ring is `PSK1`, an 8-byte
+key ID and 32-byte root key, optionally followed by an 8-byte retiring ID, 32-byte
+retiring root and 8-byte unsigned big-endian retirement timestamp. Use platform
+secret management to generate random roots and distribute the ring atomically.
+Keep at most one issuing root and one retiring root; retain the latter for at most
+24 hours plus 60 seconds after rotation. Restart workers after installing a new ring.
+Losing keys loses the ability to decrypt their checkpoints. Keys contain no user
+snapshots; encrypted state and browser publication are separate runtime facilities.
 
 `production=True` validates secure hosting configuration and forbids development
 tracebacks. `observe` accepts a callback for redacted `RequestEvent` values; bounded

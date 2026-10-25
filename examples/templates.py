@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from pysx import Fragment, bounded_while, each, each_indexed, eq, pysx, signal, styled, when
 
+from .components import example_app, example_title
 from .components.controls import Action, Actions, Description, Eyebrow, Title
 from .components.templates import Break, GroupHeading, GroupPanel, TemplatePage, snapshot_label
 
@@ -14,6 +15,8 @@ type Group = tuple[str, tuple[str, ...]]
 
 
 def app() -> Fragment:
+    example_title("Templates")
+
     initial: list[Group] = [("work", ("plan", "build")), ("learn", ("read",))]
     groups = signal(initial)
     child_sources = {name: signal(children) for name, children in initial}
@@ -21,7 +24,7 @@ def app() -> Fragment:
     selected = signal("none")
     serial = signal(0)
     live_heading = signal("Live values")
-    local_heading = styled(GroupHeading)(t"letter-spacing: 0.02em")
+    LocalHeading = styled(GroupHeading)(t"letter-spacing: 0.02em")
 
     def advance_heading(_event: object) -> None:
         live_heading.update(
@@ -73,7 +76,7 @@ def app() -> Fragment:
 
         return pysx(t"""
             GroupPanel(data-group={group[0]}):
-              local_heading: {heading}
+              LocalHeading: {heading}
               Actions:
                 {each(child_sources[group[0]], child_row, key=str)}
         """)
@@ -142,3 +145,6 @@ def app() -> Fragment:
             {ordinary}
     """,
     )
+
+
+example = example_app(app)

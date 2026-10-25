@@ -5,7 +5,7 @@ from pysx import Fragment, Signal, pysx
 from .controls import Card, Description
 
 
-def state_panel(count: Signal[int]) -> Fragment:
+def StatePanel(count: Signal[int]) -> Fragment:
     return pysx(t"""
         Card(id="pysx-dev-state"):
             h2: "Development snapshots"

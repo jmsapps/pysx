@@ -105,20 +105,20 @@ Shadowed bindings of the same spelling are left alone.
 
 ## Editor ownership
 
-pysx can take ownership of unused-symbol reporting so that template-only imports,
+PYSX can take ownership of unused-symbol reporting so that template-only imports,
 locals and nested functions stop being reported as dead while genuinely unused
 code is still flagged. Ownership is computed, not assumed: `python -m
 pysx.tooling.editor.config plan <root>` reads the observed settings, the readiness of
 analysis and which replacement checks are available, and returns an ordered list
 of steps, a matching rollback list, any project configuration edit and a retained
 state record. Setup is refused with a reason when analysis is not ready or when a
-check pysx would silence is not yet replaced.
+check PYSX would silence is not yet replaced.
 
 Applying the steps preserves unrelated user values, and running the plan again on
 a configured workspace produces no steps. If an apply is interrupted, replaying
 the rollback list restores the original values. `python -m pysx.tooling.editor.config
 restore <root>` gives ownership back, and it skips any setting whose current value
-no longer matches what pysx wrote, so a later user edit is reported rather than
+no longer matches what PYSX wrote, so a later user edit is reported rather than
 overwritten.
 
 ## Custom requests
@@ -158,10 +158,10 @@ process ID and exits if that server dies abruptly.
 
 ### Commands
 
-`pysx: Rename Python and Markup Symbol` performs the guarded rename described
-above. `pysx: Refresh Analysis` rebuilds the owning workspace. `pysx: Configure
-Template-Aware Imports` and `pysx: Restore Editor Settings pysx Changed` apply and
-reverse ownership setup for the active document's folder. `pysx: Restart Language
+`PYSX: Rename Python and Markup Symbol` performs the guarded rename described
+above. `PYSX: Refresh Analysis` rebuilds the owning workspace. `PYSX: Configure
+Template-Aware Imports` and `PYSX: Restore Editor Settings PYSX Changed` apply and
+reverse ownership setup for the active document's folder. `PYSX: Restart Language
 Server` replaces that folder's server. Every command is registered once and runs
 against the active document's owning client; a command implemented only by the
 other integration says so rather than failing as unknown.
@@ -182,11 +182,11 @@ other than the pinned one is rejected with an explanation rather than used.
    window. Without the setting the extension keeps using its worker integration.
 3. Run `python -m pysx.tooling.tools` in that environment to confirm which Ruff is resolved.
 
-Unused-symbol reporting is handed to pysx by `pysx: Configure Template-Aware Imports`.
-Setup is refused, with the reason shown, if analysis is not ready or if a check pysx
+Unused-symbol reporting is handed to PYSX by `PYSX: Configure Template-Aware Imports`.
+Setup is refused, with the reason shown, if analysis is not ready or if a check PYSX
 would silence has no replacement yet. It preserves unrelated settings, does nothing on a
 workspace already configured, rolls back an interrupted apply, and refuses to restore any
-setting edited after pysx wrote it. Setup enables the `source.organizeImports.pysx`
+setting edited after PYSX wrote it. Setup enables the `source.organizeImports.pysx`
 action as the replacement for the editor actions it disables. That action removes only
 imports the template-aware analysis proves unused, is offered only against complete,
 current analysis of the unmodified buffer, and is withheld rather than guessed whenever
@@ -194,18 +194,18 @@ analysis has moved on. Save actions never wait for the workspace sweep: if curre
 complete analysis is unavailable, that save leaves imports unchanged. Once analysis
 finishes, a subsequent action can remove proven unused imports. This avoids delaying
 the disk write and hot reload behind language analysis. Repeated setup keeps the original restoration baseline, so
-`pysx: Restore Editor Settings pysx Changed` still returns the values the workspace had
-before pysx ever configured it.
+`PYSX: Restore Editor Settings PYSX Changed` still returns the values the workspace had
+before PYSX ever configured it.
 
 ## Troubleshooting
 
-**No pysx diagnostics at all.** Check the `pysx language server` output channel. A
+**No PYSX diagnostics at all.** Check the `PYSX language server` output channel. A
 missing `lsp` extra, an unselected interpreter or a Python older than 3.14 are each
 reported there explicitly rather than failing silently.
 
 **Diagnostics stop updating.** The server makes at most two recovery attempts for a
 crashed type backend; the editor separately permits four language-server crash
-recoveries. Exhaustion is reported in the output channel. `pysx: Restart Language
+recoveries. Exhaustion is reported in the output channel. `PYSX: Restart Language
 Server` starts a fresh server and clears its crash budget. `python -m pysx.tooling.lsp.lsp` run
 in a terminal shows the underlying error.
 
@@ -220,8 +220,8 @@ should still appear, as `F401` from the pinned Ruff. If it does not, confirm
 selected environment rather than only on `PATH`.
 
 **Ruff disagrees between the editor and the command line.** Both must resolve the same
-executable. pysx never falls back to a `PATH` installation, so a mismatch means the editor
+executable. PYSX never falls back to a `PATH` installation, so a mismatch means the editor
 has a different environment selected than the shell.
 
-**Wrong Ruff version reported.** pysx rejects a version other than the pinned one rather
+**Wrong Ruff version reported.** PYSX rejects a version other than the pinned one rather
 than using it. Install the pinned version into the selected environment.

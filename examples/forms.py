@@ -15,11 +15,15 @@ from .components import (
     SecondaryAction,
     Submit,
     Title,
+    example_app,
+    example_title,
 )
 
 
 @component
 def app() -> Fragment:
+    example_title("Forms")
+
     profile = signal({"text": ["initial"]})
     text = profile["text"][0]
     note = signal("note")
@@ -135,3 +139,6 @@ def app() -> Fragment:
                 pre(id="status"): {status}
     """
     )
+
+
+example = example_app(app)

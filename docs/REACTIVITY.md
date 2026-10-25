@@ -79,7 +79,7 @@ either = any_of(enabled, override)
 blocked = not_(eligible)
 ```
 
-pysx deliberately ships no `&`, `|` or `~` on Signals: those read as bitwise to a Python
+PYSX deliberately ships no `&`, `|` or `~` on Signals: those read as bitwise to a Python
 reader, and an operator is only overloaded here when the protocol permits a faithful
 reactive return and the Python meaning is unambiguous — arithmetic, indexing and
 ordering qualify; `and`/`or`/`not`/`in`/`len` cannot and never will. The `operators`

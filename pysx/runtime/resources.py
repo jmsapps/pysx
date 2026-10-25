@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from pysx.components.errors import ErrorInfo, report_error
-from pysx.components.lifecycle import current_scope, own_subscription, resources_preparing
+from pysx.components.lifecycle import (
+    current_scope,
+    defer_resource,
+    own_subscription,
+    resources_preparing,
+)
 from pysx.hosting.security import require_access
 from pysx.reactive.reactive import Signal, signal
 
@@ -56,6 +61,8 @@ class Resource[T]:
 
     def reload(self) -> None:
         if resources_preparing():
+            defer_resource(self.reload)
+
             return
 
         if not self.owner.alive or self.runtime.closed:

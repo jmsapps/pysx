@@ -43,7 +43,13 @@ from pysx.compiler.parser import (
 from pysx.compiler.runtime import MissingComponent
 from pysx.compiler.template import template_values
 from pysx.components.boundaries import ErrorBoundary
-from pysx.components.composition import Children, Component, identity_for, namespace_for
+from pysx.components.composition import (
+    Children,
+    Component,
+    identity_for,
+    namespace_for,
+    portable_identity_for,
+)
 from pysx.components.elements import VOID, ElementTag
 from pysx.components.errors import (
     ErrorInfo,
@@ -1726,7 +1732,9 @@ class _Emitter:
         owner_token = style_owner.set(prefix)
 
         try:
-            with self.out.scopes.enter(scope, identity_for(spec.item)):
+            with self.out.scopes.enter(
+                scope, identity_for(spec.item), portable_identity_for(spec.item)
+            ):
                 fragment = spec.item(item)
         finally:
             dom_context.reset(token)
@@ -1784,7 +1792,9 @@ class _Emitter:
             slot = f"{prefix}boundary"
 
             def build(content: Callable[[], Template | Fragment], owned: str) -> str:
-                with self.out.scopes.enter(owned, identity_for(content)):
+                with self.out.scopes.enter(
+                    owned, identity_for(content), portable_identity_for(content)
+                ):
                     return self._component_body(
                         content, content, el, {}, owned, owned, static, root_classes
                     )
@@ -1799,7 +1809,9 @@ class _Emitter:
 
         try:
             target = fn.base if isinstance(fn, StyledCallable) else fn
-            with self.out.scopes.enter(scope_prefix, identity_for(target)):
+            with self.out.scopes.enter(
+                scope_prefix, identity_for(target), portable_identity_for(target)
+            ):
                 return self._component_body(
                     fn, target, el, props, prefix, scope_prefix, static, root_classes
                 )
@@ -2206,7 +2218,7 @@ def render(
     style_token = style_context.set(out.styles)
 
     try:
-        with out.scopes.enter("", identity_for(component_fn)):
+        with out.scopes.enter("", identity_for(component_fn), portable_identity_for(component_fn)):
             result = component_fn()
 
         if not isinstance(result, (Template, Fragment)):  # pyright: ignore[reportUnnecessaryIsInstance]

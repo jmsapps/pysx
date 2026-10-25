@@ -16,12 +16,16 @@ from .components import (
     Page,
     Title,
     Value,
+    example_app,
+    example_title,
 )
 
 sessions = count(1)
 
 
 def app() -> Fragment:
+    example_title("Reconnect")
+
     generation = next(sessions)
     clicks = signal(0)
     ticks = signal(0)
@@ -76,3 +80,6 @@ def app() -> Fragment:
                     "Clicks and the draft survive a reconnect. While the page is "
                     "disconnected it refuses edits instead of queuing them."
     """)
+
+
+example = example_app(app)

@@ -666,16 +666,23 @@ class Supervisor:
             return self.response(403, b"development server accepts local origins only")
 
         method = connection.method if isinstance(connection, _HTTPConnection) else "GET"
+        path = urlsplit(request.path).path
+        resetting = method == "POST" and path.endswith("/__pysx__/reset")
 
-        if method not in ("GET", "HEAD"):
+        if method not in ("GET", "HEAD") and not resetting:
             response = self.response(405, b"method not allowed")
             response.headers["Allow"] = "GET, HEAD"
 
             return response
 
+        if resetting and (
+            context.headers.get("content-length", "0") != "0"
+            or "transfer-encoding" in context.headers
+        ):
+            return self.response(413, b"request body unsupported")
+
         if method == "GET" and request.headers.get("Upgrade", "").lower() == "websocket":
             return None
-        path = urlsplit(request.path).path
 
         if path == "/__pysx_dev__/status":
             return self.response(

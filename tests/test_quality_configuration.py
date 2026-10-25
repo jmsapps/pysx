@@ -38,7 +38,7 @@ def test_locked_tools() -> None:
         assert name in names
         version = next(package["version"] for package in lock["package"] if package["name"] == name)
         assert f"{name}=={version}" in config["dependency-groups"]["dev"]
-    assert config["project"]["dependencies"] == ["websockets==17.1"]
+    assert config["project"]["dependencies"] == ["cryptography==50.0.2", "websockets==17.1"]
     declared = [
         *config["project"]["dependencies"],
         *config["build-system"]["requires"],

@@ -390,7 +390,7 @@ class Session:
                 self.server.window_log_message(
                     types.LogMessageParams(
                         types.MessageType.Error,
-                        f"pysx analysis unavailable: {error}. "
+                        f"PYSX analysis unavailable: {error}. "
                         "Install pysx[lsp] or restart the server.",
                     )
                 )
@@ -1262,7 +1262,7 @@ def create_server() -> ResidentServer:
         ]
 
         return types.CodeAction(
-            "pysx: remove unused imports",
+            "PYSX: remove unused imports",
             kind=cast("types.CodeActionKind", ORGANIZE_IMPORTS),
             edit=types.WorkspaceEdit(changes={uri: as_edits(document, item.source, spans)}),
         )
@@ -1293,7 +1293,7 @@ def create_server() -> ResidentServer:
             if edits:
                 actions.append(
                     types.CodeAction(
-                        "pysx: normalize template indentation",
+                        "PYSX: normalize template indentation",
                         kind=cast("types.CodeActionKind", TEMPLATE_FIX),
                         edit=types.WorkspaceEdit(
                             changes={

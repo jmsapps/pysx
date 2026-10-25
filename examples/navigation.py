@@ -14,11 +14,14 @@ from pysx import (
     signal,
 )
 
+from .components import example_app, example_title
 from .components.controls import Action, Actions, Description, Eyebrow, Reading, Title
 from .components.navigation import ChapterGap, NavigationLink, NavigationPage, RouteCard
 
 
 def app() -> Fragment:
+    example_title("Navigation")
+
     notice = signal("Choose a destination below.")
     cleanups = signal(0)
     needs_login = signal(False)
@@ -142,3 +145,6 @@ def app() -> Fragment:
             p(id="cleanups"): "Routes closed: " {cleanups}
             {router.view()}
     """)
+
+
+example = example_app(app)

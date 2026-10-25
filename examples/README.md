@@ -9,6 +9,7 @@ uv run --project . example run counter
 uv run --project . example run todos
 uv run --project . example run recovery
 uv run --project . example run reconnect
+uv run --project . example run browser_recovery
 uv run --project . example run resources
 uv run --project . example run reactive_state
 uv run --project . example run operators
@@ -29,7 +30,7 @@ and redacted reset reasons/source links. Discard starts this page fresh while ot
 live tabs keep their state. For live editing, use the watch launcher:
 
 ```sh
-uv run --project . pysx --app examples.development:app --watch
+uv run --project . pysx --app examples.development:example --watch
 ```
 
 Start at 0, increment to 1, edit the title in `examples/development.py` and save:
@@ -59,6 +60,33 @@ example run counter
 The command is installed into the environment's bin directory. A new terminal
 needs activation again, or you can keep using the `uv run --project .` prefix.
 
+## Browser-held draft recovery
+
+Run `uv run --project . example run browser_recovery`. This ordinary callable uses
+shared controls and three local signals, with no state codec, database, recovery
+decorator or custom form wiring.
+
+1. Enter a name and notes, then add a revision.
+2. Keep the tab open, stop the server with Ctrl+C, and start the same command again.
+3. The open page restores its latest delivered fields/revision and reports recovery.
+4. Reload the page or open another tab to start a fresh draft.
+
+The same workflow works with these normal host commands:
+
+```sh
+uv run --project . pysx --app examples.browser_recovery:example
+uv run --project . pysx --app examples.browser_recovery:example --asgi
+uv run --project . pysx --app examples.browser_recovery:example --watch
+```
+
+The unchanged counter also recovers through `pysx --app examples.counter:app`, with
+`--asgi` or `--watch` when desired. Keep the framework's private application-state
+directory across restarts. Compatible deployments on other hosts need the same
+[hosting key ring and namespace](../docs/HOSTING.md), together with current authentication.
+Capsules last 24 hours and stay only in the open document's memory. Unsupported or
+changed state can reset; undelivered edits and uncertain actions are not replayed.
+Use normal business persistence for saved account data and cross-device access.
+
 ## Durable state
 
 Run `uv run --project . example run durable_state`. Edit the saved draft and increment
@@ -69,7 +97,7 @@ reload start independent sessions. Healthy socket reconnect retains the live gra
 Unsent edits are discarded on reconstruction, rather than replayed.
 
 The same restart test works with `uv run --project . pysx --app
-examples.durable_state:app --watch`: keep the tab open, press Ctrl+C, and restart
+examples.durable_state:example --watch`: keep the tab open, press Ctrl+C, and restart
 that command. The open page reconnects and recovers its count/draft without
 navigating. Refreshing it still starts a new session.
 
@@ -81,7 +109,7 @@ resources are rebuilt from code. This example uses a local demonstration princip
 not production authentication.
 
 For owner routing across two workers, use the [Linux deployment runbook](../docs/DEPLOYMENT.md)
-with `PYSX_APP=examples.durable_state:app`. The example reads `PYSX_STATE_PATH`,
+with `PYSX_APP=examples.durable_state:example`. The example reads `PYSX_STATE_PATH`,
 `PYSX_WORKER` and `PYSX_ORIGIN` supplied by that topology. Supply disposable TLS
 material for local testing; production applications must replace the demonstration
 identity with their own authentication and authorization. The two workers share
@@ -112,7 +140,7 @@ The setup counter stays at one when the browser attaches. Your draft survives
 background updates; a second tab has its own draft and resource. Ctrl+C disposes
 sessions and their work. The loader is local and needs no network/database or extra
 host setup. Optional ASGI launch:
-`uv run --project . pysx --app examples.resources:app --asgi` (Uvicorn is in the
+`uv run --project . pysx --app examples.resources:example --asgi` (Uvicorn is in the
 checkout dev environment; installed users need `pysx[asgi]`). See
 [resources](../docs/RESOURCES.md) and [hosting](../docs/HOSTING.md).
 

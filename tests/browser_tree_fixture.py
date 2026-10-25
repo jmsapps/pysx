@@ -12,9 +12,9 @@ if TYPE_CHECKING:
 
 def _load_app() -> Callable[[], Fragment]:
     install_loader(packages=("examples",))
-    from examples.components.composition import tree_controls
+    from examples.components.composition import TreeControls
 
-    return tree_controls
+    return TreeControls
 
 
 app = _load_app()

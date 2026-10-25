@@ -179,7 +179,8 @@ def test_client_verify_cli_reports_a_failure_as_an_error(tmp_path: Path) -> None
 def test_client_verify_dev_extra_pins_the_required_ruff() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text()
     assert f'dev = ["ruff=={RUFF_REQUIREMENT}"]' in pyproject
-    assert 'dependencies = ["websockets==17.1"]' in pyproject
+    assert '"cryptography==50.0.2"' in pyproject
+    assert '"websockets==17.1"' in pyproject
 
 
 def test_editor_surface_installed_extension_declares_every_shipped_feature(

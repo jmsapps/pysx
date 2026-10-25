@@ -19,6 +19,31 @@ The image includes shipped examples. For your own module, add its directory to
 credentials or a development environment. Included test fixtures are acceptance
 inputs, not production authentication examples. Select your application explicitly.
 
+## Ordinary apps with browser-held recovery
+
+Ordinary `Application` workers need no SQLite UI snapshot/ownership volume. Mount
+the same private hosting key ring on each compatible worker, and configure a stable
+`HostConfig.recovery_namespace` plus `HostConfig.recovery_key_directory` in the
+deployment entrypoint. Keep view/component/form code unchanged. The [hosting
+contract](HOSTING.md) owns the binary key format, permissions, provisioning and
+rotation rules; retain your existing origin, authentication and proxy policy.
+
+Live resume and initial HTTP adoption prefer their original worker. If that graph
+is gone, route the browser's v4 recovery hello to any compatible worker with capacity.
+The capsule stays in the hello body, never a proxy URL or log field. The new worker
+validates today's authentication session, browser binder, origin and route before
+constructing a fresh graph. Copied valid capsules can create independent authorized
+graphs; they do not transfer a lease or steal an attached graph. Key loss or expiry
+starts fresh, and current access denial stays denied. No shared per-user snapshot
+store or global UI ownership service is required.
+
+Preserve keys across rolling deployments. Changed state identities/initializers can
+reset; unsupported state and undelivered events are not business persistence. Use
+normal application transactions for shared account effects. The Compose reference
+below continues to exercise explicit `DurableApplication` storage/lease semantics.
+Local ordinary recovery tests establish bounded behavior on their actual machine,
+without extending that reference topology's capacity or platform qualification.
+
 ## Start
 
 From the repository root, set `PYSX_APP` to your packaged `module:host`, then:

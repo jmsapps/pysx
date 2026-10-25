@@ -1,4 +1,4 @@
-# pysx DSL grammar of record
+# PYSX DSL grammar of record
 
 The indentation-based markup grammar carried inside a PEP 750 t-string. `parser.py`
 implements this; `check.py` validates against it.
@@ -275,6 +275,22 @@ scopes. Direct Python function calls share the active scope. Use a callable tag,
 `each` factory or root `render` call when the function should own a separate scope.
 `local_state("name", initial)` returns the same Signal for a surviving scope; the initial
 value is copied once. Use a stable name and payload type for each state entry.
+
+Ordinary component-owned `signal()` and named local state also have bounded internal
+checkpoint metadata. Capture uses defining module/component and keyed owner identity,
+not deployment paths or source line numbers. It inspects owned values without first
+copying them and caches unchanged snapshots; signal reads and writes never parse source.
+Supported values are exact built-in null/bool/signed-64-bit-int/finite-float/string/list
+and string-keyed dict values. Custom values, aliases/cycles, unavailable source and
+ambiguous repeated call sites carry reset reasons. They remain usable live. Derived,
+projected, shared/global state, callbacks and resources are not duplicated as local slots.
+The aggregate snapshot, metadata and traversal budgets can make a revision
+unrecoverable; an older snapshot must not represent it as current. Scope disposal
+releases captured slots and change callbacks. Normal hosted documents publish this
+state as an encrypted browser checkpoint and can reconstruct compatible ordinary
+state after graph loss; see [the wire contract](PROTOCOL.md#browser-checkpoints-v4).
+Bare `Session` objects remain volatile and have no browser custody of their own.
+
 Keyed reorder preserves scopes. Removing a key, changing a conditional branch or changing
 the component callable identity disposes its subtree; a subsequent remount starts fresh.
 Identity is the callable's definition — a function or method body, or a callable

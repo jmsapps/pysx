@@ -63,7 +63,7 @@ def _values(body: str) -> dict[str, str]:
 
 
 def test_operators_example_renders_every_tier() -> None:
-    assert examples["operators"] == "examples.operators:app"
+    assert examples["operators"] == "examples.operators:example"
     body = Session(app).rendered.body
     assert _values(body) == {
         "t1-count-value": "2",

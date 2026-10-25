@@ -4,13 +4,25 @@ from typing import TYPE_CHECKING
 
 from pysx import ErrorBoundary, ErrorInfo, Fragment, local_state, on_cleanup, pysx, signal
 
-from .components import Action, Actions, Card, Description, Field, Page, Title
+from .components import (
+    Action,
+    Actions,
+    Card,
+    Description,
+    Field,
+    Page,
+    Title,
+    example_app,
+    example_title,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 
 def app() -> Fragment:
+    example_title("Recovery")
+
     healthy = signal(0)
     draft = signal("Keep this text")
     attempts = signal(0)
@@ -79,3 +91,6 @@ def app() -> Fragment:
             "Field": Field,
         },
     )
+
+
+example = example_app(app)

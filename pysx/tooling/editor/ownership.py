@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 PROJECTION_GLOB = _editor_config.MIRRORS
 SUPPRESSED = _editor_config.RULES
-RUFF_IGNORED = ("F401", "F811", "F821", "F823", "F841", "TC")
+RUFF_IGNORED = ("F401", "F811", "F821", "F823", "F841", "N802", "N806", "TC")
 DISABLED_ACTIONS = (
     "source.fixAll",
     "source.fixAll.pylance",
@@ -145,7 +145,7 @@ def ownership_plan(
 
     if missing:
         raise SetupRefusedError(
-            "pysx cannot replace "
+            "PYSX cannot replace "
             + ", ".join(missing)
             + " yet, so those checks will not be disabled. Install the pinned developer "
             "tooling and restart analysis, then run setup again."

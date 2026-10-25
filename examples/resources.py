@@ -5,7 +5,6 @@ import asyncio
 from pysx import (
     Fragment,
     component,
-    current_request,
     derived,
     on_mount,
     on_setup,
@@ -26,12 +25,14 @@ from .components import (
     Page,
     SecondaryAction,
     Title,
+    example_app,
+    example_title,
 )
 
 
 @component
 def app() -> Fragment:
-    current_request().document.title = "Async resources"
+    example_title("Async resources")
     draft = signal("Keep this draft")
     setups = signal(0)
     mounts = signal(0)
@@ -104,3 +105,6 @@ def app() -> Fragment:
                     "The browser attaches to the page already rendered on the server. "
                     "Setup runs once."
     """)
+
+
+example = example_app(app)
