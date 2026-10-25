@@ -20,6 +20,7 @@ from pysx.compiler.source_map import Positions, utf16_offsets
 from pysx.tooling.editor.config import parse_json_configuration
 from pysx.tooling.editor.model import MAX_FILES, Model, workspace_model
 from pysx.tooling.sources import read_source, source_files
+from pysx.tooling.tools import ToolingError, resolve_ruff
 
 if TYPE_CHECKING:
     from pysx.tooling.editor.model import Buffer, Request
@@ -187,6 +188,7 @@ class WorkspaceIndex:
         self._buffers: dict[str, Buffer] = {}
         self.configuration = ""
         self.settings: dict[str, object] = {}
+        self.lint_error: str | None = None
 
     def files(self, buffers: dict[str, Buffer]) -> set[str]:
         """Discover bounded original inputs without compiling unrelated sources."""
@@ -202,8 +204,14 @@ class WorkspaceIndex:
         return set(map(str, files))
 
     def build(
-        self, buffers: dict[str, Buffer], stamp: Stamp, *, selected: set[str] | None = None
+        self,
+        buffers: dict[str, Buffer],
+        stamp: Stamp,
+        *,
+        selected: set[str] | None = None,
+        interpreter: str | None = None,
     ) -> Snapshot:
+        """Unqualified lint tooling costs its own findings, never every other feature."""
         files = set(self.files(buffers))
         request: Request = {
             "root": str(self.root),
@@ -211,6 +219,16 @@ class WorkspaceIndex:
             "buffers": buffers,
             "previous": list(self._cache.values()),
         }
+
+        if interpreter is not None:
+            request["interpreter"] = interpreter
+
+        try:
+            resolve_ruff(Path(interpreter) if interpreter is not None else None)
+            self.lint_error = None
+        except ToolingError as error:
+            self.lint_error = str(error)
+            request["lint"] = False
 
         if selected is not None:
             request["selected"] = sorted(selected)

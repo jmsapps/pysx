@@ -18,16 +18,29 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.parametrize("namespace", [False, True])
-def test_render_marker_paths(tmp_path: Path, namespace: bool) -> None:
-    module = "pysx.rendering.render"
-    declaration = f"import {module} as renderer" if namespace else f"from {module} import pysx"
-    call = "renderer.pysx" if namespace else "pysx"
+@pytest.mark.parametrize(
+    ("declaration", "call", "expected"),
+    [
+        ("from pysx import pysx", "pysx", True),
+        ("from pysx import pysx as template", "template", True),
+        ("from pysx.rendering.render import pysx", "pysx", True),
+        ("import pysx as px", "px.pysx", True),
+        ("import pysx.rendering.render as renderer", "renderer.pysx", True),
+        ("from pysx import pysx\ntemplate = pysx", "template", True),
+        ("from unrelated import pysx", "pysx", False),
+        ("def pysx(value): return value", "pysx", False),
+        ("from pysx import pysx\npysx = lambda value: value", "pysx", False),
+        ("from pysx.compiler.template import pysx", "pysx", False),
+    ],
+)
+def test_render_marker_paths(tmp_path: Path, declaration: str, call: str, expected: bool) -> None:
     source = f'{declaration}\nview = {call}(t"Panel")\n'
     filename = str(tmp_path / "view.py")
-    assert analyze(source, filename).calls
-    assert classify(source, source.index("Panel") + 2, filename, tmp_path, {}) is not None
-    assert template_calls(source, filename, tmp_path, {})
+    assert bool(analyze(source, filename).calls) is expected
+    assert (
+        classify(source, source.index("Panel") + 2, filename, tmp_path, {}) is not None
+    ) is expected
+    assert bool(template_calls(source, filename, tmp_path, {})) is expected
 
 
 @pytest.fixture
@@ -54,6 +67,37 @@ def complete(client: Client, path: Path, source: str, at: int) -> list[dict[str,
     assert isinstance(result, list)
 
     return cast("list[dict[str, Any]]", result)
+
+
+@pytest.mark.parametrize(
+    ("declaration", "call"),
+    [
+        ("from pysx import pysx", "pysx"),
+        ("from pysx.rendering.render import pysx", "pysx"),
+        ("import pysx.rendering.render as renderer", "renderer.pysx"),
+    ],
+)
+def test_marker_completion_and_rename(
+    tmp_path: Path, client: Client, declaration: str, call: str
+) -> None:
+    source = (
+        f"{declaration}\nfrom pysx import Fragment\n"
+        "def Panel(*, title: str) -> Fragment:\n"
+        f"    return {call}(t'p: {{title}}')\n"
+        f"view = {call}(t'Panel(title=\"hello\")')\n"
+    )
+    path = tmp_path / "view.py"
+    client.open(path, source)
+    at = source.rindex("title=")
+    assert any(item["label"] == "title" for item in complete(client, path, source, at))
+    result = client.request(
+        "textDocument/rename",
+        {**params(path, source, source.rindex("Panel(")), "newName": "Card"},
+    )
+    assert isinstance(result, dict)
+    edits = cast("dict[str, Any]", result)["changes"][path.as_uri()]
+    assert len(edits) == 2
+    assert all(edit["newText"] == "Card" for edit in edits)
 
 
 def test_buffer_readiness_definition_precedes_unrelated_sweep(tmp_path: Path) -> None:
@@ -153,6 +197,48 @@ create_server().start_io()
         assert instance.hover(path, 1, source.splitlines()[1].index("div"))
     finally:
         recovered.touch()
+        instance.close()
+
+
+def test_buffer_readiness_unqualified_lint_keeps_every_other_feature(tmp_path: Path) -> None:
+    """An unusable Ruff must cost its own findings, not completions, hover and rename."""
+    command = [
+        sys.executable,
+        "-c",
+        """
+import pysx.tooling.tools as tools
+tools._candidates = lambda interpreter: []
+from pysx.tooling.lsp.server import create_server
+create_server().start_io()
+""",
+    ]
+    instance = Client(tmp_path, command=command)
+    path = tmp_path / "view.py"
+    source = (
+        "import json\n"
+        "from pysx import Fragment, pysx\n"
+        "def Panel(*, title: str) -> Fragment:\n"
+        "    return pysx(t'p: {title}')\n"
+        "view = pysx(t'Panel(missing=\"hello\")')\n"
+    )
+
+    try:
+        instance.open(path, source)
+        state = instance.settled(lambda status: status["workspaces"][0]["ready"] is True)
+        assert state["workspaces"][0]["error"] is None
+        readiness = cast(
+            "dict[str, Any]", instance.request("pysx/readiness", {"uri": path.as_uri()})
+        )
+        assert readiness["ready"] is True
+        assert readiness["error"] is None
+        assert readiness["coverage"]["ruff"] is False
+        published = instance.diagnostic(path, 1, "component-unknown-prop")
+        assert not any(item["code"] == "F401" for item in published["diagnostics"])
+        assert instance.hover(path, 4, source.splitlines()[4].index("Panel"))
+        request = params(path, source, source.rindex("Panel("))
+        assert instance.request("textDocument/rename", {**request, "newName": "Card"})
+        assert instance.request("textDocument/definition", request)
+    finally:
         instance.close()
 
 

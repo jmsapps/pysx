@@ -32,6 +32,20 @@ try {
   assert.equal(await page.evaluate(() => window.retainedName === document.getElementById("recovery-name") &&
     document.activeElement === window.retainedName && window.retainedName.selectionStart === 1 &&
     window.retainedName.selectionEnd === 3), true);
+  await page.click("#add-revision");
+  await page.waitForFunction(() => document.querySelectorAll("#recovery-history li").length === 2);
+  await page.evaluate(() => {
+    window.firstRevision = document.querySelector('[data-revision="1"]');
+    window.retainedName.focus(); window.retainedName.setSelectionRange(1, 3);
+    document.getElementById("reverse-revisions").click();
+  });
+  await page.waitForFunction(() => document.querySelector("#recovery-history li").dataset.revision === "2");
+  assert.equal(await page.evaluate(() => window.firstRevision === document.querySelector('[data-revision="1"]')), true);
+  await page.evaluate(() => document.getElementById("check-draft").click());
+  await page.waitForFunction(() => document.getElementById("draft-status").textContent === "Checked");
+  assert.equal(await page.locator("#recovery-name").inputValue(), "Mira");
+  assert.equal(await page.evaluate(() => document.activeElement === window.retainedName &&
+    window.retainedName.selectionStart === 1 && window.retainedName.selectionEnd === 3), true);
   const other = await context.newPage();
   await other.goto(url);
   await other.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxAttached === "true");
@@ -43,5 +57,6 @@ try {
   assert.deepEqual(errors, []);
   console.log("  ok  ordinary shared-component form edits and revisions survive live reconnect with focus");
   console.log("  ok  same-cookie tabs and page refresh start independent drafts");
+  console.log("  ok  keyed revision reordering and awaited updates preserve the same draft and focused input");
   console.log("BROWSER RECOVERY EXAMPLE PASSED");
 } finally { await browser.close(); }

@@ -20,6 +20,140 @@ ROOT = Path(__file__).resolve().parents[1]
 EDITOR = ROOT / "editor"
 
 
+@pytest.mark.parametrize("consumer", ["cli", "worker"])
+def test_lint_qualification_rejects_selected_environment_decoy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, consumer: str
+) -> None:
+    from pysx.tooling.editor.model import workspace_model
+    from pysx.tooling.quality import main
+
+    environment = tmp_path / "bin"
+    environment.mkdir()
+    fake = environment / "ruff"
+    fake.write_text("#!/bin/sh\necho 'ruff 0.1.0'\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "view.py").write_text("value = undefined_name\n")
+    monkeypatch.setattr(sys, "executable", str(environment / "python"))
+    monkeypatch.setattr(sys, "argv", ["quality", "ruff", str(root)])
+
+    def run() -> object:
+        if consumer == "cli":
+            return main()
+
+        return workspace_model(
+            {"root": str(root), "revision": "_pysx_revision_lint", "buffers": {}}
+        )
+
+    with pytest.raises(ToolingError, match=f"requires {RUFF_REQUIREMENT}"):
+        run()
+
+
+@pytest.mark.parametrize("consumer", ["cli", "worker"])
+def test_lint_qualification_ignores_path_decoy_and_preserves_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    consumer: str,
+) -> None:
+    from pysx.tooling.editor.model import workspace_model
+    from pysx.tooling.quality import main
+
+    decoy = tmp_path / "ruff"
+    decoy.write_text("#!/bin/sh\nexit 99\n")
+    decoy.chmod(decoy.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "view.py").write_text("value = undefined_name\n")
+
+    if consumer == "cli":
+        monkeypatch.setattr(sys, "argv", ["quality", "ruff", str(root)])
+        assert main() == 1
+        assert "F821 Undefined name `undefined_name`" in capsys.readouterr().out
+    else:
+        models = workspace_model(
+            {"root": str(root), "revision": "_pysx_revision_lint", "buffers": {}}
+        )
+        assert "F821" in str(models)
+        assert "undefined_name" in str(models)
+
+
+def test_lint_qualification_follows_the_requested_interpreter(tmp_path: Path) -> None:
+    """Readiness and the type backend use the client's interpreter; lint must agree."""
+    from pysx.tooling.editor.model import workspace_model
+    from pysx.tooling.lsp.backend import Stamp
+    from pysx.tooling.lsp.workspace import WorkspaceIndex
+
+    environment = tmp_path / "bin"
+    environment.mkdir()
+    decoy = environment / "python"
+    decoy.touch()
+    fake = environment / "ruff"
+    fake.write_text("#!/bin/sh\necho 'ruff 0.1.0'\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "view.py").write_text("value = undefined_name\n")
+    models = workspace_model({"root": str(root), "revision": "_pysx_revision_lint", "buffers": {}})
+    assert "F821" in str(models)
+
+    with pytest.raises(ToolingError, match=f"requires {RUFF_REQUIREMENT}"):
+        workspace_model(
+            {
+                "root": str(root),
+                "revision": "_pysx_revision_lint",
+                "buffers": {},
+                "interpreter": str(decoy),
+            }
+        )
+
+    index = WorkspaceIndex(root)
+    snapshot = index.build({}, Stamp(1, 0), interpreter=str(decoy))
+    assert f"requires {RUFF_REQUIREMENT}" in str(index.lint_error)
+    assert snapshot.file(str(root / "view.py")) is not None
+
+
+def test_lint_qualification_probes_a_binary_once_until_it_changes(tmp_path: Path) -> None:
+    """Linting resolves the tool per source, so a probe per call would dominate the gate."""
+    probes = tmp_path / "probes"
+    environment = tmp_path / "bin"
+    environment.mkdir()
+    interpreter = environment / "python"
+    interpreter.touch()
+    ruff = environment / "ruff"
+
+    def install(version: str) -> None:
+        ruff.write_text(f"#!/bin/sh\necho probe >> {probes}\necho 'ruff {version}'\n")
+        ruff.chmod(ruff.stat().st_mode | stat.S_IEXEC)
+
+    install(RUFF_REQUIREMENT)
+    assert resolve_ruff(interpreter).version == RUFF_REQUIREMENT
+    assert resolve_ruff(interpreter).version == RUFF_REQUIREMENT
+    assert probes.read_text().count("probe") == 1
+    install("0.1.0")
+
+    with pytest.raises(ToolingError, match=f"requires {RUFF_REQUIREMENT}"):
+        resolve_ruff(interpreter)
+    assert probes.read_text().count("probe") == 2
+
+
+def test_lint_qualification_remembers_no_unusable_environment(tmp_path: Path) -> None:
+    """A later install must take effect without restarting the resident server."""
+    environment = tmp_path / "bin"
+    environment.mkdir()
+    interpreter = environment / "python"
+    interpreter.touch()
+
+    with pytest.raises(ToolingError, match="pysx\\[dev\\]"):
+        resolve_ruff(interpreter)
+    ruff = environment / "ruff"
+    ruff.write_text(f"#!/bin/sh\necho 'ruff {RUFF_REQUIREMENT}'\n")
+    ruff.chmod(ruff.stat().st_mode | stat.S_IEXEC)
+    assert resolve_ruff(interpreter).version == RUFF_REQUIREMENT
+
+
 @pytest.fixture(scope="module")
 def vsix() -> zipfile.ZipFile:
     built = subprocess.run(

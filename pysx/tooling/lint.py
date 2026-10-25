@@ -4,19 +4,18 @@ from __future__ import annotations
 
 import ast
 import json
-import shutil
 import subprocess
-import sys
 from bisect import bisect_right
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, cast
 
 from pysx.compiler.compiler import analyze
 from pysx.compiler.source_map import MappedText, Positions, SourceSpan
+from pysx.tooling.tools import resolve_ruff
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
 
     from pysx.compiler.compiler import Compilation
 
@@ -63,12 +62,11 @@ class Finding:
     edits: tuple[Edit, ...] = ()
 
 
-def _ruff(source: str, filename: str) -> list[RuffMessage]:
-    binary = shutil.which("ruff", path=str(Path(sys.executable).parent))
-    command = [binary] if binary is not None else [sys.executable, "-m", "ruff"]
+def _ruff(source: str, filename: str, interpreter: Path | None) -> list[RuffMessage]:
+    tool = resolve_ruff(interpreter)
     result = subprocess.run(
         [
-            *command,
+            str(tool.path),
             "check",
             "--output-format=json",
             "--stdin-filename",
@@ -162,7 +160,9 @@ def lint_source(
     buffers: Mapping[str, str] | None = None,
     compilation: Compilation | None = None,
     projection: MappedText | None = None,
+    interpreter: Path | None = None,
 ) -> tuple[Finding, ...]:
+    """Ruff comes from `interpreter`'s environment, which the editor client selects."""
     compilation = compilation or analyze(source, filename, workspace_roots=roots, buffers=buffers)
 
     if compilation.source != source or compilation.filename != filename:
@@ -176,15 +176,15 @@ def lint_source(
                 item["message"],
                 _span(Positions(source), item["location"], item["end_location"]),
             )
-            for item in _ruff(source, filename)
+            for item in _ruff(source, filename, interpreter)
         )
     projection = projection if projection is not None else compilation.projection()
     imports = _import_ranges(source)
     components = _component_lines(compilation.tree)
     tags = {reference.name for reference in compilation.references}
     out: dict[tuple[str, SourceSpan], Finding] = {}
-    original_messages = _ruff(source, filename)
-    projected_messages = _ruff(projection.text, filename)
+    original_messages = _ruff(source, filename, interpreter)
+    projected_messages = _ruff(projection.text, filename, interpreter)
     safe_imports = compilation.complete and not any(
         item["code"] in {"F821", "F823"} for item in projected_messages
     )

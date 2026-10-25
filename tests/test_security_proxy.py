@@ -52,6 +52,24 @@ def insecure(config: HostConfig, changes: str) -> HostConfig:
     return replace(config, security=replace(config.security, authorize=None))
 
 
+@pytest.mark.parametrize(
+    ("cookie", "expected"),
+    [
+        ("fixture_user=alice", "initial"),
+        ("fixture_user=alice; fixture_login=", "initial"),
+        ("fixture_user=alice; fixture_login=second-login", "second-login"),
+    ],
+)
+def test_deployment_security_login_generation_defaults_without_a_cookie_value(
+    cookie: str, expected: str
+) -> None:
+    """A present-but-empty cookie is no login generation; an empty one is never valid."""
+    identity = principal(request_from_headers("/", [("cookie", cookie)]))
+    assert identity is not None
+    assert identity.principal == "alice"
+    assert identity.session_id == expected
+
+
 def test_deployment_security_tls_deep_link_wss_resume_and_cookie(tmp_path: Path) -> None:
     async def exercise() -> None:
         events: list[RequestEvent] = []

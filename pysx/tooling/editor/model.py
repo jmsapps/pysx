@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import importlib.metadata
 import json
 import re
 import sys
@@ -25,6 +24,7 @@ from pysx.tooling.analysis import (
 from pysx.tooling.check import diagnostics_for_source
 from pysx.tooling.lint import lint_source
 from pysx.tooling.sources import read_source, source_files
+from pysx.tooling.tools import resolve_ruff
 
 MAX_FILES = 512
 MAX_BYTES = 8 * 1024 * 1024
@@ -41,6 +41,8 @@ class Request(TypedDict):
     buffers: dict[str, Buffer]
     previous: NotRequired[list[Model]]
     selected: NotRequired[list[str]]
+    interpreter: NotRequired[str]
+    lint: NotRequired[bool]
 
 
 class Model(Projection):
@@ -55,7 +57,7 @@ class Model(Projection):
     dependencies: dict[str, str | None]
 
 
-def _configuration(root: Path, files: tuple[Path, ...]) -> str:
+def _configuration(root: Path, files: tuple[Path, ...], tooling: str) -> str:
     paths = set(Path(__file__).resolve().parents[2].rglob("*.py"))
     directories = {root, *root.parents, *(path.parent for path in files)}
 
@@ -66,15 +68,7 @@ def _configuration(root: Path, files: tuple[Path, ...]) -> str:
         )
     pending = list(paths)
     seen: set[Path] = set()
-    digest = hashlib.sha256(
-        (
-            str(root)
-            + sys.executable
-            + sys.version
-            + importlib.metadata.version("ruff")
-            + repr(files)
-        ).encode()
-    )
+    digest = hashlib.sha256((str(root) + sys.version + tooling + repr(files)).encode())
 
     while pending:
         path = pending.pop().resolve()
@@ -208,6 +202,8 @@ def workspace_model(request: Request) -> list[Model]:
     if not revision.startswith("_pysx_revision_") or not revision.isidentifier():
         raise ValueError("invalid projection revision")
     roots = (root, root / "src") if (root / "src").is_dir() else (root,)
+    interpreter = Path(request["interpreter"]) if "interpreter" in request else None
+    ruff = resolve_ruff(interpreter) if request.get("lint", True) else None
     overlays = request["buffers"]
     additions = {Path(name).resolve() for name in overlays}
 
@@ -239,7 +235,9 @@ def workspace_model(request: Request) -> list[Model]:
     if any(re.search(rf"\b{re.escape(revision)}\b", source) for source in buffers.values()):
         raise ValueError("projection revision conflicts with an original name")
     output: list[Model] = []
-    configuration = _configuration(root, files)
+    configuration = _configuration(
+        root, files, f"{ruff.path}\n{ruff.version}" if ruff is not None else "unqualified"
+    )
     previous = {model["filename"]: model for model in request.get("previous", [])}
     selected = set(request.get("selected", buffers))
 
@@ -273,13 +271,18 @@ def workspace_model(request: Request) -> list[Model]:
             if compilation.tree is not None
             else binding
         )
-        findings = lint_source(
-            source,
-            str(path),
-            roots=roots,
-            buffers=buffers,
-            compilation=compilation,
-            projection=binding,
+        findings = (
+            lint_source(
+                source,
+                str(path),
+                roots=roots,
+                buffers=buffers,
+                compilation=compilation,
+                projection=binding,
+                interpreter=interpreter,
+            )
+            if ruff is not None
+            else ()
         )
         coordinates = utf16_offsets(source)
         diagnostics = diagnostics_for_source(

@@ -9,6 +9,7 @@ import os
 import re
 import sys
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from urllib.parse import unquote
@@ -163,6 +164,7 @@ class Session:
         self.starts = 0
         self.failures = 0
         self.backend_interpreter = ""
+        self.lint_reported: str | None = None
         self.rebuilds = 0
         self.changed: list[str] = []
         self.republished: set[str] = set()
@@ -171,6 +173,21 @@ class Session:
     @property
     def stamp(self) -> Stamp:
         return Stamp(self.generation, self.epoch)
+
+    def report_lint(self) -> None:
+        """Lint findings can disappear on their own; say so instead of going quiet."""
+
+        if self.index.lint_error == self.lint_reported:
+            return
+        self.lint_reported = self.index.lint_error
+
+        if self.index.lint_error is not None:
+            self.server.window_log_message(
+                types.LogMessageParams(
+                    types.MessageType.Warning,
+                    f"PYSX lint findings are unavailable: {self.index.lint_error}",
+                )
+            )
 
     def invalidate(self) -> None:
         self.generation += 1
@@ -335,8 +352,16 @@ class Session:
 
                     while True:
                         part = await asyncio.to_thread(
-                            self.index.build, buffers, self.stamp, selected=selected
+                            partial(
+                                self.index.build,
+                                buffers,
+                                self.stamp,
+                                selected=selected,
+                                interpreter=self.server.interpreter,
+                            )
                         )
+
+                        self.report_lint()
 
                         if self.closed or generation != self.generation:
                             break
@@ -376,7 +401,12 @@ class Session:
                     self.event.set()
 
                     continue
-                snapshot = await asyncio.to_thread(self.index.build, buffers, self.stamp)
+                snapshot = await asyncio.to_thread(
+                    partial(
+                        self.index.build, buffers, self.stamp, interpreter=self.server.interpreter
+                    )
+                )
+                self.report_lint()
 
                 if generation != self.generation:
                     self.event.set()
