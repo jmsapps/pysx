@@ -22,9 +22,9 @@ def principal(request: RequestContext) -> AuthenticatedIdentity | None:
 
     if value is None or value.value not in ("alice", "bob"):
         return None
-    generation = cookies.get("fixture_login")
+    generation = cookies["fixture_login"].value if "fixture_login" in cookies else ""
 
-    return AuthenticatedIdentity(value.value, generation.value if generation else "initial")
+    return AuthenticatedIdentity(value.value, generation or "initial")
 
 
 def authorize(request: RequestContext, action: str, target: str) -> bool:

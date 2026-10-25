@@ -46,20 +46,31 @@ try {
   assert.equal(rejected, true);
   console.log("  ok  actual cross-origin browser upgrade fails before attachment");
   // Public cookies stand in for application credentials in this local fixture.
+  const reconnected = () => first.waitForFunction(() => window.authSocket !== window.priorSocket &&
+    document.getElementById("pysx-root").dataset.pysxAttached === "true");
+  const dropSocket = () => first.evaluate(() => {
+    window.priorSocket = window.authSocket; window.authSocket.close();
+  });
+  // Without this control every later reset below would also pass with no restoration at all.
+  await dropSocket();
+  await reconnected();
+  assert.equal(await first.locator("#principal").textContent(), "alice");
+  assert.equal(await first.locator("#count").textContent(), "1");
+  console.log("  ok  an unchanged login generation restores the delivered state across a reconnect");
   // Keep the document and its capsule while changing the login generation.
   await alice.addCookies([{name: "fixture_login", value: "second-login", url: base}]);
-  await first.evaluate(() => window.authSocket.close());
-  await first.waitForFunction(() => document.getElementById("count").textContent === "0" &&
-    document.getElementById("pysx-root").dataset.pysxAttached === "true");
+  await dropSocket();
+  await reconnected();
+  await first.waitForFunction(() => document.getElementById("count").textContent === "0");
   assert.equal(await first.locator("#principal").textContent(), "alice");
   await first.click("#increment");
   await first.waitForFunction(() => document.getElementById("count").textContent === "1");
   await alice.clearCookies({name: "fixture_user"});
   assert.equal((await alice.request.get(base)).status(), 403);
   await alice.addCookies([{name: "fixture_user", value: "bob", url: base}]);
-  await first.evaluate(() => window.authSocket.close());
-  await first.waitForFunction(() => document.getElementById("principal").textContent === "bob" &&
-    document.getElementById("pysx-root").dataset.pysxAttached === "true");
+  await dropSocket();
+  await reconnected();
+  await first.waitForFunction(() => document.getElementById("principal").textContent === "bob");
   assert.equal(await first.locator("#count").textContent(), "0");
   console.log("  ok  same-account re-login and logout/login as another account cannot import the previous delivered state");
   console.log("PRINCIPAL ORIGIN BROWSER PASSED");

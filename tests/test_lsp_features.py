@@ -200,6 +200,48 @@ create_server().start_io()
         instance.close()
 
 
+def test_buffer_readiness_unqualified_lint_keeps_every_other_feature(tmp_path: Path) -> None:
+    """An unusable Ruff must cost its own findings, not completions, hover and rename."""
+    command = [
+        sys.executable,
+        "-c",
+        """
+import pysx.tooling.tools as tools
+tools._candidates = lambda interpreter: []
+from pysx.tooling.lsp.server import create_server
+create_server().start_io()
+""",
+    ]
+    instance = Client(tmp_path, command=command)
+    path = tmp_path / "view.py"
+    source = (
+        "import json\n"
+        "from pysx import Fragment, pysx\n"
+        "def Panel(*, title: str) -> Fragment:\n"
+        "    return pysx(t'p: {title}')\n"
+        "view = pysx(t'Panel(missing=\"hello\")')\n"
+    )
+
+    try:
+        instance.open(path, source)
+        state = instance.settled(lambda status: status["workspaces"][0]["ready"] is True)
+        assert state["workspaces"][0]["error"] is None
+        readiness = cast(
+            "dict[str, Any]", instance.request("pysx/readiness", {"uri": path.as_uri()})
+        )
+        assert readiness["ready"] is True
+        assert readiness["error"] is None
+        assert readiness["coverage"]["ruff"] is False
+        published = instance.diagnostic(path, 1, "component-unknown-prop")
+        assert not any(item["code"] == "F401" for item in published["diagnostics"])
+        assert instance.hover(path, 4, source.splitlines()[4].index("Panel"))
+        request = params(path, source, source.rindex("Panel("))
+        assert instance.request("textDocument/rename", {**request, "newName": "Card"})
+        assert instance.request("textDocument/definition", request)
+    finally:
+        instance.close()
+
+
 @pytest.mark.parametrize("ending", ["Panel()')", "Panel(ma"])
 def test_completion_hover_typed_callable_parameter(
     tmp_path: Path,

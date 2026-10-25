@@ -4,6 +4,11 @@ An editor and the CLI must agree on one Ruff, and that Ruff must be the one
 installed beside the selected interpreter. Silently falling back to whatever
 `ruff` happens to be on PATH is how a workspace ends up linted by a different
 version than the one its checks were qualified against.
+
+Qualification is memoized per binary and invalidated by its size and modification
+time, because linting a workspace resolves the tool once per analyzed source and a
+version probe per call dominates the gate. Only a qualified result is remembered, so
+installing the pinned Ruff into an incomplete environment needs no restart.
 """
 
 from __future__ import annotations
@@ -27,6 +32,9 @@ class Tool:
     name: str
     path: Path
     version: str
+
+
+_qualified: dict[Path, tuple[tuple[int, int], Tool]] = {}
 
 
 def _candidates(interpreter: Path) -> list[Path]:
@@ -54,6 +62,13 @@ def resolve_ruff(interpreter: Path | None = None) -> Tool:
             "PYSX does not fall back to a Ruff found elsewhere on PATH."
         )
 
+    binary = found.stat()
+    stamp = (binary.st_mtime_ns, binary.st_size)
+    remembered = _qualified.get(found)
+
+    if remembered is not None and remembered[0] == stamp:
+        return remembered[1]
+
     try:
         result = subprocess.run(
             [str(found), "--version"], capture_output=True, text=True, timeout=30, check=True
@@ -73,7 +88,10 @@ def resolve_ruff(interpreter: Path | None = None) -> Tool:
             "use a different one."
         )
 
-    return Tool("ruff", found, version)
+    tool = Tool("ruff", found, version)
+    _qualified[found] = (stamp, tool)
+
+    return tool
 
 
 def main() -> None:
