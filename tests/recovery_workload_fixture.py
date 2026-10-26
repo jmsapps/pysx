@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import sys
 from dataclasses import dataclass, field, replace
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -32,8 +34,48 @@ from pysx import (
 )
 
 if TYPE_CHECKING:
+    import sqlite3
+
     from pysx.hosting.request import RequestContext
+    from pysx.runtime.persistence import StateSnapshot
     from pysx.runtime.wire import JSONValue
+
+
+class ObservedOwnershipStore(SQLiteOwnershipStore):
+    """Record failed validation metadata without logging state or identities."""
+
+    def _valid(
+        self, database: sqlite3.Connection, snapshot: StateSnapshot, worker: str, now: float
+    ) -> bool:
+        valid = super()._valid(database, snapshot, worker, now)
+
+        if not valid:
+            lease = self._lease(database, snapshot.identity)
+            stored = self._read(database, snapshot.identity)
+            sys.stderr.write(
+                "OWNERSHIP VALIDATION: "
+                + json.dumps(
+                    {
+                        "lease_present": lease is not None,
+                        "lease_remaining_seconds": lease.expires - now
+                        if lease is not None
+                        else None,
+                        "worker_matches": lease.worker == worker if lease is not None else False,
+                        "lease_epoch_matches": lease.epoch == snapshot.owner_epoch
+                        if lease is not None
+                        else False,
+                        "state_epoch_matches": stored.owner_epoch == snapshot.owner_epoch
+                        if stored is not None
+                        else False,
+                        "generation_matches": stored.generation == snapshot.generation
+                        if stored is not None
+                        else False,
+                    }
+                )
+                + "\n"
+            )
+
+        return valid
 
 
 def principal(request: RequestContext) -> str:
@@ -177,7 +219,7 @@ host = DurableApplication(
     app,
     initial=WorkloadState,
     codec=StateCodec(encode, decode),
-    store=SQLiteOwnershipStore(Path(os.environ["PYSX_FIXTURE_STORE"])),
+    store=ObservedOwnershipStore(Path(os.environ["PYSX_FIXTURE_STORE"])),
     application="worker-counter",
     worker=os.environ["PYSX_FIXTURE_WORKER"],
     lease_seconds=float(os.environ.get("PYSX_FIXTURE_LEASE", "3")),

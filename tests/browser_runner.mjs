@@ -16,6 +16,9 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "editor_browser", cases: [
+    [0, "qualification_fixture", "browser_qualification.mjs", "QUALIFICATION BROWSER PASSED"],
+  ] },
   { suite: "browser_recovery_example", cases: [
     [0, "browser_recovery", "browser_checkpoint_example.mjs", "BROWSER RECOVERY EXAMPLE PASSED"],
   ] },
@@ -354,6 +357,8 @@ try {
       ["-m", "pysx.hosting.server", "--app", "tests.browser_http_fixture:app", "--port", String(port)] :
       name === "async_fixture" ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_async_fixture:app", "--port", String(port)] :
+      name === "qualification_fixture" ?
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_qualification_fixture:app", "--port", String(port)] :
       name === "keyed_fixture" ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_keyed_fixture:app", "--port", String(port)] :
       name === "identity_fixture" ?
@@ -407,6 +412,9 @@ try {
       if (process.env.PYSX_BROWSER_FORCE_FAILURE === "1") throw new Error("forced assertion failure");
       const count = output.split("\n").filter((line) => line.startsWith("  ok  ")).length;
       if (!count) throw new Error("empty assertions");
+      for (const line of output.split("\n")) {
+        if (line.startsWith("QUALIFICATION BROWSER SAMPLES: ")) console.log(line);
+      }
       total += count;
       selectedAssertions += count;
       console.log(`${engine}: ${name ?? "cascade"}, 1 case, ${count} assertions`);
