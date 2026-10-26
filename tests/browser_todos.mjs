@@ -83,7 +83,7 @@ try {
 
   await page.click("nav button:nth-child(1)");          // All
   await page.waitForFunction(() => document.querySelectorAll("#todo-list li").length === 4);
-  await page.click('li[data-pysx-key="3"] button');     // Remove
+  await page.locator('li[data-pysx-key="3"]').getByRole("button", {name: "Remove", exact: true}).click();
   await page.waitForFunction(() => !document.querySelector('li[data-pysx-key="3"]'));
   ok("remove deletes the right row (handler ids do not collide)");
 

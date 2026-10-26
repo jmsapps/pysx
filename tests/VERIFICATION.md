@@ -38,6 +38,15 @@ scripts/verify.py gates` executes every check below on a provisioned machine, an
 `--list` prints them. Run the individual commands when iterating on one suite.
 
 ```sh
+uv run --project . pytest -q tests/test_tutorial_website.py -k tutorial_website
+npm --prefix tests run browser -- --suite tutorial_website
+npm --prefix tests run grammar -- --suite tutorial_website
+uv run --project . pytest -q tests/test_field_application.py tests/test_distribution.py -k validate_integrated
+npm --prefix tests run browser -- --suite validate_integrated
+npm --prefix editor test -- --suite validate_integrated
+uv run --project . pytest -q tests/test_parity_corpus.py tests/test_documentation.py -k corpus_executable
+npm --prefix tests run browser -- --suite corpus_executable
+npm --prefix tests run grammar -- --suite corpus_executable
 npm --prefix tests run browser -- --suite examples
 npm --prefix tests run browser -- --suite serialization_live
 npm --prefix tests run browser -- --suite bindings_form

@@ -1,5 +1,19 @@
 # Running examples
 
+New users can start with the [installed quickstart](../docs/QUICKSTART.md),
+[interactive tutorial](../docs/TUTORIAL.md), [API index](../docs/API.md) and
+[migration guide](../docs/MIGRATION.md). The full course is a separate application
+in [tutortial](../tutortial/README.md), launched with `pysx --app tutorial:app` in
+its own environment. Run
+`hello` for a minimal greeting, `attributes` for native/ARIA/keyed attributes and
+`effects` for cleanup, automatic increments and cancelled/replaced work.
+
+In `todos`, choose **Edit** on a row, change its text and **Save**. The same keyed
+row remains; toggling or removing it acts on the edited record. Other tabs keep
+their own lists. In `navigation`, the files root and missing-route links expose
+wildcard/fallback matching; the last links demonstrate native downloads, new tabs
+and external navigation.
+
 Run commands from the repository root with [uv](https://docs.astral.sh/uv/).
 Python 3.14+ is required for t-strings; uv selects the project's interpreter and
 prepares the environment without activation.

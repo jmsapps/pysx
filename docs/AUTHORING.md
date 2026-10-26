@@ -46,7 +46,10 @@ Include every application package that produces fragments, including shared comp
 dependencies in other packages, before importing them. A wrapper entry point's package
 does not automatically cover its dependencies. The bundled example runner installs its
 scope before loading example modules.
-Framework, hidden and vendor directories are excluded. Installing after an affected
+Framework modules and hidden/vendor directories within the selected source scope
+are excluded. The CLI selects the application's own root even when its package is
+installed under an environment's `site-packages`; unrelated installed dependencies
+remain outside that scope. Installing after an affected
 application module has already executed reports an error; restart with the hook
 installed first. Ordinary imports retain their module names and source filenames.
 Reloading recompiles changed source or static import dependencies; the cache contains

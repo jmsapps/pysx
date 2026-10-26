@@ -141,6 +141,16 @@ def app() -> Fragment:
             Actions:
               Action(id="require-login", onClick={require_login}): "Require sign-in"
               Reading(id="redirect-status"): {redirect_status}
+            Description: "Native links retain browser download, target and modifier behavior."
+            Actions:
+              NavigationLink(router={router}, href="/files/", id="files-root"): "Files root"
+              NavigationLink(router={router}, href="/missing", id="missing"): "Missing route"
+              NavigationLink(router={router}, href="/", target="_blank", id="native-blank"):
+                "Open another tab"
+              NavigationLink(router={router}, href="/client.js", download="client.js",
+                  id="native-download"): "Download client"
+              NavigationLink(router={router}, href="https://example.com/", id="native-external"):
+                "External site"
             p(id="notice"): {notice}
             p(id="cleanups"): "Routes closed: " {cleanups}
             {router.view()}

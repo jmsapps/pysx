@@ -66,6 +66,9 @@ behaviour. Use WSL in the meantime.
 
 ## Explore
 
+Start with the [quickstart](docs/QUICKSTART.md), work through the
+[interactive tutorial](docs/TUTORIAL.md), or browse the [API index](docs/API.md).
+
 - [Examples](examples/README.md) — run the demos and explore reactive state and live forms.
 - [Tests](tests/README.md) — run the test suite and quality checks.
 - [Editor support](editor/README.md) — install the VSCode extension.

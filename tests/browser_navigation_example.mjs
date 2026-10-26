@@ -69,7 +69,37 @@ try {
   assert.equal(await page.evaluate(() => history.length), historyLength + 2);
   await click("user-one"); await text("current-url", "/users/1");
   await text("route-title", "User 1");
-  assert.deepEqual(errors, []);
   console.log("  ok  signal-driven effect redirects replace history and Continue restores browsing");
+
+  await click("files-root"); await text("route-title", "Files");
+  await text("current-url", "/files/");
+  await click("missing"); await text("route-title", "Not found");
+  await click("home"); await text("route-title", "Home");
+  const deep = await browser.newPage();
+  await deep.goto(`http://127.0.0.1:${process.argv[2]}/users/7/`);
+  await deep.waitForFunction(() => document.querySelector("#route-title")?.textContent === "User 7");
+  await deep.close();
+  console.log("  ok  public exact, wildcard, fallback and trailing-slash deep links resolve");
+
+  // Record the framework's policy, then suppress actual downloads/new tabs/network
+  // in this test after the event has bubbled past the framework listener.
+  await page.evaluate(() => {
+    window.nativeDefaults = [];
+    document.addEventListener("click", event => {
+      if (["native-blank", "native-download", "native-external", "user-one"].includes(event.target.closest("a")?.id)) {
+        window.nativeDefaults.push(event.defaultPrevented);
+        event.preventDefault();
+      }
+    });
+  });
+  const nativeUrl = page.url();
+  for (const id of ["native-blank", "native-download", "native-external"]) await click(id);
+  for (const modifier of ["altKey", "ctrlKey", "metaKey", "shiftKey"]) {
+    await page.locator("#user-one").dispatchEvent("click", {[modifier]: true, button: 0});
+  }
+  assert.deepEqual(await page.evaluate(() => window.nativeDefaults), Array(7).fill(false));
+  assert.equal(page.url(), nativeUrl);
+  assert.deepEqual(errors, []);
+  console.log("  ok  public download, target, external and modified links preserve native defaults");
   console.log("NAVIGATION EXAMPLE BROWSER PASSED");
 } finally { await browser.close(); }

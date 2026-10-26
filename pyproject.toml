@@ -47,12 +47,14 @@ pythonpath = ["."]
 markers = ["acceptance: real HTTP and WebSocket headless acceptance"]
 
 [tool.mypy]
+mypy_path = ["tutortial"]
 python_version = "3.14"
 strict = true
 files = ["."]
 exclude = ["^build/", "^dist/", "^\\.venv/", "(^|/)_pysx_revision_[^/]+/"]
 
 [tool.pyright]
+extraPaths = ["tutortial"]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
 reportUnusedImport = false
