@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import sys
 import time
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
@@ -46,7 +47,7 @@ async def recover(worker: Worker, previous: Client) -> Client:
     async with asyncio.timeout(10):
         while True:
             try:
-                return await Client.attach(worker, previous=previous)
+                return await Client.attach(worker, previous=previous, hello_timeout=10)
             except ConnectionClosed as error:
                 if error.rcvd is None or error.rcvd.code not in (1013, 4010):
                     raise
@@ -256,7 +257,8 @@ def test_owner_routing_fifty_sessions_per_worker_survive_owner_death(tmp_path: P
                 restored = await asyncio.gather(
                     *(recover(survivor, client) for client in clients[:50])
                 )
-                assert time.monotonic() - began <= 10
+                recovery_seconds = time.monotonic() - began
+                assert recovery_seconds <= 10
                 await asyncio.gather(*(client.event() for client in restored))
                 backend = SQLiteOwnershipStore(topology.store)
 
@@ -278,6 +280,17 @@ def test_owner_routing_fifty_sessions_per_worker_survive_owner_death(tmp_path: P
                     snapshot = backend.load(identity(client))
                     assert snapshot is not None
                     assert json.loads(snapshot.payload)["count"] == 1
+                sys.stdout.write(
+                    "OWNER RECOVERY SAMPLE: "
+                    + json.dumps(
+                        {
+                            "sessions": len(restored),
+                            "seconds": recovery_seconds,
+                            "limit_seconds": 10,
+                        }
+                    )
+                    + "\n"
+                )
             finally:
                 await asyncio.gather(*(client.close() for client in [*clients, *restored]))
 

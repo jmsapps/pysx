@@ -107,6 +107,11 @@ mutation or async completion cannot commit or publish. Lease release compares th
 worker and epoch so stale shutdown cannot release its successor's ownership.
 
 The default lease is three seconds, renewed in bounded batches every lease/3.
+Hosted mutation turns and graph admission also check for overdue fleet renewal
+before validating their owner, so a burst of synchronous work does not depend on
+the periodic task getting an event-loop turn. Renewal never restores an expired
+lease or replaces another worker's ownership; the ordinary ownership check still
+rejects stale, expired or revoked writers before their callbacks run.
 `lease_seconds` accepts 0.2–30 seconds; shorter leases require enough scheduling and
 store headroom. All workers use the same host clock. Store transactions have the
 adapter's finite timeout. No infinite retry loop runs inside an event. Expired

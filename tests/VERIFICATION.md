@@ -93,6 +93,30 @@ becomes a shipped production API or LSP feature.
 Each runner accepts `--suite`; unknown or empty selections fail. Unfiltered commands run
 all currently registered suites. Pass banners are emitted only after all required cases pass.
 
+Local performance and reliability observations use fixed semantic fixtures and
+machine-readable reports:
+
+```sh
+uv run --project . python tests/qualification.py --suite workloads --report .artifacts/qualification/workloads.json
+uv run --project . python tests/qualification.py --suite runtime --report .artifacts/qualification/runtime.json
+uv run --project . python tests/qualification.py --suite tooling --report .artifacts/qualification/tooling.json
+npm --prefix tests run browser -- --suite editor_browser
+npm --prefix editor test -- --suite client_verify
+```
+
+`--suite all` runs those three measurement groups sequentially. Reports identify
+candidate source hashes, installed versions, raw samples and local scope; they
+explicitly leave reference timing qualification unqualified. The workload group
+checks settled graph work, a 1,000-row form, 100 in-process graphs, the 200-file
+workspace and bounded inspector retention. Runtime measures five short socket-load
+runs at 100 sessions, current worker RSS, deterministic graph/row disposal and fault
+outcomes. Tooling requires all three browser engines, both activation orders of the
+actual editor client suite, resident workspace observations and development
+measurements. Missing inputs, engines, samples, verdicts and failed requests are
+failures; proposed numeric budgets are recorded as observations rather than enforced.
+Generated reports/logs belong in `.artifacts/`; a failed run replaces any earlier
+passing report at every output path it owns, including each per-suite report.
+
 Browser verification selects the interpreter through `uv run --project .`, reserves
 ephemeral ports, starts both example servers and runs the original assertion groups
 in Chromium, Firefox and WebKit. Startup and suite deadlines are bounded; child groups

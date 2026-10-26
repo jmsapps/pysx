@@ -170,7 +170,12 @@ class Client:
 
     @classmethod
     async def attach(
-        cls, worker: Worker, *, previous: Client | None = None, user: str = "alice"
+        cls,
+        worker: Worker,
+        *,
+        previous: Client | None = None,
+        user: str = "alice",
+        hello_timeout: float = 5,
     ) -> Client:
         browser = previous.browser if previous is not None else secrets.token_urlsafe(32)
         socket = await connect(
@@ -191,7 +196,10 @@ class Client:
         await socket.send(json.dumps(hello))
 
         try:
-            frame = cast("dict[str, object]", json.loads(await asyncio.wait_for(socket.recv(), 5)))
+            frame = cast(
+                "dict[str, object]",
+                json.loads(await asyncio.wait_for(socket.recv(), hello_timeout)),
+            )
             assert frame["t"] in ("init", "repair"), frame
 
             return cls(socket, browser, frame)

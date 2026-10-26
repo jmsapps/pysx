@@ -104,6 +104,13 @@ class _DurableRuntime[T](HTTPRuntime):
             outbox_bytes=self.limits.outbox_bytes,
         )
         self.graphs.add(graph)
+        check_owner = graph.runtime.admit
+
+        def admit() -> None:
+            self.host.renew_if_overdue()
+            check_owner()
+
+        graph.runtime.admit = admit
 
         return graph
 
@@ -235,9 +242,9 @@ class DurableApplication[T](Application):
             self.renewal = asyncio.create_task(self._renew())
 
     def renew_if_overdue(self) -> None:
-        """Extend the fleet's leases while admission is monopolising the loop.
+        """Extend the fleet's leases while synchronous work monopolises the loop.
 
-        Admitting a recovery storm is one long run of loop-bound work, so the
+        Mutation bursts and recovery storms can run loop-bound work, so the
         periodic renewal cannot get in between and leases the worker still owns
         lapse. Admission therefore pays for its own interruption. This only
         extends leases: fencing stays with the periodic task, which judges each
