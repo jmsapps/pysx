@@ -14,7 +14,7 @@ async function until(predicate, label, timeout = 15000) {
 exports.run = async function () {
   if (process.env.PYSX_EDITOR_SUITE === "save_latency") return require("./save_suite.cjs").run();
   if (process.env.PYSX_EDITOR_SUITE === "authoring") return require("./authoring_suite.cjs").run();
-  if (["client_verify", "editor_browser"].includes(process.env.PYSX_EDITOR_SUITE)) return require("./client_suite.cjs").run();
+  if (process.env.PYSX_EDITOR_SUITE === "client_verify") return require("./client_suite.cjs").run();
   if (process.env.PYSX_EDITOR_SUITE === "interpreter_routing") return require("./routing_suite.cjs").run();
   if (["editor_surface", "template_import_usage"].includes(process.env.PYSX_EDITOR_SUITE)) {
     return require("./surface_suite.cjs").run();

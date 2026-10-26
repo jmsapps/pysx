@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { pylanceHost } from "../../tests/pylance_host.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const SUITES = ["diagnostics", "packaging", "authoring", "client_verify", "editor_surface", "template_import_usage", "interpreter_routing", "save_latency", "editor_browser"];
+const SUITES = ["diagnostics", "packaging", "authoring", "client_verify", "editor_surface", "template_import_usage", "interpreter_routing", "save_latency"];
 const args = process.argv.slice(2);
 if (!args.length && process.env.PYSX_EDITOR_PROBE !== "1") {
   for (const registered of SUITES) {
@@ -22,7 +22,7 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 if (!SUITES.includes(suite)) throw new Error("empty editor selection");
-if (["client_verify", "editor_surface", "editor_browser"].includes(suite) && !process.env.PYSX_EDITOR_ACTIVATION_ORDER) {
+if (["client_verify", "editor_surface"].includes(suite) && !process.env.PYSX_EDITOR_ACTIVATION_ORDER) {
   for (const order of ["client-first", "pylance-first"]) {
     const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--suite", suite],
       { cwd: root, stdio: "inherit", env: { ...process.env, PYSX_EDITOR_ACTIVATION_ORDER: order } });
@@ -127,8 +127,8 @@ try {
       // buffered when "exit" fires.
       child.once("close", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`editor host exited ${code}: ${output}`)); });
     });
-    const cases = suite === "save_latency" ? 6 : suite === "interpreter_routing" ? 8 : suite === "authoring" ? 11 : ["client_verify", "editor_browser"].includes(suite) ? 12 : suite === "editor_surface" ? 11 : suite === "template_import_usage" ? 7 : 3;
-    if (["client_verify", "editor_browser"].includes(suite)) {
+    const cases = suite === "save_latency" ? 6 : suite === "interpreter_routing" ? 8 : suite === "authoring" ? 11 : suite === "client_verify" ? 12 : suite === "editor_surface" ? 11 : suite === "template_import_usage" ? 7 : 3;
+    if (suite === "client_verify") {
       const failures = /Client is stopping but no stop promise|rejected promise not handled|unhandled rejection|Handling connection close failed|Restarting server failed|Stopping server failed|Stopping the server timed out/i;
       const inspect = (directory) => {
         if (!existsSync(directory)) return;

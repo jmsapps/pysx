@@ -133,7 +133,7 @@ def keyed_workload() -> dict[str, JSONValue]:
         fields[500].set("edited")
         edits = list(session.pending)
         assert not builds
-        assert 1 <= len(edits) <= 3
+        assert len(edits) == 1
         assert all(op["op"] in ("text", "attr", "prop") for op in edits)
         session.pending.clear()
         order.set(list(reversed(order())))
@@ -317,8 +317,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--suite", required=True, choices=SUITES)
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args(argv)
+    report_path: Path = args.report.resolve()
     # Never leave an earlier successful report at the requested output on failure.
-    args.report.parent.mkdir(parents=True, exist_ok=True)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     report: dict[str, JSONValue] = {
         "suite": args.suite,
         "status": "failed",
@@ -356,17 +357,21 @@ def main(argv: list[str] | None = None) -> int:
         "metrics": {},
         "reference_qualified": False,
     }
-    args.report.write_text(json.dumps(report, indent=2) + "\n")
+    report_path.write_text(json.dumps(report, indent=2) + "\n")
     started = time.perf_counter()
 
     try:
         if args.suite == "all":
             metrics: dict[str, JSONValue] = {}
             report["metrics"] = metrics
+            children = {suite: report_path.parent / f"{suite}.json" for suite in SUITES[:-1]}
 
-            for suite in SUITES[:-1]:
+            for suite, path in children.items():
+                path.write_text(json.dumps({**report, "suite": suite}, indent=2) + "\n")
+
+            for suite, path in children.items():
                 suite_started = time.perf_counter()
-                metrics[suite] = measure(suite, args.report.parent)
+                metrics[suite] = measure(suite, report_path.parent)
                 child = {
                     **report,
                     "suite": suite,
@@ -374,18 +379,16 @@ def main(argv: list[str] | None = None) -> int:
                     "metrics": metrics[suite],
                     "elapsed_seconds": time.perf_counter() - suite_started,
                 }
-                (args.report.parent / f"{suite}.json").write_text(
-                    json.dumps(child, indent=2) + "\n"
-                )
+                path.write_text(json.dumps(child, indent=2) + "\n")
         else:
-            metrics = measure(args.suite, args.report.parent)
+            metrics = measure(args.suite, report_path.parent)
         report["metrics"] = metrics
         report["status"] = "passed"
     except BaseException as error:
         report["error"] = f"{type(error).__name__}: {error}"
         report["traceback"] = traceback.format_exc()
     report["elapsed_seconds"] = time.perf_counter() - started
-    args.report.write_text(json.dumps(report, indent=2) + "\n")
+    report_path.write_text(json.dumps(report, indent=2) + "\n")
     passed = report["status"] == "passed"
     sys.stdout.write(f"QUALIFICATION {'PASSED' if passed else 'FAILED'}: {args.suite}\n")
 

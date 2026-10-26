@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import tempfile
 import time
@@ -17,7 +16,7 @@ from test_lsp import Client
 from test_lsp_edits import applied
 
 from pysx.tooling.lsp.workspace import position
-from scripts.verify import environment
+from scripts.verify import Gate, run
 
 if TYPE_CHECKING:
     from typing import Any
@@ -56,14 +55,23 @@ def browser_samples(output: str) -> list[JSONValue]:
     return reports
 
 
-def run_command(command: list[str], log: Path, banner: str) -> str:
-    result = subprocess.run(
-        command, capture_output=True, text=True, timeout=600, env=environment(), check=False
-    )
-    output = result.stdout + result.stderr
+def validate_overhead(overhead: dict[str, JSONValue]) -> None:
+    """Reject a missing verdict; the limit itself stays a retained observation."""
+
+    samples = overhead.get("samples")
+
+    if not isinstance(samples, list) or len(samples) != 5:
+        raise ValueError("missing disabled tracing overhead samples")
+
+    if not isinstance(overhead.get("passed"), bool) or overhead.get("limit_percent") != 5:
+        raise ValueError("missing disabled tracing overhead verdict")
+
+
+def run_command(gate: Gate, log: Path, banner: str) -> str:
+    passed, _elapsed, output = run(gate, stream=False)
     log.write_text(output)
 
-    if result.returncode != 0 or banner not in output:
+    if not passed or banner not in output:
         raise RuntimeError(f"command failed or missing assertions: {log.name}")
 
     return output
@@ -252,39 +260,57 @@ def wait_ready(client: Client) -> dict[str, object]:
 def tooling(directory: Path) -> dict[str, JSONValue]:
     directory.mkdir(parents=True, exist_ok=True)
     browser = run_command(
-        ["npm", "--prefix", "tests", "run", "browser", "--", "--suite", "editor_browser"],
+        Gate(
+            "browser",
+            "qualification-browser",
+            ("npm", "--prefix", "tests", "run", "browser", "--", "--suite", "editor_browser"),
+            timeout=600,
+        ),
         directory / "browser.log",
         "BROWSER VERIFICATION PASSED: editor_browser",
     )
     browsers = browser_samples(browser)
     editor = run_command(
-        ["npm", "--prefix", "editor", "test", "--", "--suite", "editor_browser"],
+        Gate(
+            "editor",
+            "qualification-editor",
+            ("npm", "--prefix", "editor", "test", "--", "--suite", "client_verify"),
+            needs_display=True,
+            timeout=600,
+        ),
         directory / "editor.log",
-        "EDITOR VERIFICATION PASSED: editor_browser",
+        "EDITOR VERIFICATION PASSED: client_verify",
     )
     assert editor.count("PYSX EDITOR CASES PASSED: 12") == 2
     resident_report = resident(directory)
-    overhead = cast("JSONValue", disabled_overhead())
+    overhead = cast("dict[str, JSONValue]", disabled_overhead())
+    validate_overhead(overhead)
     (directory / "disabled-overhead.json").write_text(json.dumps(overhead, indent=2) + "\n")
     development = directory / "development.json"
     run_command(
-        [
-            sys.executable,
-            "tests/dev_measurements.py",
-            "--section",
-            "reload",
-            "--report",
-            str(development),
-        ],
+        Gate(
+            "python",
+            "qualification-development",
+            (
+                sys.executable,
+                "tests/dev_measurements.py",
+                "--section",
+                "reload",
+                "--report",
+                str(development),
+            ),
+            timeout=600,
+        ),
         directory / "development.log",
         "DEV MEASUREMENTS PASSED",
     )
 
     return {
         "browsers": browsers,
-        "editor_cases": 24,
+        "editor": {"suite": "client_verify", "cases": 12, "activation_orders": 2},
         "resident": resident_report,
         "disabled_overhead": overhead,
+        "disabled_overhead_within_limit": overhead["passed"],
         "development": cast("JSONValue", json.loads(development.read_text())),
         "reference_numeric_qualification": "deferred; local failures retained in raw reports",
     }

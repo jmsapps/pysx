@@ -139,14 +139,7 @@ async def socket_load(directory: Path) -> dict[str, JSONValue]:
                 observed["events"] = events
                 observed["window_seconds"] = time.perf_counter() - started
                 runs.append(observed)
-                current = (
-                    int(
-                        subprocess.check_output(
-                            ["ps", "-o", "rss=", "-p", str(worker.process.pid)], text=True
-                        ).strip()
-                    )
-                    * 1024
-                )
+                current = rss_bytes(worker.process.pid)
                 rss.append(current)
                 assert current <= 1024**3, current
         finally:

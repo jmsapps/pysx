@@ -117,6 +117,39 @@ def test_editor_browser_all_stops_at_failed_stage(
     assert json.loads((tmp_path / "workloads.json").read_text())["status"] == "passed"
 
 
+OVERHEAD_SAMPLES: list[JSONValue] = [{"overhead_percent": 1.0} for _ in range(5)]
+INCOMPLETE_OVERHEAD: list[dict[str, JSONValue]] = [
+    {"samples": [], "limit_percent": 5, "passed": True},
+    {"samples": OVERHEAD_SAMPLES, "limit_percent": 5},
+    {"samples": OVERHEAD_SAMPLES, "limit_percent": 50, "passed": True},
+]
+
+
+@pytest.mark.parametrize("overhead", INCOMPLETE_OVERHEAD)
+def test_editor_browser_missing_overhead_verdict_fails(overhead: dict[str, JSONValue]) -> None:
+    from qualification_tooling import validate_overhead
+
+    with pytest.raises(ValueError, match="disabled tracing overhead"):
+        validate_overhead(overhead)
+
+
+def test_editor_browser_all_replaces_stale_child_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def measure(suite: str, _directory: Path) -> dict[str, JSONValue]:
+        if suite == "runtime":
+            raise RuntimeError("fault failed")
+
+        return {"observed": True}
+
+    monkeypatch.setattr(qualification, "measure", measure)
+    stale = tmp_path / "runtime.json"
+    stale.write_text('{"status": "passed"}')
+    assert main(["--suite", "all", "--report", str(tmp_path / "all.json")]) == 1
+    assert json.loads(stale.read_text())["status"] == "failed"
+    assert json.loads((tmp_path / "tooling.json").read_text())["status"] == "failed"
+
+
 def test_load_churn_disposed_graphs_and_rows() -> None:
     from qualification_runtime import churn
 
