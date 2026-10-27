@@ -1,5 +1,7 @@
 """Authorization, tooling, hosting and a coherent final application."""
 
+from textwrap import dedent
+
 from tutorial.content import Lesson
 
 LESSONS = (
@@ -22,11 +24,15 @@ LESSONS = (
         "tests need both a same-generation restoration control and a changed-generation "
         "rejection; a system that never restores anything would otherwise appear secure "
         "by passing only the negative case.",
-        "from pysx import AccessDenied, RequestContext, SecurityPolicy\n\n"
-        "def authorize(request: RequestContext, action: str, target: str) -> bool:\n"
-        '    return action != "write" or request.principal == "writer"\n\n'
-        "policy = SecurityPolicy(authorize=authorize)\n"
-        'assert not authorize(RequestContext(principal="reader"), "write", "draft")\n',
+        dedent("""
+            from pysx import AccessDenied, RequestContext, SecurityPolicy
+
+            def authorize(request: RequestContext, action: str, target: str) -> bool:
+                return action != "write" or request.principal == "writer"
+
+            policy = SecurityPolicy(authorize=authorize)
+            assert not authorize(RequestContext(principal="reader"), "write", "draft")
+        """).strip(),
         "The policy evaluates the principal from the request. The live handler calls "
         "require_access before updating its protected counter; it does not merely compare "
         "a role label.",
@@ -57,9 +63,16 @@ LESSONS = (
         "Keep Python/Pylance ownership of Python expressions and use the framework's "
         "template-aware tooling for markup. The final installed qualification uses the "
         "real editor host, not a mock completion provider.",
-        "from pysx.tooling.check import diagnostics_for_source\n\n"
-        'source = "from pysx import pysx\\nview = pysx(t\\\'div(hreff=\\"/\\")\\\')\\n"\n'
-        "assert diagnostics_for_source(source)\n",
+        dedent("""
+            from pysx.tooling.check import diagnostics_for_source
+
+            source = '''from pysx import pysx
+            view = pysx(t\"\"\"
+                div(hreff="/")
+            \"\"\")
+            '''
+            assert diagnostics_for_source(source)
+        """).strip(),
         "diagnostics_for_source reads source without importing its application. The "
         "intentional hreff misspelling produces an advisory finding rather than a "
         "fabricated failure.",
@@ -90,10 +103,18 @@ LESSONS = (
         "provider, explicit HTTPS origins, secure cookies and a deliberate authorization "
         "policy. Health checks and graceful shutdown are part of deployment. Keep the "
         "state/key directory stable across the restarts you expect to recover from.",
-        "from pysx import HostConfig\n\nconfig = HostConfig(render_capacity=25)\n"
-        "assert config.render_capacity == 25\n"
-        "try:\n    HostConfig(production=True)\nexcept ValueError:\n    pass\n"
-        'else:\n    raise AssertionError("Incomplete production policy must be rejected")\n',
+        dedent("""
+            from pysx import HostConfig
+
+            config = HostConfig(render_capacity=25)
+            assert config.render_capacity == 25
+            try:
+                HostConfig(production=True)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("Incomplete production policy must be rejected")
+        """).strip(),
         "The first configuration is a bounded local host. The second deliberately "
         "omits production requirements and must raise rather than looking secure by label alone.",
         "Try the incomplete production configuration, select the complete profile, then "
@@ -125,12 +146,20 @@ LESSONS = (
         "different operation with session semantics; do not use it as a hidden substitute "
         "for a broken reset. The next lesson extends this same application with failure "
         "and recovery rather than replacing it with a different showcase.",
-        "from dataclasses import dataclass, replace\nfrom pysx import signal\n\n"
-        "@dataclass(frozen=True)\nclass Task:\n    id: int\n    title: str\n    done: "
-        "bool = False\n\n"
-        'tasks = signal([Task(1, "Build")])\n'
-        "tasks.update(lambda rows: [replace(row, done=True) for row in rows])\n"
-        "assert tasks()[0].done\n",
+        dedent("""
+            from dataclasses import dataclass, replace
+            from pysx import signal
+
+            @dataclass(frozen=True)
+            class Task:
+                id: int
+                title: str
+                done: bool = False
+
+            tasks = signal([Task(1, "Build")])
+            tasks.update(lambda rows: [replace(row, done=True) for row in rows])
+            assert tasks()[0].done
+        """).strip(),
         "The record identifier stays fixed while its value is replaced. A keyed view "
         "can therefore retain its input identity while rendering the changed record.",
         "Add a task, edit a row note, reverse, toggle completion and test the active "
@@ -160,10 +189,13 @@ LESSONS = (
         "committed declared state, current authorization and ordinary fresh-session "
         "behavior. None promises exactly-once external transactions. The installed "
         "application checks and your final review judge this entire story together.",
-        "from pysx import AuthenticatedIdentity, StateCodec\n\n"
-        'identity = AuthenticatedIdentity("learner", "login-generation-1")\n'
-        'assert identity.principal == "learner"\n'
-        "codec = StateCodec[str](lambda value: value, lambda value: str(value))\n",
+        dedent("""
+            from pysx import AuthenticatedIdentity, StateCodec
+
+            identity = AuthenticatedIdentity("learner", "login-generation-1")
+            assert identity.principal == "learner"
+            codec = StateCodec[str](lambda value: value, lambda value: str(value))
+        """).strip(),
         "Authentication generation and state codec are explicit contracts. The lab's "
         "complete source adds bounded decoding, a store, authorization and owned resources.",
         "Complete the embedded lab's draft/commit/fail/retry workflow, restart the server "

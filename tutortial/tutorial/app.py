@@ -21,7 +21,7 @@ from pysx import (
     StaticAsset,
     current_request,
     derived,
-    native,
+    each,
     pysx,
 )
 
@@ -127,18 +127,13 @@ def course() -> Fragment:
     def overview(_: RouteState) -> Fragment:
         current_request().document.title = "Learn pysx · A practical course"
         teaser = foundations.greeting()
-        cards = native.Div(
-            *(
-                Link(
-                    native.Small(f"{lesson.unit} · {lesson.number:02}"),
-                    lesson.title,
-                    router=router,
-                    href=lesson.path,
-                )
-                for lesson in LESSONS
-            ),
-            class_name="overview-grid",
-        )
+
+        def card(lesson: Lesson) -> Fragment:
+            return pysx(t"""
+                Link(router={router} href={lesson.path})
+                    small: {lesson.unit} " · " {f"{lesson.number:02}"}
+                    {lesson.title}
+            """)
 
         return pysx(t"""
             article(class="lesson" data-page="overview")
@@ -158,7 +153,8 @@ def course() -> Fragment:
                     h2: "Your first live page"
                     {teaser}
                 h2: "The complete course"
-                {cards}
+                div(class="overview-grid")
+                    {each(LESSONS, card, key=lambda lesson: lesson.slug)}
                 p: "The course runs on pysx. Your private demo state belongs to this session."
         """)
 
@@ -220,7 +216,8 @@ def course() -> Fragment:
         link(rel="stylesheet" href="/assets/course.css")
         header(class="course-header")
             Link(router={router} href="/" class_name="brand"):
-                "pysx"; small: "Learn by building"
+                "pysx"
+                small: "Learn by building"
             Button(id="course-theme" onClick={switch}): "Theme: " {theme_name}
         a(href="#lesson-main" class="skip-link"): "Skip to lesson"
         div(class="course-layout")
@@ -239,9 +236,14 @@ class CourseApplication(Application):
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         (directory / "keys").mkdir(mode=0o700, exist_ok=True)
         assets = {
+            "/favicon.ico": StaticAsset(
+                files("tutorial").joinpath("assets/favicon.png").read_bytes(),
+                "image/png",
+                cache_seconds=3600,
+            ),
             "/assets/course.css": StaticAsset(
                 files("tutorial").joinpath("assets/course.css").read_bytes(), "text/css"
-            )
+            ),
         }
         config = HostConfig(
             assets=assets,

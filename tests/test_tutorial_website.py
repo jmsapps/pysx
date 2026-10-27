@@ -1,5 +1,6 @@
 """Full course structure, executable lesson sources and real HTTP ownership."""
 
+import ast
 import asyncio
 import html
 import importlib
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from tutorial.app import create_application
 from tutorial.catalog import LESSONS, neighbors
+from tutorial.components.code import CodeBlock, highlighted_sources
 
 from pysx import RequestContext
 from pysx.compiler.loader import install_loader
@@ -20,6 +22,41 @@ if TYPE_CHECKING:
     from pysx.runtime.wire import JSONValue
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_tutorial_website_pure_multiline_authoring_and_displayed_source() -> None:
+    sources = [path.read_text() for path in (ROOT / "tutortial/tutorial").rglob("*.py")]
+    sources.extend(lesson.code for lesson in LESSONS)
+
+    for source in sources:
+        for node in ast.walk(ast.parse(source)):
+            assert not (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "native"
+            )
+
+            if isinstance(node, ast.TemplateStr):
+                assert node.end_lineno is not None
+                assert node.end_lineno > node.lineno
+
+    for lesson in LESSONS:
+        parts = highlighted_sources()[lesson.code]
+        assert "".join(part[1] for part in parts) == lesson.code
+        assert any(part[0] != "plain" for part in parts)
+
+
+def test_tutorial_website_highlighted_code_escapes_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = '<script>alert("source is data")</script>'
+    monkeypatch.setitem(highlighted_sources(), source, [["string", source]])
+    session = Session(lambda: CodeBlock(source=source))
+
+    try:
+        assert "<script>alert" not in session.rendered.body
+        assert "&lt;script&gt;" in session.rendered.body
+        assert 'data-syntax="string"' in session.rendered.body
+    finally:
+        session.dispose()
 
 
 def test_tutorial_website_complete_course_graph_and_grounding() -> None:

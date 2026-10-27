@@ -20,6 +20,7 @@ def test_validate_integrated_tutorial_wheel_assets_types_and_provenance(tmp_path
         names = archive.namelist()
         assert "tutorial/py.typed" in names
         assert "tutorial/assets/course.css" in names
+        assert "tutorial/assets/code-tokens.json" in names
         assert "tutorial/components/pages.py" in names
         assert not any(name.startswith(("examples/", "tests/")) for name in names)
     worker.reinstall()

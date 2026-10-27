@@ -83,5 +83,11 @@ identity provider, HTTPS origins, secure cookies and deliberate access policy.
   application-owned presentation.
 - `tutorial/app.py` exports the host; `tutorial/durable.py` owns the declared-state lab.
 
+The interface is authored in multiline pysx templates, including shared navigation,
+contents and recursive controls. Code panels use escaped spans generated with the
+editor's own Python grammar and pysx injection. After editing teaching snippets in
+the framework checkout, run `node scripts/highlight_tutorial.mjs`; the grammar gate
+checks that the generated data matches. The deployed course needs no editor tools.
+
 The application does not import the example or test packages at runtime. Publishing
 is a separate operation from running this local teaching application.

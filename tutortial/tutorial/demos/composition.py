@@ -67,7 +67,11 @@ def loops() -> Fragment:
             def choose(_: object) -> None:
                 selected.set(f"{name} / {label}")
 
-            return pysx(t"Button(data-choice={name + '-' + label} onClick={choose}): {label}")
+            choice_id = name + "-" + label
+
+            return pysx(t"""
+                Button(data-choice={choice_id} onClick={choose}): {label}
+            """)
 
         return pysx(t"""
             li(data-group={name})
@@ -184,7 +188,9 @@ def effects() -> Fragment:
 
         own_effect("lesson-observer", observe)
 
-        return pysx(t'p(id="observer-active"): "Observer attached"')
+        return pysx(t"""
+            p(id="observer-active"): "Observer attached"
+        """)
 
     def increment(_: object) -> None:
         count.update(lambda value: value + 1)

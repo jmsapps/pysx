@@ -91,6 +91,8 @@ try {
     assert.equal(response.status(), 200, slug);
     await connected();
     assert.equal(await page.locator(`[data-lesson="${slug}"]`).count(), 1);
+    assert.equal(await page.locator('.contents a[aria-current="page"]').count(), 1);
+    assert.equal(await page.locator('.contents a[aria-current="page"]').getAttribute("href"), "/learn/" + slug);
     assert.equal(await page.locator("[data-previous]").count(), 2);
     assert.equal(await page.locator("[data-next]").count(), 2);
     const prior = index ? "/learn/" + slugs[index - 1] : "/";
@@ -99,7 +101,38 @@ try {
       assert.equal(await page.locator(`[data-previous="${position}"]`).getAttribute("href"), prior);
       assert.equal(await page.locator(`[data-next="${position}"]`).getAttribute("href"), next);
     }
-    assert((await page.locator("article pre code").textContent()).includes("from pysx"));
+    assert((await page.locator("article > pre code").textContent()).includes("from pysx"));
+    assert(await page.locator("article pre code [data-syntax]").count() > 0);
+    await page.locator("#lesson-main").focus();
+    assert.equal(await page.locator("#lesson-main").evaluate(node => getComputedStyle(node).outlineStyle), "none");
+    assert(await page.locator(".demo").evaluate(node => {
+      const exercise = node.querySelector("#lesson-exercise");
+      const expected = node.querySelector("#lesson-expected");
+      const reset = node.querySelector("#reset-demo");
+      return Boolean(exercise && expected && reset &&
+        (exercise.compareDocumentPosition(expected) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+        (expected.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING));
+    }));
+    assert.equal(await page.getByRole("heading", {name: "Your turn", exact: true}).count(), 0);
+    if (index === 0) {
+      const palette = () => page.evaluate(() => ({
+        paper: getComputedStyle(document.body).backgroundColor,
+        accent: getComputedStyle(document.querySelector('[data-previous="top"]')).color,
+        detail: getComputedStyle(document.querySelector('.eyebrow')).color,
+      }));
+      assert.deepEqual(await palette(), {paper: "rgb(247, 249, 254)", accent: "rgb(21, 94, 217)", detail: "rgb(104, 53, 201)"});
+      await page.locator('#course-theme').click();
+      await text('course-theme', 'Theme: dark');
+      assert.deepEqual(await palette(), {paper: "rgb(9, 22, 45)", accent: "rgb(84, 205, 255)", detail: "rgb(189, 154, 255)"});
+      await page.screenshot({path: `${tmpdir()}/pysx-course-dark-${process.env.PYSX_BROWSER_ENGINE}.png`, fullPage: true});
+      await page.locator('#course-theme').click();
+      await text('course-theme', 'Theme: light');
+      await page.locator('#reset-demo').focus();
+      await page.keyboard.press("Shift+Tab");
+      assert(await page.locator('#greeting-name').evaluate(node =>
+        node === document.activeElement && node.matches(":focus-visible") &&
+        getComputedStyle(node).outlineStyle !== "none" && parseFloat(getComputedStyle(node).outlineWidth) > 0));
+    }
     const isolated = await context.newPage();
     await isolated.goto(base + "/learn/" + slug); await connected(isolated);
     if (slug === "getting-started") {
@@ -196,6 +229,7 @@ try {
       await page.keyboard.press("ArrowRight");
       await page.waitForFunction(() => document.activeElement?.id === "lesson-tree-read");
       await page.keyboard.press("Enter"); await text("tree-selection", "Read");
+      await page.waitForFunction(() => document.querySelector('#lesson-tree-read')?.getAttribute('aria-selected') === 'true');
       assert.equal(await page.locator('#lesson-tree [tabindex="0"]').count(), 1);
     } else if (["async-resources", "server-rendering"].includes(slug)) {
       await text("resource-status", "success"); await text("resource-setups", "1"); await text("resource-mounts", "1");
@@ -256,9 +290,9 @@ try {
         await frame.locator("#lab-resource-retry").click(); await text("lab-resource-status", "success", frame);
       }
     } else if (slug === "authentication") {
-      await page.locator("#auth-reader").click(); await text("auth-principal", "reader");
+      await page.locator("#auth-reader").click(); await connected(); await text("auth-principal", "reader");
       await page.locator("#auth-write").click(); await text("auth-result", "Denied by current host policy");
-      await page.locator("#auth-writer").click(); await text("auth-principal", "writer");
+      await page.locator("#auth-writer").click(); await connected(); await text("auth-principal", "writer");
       await page.locator("#auth-write").click(); await text("auth-count", "1");
       await reconnect(); await text("auth-count", "1");
       // Change the actual HttpOnly login through the application's own endpoint,
@@ -266,7 +300,7 @@ try {
       const changedLogin = await context.request.get(base + "/demo-login/reader", {maxRedirects: 0});
       assert.equal(changedLogin.status(), 303);
       await reconnect(); await text("auth-principal", "reader"); await text("auth-count", "0");
-      await page.locator("#auth-logout").click(); await text("auth-principal", "learner"); await text("auth-count", "0");
+      await page.locator("#auth-logout").click(); await connected(); await text("auth-principal", "learner"); await text("auth-count", "0");
     } else if (slug === "development-workflow") {
       await page.locator("#diagnostic-fix").click(); await text("diagnostic-result", "No diagnostics ([])");
       await page.locator("#diagnostic-warning").click();
@@ -287,6 +321,7 @@ try {
       await page.waitForFunction(() => !document.querySelector('[data-task="1"]'));
     }
     await fresh(isolated, slug); await isolated.close();
+    await connected();
     const generation = await page.locator("[data-lesson]").getAttribute("data-demo-generation");
     await page.locator("#reset-demo").click();
     await page.waitForFunction(generation => document.querySelector("[data-lesson]")?.getAttribute("data-demo-generation") !== generation, generation);
@@ -302,6 +337,7 @@ try {
   await page.goto(base + "/"); await connected();
   await page.locator(".lesson-nav a").click(); await page.waitForURL("**/learn/getting-started");
   await page.locator('[data-next="bottom"]').click(); await page.waitForURL("**/learn/templates-and-elements");
+  await page.waitForFunction(() => document.querySelector('.contents a[aria-current="page"]')?.getAttribute('href') === '/learn/templates-and-elements');
   await page.locator('[data-previous="top"]').click(); await page.waitForURL("**/learn/getting-started");
   await page.setViewportSize({width: 375, height: 812});
   await page.evaluate(() => window.scrollTo(0, 0));

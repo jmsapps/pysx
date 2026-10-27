@@ -19,14 +19,29 @@ from pysx import (
 )
 from pysx.tooling.check import apply_fix, diagnostics_for_source
 from tutorial.components import Actions, Button, Field, Panel, Readout
+from tutorial.components.code import CodeBlock
 from tutorial.model import LabState
 
 if TYPE_CHECKING:
     from pysx import Signal
     from tutorial.model import Task
 
-FROZEN_SOURCE = 'from pysx import pysx, signal\ncount = signal(0)\nview = pysx(t"p: {count()}")\n'
-ATTRIBUTE_SOURCE = "from pysx import pysx\nview = pysx(t\"div(hreff='bad')\")\n"
+FROZEN_SOURCE = '''from pysx import pysx, signal
+count = signal(0)
+view = pysx(t"""
+    p: {count()}
+""")
+'''
+ATTRIBUTE_SOURCE = '''from pysx import pysx
+view = pysx(t"""
+    div(hreff="bad")
+""")
+'''
+CORRECT_SOURCE = '''from pysx import pysx
+view = pysx(t"""
+    div(title="valid")
+""")
+'''
 
 
 def authentication() -> Fragment:
@@ -76,13 +91,13 @@ def diagnostics() -> Fragment:
                 source.set(apply_fix(source(), fixes[0]))
 
                 return
-        source.set("from pysx import pysx\nview = pysx(t\"div(title='valid')\")\n")
+        source.set(CORRECT_SOURCE)
 
     def warning(_: object) -> None:
         source.set(ATTRIBUTE_SOURCE)
 
     return pysx(t"""
-        pre(id="diagnostic-source"): {source}
+        CodeBlock(identifier="diagnostic-source" source={source}):
         Actions:
             Button(id="diagnostic-fix" onClick={fix}): "Apply correction"
             Button(id="diagnostic-warning" onClick={warning}): "Show attribute warning"

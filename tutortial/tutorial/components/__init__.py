@@ -28,7 +28,12 @@ Field = styled.input(t"""
     color: var(--ink);
     background: var(--surface);
 """)
-Actions = styled.div(t"display: flex; flex-wrap: wrap; gap: 10px; align-items: center;")
+Actions = styled.div(t"""
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+""")
 Panel = styled.section(t"""
     border: 1px solid var(--line);
     border-radius: 12px;
@@ -37,4 +42,8 @@ Panel = styled.section(t"""
     background: var(--surface);
     min-width: 0;
 """)
-Readout = styled.output(t"display: block; padding: 12px 0; overflow-wrap: anywhere;")
+Readout = styled.output(t"""
+    display: block;
+    padding: 12px 0;
+    overflow-wrap: anywhere;
+""")

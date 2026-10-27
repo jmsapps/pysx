@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pysx import BrowserEvent, Dom, Fragment, Link, derived, native, on_event, pysx, signal, when
+from pysx import BrowserEvent, Dom, Fragment, Link, derived, each, on_event, pysx, signal
 from tutorial.components import Actions, Button, Field, Panel, Readout
 from tutorial.themes import selected_name
 
@@ -158,47 +158,34 @@ def tree_controls() -> Fragment:
             active.set(destination)
             await refs[destination].handle().focus()
 
-        children = (
-            when(
-                conditions=(
-                    (
-                        opened,
-                        lambda: native.Ul(
-                            *(node(child, level + 1) for child in entry.children), role="group"
-                        ),
-                    ),
-                )
-            )
-            if entry.children
-            else native.Fragment()
+        key_handler = on_event(
+            keyboard_event,
+            keys=("ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", "Home", "End", "Enter"),
+            prevent_default=True,
+            stop_propagation=True,
+        )
+        tab_stop = derived(lambda: 0 if active() == entry.key else -1)
+        expanded = opened if entry.children else None
+        selected = derived(lambda: chosen() == entry.key)
+        children = each(
+            derived(lambda: entry.children),
+            lambda child: node(child, level + 1),
+            key=lambda child: child.key,
         )
 
-        return native.Li(
-            native.Span(entry.label),
-            children,
-            id="lesson-tree-" + entry.key,
-            ref=refs[entry.key],
-            role="treeitem",
-            tabindex=derived(lambda: 0 if active() == entry.key else -1),
-            custom_attrs={
-                "aria-expanded": opened if entry.children else None,
-                "aria-level": level,
-                "aria-selected": derived(lambda: chosen() == entry.key),
-            },
-            on_keydown=on_event(
-                keyboard_event,
-                keys=("ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", "Home", "End", "Enter"),
-                prevent_default=True,
-                stop_propagation=True,
-            ),
-        )
+        return pysx(t"""
+            li(id={"lesson-tree-" + entry.key} ref={refs[entry.key]} role="treeitem"
+                tabindex={tab_stop} aria-expanded={expanded} aria-level={level}
+                aria-selected={selected} onKeydown={key_handler})
+                span: {entry.label}
+                if {bool(entry.children)}:
+                    if {opened}:
+                        ul(role="group")
+                            {children}
+        """)
 
-    return native.Fragment(
-        native.Ul(
-            node(root),
-            id="lesson-tree",
-            role="tree",
-            custom_attrs={"aria-label": "Project learning tree"},
-        ),
-        native.Output(selection, id="tree-selection"),
-    )
+    return pysx(t"""
+        ul(id="lesson-tree" role="tree" aria-label="Project learning tree")
+            {node(root)}
+        output(id="tree-selection"): {selection}
+    """)

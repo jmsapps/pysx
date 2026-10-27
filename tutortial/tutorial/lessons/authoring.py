@@ -1,5 +1,7 @@
 """Composition, identity, lifecycle, styling and accessible navigation."""
 
+from textwrap import dedent
+
 from tutorial.content import Lesson
 
 LESSONS = (
@@ -21,10 +23,18 @@ LESSONS = (
         "The demo keeps a parent count while mounting and removing a child. The child has "
         "its own local count and cleanup. Increment both, remove the child and restore it: "
         "the parent should retain its count while the new child starts fresh.",
-        "from pysx import Fragment, pysx, signal\n\ndef app() -> Fragment:\n"
-        '    visible = signal(True)\n    return pysx(t"""\n'
-        '        if {visible}:\n            p: "Visible"\n'
-        '        else:\n            p: "Hidden"\n    """)\n',
+        dedent('''
+            from pysx import Fragment, pysx, signal
+
+            def app() -> Fragment:
+                visible = signal(True)
+                return pysx(t"""
+                    if {visible}:
+                        p: "Visible"
+                    else:
+                        p: "Hidden"
+                """)
+        ''').strip(),
         "The condition is a live Signal. Only the selected body's nodes are active. "
         "The alternative is not an eagerly constructed component.",
         "Increment the child, hide it, show it again, and inspect the cleanup count.",
@@ -51,10 +61,19 @@ LESSONS = (
         "In the demo, reverse the groups before selecting a nested child. The selection "
         "readout should still name the clicked group's child. Adding a group affects the "
         "live region, while the snapshot count remains the count taken at setup.",
-        "from pysx import Fragment, each, pysx, signal\n\ndef app() -> Fragment:\n"
-        '    rows = signal(["Read", "Build"])\n'
-        "    def row(text: str) -> Fragment:\n        return pysx(t'li: {text}')\n"
-        "    return pysx(t'ul: {each(rows, row, key=str)}')\n",
+        dedent('''
+            from pysx import Fragment, each, pysx, signal
+
+            def app() -> Fragment:
+                rows = signal(["Read", "Build"])
+                def row(text: str) -> Fragment:
+                    return pysx(t"""
+                        li: {text}
+                    """)
+                return pysx(t"""
+                    ul: {each(rows, row, key=str)}
+                """)
+        ''').strip(),
         "The source is passed to each uncalled. The row function receives the current "
         "value, and key=str is suitable here because the small example has unique text keys.",
         "Add a group, reverse the groups and select a child from the original first group.",
@@ -81,11 +100,21 @@ LESSONS = (
         "This is a behavioral contract worth testing with object identity, not just "
         "matching visible strings. An implementation can reconstruct identical HTML "
         "while still losing caret position, selection or a native control's state.",
-        "from pysx import Fragment, each, local_state, pysx, signal\n\n"
-        "def app() -> Fragment:\n    rows = signal([1, 2])\n"
-        '    def row(key: int) -> Fragment:\n        draft = local_state("draft", "")\n'
-        "        return pysx(t'\\nli:\\n    input(bindValue={draft})\\n')\n"
-        "    return pysx(t'ul: {each(rows, row, key=lambda key: key)}')\n",
+        dedent('''
+            from pysx import Fragment, each, local_state, pysx, signal
+
+            def app() -> Fragment:
+                rows = signal([1, 2])
+                def row(key: int) -> Fragment:
+                    draft = local_state("draft", "")
+                    return pysx(t"""
+                        li:
+                            input(bindValue={draft})
+                    """)
+                return pysx(t"""
+                    ul: {each(rows, row, key=lambda key: key)}
+                """)
+        ''').strip(),
         "The stable integer key identifies the record. draft belongs to that row owner, "
         "so movement retains it and removal disposes it.",
         "Type into Alpha, increment its count, focus and reverse, then remove and restore Alpha.",
@@ -112,10 +141,21 @@ LESSONS = (
         "A styled callable can extend a component's appearance while preserving its "
         "content and prop contract. Children retain the caller's namespace: a component "
         "does not gain permission to reinterpret a caller's dynamic source.",
-        "from pysx import Children, Fragment, pysx\n\n"
-        "def Card(*, title: str, children: Children | None = None) -> Fragment:\n"
-        "    return pysx(t'\\nsection:\\n    h2: {title}\\n    div: {children}\\n')\n\n"
-        'def app() -> Fragment:\n    return pysx(t\'Card(title="A reusable card"): "Content"\')\n',
+        dedent('''
+            from pysx import Children, Fragment, pysx
+
+            def Card(*, title: str, children: Children | None = None) -> Fragment:
+                return pysx(t"""
+                    section:
+                        h2: {title}
+                        div: {children}
+                """)
+
+            def app() -> Fragment:
+                return pysx(t"""
+                    Card(title="A reusable card"): "Content"
+                """)
+        ''').strip(),
         "title is a typed prop and children is composable content. The caller controls "
         "the content without duplicating the section and heading structure.",
         "Change the common heading and increment only the first component instance.",
@@ -141,9 +181,17 @@ LESSONS = (
         "The bounded log below records run N and cleanup N. Incrementing should clean "
         "up the old run before recording the new run. Once the observer is removed, "
         "further increments must not append log entries until a new observer is attached.",
-        "from pysx import effect, signal\n\ncount = signal(0)\n"
-        "seen: list[int] = []\nobserver = effect(lambda: seen.append(count()))\n"
-        "count.set(1)\nobserver.dispose()\ncount.set(2)\nassert seen == [0, 1]\n",
+        dedent("""
+            from pysx import effect, signal
+
+            count = signal(0)
+            seen: list[int] = []
+            observer = effect(lambda: seen.append(count()))
+            count.set(1)
+            observer.dispose()
+            count.set(2)
+            assert seen == [0, 1]
+        """).strip(),
         "The effect subscribes on its first read. dispose removes that subscription, "
         "which is why changing the source to two does not produce another entry.",
         "Increment, dispose the observer, increment again and reattach it. Reset the log.",
@@ -169,9 +217,19 @@ LESSONS = (
         "Empty dynamic variable values remove the local override, allowing the declared "
         "fallback to apply. css() is for validated flat snapshot CSS text; it is not "
         "an unrestricted live stylesheet or a way to execute submitted source.",
-        "from pysx import Fragment, pysx, styled\n\n"
-        'Notice = styled.p(t"padding: 12px; color: teal;")\n\n'
-        "def app() -> Fragment:\n    return pysx(t'Notice: \"A scoped style\"')\n",
+        dedent('''
+            from pysx import Fragment, pysx, styled
+
+            Notice = styled.p(t"""
+                padding: 12px;
+                color: teal;
+            """)
+
+            def app() -> Fragment:
+                return pysx(t"""
+                    Notice: "A scoped style"
+                """)
+        ''').strip(),
         "Notice is a styled native paragraph. A real lexical reference lets the compiler "
         "and editor recognize it, while the renderer owns the scoped style rule.",
         "Change spacing and switch theme. Type into the preview before another theme switch.",
@@ -197,12 +255,21 @@ LESSONS = (
         "Use the project links below and watch the actual address bar. Copy a project "
         "URL into a fresh tab. The lesson and selected project should render immediately "
         "without first visiting the course overview.",
-        "from pysx import Fragment, Route, Router, RouteState, derived, pysx\n\n"
-        "def project(state: RouteState) -> Fragment:\n"
-        '    identifier = derived(lambda: state.params()["id"])\n'
-        "    return pysx(t'h2: {identifier}')\n\n"
-        'def app() -> Fragment:\n    router = Router([Route("/projects/:id", project)])\n'
-        "    return pysx(t'main: {router.view()}')\n",
+        dedent('''
+            from pysx import Fragment, Route, Router, RouteState, derived, pysx
+
+            def project(state: RouteState) -> Fragment:
+                identifier = derived(lambda: state.params()["id"])
+                return pysx(t"""
+                    h2: {identifier}
+                """)
+
+            def app() -> Fragment:
+                router = Router([Route("/projects/:id", project)])
+                return pysx(t"""
+                    main: {router.view()}
+                """)
+        ''').strip(),
         "The :id segment names a parameter. The branch receives RouteState instead of "
         "parsing raw URL strings itself. Its content is mounted through router.view().",
         "Open project one and then project two, inspect the URL, and reload the second deep link.",
@@ -229,10 +296,20 @@ LESSONS = (
         "The controls below change the actual lesson URL. Use Back and Forward after "
         "moving between project details. A replace-query control should not create an "
         "extra history entry, while a cancelled destination should leave the URL alone.",
-        "from pysx import Fragment, Link, Route, Router, RouteState, pysx\n\n"
-        "def home(_: RouteState) -> Fragment:\n    return pysx(t'p: \"Home\"')\n\n"
-        'def app() -> Fragment:\n    router = Router([Route("/", home)])\n'
-        '    return pysx(t\'main: {Link("Home", router=router, href="/")} {router.view()}\')\n',
+        dedent('''
+            from pysx import Fragment, Link, Route, Router, RouteState, pysx
+
+            def home(_: RouteState) -> Fragment:
+                return pysx(t"""
+                    p: "Home"
+                """)
+
+            def app() -> Fragment:
+                router = Router([Route("/", home)])
+                return pysx(t"""
+                    main: {Link("Home", router=router, href="/")} {router.view()}
+                """)
+        ''').strip(),
         "Link creates a real anchor associated with its router. Keeping the href "
         "meaningful preserves copying, native targets and browser navigation conventions.",
         "Push a detail URL, replace its query, go Back and Forward, then try a cancelled link.",
@@ -259,11 +336,19 @@ LESSONS = (
         "A focus button awaits the ref's handle. Preventing the arrow key's native "
         "default is declared in on_event, before the callback travels to Python. Try "
         "Tab and Shift+Tab as well as the chooser's own keys.",
-        "from pysx import Dom, Fragment, pysx\n\ndef app() -> Fragment:\n"
-        "    dom = Dom()\n    field = dom.ref()\n"
-        "    async def focus(_: object) -> None:\n        await field.handle().focus()\n"
-        '    return pysx(t\'input(ref={field} ariaLabel="Name"); button(onClick={focus}): '
-        '"Focus name"\')\n',
+        dedent('''
+            from pysx import Dom, Fragment, pysx
+
+            def app() -> Fragment:
+                dom = Dom()
+                field = dom.ref()
+                async def focus(_: object) -> None:
+                    await field.handle().focus()
+                return pysx(t"""
+                    input(ref={field} ariaLabel="Name")
+                    button(onClick={focus}): "Focus name"
+                """)
+        ''').strip(),
         "The ref is created by this component. The command is awaited from an async "
         "handler after mounting, rather than pretending a server-side object is a DOM node.",
         "Focus the chooser, press Down twice and Enter, then use Escape and the focus button.",

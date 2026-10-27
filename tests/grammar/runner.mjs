@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import textmate from "vscode-textmate";
@@ -63,10 +64,10 @@ try {
     }
     tokens += result.length;
     if (fixture === "tutorial_website") {
-      for (const word of ["article", "section", "h1", "h2", "pre", "code", "footer", "details", "summary", "nav"]) {
+      for (const word of ["article", "section", "h1", "h2", "pre", "footer", "details", "summary", "nav", "ol"]) {
         check(result.some(token => token.text === word && token.scopes.includes("entity.name.tag.pysx")), `actual course native ${word}`);
       }
-      for (const word of ["Navigation", "Paragraphs", "Button"]) {
+      for (const word of ["Navigation", "Paragraphs", "Button", "CodeBlock"]) {
         check(result.some(token => token.text === word && token.scopes.includes("support.class.component.pysx")), `actual course component ${word}`);
       }
       for (const word of ["data-lesson", "ariaPressed", "class", "position"]) {
@@ -77,8 +78,9 @@ try {
       }
       const firstImport = lines.findIndex(line => line.startsWith("from pysx import"));
       check(firstImport >= 0 && !result.some(token => token.line === firstImport && token.scopes.some(scope => scope.includes("pysx"))), "course imports stay host Python");
-      const constructor = lines.findIndex(line => line.includes("native.Ol("));
-      check(constructor >= 0 && !result.some(token => token.line === constructor && token.scopes.some(scope => scope.includes("pysx"))), "native constructors outside templates stay host Python");
+      check(!lines.some(line => line.includes("native.")), "course shared UI uses templates throughout");
+      const highlighted = spawnSync(process.execPath, [fileURLToPath(new URL("../../scripts/highlight_tutorial.mjs", import.meta.url)), "--check"], {encoding: "utf8"});
+      check(highlighted.status === 0, `displayed course scopes match actual editor grammar: ${highlighted.stderr}`);
       continue;
     }
     if (fixture === "corpus_executable") {

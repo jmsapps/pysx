@@ -1,5 +1,7 @@
 """From a running application to useful reactive state."""
 
+from textwrap import dedent
+
 from tutorial.content import Lesson
 
 LESSONS = (
@@ -23,8 +25,14 @@ LESSONS = (
         "The initial page is already meaningful HTML. A later input event travels to "
         "Python and the resulting small patch returns to this document. Keep the terminal "
         "open while learning; Ctrl+C shuts down the server and its owned work.",
-        "from pysx import Fragment, pysx\n\ndef app() -> Fragment:\n"
-        "    return pysx(t'h1: \"Hello, learner!\"')\n",
+        dedent('''
+            from pysx import Fragment, pysx
+
+            def app() -> Fragment:
+                return pysx(t"""
+                    h1: "Hello, learner!"
+                """)
+        ''').strip(),
         "Fragment describes composable content. The t prefix preserves the template's "
         "structure, and pysx interprets its native h1 element. The CLI imports app before "
         "serving it; it does not execute a copy of Python inside the browser.",
@@ -59,9 +67,16 @@ LESSONS = (
         "control changes an attribute. Inspect the visible preview and the generated text. "
         "Changing data should not require constructing new Python source. Never evaluate "
         "a learner's string as a template.",
-        "from pysx import Fragment, pysx, signal\n\ndef app() -> Fragment:\n"
-        '    name = signal("Learner")\n'
-        "    return pysx(t'\\nsection:\\n    h2: {name}\\n')\n",
+        dedent('''
+            from pysx import Fragment, pysx, signal
+
+            def app() -> Fragment:
+                name = signal("Learner")
+                return pysx(t"""
+                    section:
+                        h2: {name}
+                """)
+        ''').strip(),
         "The outer section supplies structure and h2 supplies a heading. Passing name "
         "uncalled retains a live value. If you interpolate name() here, the read happens "
         "while constructing the fragment and becomes a snapshot.",
@@ -89,9 +104,16 @@ LESSONS = (
         "Keep derived work out of event handlers when it can be expressed as a readable "
         "value. Your handler should change the source; the renderer can then update every "
         "dependent location consistently. Reset is another ordinary write, not a reload.",
-        "from pysx import Fragment, pysx, signal\n\ndef app() -> Fragment:\n"
-        "    count = signal(0)\n    snapshot = count()\n"
-        '    return pysx(t\'p: "Live " {count} " | snapshot " {snapshot}\')\n',
+        dedent('''
+            from pysx import Fragment, pysx, signal
+
+            def app() -> Fragment:
+                count = signal(0)
+                snapshot = count()
+                return pysx(t"""
+                    p: "Live " {count} " | snapshot " {snapshot}
+                """)
+        ''').strip(),
         "snapshot stores the initial integer. The count hole retains the Signal itself. "
         "Both belong to the same render, but only one retains a dependency on future writes.",
         "Increment twice, read both outputs, and reset. Try the same steps in another tab.",
@@ -119,9 +141,14 @@ LESSONS = (
         "Use eq/ne for reactive payload equality. Signal object identity remains useful "
         "to Python containers. A lambda passed to derived is also a good place for genuine "
         "Python short-circuiting, because only the sources actually read are tracked.",
-        "from pysx import derived, signal\n\nquantity = signal(2)\n"
-        "total = derived(lambda: quantity() * 12)\n"
-        "quantity.set(3)\nassert total() == 36\n",
+        dedent("""
+            from pysx import derived, signal
+
+            quantity = signal(2)
+            total = derived(lambda: quantity() * 12)
+            quantity.set(3)
+            assert total() == 36
+        """).strip(),
         "The callback reads quantity, which establishes its dependency. The assertion "
         "checks a later read after changing the source, rather than only checking initialization.",
         "Increase quantity past three, observe the threshold, then reset. Explain why "
@@ -150,10 +177,18 @@ LESSONS = (
         "and role behavior you would otherwise get for free. In the live exercise, the "
         "input retains focus while its event readout changes, so you can compare keys "
         "without clicking between every experiment.",
-        "from pysx import BrowserEvent, Fragment, on_event, pysx, signal\n\n"
-        'def app() -> Fragment:\n    last = signal("No key yet")\n'
-        "    def key(event: BrowserEvent) -> None:\n        last.set(event.key)\n"
-        "    return pysx(t'input(onKeydown={on_event(key)}); p: {last}')\n",
+        dedent('''
+            from pysx import BrowserEvent, Fragment, on_event, pysx, signal
+
+            def app() -> Fragment:
+                last = signal("No key yet")
+                def key(event: BrowserEvent) -> None:
+                    last.set(event.key)
+                return pysx(t"""
+                    input(onKeydown={on_event(key)})
+                    p: {last}
+                """)
+        ''').strip(),
         "The callback takes BrowserEvent and records its key. The input's onKeydown "
         "binding is an event contract, while the paragraph is an ordinary live binding.",
         "Focus the event field. Press A, Shift+A and ArrowDown, then clear the readout.",
@@ -181,10 +216,17 @@ LESSONS = (
         "submission gives the app a deliberate commit point. Reset should visibly restore "
         "the lesson's initial values, while a server correction demonstrates that the "
         "server remains authoritative over the bound value.",
-        "from pysx import Fragment, pysx, signal\n\ndef app() -> Fragment:\n"
-        '    name = signal("")\n'
-        '    return pysx(t\'label(for="name"): "Name"; input(id="name" bindValue={name} '
-        "required={True}); p: {name}')\n",
+        dedent('''
+            from pysx import Fragment, pysx, signal
+
+            def app() -> Fragment:
+                name = signal("")
+                return pysx(t"""
+                    label(for="name"): "Name"
+                    input(id="name" bindValue={name} required={True})
+                    p: {name}
+                """)
+        ''').strip(),
         "The label points to the same id as the input. The writable name Signal supplies "
         "the binding, and required remains a native boolean property rather than a string.",
         "Try submitting an empty name. Enter a name, accept the terms, submit, then "
@@ -214,9 +256,16 @@ LESSONS = (
         "copy experiment is intentionally visible: it changes the copy's readout while "
         "the live first-score readout stays put. This distinguishes real ownership from "
         "a demonstration that happens to print the expected initial value.",
-        'from pysx import signal\n\nprofile = signal({"scores": {"first": 1, "second": 2}})\n'
-        'first = profile["scores"]["first"]\nfirst.set(3)\n'
-        'copy = profile()\ncopy["scores"]["first"] = 99\nassert first() == 3\n',
+        dedent("""
+            from pysx import signal
+
+            profile = signal({"scores": {"first": 1, "second": 2}})
+            first = profile["scores"]["first"]
+            first.set(3)
+            copy = profile()
+            copy["scores"]["first"] = 99
+            assert first() == 3
+        """).strip(),
         "first remains attached to the owned root. copy is a detached dictionary. The "
         "last assertion proves that editing a snapshot is not a hidden live write.",
         "Increment the first score, then change a private copy. Compare first, second "

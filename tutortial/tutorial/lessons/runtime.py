@@ -1,5 +1,7 @@
 """Async work, HTTP, isolation and resilient state."""
 
+from textwrap import dedent
+
 from tutorial.content import Lesson
 
 LESSONS = (
@@ -21,12 +23,20 @@ LESSONS = (
         "The local loader below deliberately waits long enough to interact with. Type "
         "a draft while it runs, trigger a replacement, and cancel another request. Your "
         "draft should remain editable and a cancelled result must not appear later.",
-        "import asyncio\nfrom pysx import Fragment, derived, pysx, resource\n\n"
-        "def app() -> Fragment:\n"
-        '    async def load() -> str:\n        await asyncio.sleep(0.05)\n        return "Ready"\n'
-        '    result = resource("message", load)\n'
-        "    text = derived(lambda: result().value or result().status)\n"
-        "    return pysx(t'p: {text}')\n",
+        dedent('''
+            import asyncio
+            from pysx import Fragment, derived, pysx, resource
+
+            def app() -> Fragment:
+                async def load() -> str:
+                    await asyncio.sleep(0.05)
+                    return "Ready"
+                result = resource("message", load)
+                text = derived(lambda: result().value or result().status)
+                return pysx(t"""
+                    p: {text}
+                """)
+        ''').strip(),
         "The resource key is stable within its owner. The derived text reads its current "
         "state, so pending and completed output share one live display.",
         "Reload twice before completion. Cancel a third request and wait past its "
@@ -54,13 +64,24 @@ LESSONS = (
         "The live panel throws a real handler error. Use the sibling while the fallback "
         "is visible, then retry. The fallback's retry callback is owned by the current "
         "boundary generation and should not revive an older discarded instance.",
-        "from pysx import ErrorBoundary, ErrorInfo, Fragment, pysx\n"
-        "from collections.abc import Callable\n\n"
-        "def app() -> Fragment:\n"
-        "    def content() -> Fragment:\n        return pysx(t'p: \"Healthy content\"')\n"
-        "    def fallback(info: ErrorInfo, retry: Callable[[], None]) -> Fragment:\n"
-        "        return pysx(t'p: {info.message}')\n"
-        "    Boundary = ErrorBoundary(content, fallback)\n    return pysx(t'Boundary:')\n",
+        dedent('''
+            from pysx import ErrorBoundary, ErrorInfo, Fragment, pysx
+            from collections.abc import Callable
+
+            def app() -> Fragment:
+                def content() -> Fragment:
+                    return pysx(t"""
+                        p: "Healthy content"
+                    """)
+                def fallback(info: ErrorInfo, retry: Callable[[], None]) -> Fragment:
+                    return pysx(t"""
+                        p: {info.message}
+                    """)
+                Boundary = ErrorBoundary(content, fallback)
+                return pysx(t"""
+                    Boundary:
+                """)
+        ''').strip(),
         "The boundary receives functions, not eagerly built alternatives. Its fallback "
         "has safe ErrorInfo and a current retry capability.",
         "Increment the sibling, fail the panel, increment the sibling again, and retry the panel.",
@@ -87,11 +108,18 @@ LESSONS = (
         "Inspect the page response using the browser's network tools or a command-line "
         "HTTP client, then compare it with the attached document. Initial-response tests "
         "and post-attachment interaction tests establish different parts of the contract.",
-        "from pysx import Fragment, on_mount, on_setup, pysx, signal\n\n"
-        "def app() -> Fragment:\n    setups = signal(0)\n    mounts = signal(0)\n"
-        "    on_setup(lambda: setups.update(lambda n: n + 1))\n"
-        "    on_mount(lambda: mounts.update(lambda n: n + 1))\n"
-        '    return pysx(t\'p: "Setup " {setups} " | mount " {mounts}\')\n',
+        dedent('''
+            from pysx import Fragment, on_mount, on_setup, pysx, signal
+
+            def app() -> Fragment:
+                setups = signal(0)
+                mounts = signal(0)
+                on_setup(lambda: setups.update(lambda n: n + 1))
+                on_mount(lambda: mounts.update(lambda n: n + 1))
+                return pysx(t"""
+                    p: "Setup " {setups} " | mount " {mounts}
+                """)
+        ''').strip(),
         "on_setup belongs to the server lifetime and on_mount waits for browser confirmation. "
         "They count two distinct moments, not two names for initialization.",
         "Wait for attachment and the async result, edit the draft, then trigger another "
@@ -120,9 +148,16 @@ LESSONS = (
         "Choose intentional sharing only when the product needs it, then define ownership, "
         "authorization and concurrency. Keeping private state local is simpler than "
         "trying to remove accidental sharing after several users already depend on it.",
-        "from pysx import Fragment, pysx, signal\n\ndef app() -> Fragment:\n"
-        '    private_draft = signal("")\n'
-        "    return pysx(t'input(bindValue={private_draft}); p: {private_draft}')\n",
+        dedent('''
+            from pysx import Fragment, pysx, signal
+
+            def app() -> Fragment:
+                private_draft = signal("")
+                return pysx(t"""
+                    input(bindValue={private_draft})
+                    p: {private_draft}
+                """)
+        ''').strip(),
         "The constructor is inside app, so it runs once for each new graph. Moving it "
         "to module scope would change the ownership and isolation of the same markup.",
         "Edit a private draft and increment an instance. Open this lesson in a new tab, "
@@ -151,9 +186,17 @@ LESSONS = (
         "see its current total rather than a replay of every missed visual tick. After "
         "the retained owner expires, recovery may reconstruct or reset; the next lesson "
         "explains that separate boundary.",
-        "from pysx import Fragment, pysx, signal\n\ndef app() -> Fragment:\n"
-        '    draft = signal("Keep this draft")\n    count = signal(0)\n'
-        "    return pysx(t'input(bindValue={draft}); p: {count}')\n",
+        dedent('''
+            from pysx import Fragment, pysx, signal
+
+            def app() -> Fragment:
+                draft = signal("Keep this draft")
+                count = signal(0)
+                return pysx(t"""
+                    input(bindValue={draft})
+                    p: {count}
+                """)
+        ''').strip(),
         "Ordinary local state is sufficient for a live graph. Reconnect policy belongs "
         "to the host/client transport, not a second queue hidden in this component.",
         "Edit, increment and temporarily block the socket. Restore it without reloading "
@@ -182,9 +225,17 @@ LESSONS = (
         "are held in document memory, not a cross-device account store. Use application "
         "persistence for saved business records and explicit durable UI state when you "
         "need the contract in the following lesson.",
-        "from pysx import Fragment, pysx, signal\n\ndef app() -> Fragment:\n"
-        '    draft = signal("")\n    count = signal(0)\n'
-        "    return pysx(t'input(bindValue={draft}); p: \"Delivered count \" {count}')\n",
+        dedent('''
+            from pysx import Fragment, pysx, signal
+
+            def app() -> Fragment:
+                draft = signal("")
+                count = signal(0)
+                return pysx(t"""
+                    input(bindValue={draft})
+                    p: "Delivered count " {count}
+                """)
+        ''').strip(),
         "There is no special recovery wrapper around these local signals. Compatible "
         "ordinary state participates in the host's default browser-held recovery policy.",
         "Save a delivered draft/count by interacting, restart the server with the tab "
@@ -214,11 +265,17 @@ LESSONS = (
         "Try the invalid example and inspect the rejection. Persisting a UI draft still "
         "does not make an external payment or account write exactly-once; those operations "
         "need the application's own transactional design.",
-        "from pysx import StateCodec\n\n"
-        "def decode(value: object) -> str:\n"
-        "    if not isinstance(value, str) or len(value) > 512:\n"
-        '        raise ValueError("Expected a bounded draft")\n    return value\n\n'
-        'codec = StateCodec[str](lambda value: value, decode)\nassert decode("Draft") == "Draft"\n',
+        dedent("""
+            from pysx import StateCodec
+
+            def decode(value: object) -> str:
+                if not isinstance(value, str) or len(value) > 512:
+                    raise ValueError("Expected a bounded draft")
+                return value
+
+            codec = StateCodec[str](lambda value: value, decode)
+            assert decode("Draft") == "Draft"
+        """).strip(),
         "Encoding is deliberately simple; decoding proves the expected type and bound. "
         "The real lab extends that pattern to a dataclass and a versioned host/store.",
         "Edit the lab draft, restart the server, and compare its setup marker. Reject the "
