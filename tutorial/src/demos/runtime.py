@@ -18,7 +18,7 @@ from pysx import (
     resource,
     signal,
 )
-from tutorial.components import Actions, Button, Field, Panel, Readout
+from src.components import Actions, Button, Field, Panel, Readout
 
 from .foundations import counter
 

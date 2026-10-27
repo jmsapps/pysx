@@ -1,18 +1,18 @@
 # Interactive tutorial website
 
-The full course is the standalone application in [tutortial/](../tutortial/README.md).
+The full course is the standalone application in [tutorial/](../tutorial/README.md).
 It has its own package, shared components, themes, routes, assets and environment.
 It is grounded in the maintained runnable examples and uses pysx to teach pysx.
 
 From the library checkout, prepare its independent environment and run it:
 
 ```sh
-uv run --project . python tutortial/bootstrap.py
-uv run --project tutortial pysx --app tutorial:app
+uv run --project . python tutorial/bootstrap.py
+uv run --project tutorial pysx-tutorial
 ```
 
 Open http://127.0.0.1:8750. In the tutorial environment the command is
-`pysx --app tutorial:app`. Follow the course overview through 28 ordered lessons,
+`pysx-tutorial`. Follow the course overview through 28 ordered lessons,
 each with named Previous/Next links, original explanations, a code walkthrough,
 a live demo, an exercise, observable outcomes and a recap.
 
@@ -24,7 +24,7 @@ editor/development tools and hosting. The final workspace puts the ideas togethe
 
 Every demo has a reset path. Practice marks are the learner's self-assessment.
 Exercises execute trusted application code and accept bounded data; they do not
-evaluate arbitrary submitted Python. The [course runbook](../tutortial/README.md)
+evaluate arbitrary submitted Python. The [course runbook](../tutorial/README.md)
 covers independent installed-wheel operation, real restart journeys and local
 demonstration identities.
 

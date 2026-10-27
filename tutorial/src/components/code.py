@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 def highlighted_sources() -> dict[str, list[list[str]]]:
     return cast(
         "dict[str, list[list[str]]]",
-        json.loads(files("tutorial").joinpath("assets/code-tokens.json").read_text()),
+        json.loads(files("src").joinpath("assets/code-tokens.json").read_text()),
     )
 
 

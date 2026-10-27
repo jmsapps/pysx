@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pysx import BrowserEvent, Dom, Fragment, Link, derived, each, on_event, pysx, signal
-from tutorial.components import Actions, Button, Field, Panel, Readout
-from tutorial.themes import selected_name
+from src.components import Actions, Button, Field, Panel, Readout
+from src.themes import selected_name
 
 if TYPE_CHECKING:
     from pysx import NavigationEvent, Router, RouteState, Themes

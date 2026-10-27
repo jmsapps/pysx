@@ -10,8 +10,8 @@ owns its shared components, themes, routes and assets.
 Python 3.14+ and uv are required. From the library checkout root:
 
 ```sh
-uv run --project . python tutortial/bootstrap.py
-uv run --project tutortial pysx --app tutorial:app
+uv run --project . python tutorial/bootstrap.py
+uv run --project tutorial pysx-tutorial
 ```
 
 Open http://127.0.0.1:8750. The bootstrap builds a real framework wheel, then creates
@@ -21,12 +21,12 @@ course using imports from the library checkout or the examples registry.
 With the tutorial environment activated, the app's command is simply:
 
 ```sh
-pysx --app tutorial:app
+pysx-tutorial
 ```
 
 Use `--port 9100` for another port, `--watch` for development, or `--asgi` after
 installing the `asgi` extra. Ctrl+C stops the course and its owned durable lab.
-For editor support, prepare with `--editor`, then select `tutortial/.venv` in the
+For editor support, prepare with `--editor`, then select `tutorial/.venv` in the
 Python extension. The course explains the distinction between advisory diagnostics
 and runtime verification.
 
@@ -37,7 +37,7 @@ framework candidate wheel to the bootstrap; no parent checkout is required:
 
 ```sh
 uv run --no-project --python 3.14 python bootstrap.py --wheel /path/to/pysx-0.1.0-py3-none-any.whl
-uv run --project . pysx --app tutorial:app
+uv run --project . pysx-tutorial
 ```
 
 The candidate is stored in `.artifacts/` and its resolved hash is recorded in the
@@ -75,13 +75,13 @@ identity provider, HTTPS origins, secure cookies and deliberate access policy.
 
 ## Source guide
 
-- `tutorial/catalog.py` owns course order and adjacency.
-- `tutorial/lessons/` contains original explanations, snippets and exercises grounded
+- `src/catalog.py` owns course order and adjacency.
+- `src/lessons/` contains original explanations, snippets and exercises grounded
   in the library's maintained runnable examples.
-- `tutorial/demos/` contains live subject-specific behavior.
-- `tutorial/components/`, `tutorial/themes.py` and `tutorial/assets/` are shared
+- `src/demos/` contains live subject-specific behavior.
+- `src/components/`, `src/themes.py` and `src/assets/` are shared
   application-owned presentation.
-- `tutorial/app.py` exports the host; `tutorial/durable.py` owns the declared-state lab.
+- `src/app.py` exports the host; `src/durable.py` owns the declared-state lab.
 
 The interface is authored in multiline pysx templates, including shared navigation,
 contents and recursive controls. Code panels use escaped spans generated with the

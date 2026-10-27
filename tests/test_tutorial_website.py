@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from tutorial.app import create_application
-from tutorial.catalog import LESSONS, neighbors
-from tutorial.components.code import CodeBlock, highlighted_sources
+from src.app import create_application
+from src.catalog import LESSONS, neighbors
+from src.components.code import CodeBlock, highlighted_sources
 
 from pysx import RequestContext
 from pysx.compiler.loader import install_loader
@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_tutorial_website_pure_multiline_authoring_and_displayed_source() -> None:
-    sources = [path.read_text() for path in (ROOT / "tutortial/tutorial").rglob("*.py")]
+    sources = [path.read_text() for path in (ROOT / "tutorial/src").rglob("*.py")]
     sources.extend(lesson.code for lesson in LESSONS)
 
     for source in sources:
@@ -180,8 +180,8 @@ def test_tutorial_website_outside_checkout_installed_entry_and_all_routes(tmp_pa
             str(worker.python),
             "-I",
             "-c",
-            "import pathlib,sys,tutorial,pysx; "
-            "assert pathlib.Path(tutorial.__file__).is_relative_to(pathlib.Path(sys.argv[1])); "
+            "import pathlib,sys,src,pysx; "
+            "assert pathlib.Path(src.__file__).is_relative_to(pathlib.Path(sys.argv[1])); "
             "assert pathlib.Path(pysx.__file__).is_relative_to(pathlib.Path(sys.prefix)); "
             "assert not any(p == sys.argv[2] or p.startswith(sys.argv[2] + '/') for p in sys.path)",
             str(worker.site),
@@ -221,7 +221,7 @@ def test_tutorial_website_outside_checkout_installed_entry_and_all_routes(tmp_pa
     ],
 )
 def test_tutorial_website_declared_codec_rejects_invalid_state(value: object) -> None:
-    from tutorial.durable import decode
+    from src.durable import decode
 
     with pytest.raises(ValueError, match=r"invalid|expected"):
         decode(cast("JSONValue", value))

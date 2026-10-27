@@ -52,7 +52,7 @@ try {
     suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
     ["tutorial_website", "corpus_executable", "counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity", "fallback_empty", "diagnostics_actions", "client_verify"];
   for (const fixture of fixtures) {
-    const source = fixture === "tutorial_website" ? "../../tutortial/tutorial/components/pages.py" :
+    const source = fixture === "tutorial_website" ? "../../tutorial/src/components/pages.py" :
       fixture === "templates_example" ? "../../examples/templates.py" : `fixtures/${fixture}.txt`;
     const lines = readFileSync(new URL(source, import.meta.url), "utf8").split("\n");
     let stack = textmate.INITIAL;

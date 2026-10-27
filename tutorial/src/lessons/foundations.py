@@ -2,7 +2,7 @@
 
 from textwrap import dedent
 
-from tutorial.content import Lesson
+from src.content import Lesson
 
 LESSONS = (
     Lesson(
@@ -18,13 +18,15 @@ LESSONS = (
         "Use Python 3.14 or newer: t-strings preserve expressions instead of immediately "
         "flattening them into text. The environment panel below reports the interpreter "
         "actually running this course. It is not a browser simulation of Python.",
-        "Start with the independent project instructions in this application's README. "
-        "After installing the candidate wheel, run pysx --app tutorial:app. For your own "
-        "file named my_app.py, the corresponding entry is my_app:app. The part before the "
-        "colon is an importable module; the part after it is the exported callable or host.\n\n"
+        "The panel above copies a runnable counter into your own project and serves it. "
+        "That counter is an ordinary file you own; nothing about it is special to this "
+        "course. For your own file named my_app.py, the corresponding entry is my_app:app. "
+        "The part before the colon is an importable module; the part after it is the "
+        "exported callable or host.\n\n"
         "The initial page is already meaningful HTML. A later input event travels to "
-        "Python and the resulting small patch returns to this document. Keep the terminal "
-        "open while learning; Ctrl+C shuts down the server and its owned work.",
+        "Python and the resulting small patch returns to this document. If you are running "
+        "the course locally, keep that terminal open; Ctrl+C shuts down the server and its "
+        "owned work.",
         dedent('''
             from pysx import Fragment, pysx
 
@@ -42,9 +44,10 @@ LESSONS = (
         "its private form does not inherit your edit.",
         "The server owns application Python. The browser displays HTML and delivers events.",
         ("hello", "counter"),
-        "uv run --project . python tutortial/bootstrap.py\n"
-        "uv run --project tutortial pysx --app tutorial:app\n\n"
-        "# In the prepared environment, save the code below as my_app.py:\n"
+        "pip install pysx\n"
+        "pysx-playground counter\n"
+        "pysx --app playgrounds.counter\n\n"
+        "# Your own file named my_app.py uses the same form:\n"
         "pysx --app my_app:app\n",
     ),
     Lesson(

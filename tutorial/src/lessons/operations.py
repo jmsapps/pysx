@@ -2,7 +2,7 @@
 
 from textwrap import dedent
 
-from tutorial.content import Lesson
+from src.content import Lesson
 
 LESSONS = (
     Lesson(
@@ -55,7 +55,10 @@ LESSONS = (
         "The source panel below is analyzed as text. Its fix changes an eager count() "
         "hole to a live count reference. This is safe static analysis, not evaluation of "
         "whatever source a learner supplies.",
-        "Run pysx --app tutorial:app --watch in the tutorial environment. Compatible "
+        "Watching requires a server you control, so this lesson's exercise uses a "
+        "playground rather than the course you are reading. Scaffold the counter from "
+        "lesson 1 again, then run it with pysx --app playgrounds.counter --watch and edit "
+        "playgrounds/counter.py while it serves. Compatible "
         "saved edits preserve supported UI state while a broken candidate leaves the "
         "previous worker available. The documented CLI uses the same application entry "
         "as ordinary serving.\n\n"
@@ -198,8 +201,9 @@ LESSONS = (
         """).strip(),
         "Authentication generation and state codec are explicit contracts. The lab's "
         "complete source adds bounded decoding, a store, authorization and owned resources.",
-        "Complete the embedded lab's draft/commit/fail/retry workflow, restart the server "
-        "and continue editing.",
+        "Complete the embedded lab's draft/commit/fail/retry workflow here. Then, for the "
+        "restart half, scaffold pysx-playground durable, run pysx --app "
+        "playgrounds.durable, stop it with the tab open and start it again.",
         "Committed declared state is reconstructed, the setup marker changes, retry works "
         "and current policy still applies.",
         "Resilience is an observed workflow across boundaries, not one successful initial render.",

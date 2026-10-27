@@ -14,7 +14,7 @@ from pysx import (
     pysx,
     signal,
 )
-from tutorial.components import Actions, Button, Field, Panel, Readout
+from src.components import Actions, Button, Field, Panel, Readout
 
 if TYPE_CHECKING:
     from collections.abc import Callable

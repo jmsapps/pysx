@@ -18,13 +18,13 @@ from pysx import (
     signal,
 )
 from pysx.tooling.check import apply_fix, diagnostics_for_source
-from tutorial.components import Actions, Button, Field, Panel, Readout
-from tutorial.components.code import CodeBlock
-from tutorial.model import LabState
+from src.components import Actions, Button, Field, Panel, Readout
+from src.components.code import CodeBlock
+from src.model import LabState
 
 if TYPE_CHECKING:
     from pysx import Signal
-    from tutorial.model import Task
+    from src.model import Task
 
 FROZEN_SOURCE = '''from pysx import pysx, signal
 count = signal(0)
@@ -142,7 +142,7 @@ def codec() -> Fragment:
     result = signal("Choose Validate to decode the data")
 
     def validate(_: object) -> None:
-        from tutorial.durable import decode
+        from src.durable import decode
 
         try:
             if len(source()) > 2048:
@@ -167,7 +167,7 @@ def codec() -> Fragment:
 
 
 def capstone(state: Signal[LabState] | None = None) -> Fragment:
-    from tutorial.model import Task
+    from src.model import Task
 
     root = signal(LabState()) if state is None else state
     tasks = project(

@@ -4,8 +4,8 @@ import platform
 from importlib.metadata import version
 
 from pysx import BrowserEvent, Fragment, batch, derived, on_event, pysx, signal
-from tutorial.components import Actions, Button, Field, Panel, Readout
-from tutorial.components.code import CodeBlock
+from src.components import Actions, Button, Field, Panel, Readout
+from src.components.code import CodeBlock
 
 CARD_SOURCES = tuple(
     f'''pysx(t"""

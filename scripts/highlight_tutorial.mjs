@@ -13,7 +13,7 @@ const args = process.argv.slice(2);
 if (args.some(arg => arg !== "--check")) throw new Error("expected --check or no arguments");
 const exported = spawnSync("uv", ["run", "--project", root, "python", "-c", `
 import json,sys
-sys.path.insert(0, 'tutortial')
+sys.path.insert(0, 'tutorial')
 from pysx.compiler.loader import install_loader
 install_loader(packages=('tutorial',))
 from tutorial.catalog import LESSONS
@@ -63,7 +63,7 @@ try {
     if (parts.map(part => part[1]).join("") !== source) throw new Error("highlighting changed source text");
     output[source] = parts;
   }
-  const filename = fileURLToPath(new URL("../tutortial/tutorial/assets/code-tokens.json", import.meta.url));
+  const filename = fileURLToPath(new URL("../tutorial/src/assets/code-tokens.json", import.meta.url));
   const serialized = JSON.stringify(output) + "\n";
   if (args.includes("--check")) {
     if (readFileSync(filename, "utf8") !== serialized) throw new Error("stale tutorial highlighting; run node scripts/highlight_tutorial.mjs");

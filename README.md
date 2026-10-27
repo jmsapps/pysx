@@ -53,6 +53,23 @@ updates.
   themes. See the [styling guide](docs/STYLING.md).
 - **Editor support:** VSCode syntax highlighting and advisory template diagnostics.
 
+## Playgrounds
+
+Copy runnable starter applications into your own project, then run them the ordinary way:
+
+```sh
+pysx-playground                        # all of them, into ./playgrounds
+pysx-playground counter                # just one
+pysx --app playgrounds.counter         # run it
+pysx --app playgrounds.counter --watch # edit the file and watch it reload
+```
+
+`counter` is the smallest useful live application, `recovery` a draft that survives a restart
+with the tab open, and `durable` declared state reconstructed through a fresh application
+graph.
+Re-running `pysx-playground <name>` restores that playground to its shipped source and
+clears its state, so it is also the reset.
+
 ## Supported platforms
 
 Python 3.14 or newer, on macOS and Linux. Ordinary changes use local verification;

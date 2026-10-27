@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 
 from pysx import Fragment, Link, derived, each, pysx, signal
 from pysx.reactive.reactive import untracked
-from tutorial.catalog import LESSONS, neighbors
-from tutorial.components import Actions
+from src.catalog import LESSONS, neighbors
+from src.components import Actions
 
 from . import Button
 from .code import CodeBlock
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from pysx import Router
-    from tutorial.content import Lesson
+    from src.content import Lesson
 
 
 def Paragraphs(*, text: str) -> Fragment:
@@ -71,8 +71,8 @@ def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> 
             p(class="lede"): {lesson.objective}
             Paragraphs(text={lesson.introduction}):
             if {bool(lesson.commands)}:
-                h2: "Prepare and run"
-                p: "Run the first commands from the framework checkout. Then try your own module."
+                h2: "Run this on your own machine"
+                p: "Copy a runnable example into your own project and serve it."
                 pre: {lesson.commands}
             h2: "Understand the moving parts"
             Paragraphs(text={lesson.explanation}):

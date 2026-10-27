@@ -237,12 +237,12 @@ class CourseApplication(Application):
         (directory / "keys").mkdir(mode=0o700, exist_ok=True)
         assets = {
             "/favicon.ico": StaticAsset(
-                files("tutorial").joinpath("assets/favicon.png").read_bytes(),
+                files("src").joinpath("assets/favicon.png").read_bytes(),
                 "image/png",
                 cache_seconds=3600,
             ),
             "/assets/course.css": StaticAsset(
-                files("tutorial").joinpath("assets/course.css").read_bytes(), "text/css"
+                files("src").joinpath("assets/course.css").read_bytes(), "text/css"
             ),
         }
         config = HostConfig(

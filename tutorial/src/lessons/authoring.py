@@ -2,7 +2,7 @@
 
 from textwrap import dedent
 
-from tutorial.content import Lesson
+from src.content import Lesson
 
 LESSONS = (
     Lesson(

@@ -2,7 +2,7 @@
 
 from textwrap import dedent
 
-from tutorial.content import Lesson
+from src.content import Lesson
 
 LESSONS = (
     Lesson(
@@ -238,8 +238,9 @@ LESSONS = (
         ''').strip(),
         "There is no special recovery wrapper around these local signals. Compatible "
         "ordinary state participates in the host's default browser-held recovery policy.",
-        "Save a delivered draft/count by interacting, restart the server with the tab "
-        "open, then compare refresh.",
+        "Restarting needs a server you control, so use a playground: scaffold "
+        "pysx-playground recovery, run pysx --app playgrounds.recovery, save a draft "
+        "and count by interacting, restart it with the tab open, then compare refresh.",
         "The open document restores compatible state after server loss; refresh starts a "
         "new draft.",
         "UI continuity reconstructs a new authorized graph; it does not persist business "
@@ -278,8 +279,9 @@ LESSONS = (
         """).strip(),
         "Encoding is deliberately simple; decoding proves the expected type and bound. "
         "The real lab extends that pattern to a dataclass and a versioned host/store.",
-        "Edit the lab draft, restart the server, and compare its setup marker. Reject the "
-        "invalid codec sample.",
+        "Reject the invalid codec sample here. For the restart, scaffold "
+        "pysx-playground durable, run pysx --app playgrounds.durable, edit its draft, "
+        "restart it and compare the setup marker.",
         "Committed declared state survives reconstruction, callbacks/resources are new "
         "and invalid data is rejected.",
         "Declare data and schema explicitly; rebuild behavior from trusted code.",

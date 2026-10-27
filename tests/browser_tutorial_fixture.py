@@ -49,7 +49,7 @@ class TutorialWorker:
         )
         self.site = workspace / "application"
         shutil.copytree(
-            ROOT / "tutortial",
+            ROOT / "tutorial",
             self.site,
             ignore=shutil.ignore_patterns(".venv", ".artifacts", "__pycache__"),
         )
@@ -146,7 +146,7 @@ class TutorialWorker:
                 [
                     str(self.python.with_name("pysx")),
                     "--app",
-                    "tutorial:app",
+                    "src:app",
                     "--port",
                     str(self.port),
                 ],

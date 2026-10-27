@@ -315,7 +315,7 @@ def candidate(destination: Path) -> None:
         '"example needs the optional pysx[examples] extra.\\n"',
     ).replace(
         '"run it through uv:  uv run --project . python run_example.py run <name>"',
-        '"Install pysx[examples], or use uv run --project . example from a checkout."',
+        '"Install pysx[examples], or use uv run --project . pysx-example from a checkout."',
     )
     (destination / "pysx" / "_example_runner.py").write_text(runner)
 
@@ -718,7 +718,7 @@ print(json.dumps({"package": str(Path(pysx_package.__file__).resolve()),
         stdio_probe(python, consumer)
         typing_probe(python, consumer)
         serve_probe(python, consumer)
-    example = "example.exe" if os.name == "nt" else "example"
+    example = "pysx-example.exe" if os.name == "nt" else "pysx-example"
     missing = command([str(core.parent / example), "--help"], consumer, expected=1)
 
     if "pysx[examples]" not in missing.stderr:

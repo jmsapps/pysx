@@ -51,7 +51,7 @@ def main() -> None:
     if args.editor:
         command.extend(("--extra", "editor"))
     subprocess.run(command, check=True)
-    sys.stdout.write("Ready: uv run --project tutortial pysx --app tutorial:app\n")
+    sys.stdout.write("Ready: uv run --project tutorial pysx-tutorial\n")
 
 
 if __name__ == "__main__":
