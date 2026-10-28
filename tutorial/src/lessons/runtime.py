@@ -12,10 +12,10 @@ LESSONS = (
         "Runtime and resilience",
         "Start, replace and cancel owned asynchronous work without stale publication.",
         "An interface must remain usable while work is pending. A resource makes that "
-        "lifetime visible through pending, success, error and cancelled states. The loader "
+        "lifetime visible through `pending`, `success`, `error` and `cancelled` states. The loader "
         "runs independently, while its eventual publication belongs to the owning session.\n\n"
         "Await slow work outside a synchronous mutation turn. When background work needs "
-        "to change signals, await push with a synchronous callback. Keeping that boundary "
+        "to change signals, await `push` with a synchronous callback. Keeping that boundary "
         "explicit avoids holding a batch or a session mutation across arbitrary I/O.",
         "Reload replaces unfinished work and suppresses results from superseded generations. "
         "Cancellation is therefore more than showing a cancelled label: the old operation "
@@ -37,7 +37,7 @@ LESSONS = (
                     p: {text}
                 """)
         ''').strip(),
-        "The resource key is stable within its owner. The derived text reads its current "
+        "The `resource` key is stable within its owner. The derived `text` reads its current "
         "state, so pending and completed output share one live display.",
         "Reload twice before completion. Cancel a third request and wait past its "
         "original deadline.",
@@ -53,9 +53,9 @@ LESSONS = (
         "Runtime and resilience",
         "Recover one failed region without discarding healthy sibling state.",
         "A local failure should have a local recovery boundary when the rest of the "
-        "interface can still work. ErrorBoundary owns its content and a fallback. A "
+        "interface can still work. `ErrorBoundary` owns its content and a fallback. A "
         "failure retires the affected region instead of exposing a traceback to the page.\n\n"
-        "ErrorInfo is deliberately redacted. It provides a safe message and correlation "
+        "`ErrorInfo` is deliberately redacted. It provides a safe message and correlation "
         "identity, while the cause stays in server diagnostics. Retry recreates the "
         "failed subtree; it does not undo an already committed business operation.",
         "Keep a healthy sibling outside the boundary. That makes the recovery scope "
@@ -83,7 +83,7 @@ LESSONS = (
                 """)
         ''').strip(),
         "The boundary receives functions, not eagerly built alternatives. Its fallback "
-        "has safe ErrorInfo and a current retry capability.",
+        "has safe `ErrorInfo` and a current `retry` capability.",
         "Increment the sibling, fail the panel, increment the sibling again, and retry the panel.",
         "The fallback appears, the sibling keeps its count and the retried panel starts a "
         "fresh lifetime.",
@@ -120,7 +120,7 @@ LESSONS = (
                     p: "Setup " {setups} " | mount " {mounts}
                 """)
         ''').strip(),
-        "on_setup belongs to the server lifetime and on_mount waits for browser confirmation. "
+        "`on_setup` belongs to the server lifetime and `on_mount` waits for browser confirmation. "
         "They count two distinct moments, not two names for initialization.",
         "Wait for attachment and the async result, edit the draft, then trigger another "
         "resource load.",
@@ -135,11 +135,11 @@ LESSONS = (
         "Sessions and state boundaries",
         "Runtime and resilience",
         "Distinguish one learner's UI state from explicitly shared application data.",
-        "Each browser session owns a graph. A Signal created inside the app callable "
+        "Each browser session owns a graph. A `Signal` created inside the `app` callable "
         "belongs to that graph, so one learner's draft does not become another learner's "
-        "draft. A module-level Signal instead belongs to the process and is shared.\n\n"
+        "draft. A module-level `Signal` instead belongs to the process and is shared.\n\n"
         "Neither boundary is a business database. A process-local shared value does "
-        "not automatically coordinate several workers, and an ordinary UI Signal does "
+        "not automatically coordinate several workers, and an ordinary UI `Signal` does "
         "not promise saved account data after refresh.",
         "The two counters below are independent component instances inside one session. "
         "A second browser tab is a stronger isolation check: it constructs a different "
@@ -158,7 +158,7 @@ LESSONS = (
                     p: {private_draft}
                 """)
         ''').strip(),
-        "The constructor is inside app, so it runs once for each new graph. Moving it "
+        "The constructor is inside `app`, so it runs once for each new graph. Moving it "
         "to module scope would change the ownership and isolation of the same markup.",
         "Edit a private draft and increment an instance. Open this lesson in a new tab, "
         "then refresh it.",
@@ -181,7 +181,7 @@ LESSONS = (
         "whose effects are uncertain. That would be a different consistency contract.",
         "Type a draft and increment the live count. Use browser network tools to block "
         "the WebSocket temporarily, then restore the connection. The status indicator "
-        "comes from the actual client connection, not a demonstration-only Signal.\n\n"
+        "comes from the actual client connection, not a demonstration-only `Signal`.\n\n"
         "The server clock deliberately keeps running. On a healthy reattach you should "
         "see its current total rather than a replay of every missed visual tick. After "
         "the retained owner expires, recovery may reconstruct or reset; the next lesson "
@@ -239,7 +239,7 @@ LESSONS = (
         "There is no special recovery wrapper around these local signals. Compatible "
         "ordinary state participates in the host's default browser-held recovery policy.",
         "Restarting needs a server you control, so use a playground: scaffold "
-        "pysx-playground recovery, run pysx --app playgrounds.recovery, save a draft "
+        "`pysx-playground recovery`, run `pysx --app playgrounds.recovery`, save a draft "
         "and count by interacting, restart it with the tab open, then compare refresh.",
         "The open document restores compatible state after server loss; refresh starts a "
         "new draft.",
@@ -259,7 +259,7 @@ LESSONS = (
         "A store retains versioned snapshots and ownership information. New graphs "
         "rebuild callbacks and resources from application code. A schema change needs "
         "a declared migration or an explicit unavailable/reset policy.",
-        "The embedded lab is a real DurableApplication with a SQLite ownership store. "
+        "The embedded lab is a real `DurableApplication` with a SQLite ownership store. "
         "Edit its declared draft, increment and keep the document open through a server "
         "restart. The setup marker changes while the committed root is reconstructed.\n\n"
         "The codec exercise beside it accepts bounded JSON data, not Python source. "
@@ -280,7 +280,7 @@ LESSONS = (
         "Encoding is deliberately simple; decoding proves the expected type and bound. "
         "The real lab extends that pattern to a dataclass and a versioned host/store.",
         "Reject the invalid codec sample here. For the restart, scaffold "
-        "pysx-playground durable, run pysx --app playgrounds.durable, edit its draft, "
+        "`pysx-playground durable`, run `pysx --app playgrounds.durable`, edit its draft, "
         "restart it and compare the setup marker.",
         "Committed declared state survives reconstruction, callbacks/resources are new "
         "and invalid data is rejected.",

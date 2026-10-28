@@ -17,7 +17,7 @@ LESSONS = (
         "This course has explicitly labeled local demonstration roles. The login links "
         "change a demo cookie and create a new authentication generation. They are not "
         "a production credential provider and do not ask you for a real password.",
-        "The host resolves identity for HTTP and socket operations. require_access "
+        "The host resolves identity for HTTP and socket operations. `require_access` "
         "checks the current policy at the write boundary. The reader may edit its own "
         "private UI draft while a protected commit remains denied.\n\n"
         "Identity changes must not import another login's delivered state. Recovery "
@@ -34,7 +34,7 @@ LESSONS = (
             assert not authorize(RequestContext(principal="reader"), "write", "draft")
         """).strip(),
         "The policy evaluates the principal from the request. The live handler calls "
-        "require_access before updating its protected counter; it does not merely compare "
+        "`require_access` before updating its protected counter; it does not merely compare "
         "a role label.",
         "Sign in as reader and attempt a protected write. Repeat as writer, then sign out "
         "and inspect fresh state.",
@@ -52,13 +52,13 @@ LESSONS = (
         "Fast feedback helps you reason about live templates before opening a browser. "
         "The checker and editor understand markup alongside Python, but template "
         "diagnostics remain advisory. A successful editor check is not a runtime proof.\n\n"
-        "The source panel below is analyzed as text. Its fix changes an eager count() "
-        "hole to a live count reference. This is safe static analysis, not evaluation of "
+        "The source panel below is analyzed as text. Its fix changes an eager `count()` "
+        "hole to a live `count` reference. This is safe static analysis, not evaluation of "
         "whatever source a learner supplies.",
         "Watching requires a server you control, so this lesson's exercise uses a "
         "playground rather than the course you are reading. Scaffold the counter from "
-        "lesson 1 again, then run it with pysx --app playgrounds.counter --watch and edit "
-        "playgrounds/counter.py while it serves. Compatible "
+        "lesson 1 again, then run it with `pysx --app playgrounds.counter --watch` and edit "
+        "`playgrounds/counter.py` while it serves. Compatible "
         "saved edits preserve supported UI state while a broken candidate leaves the "
         "previous worker available. The documented CLI uses the same application entry "
         "as ordinary serving.\n\n"
@@ -76,8 +76,8 @@ LESSONS = (
             '''
             assert diagnostics_for_source(source)
         """).strip(),
-        "diagnostics_for_source reads source without importing its application. The "
-        "intentional hreff misspelling produces an advisory finding rather than a "
+        "`diagnostics_for_source` reads source without importing its application. The "
+        "intentional `hreff` misspelling produces an advisory finding rather than a "
         "fabricated failure.",
         "Inspect the frozen-hole warning, apply its real suggested fix, then show and "
         "correct an attribute warning.",
@@ -94,12 +94,12 @@ LESSONS = (
         "Validate a host configuration and distinguish local teaching defaults from "
         "production policy.",
         "An application needs operational boundaries as well as attractive markup. "
-        "HostConfig owns budgets, assets, lifecycle hooks and security policy. Standalone "
+        "`HostConfig` owns budgets, assets, lifecycle hooks and security policy. Standalone "
         "and optional ASGI adapters serve the same application engine.\n\n"
         "A loopback teaching server is not a production authentication/TLS setup. The "
-        "production flag validates required security choices instead of silently "
+        "`production` flag validates required security choices instead of silently "
         "accepting an unsafe collection of defaults.",
-        "The configuration controls below instantiate real HostConfig values. Select "
+        "The configuration controls below instantiate real `HostConfig` values. Select "
         "an invalid production profile and inspect its rejection, then choose the complete "
         "profile. No remote host is contacted and no credentials are collected.\n\n"
         "Read the course runbook before exposing the application: use a real identity "
@@ -202,8 +202,8 @@ LESSONS = (
         "Authentication generation and state codec are explicit contracts. The lab's "
         "complete source adds bounded decoding, a store, authorization and owned resources.",
         "Complete the embedded lab's draft/commit/fail/retry workflow here. Then, for the "
-        "restart half, scaffold pysx-playground durable, run pysx --app "
-        "playgrounds.durable, stop it with the tab open and start it again.",
+        "restart half, scaffold `pysx-playground durable`, run `pysx --app "
+        "playgrounds.durable`, stop it with the tab open and start it again.",
         "Committed declared state is reconstructed, the setup marker changes, retry works "
         "and current policy still applies.",
         "Resilience is an observed workflow across boundaries, not one successful initial render.",

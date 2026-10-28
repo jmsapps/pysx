@@ -31,15 +31,8 @@ let stopped = false;
 let freshSession = false;
 let restoredSession = false;
 let partialReset = false;
-const connectionStatus = document.createElement("p");
-connectionStatus.id = "pysx-connection-status";
-connectionStatus.setAttribute("role", "status");
-connectionStatus.hidden = true;
-const retryButton = document.createElement("button");
-retryButton.type = "button";
-retryButton.textContent = "Retry connection";
-retryButton.hidden = true;
-root.after(connectionStatus, retryButton);
+let connectionStatus = null;
+let retryButton = null;
 let epoch = null;
 let stateRevision = 0;
 let eventSequence = 0;
@@ -697,9 +690,24 @@ function clearTransportTimer() {
   transportTimer = null;
 }
 
+// Built on the first state worth reporting, so an ordinary connected page carries
+// no injected status markup at all.
+function connectionElements() {
+  if (connectionStatus !== null) return;
+  connectionStatus = document.createElement("p");
+  connectionStatus.id = "pysx-connection-status";
+  connectionStatus.setAttribute("role", "status");
+  retryButton = document.createElement("button");
+  retryButton.type = "button";
+  retryButton.textContent = "Retry connection";
+  retryButton.hidden = true;
+  retryButton.addEventListener("click", () => reconnect());
+  root.after(connectionStatus, retryButton);
+}
+
 function connectionState(state, retryMs = 0) {
   root.dataset.pysxConnection = state;
-  connectionStatus.hidden = state === "connected" && !freshSession && !restoredSession;
+  const hidden = state === "connected" && !freshSession && !restoredSession;
   const text = state === "connected" ? (restoredSession ? (partialReset ?
     "Connected. Session state was restored; some fields restarted with their defaults and uncommitted edits were discarded." :
     "Connected. Session state was restored; uncommitted edits were discarded.") :
@@ -708,8 +716,13 @@ function connectionState(state, retryMs = 0) {
     state === "fresh" ? "Previous session expired. Starting a fresh session." :
     state === "stopped" ? "Disconnected by a protocol failure. Offline edits are rejected. Reload the page to continue." :
     "Disconnected. Offline edits are rejected. Retry to connect.";
-  connectionStatus.textContent = text;
-  retryButton.hidden = state !== "disconnected";
+  if (!hidden) connectionElements();
+
+  if (connectionStatus !== null) {
+    connectionStatus.hidden = hidden;
+    connectionStatus.textContent = text;
+    retryButton.hidden = state !== "disconnected";
+  }
   window.dispatchEvent(new CustomEvent("pysx:connection", {detail: {
     state, attempt: retryAttempt, retryMs, fresh: freshSession, partialReset,
     timers: transportTimer === null ? 0 : 1,
@@ -834,7 +847,6 @@ window.addEventListener("pysx:reset", async () => {
   } catch { connectionState("stopped"); }
   finally { resetting = false; }
 });
-retryButton.addEventListener("click", () => reconnect());
 window.addEventListener("pagehide", () => {
   stopped = true;
   clearTransportTimer();

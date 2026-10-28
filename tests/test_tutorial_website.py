@@ -13,6 +13,7 @@ import pytest
 from src.app import create_application
 from src.catalog import LESSONS, neighbors
 from src.components.code import CodeBlock, highlighted_sources
+from src.components.pages import Inline
 
 from pysx import RequestContext
 from pysx.compiler.loader import install_loader
@@ -57,6 +58,33 @@ def test_tutorial_website_highlighted_code_escapes_source(monkeypatch: pytest.Mo
         assert 'data-syntax="string"' in session.rendered.body
     finally:
         session.dispose()
+
+
+def test_tutorial_website_inline_code_spans_render_and_escape() -> None:
+    text = "Run `pysx --app foo:bar` for <b>any</b> project."
+    session = Session(lambda: Inline(text=text))
+
+    try:
+        body = session.rendered.body
+        assert "<code" in body
+        assert "</code>" in body
+        assert ">pysx --app foo:bar<" in body.replace("</pysx-slot>", "<")
+        assert "`" not in body
+        assert "<b>any</b>" not in body
+        assert "&lt;b&gt;any&lt;/b&gt;" in body
+    finally:
+        session.dispose()
+
+
+def test_tutorial_website_every_lesson_closes_its_code_spans() -> None:
+    prose = ("objective", "introduction", "explanation", "walkthrough", "exercise", "expected")
+
+    for lesson in LESSONS:
+        for name in (*prose, "recap"):
+            value = cast("str", getattr(lesson, name))
+            assert value.count("`") % 2 == 0, (lesson.number, name)
+        assert "`" not in lesson.code
+        assert "`" not in lesson.commands
 
 
 def test_tutorial_website_complete_course_graph_and_grounding() -> None:

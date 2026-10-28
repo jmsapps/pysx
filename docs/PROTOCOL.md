@@ -115,6 +115,11 @@ distinct `stopped` state, which offers no retry button because neither it nor
 `pysx:reconnect` can revive that page. Unavailable resume
 (4004) explicitly starts a fresh session and visibly reports lost session state.
 
+The built-in status paragraph and retry button are created on the first state worth
+reporting, so an ordinary connected document contains neither. Applications that
+render their own connection UI read the `data-pysx-connection` root attribute or the
+`pysx:connection` event below instead of querying those elements at load.
+
 The client emits `pysx:disconnected`, `pysx:repair`, `pysx:rejected` (reason), and
 `pysx:connection` (state, attempt, retryMs, fresh, timers, listeners, pendingBytes).
 These bounded diagnostics contain no credentials. Fresh recovery clears old

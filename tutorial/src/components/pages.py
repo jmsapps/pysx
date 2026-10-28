@@ -17,12 +17,35 @@ if TYPE_CHECKING:
     from src.content import Lesson
 
 
+def Inline(*, text: str) -> Fragment:
+    """Render backtick spans as code, leaving every other character ordinary text."""
+
+    runs = tuple(
+        (index, part, index % 2 == 1) for index, part in enumerate(text.split("`")) if part
+    )
+
+    def run(part: tuple[int, str, bool]) -> Fragment:
+        if part[2]:
+            return pysx(t"""
+                code: {part[1]}
+            """)
+
+        return pysx(t"""
+            {part[1]}
+        """)
+
+    return pysx(t"""
+        {each(runs, run, key=lambda part: part[0])}
+    """)
+
+
 def Paragraphs(*, text: str) -> Fragment:
     paragraphs = tuple(enumerate(text.split("\n\n")))
 
     def paragraph(part: tuple[int, str]) -> Fragment:
         return pysx(t"""
-            p: {part[1]}
+            p:
+                Inline(text={part[1]}):
         """)
 
     return pysx(t"""
@@ -46,15 +69,10 @@ def Navigation(*, lesson: Lesson, router: Router, position: str) -> Fragment:
 
 def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> Fragment:
     revision = signal([0])
-    practiced = signal(False)
     generation = derived(lambda: revision()[0])
 
     def reset(_: object) -> None:
         revision.set([revision()[0] + 1])
-        practiced.set(False)
-
-    def mark(_: object) -> None:
-        practiced.set(not practiced())
 
     def build(_revision: int) -> Fragment:
         # A demo's deliberate eager snapshots must not subscribe the reset row's
@@ -68,7 +86,8 @@ def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> 
             Navigation(lesson={lesson} router={router} position="top"):
             p(class="eyebrow"): {lesson.unit} " · Lesson " {lesson.number} " of 28"
             h1: {lesson.title}
-            p(class="lede"): {lesson.objective}
+            p(class="lede"):
+                Inline(text={lesson.objective}):
             Paragraphs(text={lesson.introduction}):
             if {bool(lesson.commands)}:
                 h2: "Run this on your own machine"
@@ -81,17 +100,17 @@ def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> 
             Paragraphs(text={lesson.walkthrough}):
             section(class="demo" aria-label="Interactive lesson")
                 h2: "Try it live"
-                p(id="lesson-exercise"): {lesson.exercise}
+                p(id="lesson-exercise"):
+                    Inline(text={lesson.exercise}):
                 h3: "What to observe"
-                p(id="lesson-expected"): {lesson.expected}
+                p(id="lesson-expected"):
+                    Inline(text={lesson.expected}):
                 {each(revision, build, key=lambda value: value)}
                 Actions:
                     Button(id="reset-demo" onClick={reset}): "Reset demo"
-                    Button(id="mark-practiced" ariaPressed={practiced} onClick={mark}):
-                        "Mark / unmark as practiced"
-                p: "Practice marked: " {practiced}
             h2: "Take this with you"
-            p: {lesson.recap}
+            p:
+                Inline(text={lesson.recap}):
             Navigation(lesson={lesson} router={router} position="bottom"):
             footer(class="course-footer"):
                 "Original working material grounded in the runnable examples: "

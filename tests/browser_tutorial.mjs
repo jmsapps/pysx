@@ -326,8 +326,6 @@ try {
     await page.locator("#reset-demo").click();
     await page.waitForFunction(generation => document.querySelector("[data-lesson]")?.getAttribute("data-demo-generation") !== generation, generation);
     await fresh(page, slug);
-    await page.locator("#mark-practiced").click();
-    await page.waitForFunction(() => document.querySelector("#mark-practiced").getAttribute("aria-pressed") === "true");
     console.log(`  ok  ${index + 1}: ${slug} subject interaction, correction/reset and named navigation`);
     if (index === 0) {
       await page.evaluate(() => window.scrollTo(0, 0));

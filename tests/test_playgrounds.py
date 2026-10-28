@@ -71,6 +71,22 @@ def test_scaffold_wipes_only_the_requested_playgrounds_state(tmp_path: Path) -> 
     assert not (state / "durable").exists()
 
 
+def test_scaffold_preserves_an_existing_package_marker(tmp_path: Path) -> None:
+    target = tmp_path / "playgrounds"
+    target.mkdir()
+    marker = target / "__init__.py"
+    marker.write_text('SHARED = "mine"\n', encoding="utf-8")
+    scaffold((), root=tmp_path)
+
+    assert marker.read_text(encoding="utf-8") == 'SHARED = "mine"\n'
+
+
+def test_scaffold_creates_a_package_marker_when_absent(tmp_path: Path) -> None:
+    scaffold(("counter",), root=tmp_path)
+
+    assert (tmp_path / "playgrounds" / "__init__.py").read_text(encoding="utf-8") == ""
+
+
 def test_unknown_reports_only_unknown_names() -> None:
     assert unknown(("counter", "nope", "durable")) == ("nope",)
     assert unknown(NAMES) == ()

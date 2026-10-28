@@ -28,6 +28,7 @@ h3 { font-size: 19px; }
 .lesson-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 24px 0; font-size: 14px; }
 .lesson-nav a:last-child { text-align: right; }
 .lesson-nav [aria-disabled=true] { color: var(--muted); }
+p code { font: 0.88em/1.5 ui-monospace, monospace; background: var(--wash); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; overflow-wrap: break-word; }
 pre { white-space: pre; overflow: auto; padding: 22px; border-radius: 10px; font: 14px/1.75 ui-monospace, monospace; background: var(--code); color: var(--code-ink); max-width: 100%; }
 [data-syntax=tag] { color: #54cdff; }
 [data-syntax=component] { color: #b6c9ff; }

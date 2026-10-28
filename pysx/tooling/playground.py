@@ -22,7 +22,10 @@ def scaffold(requested: tuple[str, ...], *, root: Path) -> tuple[Path, ...]:
     selected = requested or NAMES
     target = root / DIRECTORY
     target.mkdir(parents=True, exist_ok=True)
-    (target / "__init__.py").write_text("", encoding="utf-8")
+    marker = target / "__init__.py"
+
+    if not marker.exists():
+        marker.write_text("", encoding="utf-8")
     written: list[Path] = []
 
     for name in selected:

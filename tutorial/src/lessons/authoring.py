@@ -17,7 +17,7 @@ LESSONS = (
         "Use a readable condition in the template. Reading it eagerly into a plain bool "
         "before returning the fragment freezes that decision, just as an eager counter "
         "read froze the snapshot in lesson three.",
-        "The DSL supports if/elif/else and matching, while when provides an explicit lazy "
+        "The DSL supports `if`/`elif`/`else` and matching, while `when` provides an explicit lazy "
         "construction helper. Do not build both expensive alternatives in Python and then "
         "choose between the already-built results.\n\n"
         "The demo keeps a parent count while mounting and removing a child. The child has "
@@ -35,7 +35,7 @@ LESSONS = (
                         p: "Hidden"
                 """)
         ''').strip(),
-        "The condition is a live Signal. Only the selected body's nodes are active. "
+        "The condition is a live `Signal`. Only the selected body's nodes are active. "
         "The alternative is not an eagerly constructed component.",
         "Increment the child, hide it, show it again, and inspect the cleanup count.",
         "The child restarts at zero; the parent count stays. Cleanup increases when the "
@@ -52,7 +52,7 @@ LESSONS = (
         "A Python comprehension evaluated while building a template is a snapshot. A "
         "reactive list region instead reads its collection as that collection changes. "
         "This distinction matters when adding, removing or reordering records.\n\n"
-        "Use each for live rows and each_indexed when the current position is part of "
+        "Use `each` for live rows and `each_indexed` when the current position is part of "
         "the display. Nested rows need their own stable keys and correctly captured "
         "parent values; a callback must not accidentally use the last loop variable.",
         "A row renderer is an ordinary function. Its parameter provides one record and "
@@ -74,8 +74,8 @@ LESSONS = (
                     ul: {each(rows, row, key=str)}
                 """)
         ''').strip(),
-        "The source is passed to each uncalled. The row function receives the current "
-        "value, and key=str is suitable here because the small example has unique text keys.",
+        "The source is passed to `each` uncalled. The row function receives the current "
+        "value, and `key=str` is suitable here because the small example has unique text keys.",
         "Add a group, reverse the groups and select a child from the original first group.",
         "The list changes immediately, the snapshot stays fixed and selection names the "
         "correct group.",
@@ -115,7 +115,7 @@ LESSONS = (
                     ul: {each(rows, row, key=lambda key: key)}
                 """)
         ''').strip(),
-        "The stable integer key identifies the record. draft belongs to that row owner, "
+        "The stable integer key identifies the record. `draft` belongs to that row owner, "
         "so movement retains it and removal disposes it.",
         "Type into Alpha, increment its count, focus and reverse, then remove and restore Alpha.",
         "Movement keeps the draft/count/focus. Removal followed by restoration creates an "
@@ -156,8 +156,8 @@ LESSONS = (
                     Card(title="A reusable card"): "Content"
                 """)
         ''').strip(),
-        "title is a typed prop and children is composable content. The caller controls "
-        "the content without duplicating the section and heading structure.",
+        "`title` is a typed prop and `children` is composable content. The caller controls "
+        "the content without duplicating the `section` and heading structure.",
         "Change the common heading and increment only the first component instance.",
         "Both headings change, but only the first instance's local count increments.",
         "Share component definitions, not accidental instance state.",
@@ -175,7 +175,7 @@ LESSONS = (
         "Server setup, browser mount and disposal are different moments. Setup can happen "
         "before a browser attaches. A DOM command needs a mounted capability. Cleanup must "
         "still run when a branch leaves or its entire session closes.",
-        "own_effect ties a keyed observer to a component. Direct effect calls return "
+        "`own_effect` ties a keyed observer to a component. Direct `effect` calls return "
         "a disposer that the caller must own. Similarly, prefer owned timers/tasks and "
         "subscriptions over unmanaged background factories.\n\n"
         "The bounded log below records run N and cleanup N. Incrementing should clean "
@@ -192,7 +192,7 @@ LESSONS = (
             count.set(2)
             assert seen == [0, 1]
         """).strip(),
-        "The effect subscribes on its first read. dispose removes that subscription, "
+        "The effect subscribes on its first read. `dispose` removes that subscription, "
         "which is why changing the source to two does not produce another entry.",
         "Increment, dispose the observer, increment again and reattach it. Reset the log.",
         "Cleanup precedes rerun. A disposed observer produces no new entries.",
@@ -215,7 +215,7 @@ LESSONS = (
         "spacing is local to this demo. A theme switch updates computed appearance; it "
         "should not remount the input or discard its draft.\n\n"
         "Empty dynamic variable values remove the local override, allowing the declared "
-        "fallback to apply. css() is for validated flat snapshot CSS text; it is not "
+        "fallback to apply. `css()` is for validated flat snapshot CSS text; it is not "
         "an unrestricted live stylesheet or a way to execute submitted source.",
         dedent('''
             from pysx import Fragment, pysx, styled
@@ -230,7 +230,7 @@ LESSONS = (
                     Notice: "A scoped style"
                 """)
         ''').strip(),
-        "Notice is a styled native paragraph. A real lexical reference lets the compiler "
+        "`Notice` is a styled native paragraph. A real lexical reference lets the compiler "
         "and editor recognize it, while the renderer owns the scoped style rule.",
         "Change spacing and switch theme. Type into the preview before another theme switch.",
         "Computed spacing/colors change while the preview input and its draft remain intact.",
@@ -249,7 +249,7 @@ LESSONS = (
         "Routers in one document share its real location. They are not independent toy "
         "browsers. This course deliberately places its routing exercise under the lesson's "
         "URL so it cannot silently compete with unrelated course routes.",
-        "RouteState provides readable params and location. A compatible parameter "
+        "`RouteState` provides readable `params` and `location`. A compatible parameter "
         "change can retain a branch's local state; navigating away ends its owned work. "
         "Do not confuse that retention with global persistence.\n\n"
         "Use the project links below and watch the actual address bar. Copy a project "
@@ -270,8 +270,8 @@ LESSONS = (
                     main: {router.view()}
                 """)
         ''').strip(),
-        "The :id segment names a parameter. The branch receives RouteState instead of "
-        "parsing raw URL strings itself. Its content is mounted through router.view().",
+        "The `:id` segment names a parameter. The branch receives `RouteState` instead of "
+        "parsing raw URL strings itself. Its content is mounted through `router.view()`.",
         "Open project one and then project two, inspect the URL, and reload the second deep link.",
         "The selected project matches the URL before and after reload. Course navigation "
         "still works.",
@@ -287,11 +287,11 @@ LESSONS = (
         "A navigation link still needs to behave like a link. A modified click, a "
         "download, another target or an external URL has native browser meaning. Internal "
         "navigation may be intercepted only when that ordinary anchor action is eligible.\n\n"
-        "Relative paths use familiar filesystem-style ./ and ../ resolution. A query "
+        "Relative paths use familiar filesystem-style `./` and `../` resolution. A query "
         "or fragment update changes a different part of the current location. Push adds "
         "history; replace changes the current entry.",
-        "Link composes a normal callback with the router's navigation decision. A "
-        "NavigationEvent may explicitly cancel that decision; cancelling is different "
+        "`Link` composes a normal callback with the router's navigation decision. A "
+        "`NavigationEvent` may explicitly cancel that decision; cancelling is different "
         "from changing the destination after navigation already happened.\n\n"
         "The controls below change the actual lesson URL. Use Back and Forward after "
         "moving between project details. A replace-query control should not create an "
@@ -310,7 +310,7 @@ LESSONS = (
                     main: {Link("Home", router=router, href="/")} {router.view()}
                 """)
         ''').strip(),
-        "Link creates a real anchor associated with its router. Keeping the href "
+        "`Link` creates a real anchor associated with its router. Keeping the `href` "
         "meaningful preserves copying, native targets and browser navigation conventions.",
         "Push a detail URL, replace its query, go Back and Forward, then try a cancelled link.",
         "The address bar and readout agree. Cancellation changes neither the destination "
@@ -327,14 +327,14 @@ LESSONS = (
         "Accessibility comes from behavior as well as attributes. A combobox needs "
         "an expanded state, an active option and predictable keys. A roving control needs "
         "one tab stop and actual focus movement, not only a highlighted background.\n\n"
-        "The server cannot synchronously inspect arbitrary browser nodes. Dom gives "
+        "The server cannot synchronously inspect arbitrary browser nodes. `Dom` gives "
         "an owned ref, and its handle exposes bounded asynchronous capabilities after "
         "mount. A command must stay inside the component's ownership boundary.",
-        "The chooser below keeps input focus while ArrowUp/ArrowDown changes the active "
-        "option. Enter selects, and Escape closes. ARIA state follows the same sources "
+        "The chooser below keeps input focus while `ArrowUp`/`ArrowDown` changes the active "
+        "option. `Enter` selects, and `Escape` closes. ARIA state follows the same sources "
         "as the visible state so the two cannot drift apart.\n\n"
         "A focus button awaits the ref's handle. Preventing the arrow key's native "
-        "default is declared in on_event, before the callback travels to Python. Try "
+        "default is declared in `on_event`, before the callback travels to Python. Try "
         "Tab and Shift+Tab as well as the chooser's own keys.",
         dedent('''
             from pysx import Dom, Fragment, pysx

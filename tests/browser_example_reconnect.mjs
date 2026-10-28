@@ -15,6 +15,8 @@ try {
   const url = `http://127.0.0.1:${process.argv[2]}/`;
   await page.goto(url);
   await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "connected");
+  assert.equal(await page.evaluate(() => document.getElementById("pysx-connection-status")), null);
+  console.log("  ok  a healthy connected page carries no injected connection markup");
   const session = await page.locator("#reconnect-generation").textContent();
   await page.locator("#reconnect-increment").click();
   await page.waitForFunction(() => document.querySelector("#reconnect-clicks").textContent === "1");

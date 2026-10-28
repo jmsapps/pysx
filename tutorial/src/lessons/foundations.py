@@ -20,13 +20,17 @@ LESSONS = (
         "actually running this course. It is not a browser simulation of Python.",
         "The panel above copies a runnable counter into your own project and serves it. "
         "That counter is an ordinary file you own; nothing about it is special to this "
-        "course. For your own file named my_app.py, the corresponding entry is my_app:app. "
-        "The part before the colon is an importable module; the part after it is the "
-        "exported callable or host.\n\n"
+        "course.\n\n"
+        "The run command is shorthand: given `playgrounds.counter`, pysx looks for a callable "
+        "named `app` inside that module. Written in full it is "
+        "`pysx --app playgrounds.counter:app`. The part before the colon is an importable "
+        "module; the part after it is the exported callable or host, and its name is yours "
+        "to choose. A project called `foo` whose entry point is `bar` runs as "
+        "`pysx --app foo:bar`.\n\n"
         "The initial page is already meaningful HTML. A later input event travels to "
-        "Python and the resulting small patch returns to this document. If you are running "
-        "the course locally, keep that terminal open; Ctrl+C shuts down the server and its "
-        "owned work.",
+        "Python and the resulting small patch returns to this document. If you started the "
+        "counter above, keep its terminal open; Ctrl+C shuts that server down along with "
+        "the work it owns.",
         dedent('''
             from pysx import Fragment, pysx
 
@@ -35,8 +39,8 @@ LESSONS = (
                     h1: "Hello, learner!"
                 """)
         ''').strip(),
-        "Fragment describes composable content. The t prefix preserves the template's "
-        "structure, and pysx interprets its native h1 element. The CLI imports app before "
+        "`Fragment` describes composable content. The `t` prefix preserves the template's "
+        "structure, and pysx interprets its native `h1` element. The CLI imports `app` before "
         "serving it; it does not execute a copy of Python inside the browser.",
         "Change the name in the live greeting. Then open the same lesson in another tab "
         "and compare its initial name. Use Reset to repeat the experiment.",
@@ -45,10 +49,9 @@ LESSONS = (
         "The server owns application Python. The browser displays HTML and delivers events.",
         ("hello", "counter"),
         "pip install pysx\n"
-        "pysx-playground counter\n"
-        "pysx --app playgrounds.counter\n\n"
-        "# Your own file named my_app.py uses the same form:\n"
-        "pysx --app my_app:app\n",
+        "pysx-playground counter\n\n"
+        "# pysx-playground writes the file; this runs it\n"
+        "pysx --app playgrounds.counter\n",
     ),
     Lesson(
         2,
@@ -61,10 +64,10 @@ LESSONS = (
         "statement belongs inside a block. Native HTML remains native HTML: labels, "
         "buttons and inputs keep the browser's accessibility and validation behavior.\n\n"
         "A quoted string in markup is literal text. A hole inserts a Python value. These "
-        "are separate operations, so a name containing <strong> is displayed as data "
+        "are separate operations, so a name containing `<strong>` is displayed as data "
         "rather than turning into an element or a script.",
         "A colon introduces content. Elements with attributes use parentheses, and a "
-        "childless input needs no content body. Attribute names are checked by advisory "
+        "childless `input` needs no content body. Attribute names are checked by advisory "
         "tooling; the actual browser behavior still deserves a runtime test.\n\n"
         "In the card builder, a text field supplies an ordinary string while the emphasis "
         "control changes an attribute. Inspect the visible preview and the generated text. "
@@ -80,10 +83,10 @@ LESSONS = (
                         h2: {name}
                 """)
         ''').strip(),
-        "The outer section supplies structure and h2 supplies a heading. Passing name "
-        "uncalled retains a live value. If you interpolate name() here, the read happens "
+        "The outer `section` supplies structure and `h2` supplies a heading. Passing `name` "
+        "uncalled retains a live value. If you interpolate `name()` here, the read happens "
         "while constructing the fragment and becomes a snapshot.",
-        "Enter <em>Hello</em> as the card's text, then toggle emphasis and reset the card.",
+        "Enter `<em>Hello</em>` as the card's text, then toggle emphasis and reset the card.",
         "Angle brackets stay visible as text. Emphasis changes the preview's attribute; "
         "it does not reinterpret your input as HTML.",
         "Use markup for structure and holes for data. Preserve native semantics.",
@@ -95,12 +98,12 @@ LESSONS = (
         "Live signals and snapshots",
         "Foundations",
         "Predict which values update after a write and which values stay fixed.",
-        "A Signal is a small piece of reactive state. Calling it reads the current value; "
-        "set replaces that value and update computes a replacement from the current one. "
+        "A `Signal` is a small piece of reactive state. Calling it reads the current value; "
+        "`set` replaces that value and `update` computes a replacement from the current one. "
         "State created inside the application belongs to that session.\n\n"
         "The most useful distinction is between passing a readable object and reading "
         "it now. A live template hole can subscribe to a Signal. A plain integer obtained "
-        "from count() is just an integer, even if it originally came from a Signal.",
+        "from `count()` is just an integer, even if it originally came from a `Signal`.",
         "Create the snapshot before returning the template. The two outputs start at "
         "the same value, so initial HTML cannot prove which is reactive. Only a later "
         "write exposes the difference. This is why the exercise asks you to interact.\n\n"
@@ -117,7 +120,7 @@ LESSONS = (
                     p: "Live " {count} " | snapshot " {snapshot}
                 """)
         ''').strip(),
-        "snapshot stores the initial integer. The count hole retains the Signal itself. "
+        "`snapshot` stores the initial integer. The `count` hole retains the `Signal` itself. "
         "Both belong to the same render, but only one retains a dependency on future writes.",
         "Increment twice, read both outputs, and reset. Try the same steps in another tab.",
         "Live reaches 2 while snapshot remains 0. Reset returns live to 0 without navigation.",
@@ -135,14 +138,14 @@ LESSONS = (
         "handler must remember to update them all. A derived value records the sources "
         "read by its callback and recomputes from those sources.\n\n"
         "Python permits reactive arithmetic and ordering results, but some protocols "
-        "require primitives. Python's and, or, not, in and len cannot faithfully return "
-        "a Signal. Use the named helpers or ordinary Python inside derived.",
-        "The calculator below has quantity as a source and total as a consequence. Its "
+        "require primitives. Python's `and`, `or`, `not`, `in` and `len` cannot faithfully return "
+        "a `Signal`. Use the named helpers or ordinary Python inside `derived`.",
+        "The calculator below has `quantity` as a source and `total` as a consequence. Its "
         "threshold indicator reads the same source. A single write can update both while "
         "keeping them consistent. Batch groups synchronous writes; it is not a transaction "
         "rollback and must not span an await.\n\n"
-        "Use eq/ne for reactive payload equality. Signal object identity remains useful "
-        "to Python containers. A lambda passed to derived is also a good place for genuine "
+        "Use `eq`/`ne` for reactive payload equality. `Signal` object identity remains useful "
+        "to Python containers. A lambda passed to `derived` is also a good place for genuine "
         "Python short-circuiting, because only the sources actually read are tracked.",
         dedent("""
             from pysx import derived, signal
@@ -152,10 +155,10 @@ LESSONS = (
             quantity.set(3)
             assert total() == 36
         """).strip(),
-        "The callback reads quantity, which establishes its dependency. The assertion "
+        "The callback reads `quantity`, which establishes its dependency. The assertion "
         "checks a later read after changing the source, rather than only checking initialization.",
         "Increase quantity past three, observe the threshold, then reset. Explain why "
-        "the total needs no separate set call.",
+        "the total needs no separate `set` call.",
         "The total is quantity times 12, and the threshold changes when quantity exceeds three.",
         "Store sources; derive consequences. Choose helpers when Python forces a primitive.",
         ("operators", "reactive_state"),
@@ -173,10 +176,10 @@ LESSONS = (
         "or stopping propagation must be declared when registering the handler, so the "
         "browser can act immediately. An eventual Python callback is too late to undo "
         "a default action that already occurred.",
-        "on_event combines a callback with its local policy. The key filter limits which "
+        "`on_event` combines a callback with its local policy. The key filter limits which "
         "keys invoke that callback. Modifier fields let the server distinguish an ordinary "
         "press from Shift or Control combinations without guessing from text.\n\n"
-        "Use semantic native buttons for activation. A clickable div needs keyboard "
+        "Use semantic native buttons for activation. A clickable `div` needs keyboard "
         "and role behavior you would otherwise get for free. In the live exercise, the "
         "input retains focus while its event readout changes, so you can compare keys "
         "without clicking between every experiment.",
@@ -192,7 +195,7 @@ LESSONS = (
                     p: {last}
                 """)
         ''').strip(),
-        "The callback takes BrowserEvent and records its key. The input's onKeydown "
+        "The callback takes `BrowserEvent` and records its key. The input's `onKeydown` "
         "binding is an event contract, while the paragraph is an ordinary live binding.",
         "Focus the event field. Press A, Shift+A and ArrowDown, then clear the readout.",
         "The readout reports the actual key and modifier values delivered by your browser.",
@@ -206,13 +209,13 @@ LESSONS = (
         "Foundations",
         "Bind fields, preserve browser validation and handle authoritative corrections.",
         "A form has two directions of information flow. User edits update server state, "
-        "and server corrections update the control's property. Writing a value attribute "
+        "and server corrections update the control's property. Writing a `value` attribute "
         "alone is not enough once a user has made a field dirty. Bindings connect the "
         "control to a writable readable and coordinate the round trip.\n\n"
-        "A label needs a matching field id. Required fields should keep native constraint "
+        "A `label` needs a matching field `id`. Required fields should keep native constraint "
         "validation: an invalid submit is rejected before the application accepts it. "
         "ARIA descriptions add context but do not replace a real label.",
-        "bindValue handles text-like values and bindChecked handles boolean checked state. "
+        "`bindValue` handles text-like values and `bindChecked` handles boolean checked state. "
         "Select and radio controls have their own native property semantics. Programmatic "
         "correction must preserve useful caret state rather than replacing the whole input.\n\n"
         "The exercise separates changing a draft from submitting it. A native form "
@@ -230,8 +233,8 @@ LESSONS = (
                     p: {name}
                 """)
         ''').strip(),
-        "The label points to the same id as the input. The writable name Signal supplies "
-        "the binding, and required remains a native boolean property rather than a string.",
+        "The `label` points to the same `id` as the `input`. The writable `name` `Signal` supplies "
+        "the binding, and `required` remains a native boolean property rather than a string.",
         "Try submitting an empty name. Enter a name, accept the terms, submit, then "
         "apply the server correction and reset.",
         "Empty input is rejected. A valid submit shows the accepted name; correction "
@@ -253,7 +256,7 @@ LESSONS = (
         "dictionary edit could bypass notification, validation and session ownership.",
         "Indexing a supported structured path creates a projection rather than freezing "
         "the current payload. Write through the projection or replace/update the root. "
-        "For dataclasses, project accepts explicit getter/setter functions and can keep "
+        "For dataclasses, `project` accepts explicit getter/setter functions and can keep "
         "immutable replacement logic in one place.\n\n"
         "In this lesson, editing the first score should not alter the second. The private "
         "copy experiment is intentionally visible: it changes the copy's readout while "
@@ -269,7 +272,7 @@ LESSONS = (
             copy["scores"]["first"] = 99
             assert first() == 3
         """).strip(),
-        "first remains attached to the owned root. copy is a detached dictionary. The "
+        "`first` remains attached to the owned root. `copy` is a detached dictionary. The "
         "last assertion proves that editing a snapshot is not a hidden live write.",
         "Increment the first score, then change a private copy. Compare first, second "
         "and the displayed copy before resetting.",

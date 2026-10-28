@@ -70,10 +70,10 @@ try {
       for (const word of ["Navigation", "Paragraphs", "Button", "CodeBlock"]) {
         check(result.some(token => token.text === word && token.scopes.includes("support.class.component.pysx")), `actual course component ${word}`);
       }
-      for (const word of ["data-lesson", "ariaPressed", "class", "position"]) {
+      for (const word of ["data-lesson", "onClick", "class", "position"]) {
         check(result.some(token => token.text === word && token.scopes.includes("entity.other.attribute-name.pysx")), `actual course attribute ${word}`);
       }
-      for (const word of ["lesson", "revision", "practiced", "router"]) {
+      for (const word of ["lesson", "revision", "generation", "router"]) {
         check(result.some(token => token.text === word && token.scopes.includes("meta.embedded.inline.python")), `actual course expression ${word}`);
       }
       const firstImport = lines.findIndex(line => line.startsWith("from pysx import"));
