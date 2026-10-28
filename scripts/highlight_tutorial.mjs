@@ -15,10 +15,10 @@ const exported = spawnSync("uv", ["run", "--project", root, "python", "-c", `
 import json,sys
 sys.path.insert(0, 'tutorial')
 from pysx.compiler.loader import install_loader
-install_loader(packages=('tutorial',))
-from tutorial.catalog import LESSONS
-from tutorial.demos.foundations import CARD_SOURCES
-from tutorial.demos.operations import FROZEN_SOURCE, ATTRIBUTE_SOURCE, CORRECT_SOURCE
+install_loader(packages=('src',))
+from src.catalog import LESSONS
+from src.demos.foundations import CARD_SOURCES
+from src.demos.operations import FROZEN_SOURCE, ATTRIBUTE_SOURCE, CORRECT_SOURCE
 print(json.dumps([lesson.code for lesson in LESSONS] + list(CARD_SOURCES) +
     [FROZEN_SOURCE, FROZEN_SOURCE.replace('count()', 'count'), ATTRIBUTE_SOURCE, CORRECT_SOURCE]))
 `], {cwd: root, encoding: "utf8"});

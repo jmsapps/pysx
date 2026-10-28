@@ -18,10 +18,10 @@ def test_validate_integrated_tutorial_wheel_assets_types_and_provenance(tmp_path
     assert worker.wheel is not None
     with zipfile.ZipFile(worker.wheel) as archive:
         names = archive.namelist()
-        assert "tutorial/py.typed" in names
-        assert "tutorial/assets/course.css" in names
-        assert "tutorial/assets/code-tokens.json" in names
-        assert "tutorial/components/pages.py" in names
+        assert "src/py.typed" in names
+        assert "src/assets/course.css" in names
+        assert "src/assets/code-tokens.json" in names
+        assert "src/components/pages.py" in names
         assert not any(name.startswith(("examples/", "tests/")) for name in names)
     worker.reinstall()
     result = subprocess.run(
@@ -29,10 +29,10 @@ def test_validate_integrated_tutorial_wheel_assets_types_and_provenance(tmp_path
             str(worker.python),
             "-I",
             "-c",
-            "import importlib.resources,pathlib,sys,tutorial,pysx; "
-            "assert pathlib.Path(tutorial.__file__).is_relative_to(pathlib.Path(sys.prefix)); "
+            "import importlib.resources,pathlib,sys,src,pysx; "
+            "assert pathlib.Path(src.__file__).is_relative_to(pathlib.Path(sys.prefix)); "
             "assert pathlib.Path(pysx.__file__).is_relative_to(pathlib.Path(sys.prefix)); "
-            "assert importlib.resources.files('tutorial').joinpath('py.typed').is_file(); "
+            "assert importlib.resources.files('src').joinpath('py.typed').is_file(); "
             "assert not any(p == sys.argv[1] or p.startswith(sys.argv[1] + '/') for p in sys.path)",
             str(ROOT),
         ],
