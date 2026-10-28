@@ -138,7 +138,12 @@ load that artifact in an isolated profile. The runner discovers local VSCode or 
 the pinned version; `PYSX_VSCODE_EXECUTABLE` explicitly selects a managed executable.
 Inherited VSCode/Node-host environment variables are removed. Activation, saved-file
 diagnostic contents/range and Python-document close cleanup are asserted in the actual
-host; the launcher has a 120-second deadline and removes its profile and process group.
+host; the launcher has a 120-second deadline (240 seconds for interpreter routing)
+and kills its process group on every exit. Successful runs remove their profile.
+Failed runs retain their workspace, including complete `host-output.log` output and
+`profile/logs`, and print its location, suite and activation order. All suites scan
+profile logs for lifecycle failures; failed hosts also surface error context from those
+logs without replacing the original failure. Remove retained workspaces after investigation.
 The worker client is the default; the resident language-server client is enabled with
 `pysx.useLanguageServer`. Both use the configured or selected Python environment,
 with the worker retaining workspace-interpreter fallbacks. The resident router probes

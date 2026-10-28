@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -218,7 +219,10 @@ def test_editor_timeout_cleanup(tmp_path: Path, suite: str) -> None:
     assert isinstance(decoded, dict)
     state = cast("dict[str, object]", decoded)
     assert isinstance(state["workspace"], str)
-    assert not Path(state["workspace"]).exists()
+    workspace = Path(state["workspace"])
+    assert workspace.is_dir()
+    assert (workspace / "host-output.log").is_file()
+    assert f"workspace retained: {workspace}" in result.stderr
     pid = str(state["pid"])
     command = (
         ["ps", "-o", "stat=", "-p", pid]
@@ -231,6 +235,60 @@ def test_editor_timeout_cleanup(tmp_path: Path, suite: str) -> None:
         assert not process.stdout.strip() or process.stdout.strip().startswith("Z")
     else:
         assert pid not in process.stdout
+    shutil.rmtree(workspace)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="executable fixture uses a POSIX shebang")
+@pytest.mark.parametrize("host_exit", [0, 1])
+def test_editor_host_failure_retains_early_output_and_profile_logs(
+    tmp_path: Path, host_exit: int
+) -> None:
+    executable = tmp_path / "host"
+    failure = (
+        "Stopping the server timed out"
+        if host_exit == 0
+        else "timeout waiting for fixture readiness"
+    )
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import pathlib, sys\n"
+        "profile = pathlib.Path(sys.argv[sys.argv.index('--user-data-dir') + 1])\n"
+        "logs = profile / 'logs' / 'fixture' / 'exthost'\n"
+        "logs.mkdir(parents=True)\n"
+        "(logs / 'exthost.log').write_text(\n"
+        f"    '[error] Error: {failure}\\n'\n"
+        "    '    at until (surface_suite.cjs:14:9)\\n')\n"
+        "print('AssertionError: early host failure', flush=True)\n"
+        "print('shutdown logging ' * 4000, flush=True)\n"
+        "print('PYSX EDITOR CASES PASSED: 11', flush=True)\n"
+        f"sys.exit({host_exit})\n"
+    )
+    executable.chmod(0o755)
+    state_file = tmp_path / "state.json"
+    result = editor_run(
+        {"PYSX_VSCODE_EXECUTABLE": str(executable), "PYSX_EDITOR_STATE_FILE": str(state_file)},
+        "--suite",
+        "editor_surface",
+    )
+    assert result.returncode != 0
+    assert (
+        "editor host exited 1" if host_exit else "lifecycle failure in host logs"
+    ) in result.stderr
+
+    if host_exit:
+        assert "AssertionError: early host failure" in result.stderr
+    assert "EDITOR HOST LOG FINDINGS:" in result.stderr
+    assert failure in result.stderr
+    assert "at until (surface_suite.cjs:14:9)" in result.stderr
+    assert "VERIFICATION PASSED" not in result.stdout
+    state = json.loads(state_file.read_text())
+    workspace = Path(state["workspace"])
+    assert f"workspace retained: {workspace}" in result.stderr
+    output = (workspace / "host-output.log").read_text()
+    assert len(output) > 30000
+    assert "AssertionError: early host failure" in output
+    assert (workspace / "profile/logs/fixture/exthost/exthost.log").is_file()
+    shutil.rmtree(workspace)
 
 
 def test_editor_routing_wait_bounds_a_stalled_status_request() -> None:

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, realpathSync, readdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, realpathSync, readdirSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +53,27 @@ const executable = process.env.PYSX_VSCODE_EXECUTABLE ?? locations.find(existsSy
 if (process.env.PYSX_VSCODE_EXECUTABLE && !existsSync(executable)) throw new Error("missing VSCode executable");
 const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), "pysx-editor-")));
 let child;
+let failed = false;
+const outputFile = path.join(workspace, "host-output.log");
+const lifecycleFailures = /Client is stopping but no stop promise|rejected promise not handled|unhandled rejection|Handling connection close failed|Restarting server failed|Stopping server failed|Stopping the server timed out/i;
+const inspect = (directory, failures = lifecycleFailures) => {
+  const findings = [];
+  if (!existsSync(directory)) return findings;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const filename = path.join(directory, entry.name);
+    if (entry.isDirectory()) findings.push(...inspect(filename, failures));
+    else if (entry.name.endsWith(".log")) {
+      const lines = readFileSync(filename, "utf8").split("\n");
+      for (let index = 0; index < lines.length; index++) {
+        if (failures.test(lines[index])) {
+          findings.push(`${path.relative(workspace, filename)}:${index + 1}\n` +
+            lines.slice(Math.max(0, index - 2), index + 13).join("\n"));
+        }
+      }
+    }
+  }
+  return findings;
+};
 try {
   const proof = suite === "packaging";
   const build = spawnSync("uv", ["run", "--project", root, "python", ...(proof ? ["-c",
@@ -115,6 +136,7 @@ try {
         root: multiRoot ?? (fixture ? fixture.consumer : consumer), checkout: root, host, suite,
         python: fixture?.python ?? interpreter, alternate, bare, pythonExtension, ruffExtension: ["authoring", "template_import_usage", "editor_surface"].includes(suite) ? ruffExtension : null }) },
     });
+    writeFileSync(outputFile, "");
     if (process.env.PYSX_EDITOR_STATE_FILE) {
       writeFileSync(process.env.PYSX_EDITOR_STATE_FILE, JSON.stringify({ workspace, pid: child.pid }));
     }
@@ -127,34 +149,33 @@ try {
         suite === "interpreter_routing" || process.env.PYSX_EDITOR_PERFORMANCE === "1" ? 240000 : 120000;
       const timer = setTimeout(() => reject(new Error(`editor deadline exceeded: ${output}`)),
         timeout);
-      child.stdout.on("data", (data) => { output = (output + data).slice(-30000); });
-      child.stderr.on("data", (data) => { output = (output + data).slice(-30000); });
+      const capture = (data) => { appendFileSync(outputFile, data); output += data; };
+      child.stdout.on("data", capture);
+      child.stderr.on("data", capture);
       child.once("error", (error) => { clearTimeout(timer); reject(error); });
       // "close" rather than "exit": the host's final assertion line is still
       // buffered when "exit" fires.
       child.once("close", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`editor host exited ${code}: ${output}`)); });
     });
     const cases = suite === "save_latency" ? 6 : suite === "interpreter_routing" ? 8 : suite === "authoring" ? 11 : suite === "client_verify" ? 12 : suite === "editor_surface" ? 11 : suite === "template_import_usage" ? 7 : 3;
-    if (suite === "client_verify") {
-      const failures = /Client is stopping but no stop promise|rejected promise not handled|unhandled rejection|Handling connection close failed|Restarting server failed|Stopping server failed|Stopping the server timed out/i;
-      const inspect = (directory) => {
-        if (!existsSync(directory)) return;
-        for (const entry of readdirSync(directory, { withFileTypes: true })) {
-          const filename = path.join(directory, entry.name);
-          if (entry.isDirectory()) inspect(filename);
-          else if (entry.name.endsWith(".log")) {
-            const log = readFileSync(filename, "utf8");
-            if (failures.test(log)) throw new Error(`lifecycle failure in ${entry.name}: ${log.match(new RegExp(`.{0,100}(?:${failures.source}).{0,200}`, "i"))?.[0]}`);
-          }
-        }
-      };
-      if (failures.test(output)) throw new Error(`lifecycle failure in host output: ${output}`);
-      inspect(path.join(workspace, "profile", "logs"));
-    }
+    if (lifecycleFailures.test(output)) throw new Error(`lifecycle failure in host output: ${output}`);
+    const findings = inspect(path.join(workspace, "profile", "logs"));
+    if (findings.length) throw new Error(`lifecycle failure in host logs:\n${findings.join("\n")}`);
     if (!output.includes(`PYSX EDITOR CASES PASSED: ${cases}`)) throw new Error(`missing host assertions: ${output}`);
     console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR SAVE:") || line.startsWith("PYSX EDITOR PERFORMANCE") || line.startsWith("PYSX EDITOR ROUTING:")).join("\n"));
     console.log(`EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, ${cases} cases)`);
   }
+} catch (error) {
+  failed = true;
+  console.error(`EDITOR FAILURE: ${suite} (${process.env.PYSX_EDITOR_ACTIVATION_ORDER ?? "default"}); workspace retained: ${workspace}; output: ${outputFile}`);
+  try {
+    const findings = inspect(path.join(workspace, "profile", "logs"),
+      new RegExp(`${lifecycleFailures.source}|timeout waiting for|AssertionError|\\[error\\]`, "i"));
+    if (findings.length) console.error(`EDITOR HOST LOG FINDINGS:\n${findings.join("\n")}`);
+  } catch (inspectionError) {
+    console.error(`editor log inspection failed: ${inspectionError.stack ?? inspectionError}`);
+  }
+  throw error;
 } finally {
   if (child?.pid) {
     if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
@@ -163,5 +184,5 @@ try {
       catch (error) { if (!["ESRCH", "EPERM"].includes(error.code)) throw error; }
     }
   }
-  rmSync(workspace, { recursive: true, force: true });
+  if (!failed) rmSync(workspace, { recursive: true, force: true });
 }
