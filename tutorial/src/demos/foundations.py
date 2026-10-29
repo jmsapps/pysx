@@ -39,8 +39,9 @@ def template_card() -> Fragment:
 
     return pysx(t"""
         label(for="card-text"): "Card text (ordinary escaped data)"
-        Field(id="card-text" bindValue={text} maxLength={200})
-        Button(id="card-emphasis" onClick={toggle} ariaPressed={strong}): "Toggle emphasis"
+        Actions:
+            Field(id="card-text" bindValue={text} maxLength={200})
+            Button(id="card-emphasis" onClick={toggle} ariaPressed={strong}): "Toggle emphasis"
         Panel:
             p(id="card-preview" style={weight}): {text}
         CodeBlock(identifier="card-source" source={source}):
