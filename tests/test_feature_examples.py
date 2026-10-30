@@ -127,7 +127,7 @@ def test_browser_recovery_example_cli_startup_and_ctrl_c_exit() -> None:
         "run",
         "--project",
         ".",
-        "example",
+        "pysx-example",
         "run",
         "browser_recovery",
         "--port",
@@ -231,7 +231,17 @@ def test_diagnostics_example_cli_startup_and_ctrl_c_exit() -> None:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    command = ["uv", "run", "--project", ".", "example", "run", "diagnostics", "--port", str(port)]
+    command = [
+        "uv",
+        "run",
+        "--project",
+        ".",
+        "pysx-example",
+        "run",
+        "diagnostics",
+        "--port",
+        str(port),
+    ]
 
     with ready_server(command) as server:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
@@ -319,7 +329,7 @@ def test_resources_checker_clean_and_registered() -> None:
 
 @pytest.mark.acceptance
 def test_resources_cli_startup_and_ctrl_c_exit() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "resources", "--port", "8776"]
+    command = ["uv", "run", "--project", ".", "pysx-example", "run", "resources", "--port", "8776"]
     with ready_server(command) as server:
         with urllib.request.urlopen("http://127.0.0.1:8776/", timeout=5) as response:
             assert response.status == 200
@@ -373,7 +383,7 @@ def test_recovery_checker_clean_and_registered() -> None:
 
 @pytest.mark.acceptance
 def test_recovery_cli_startup_and_ctrl_c_exit() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "recovery", "--port", "8775"]
+    command = ["uv", "run", "--project", ".", "pysx-example", "run", "recovery", "--port", "8775"]
     with ready_server(command) as server:
         with urllib.request.urlopen("http://127.0.0.1:8775/", timeout=5) as response:
             assert response.status == 200
@@ -472,7 +482,7 @@ def test_pysx_12_st_4navigation_report_checker_clean_and_registered() -> None:
 
 @pytest.mark.acceptance
 def test_pysx_12_st_4navigation_report_cli_startup_and_ctrl_c_exit() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "navigation", "--port", "8768"]
+    command = ["uv", "run", "--project", ".", "pysx-example", "run", "navigation", "--port", "8768"]
     with ready_server(command) as server:
         with urllib.request.urlopen("http://127.0.0.1:8768/", timeout=5) as response:
             assert response.status == 200
@@ -532,7 +542,7 @@ def test_templates_checker_clean_and_registered() -> None:
 
 @pytest.mark.acceptance
 def test_templates_cli_startup_and_ctrl_c_exit() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "templates", "--port", "8761"]
+    command = ["uv", "run", "--project", ".", "pysx-example", "run", "templates", "--port", "8761"]
     with ready_server(command) as server:
         with urllib.request.urlopen("http://127.0.0.1:8761/", timeout=5) as response:
             assert response.status == 200
@@ -581,7 +591,17 @@ def test_components_example_checker_clean() -> None:
 
 @pytest.mark.acceptance
 def test_components_example_cli_startup_cleanup() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "composition", "--port", "8759"]
+    command = [
+        "uv",
+        "run",
+        "--project",
+        ".",
+        "pysx-example",
+        "run",
+        "composition",
+        "--port",
+        "8759",
+    ]
 
     with (
         ready_server(command) as server,
@@ -638,7 +658,7 @@ def test_themes_example_checker_clean() -> None:
 
 @pytest.mark.acceptance
 def test_themes_example_cli_startup_cleanup() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "themes", "--port", "8760"]
+    command = ["uv", "run", "--project", ".", "pysx-example", "run", "themes", "--port", "8760"]
 
     with (
         ready_server(command) as server,
@@ -758,7 +778,7 @@ def test_events_example_checker_clean() -> None:
 
 @pytest.mark.acceptance
 def test_events_example_cli_startup_cleanup() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "events", "--port", "8758"]
+    command = ["uv", "run", "--project", ".", "pysx-example", "run", "events", "--port", "8758"]
 
     with (
         ready_server(command) as server,
@@ -773,7 +793,7 @@ def test_events_example_cli_startup_cleanup() -> None:
 
 @pytest.mark.acceptance
 def test_forms_example_cli_startup_cleanup() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "forms", "--port", "8757"]
+    command = ["uv", "run", "--project", ".", "pysx-example", "run", "forms", "--port", "8757"]
 
     with (
         ready_server(command) as server,
@@ -829,7 +849,17 @@ def test_operators_example_checker_clean() -> None:
 
 @pytest.mark.acceptance
 def test_operators_example_cli_startup_cleanup() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "reactive_state", "--port", "8756"]
+    command = [
+        "uv",
+        "run",
+        "--project",
+        ".",
+        "pysx-example",
+        "run",
+        "reactive_state",
+        "--port",
+        "8756",
+    ]
 
     with (
         ready_server(command) as server,
@@ -914,7 +944,7 @@ def test_keyed_rows_checker_clean() -> None:
 
 @pytest.mark.acceptance
 def test_keyed_rows_cli_startup_and_ctrl_c_exit() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "keyed_rows", "--port", "8764"]
+    command = ["uv", "run", "--project", ".", "pysx-example", "run", "keyed_rows", "--port", "8764"]
     with ready_server(command) as server:
         with urllib.request.urlopen("http://127.0.0.1:8764/", timeout=5) as response:
             assert response.status == 200
@@ -1006,7 +1036,7 @@ def test_reconnect_checker_clean_and_registered() -> None:
 
 @pytest.mark.acceptance
 def test_reconnect_cli_startup_and_ctrl_c_exit() -> None:
-    command = ["uv", "run", "--project", ".", "example", "run", "reconnect", "--port", "8777"]
+    command = ["uv", "run", "--project", ".", "pysx-example", "run", "reconnect", "--port", "8777"]
     with ready_server(command) as server:
         with urllib.request.urlopen("http://127.0.0.1:8777/", timeout=5) as response:
             assert response.status == 200
@@ -1077,7 +1107,7 @@ def test_session_security_cli_startup_interaction_and_ctrl_c_exit() -> None:
         "run",
         "--project",
         ".",
-        "example",
+        "pysx-example",
         "run",
         "session_security",
         "--port",
@@ -1165,7 +1195,17 @@ def test_development_cli_startup_and_ctrl_c_exit() -> None:
     from ownership_topology import free_port
 
     port = free_port()
-    command = ["uv", "run", "--project", ".", "example", "run", "development", "--port", str(port)]
+    command = [
+        "uv",
+        "run",
+        "--project",
+        ".",
+        "pysx-example",
+        "run",
+        "development",
+        "--port",
+        str(port),
+    ]
 
     with ready_server(command) as server:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
@@ -1211,7 +1251,7 @@ def test_durable_state_cli_startup_and_ctrl_c_exit(
         "run",
         "--project",
         ".",
-        "example",
+        "pysx-example",
         "run",
         "durable_state",
         "--port",
@@ -1287,7 +1327,7 @@ def test_editor_features_cli_startup_and_ctrl_c_exit() -> None:
         "run",
         "--project",
         ".",
-        "example",
+        "pysx-example",
         "run",
         "editor_features",
         "--port",

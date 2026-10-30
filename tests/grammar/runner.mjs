@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import textmate from "vscode-textmate";
@@ -11,7 +12,7 @@ for (let i = 0; i < args.length; i += 2) {
   if (args[i] !== "--suite" || !args[i + 1]) throw new Error("invalid selectors");
   suite = args[i + 1];
 }
-if (suite && !["injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "identity_cleanup", "fallback_empty", "diagnostics_actions", "client_verify", "editor_surface"].includes(suite)) throw new Error("empty grammar selection");
+if (suite && !["tutorial_website", "corpus_executable", "injection", "styling_diagnostics", "composition_recursive", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "identity_cleanup", "fallback_empty", "diagnostics_actions", "client_verify", "editor_surface"].includes(suite)) throw new Error("empty grammar selection");
 const host = pylanceHost();
 const injectionPath = process.env.PYSX_INJECTION_GRAMMAR ??
   fileURLToPath(new URL("../../editor/syntaxes/pysx.injection.tmLanguage.json", import.meta.url));
@@ -36,7 +37,9 @@ try {
     if (!condition) throw new Error(`scope assertion failed: ${label}`);
     assertions++;
   };
-  const fixtures = suite === "client_verify" || suite === "editor_surface" ? ["client_verify"] :
+  const fixtures = suite === "tutorial_website" ? ["tutorial_website"] :
+    suite === "corpus_executable" ? ["corpus_executable"] :
+    suite === "client_verify" || suite === "editor_surface" ? ["client_verify"] :
     suite === "diagnostics_actions" ? ["diagnostics_actions"] :
     suite === "fallback_empty" ? ["fallback_empty"] :
     suite === "identity_cleanup" ? ["keyed_identity"] :
@@ -47,9 +50,10 @@ try {
     suite === "composition_recursive" ? ["composition"] :
     suite === "styling_diagnostics" ? ["styling"] :
     suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
-    ["counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity", "fallback_empty", "diagnostics_actions", "client_verify"];
+    ["tutorial_website", "corpus_executable", "counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity", "fallback_empty", "diagnostics_actions", "client_verify"];
   for (const fixture of fixtures) {
-    const source = fixture === "templates_example" ? "../../examples/templates.py" : `fixtures/${fixture}.txt`;
+    const source = fixture === "tutorial_website" ? "../../tutorial/src/components/pages.py" :
+      fixture === "templates_example" ? "../../examples/templates.py" : `fixtures/${fixture}.txt`;
     const lines = readFileSync(new URL(source, import.meta.url), "utf8").split("\n");
     let stack = textmate.INITIAL;
     const result = [];
@@ -59,6 +63,38 @@ try {
       stack = current.ruleStack;
     }
     tokens += result.length;
+    if (fixture === "tutorial_website") {
+      for (const word of ["article", "section", "h1", "h2", "h3", "pre", "details", "summary", "nav", "ol"]) {
+        check(result.some(token => token.text === word && token.scopes.includes("entity.name.tag.pysx")), `actual course native ${word}`);
+      }
+      for (const word of ["Navigation", "Paragraphs", "Button", "CodeBlock"]) {
+        check(result.some(token => token.text === word && token.scopes.includes("support.class.component.pysx")), `actual course component ${word}`);
+      }
+      for (const word of ["data-lesson", "onClick", "class", "position"]) {
+        check(result.some(token => token.text === word && token.scopes.includes("entity.other.attribute-name.pysx")), `actual course attribute ${word}`);
+      }
+      for (const word of ["lesson", "revision", "generation", "router"]) {
+        check(result.some(token => token.text === word && token.scopes.includes("meta.embedded.inline.python")), `actual course expression ${word}`);
+      }
+      const firstImport = lines.findIndex(line => line.startsWith("from pysx import"));
+      check(firstImport >= 0 && !result.some(token => token.line === firstImport && token.scopes.some(scope => scope.includes("pysx"))), "course imports stay host Python");
+      check(!lines.some(line => line.includes("native.")), "course shared UI uses templates throughout");
+      const highlighted = spawnSync(process.execPath, [fileURLToPath(new URL("../../scripts/highlight_tutorial.mjs", import.meta.url)), "--check"], {encoding: "utf8"});
+      check(highlighted.status === 0, `displayed course scopes match actual editor grammar: ${highlighted.stderr}`);
+      continue;
+    }
+    if (fixture === "corpus_executable") {
+      const exact = (word, scope) => check(result.some(token => token.text === word && token.scopes.includes(scope)), `corpus ${word}: ${scope}`);
+      for (const word of ["Page", "Title", "Observer", "Action"]) exact(word, "support.class.component.pysx");
+      exact("input", "entity.name.tag.pysx");
+      for (const word of ["id", "readOnly", "ariaLabel", "dataTone"]) exact(word, "entity.other.attribute-name.pysx");
+      for (const word of ["visible", "locked", "rows", "tone"]) exact(word, "meta.embedded.inline.python");
+      for (const word of ["if", "for"]) exact(word, "keyword.control.conditional.pysx");
+      for (const word of ["in", "key"]) exact(word, "keyword.control.loop.pysx");
+      const sentinel = result.find(token => token.text.includes("AFTER_SENTINEL"));
+      check(sentinel && !sentinel.scopes.some(scope => scope.includes("pysx")), "corpus scopes end before ordinary Python");
+      continue;
+    }
     if (fixture === "client_verify") {
       // Direct literal markup remains TextMate-owned. Statically resolved
       // templates and renderer aliases are handled by resident decorations;

@@ -1,0 +1,14 @@
+from pysx import pysx
+
+def app():
+    return pysx(t'''
+        Page(id="learning")
+            Title: "Learn"
+            input(readOnly={locked} ariaLabel="Name")
+            if {visible}:
+                Observer:
+            for row in {rows} key={row.id}:
+                Action(dataTone={tone}): {row.label}
+    ''')
+
+AFTER_SENTINEL = 1

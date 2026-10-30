@@ -26,14 +26,14 @@ def create_workspace(root: Path, *, ordinary: bool = False) -> None:
     quota, extra = divmod(TOTAL_BYTES - LARGEST_BYTES, FILES - 1)
 
     for index in range(FILES):
-        source = "from pysx import Fragment, component, pysx\n"
+        source = "from pysx import Fragment, pysx\n"
 
         if index:
             source += "from leaf_000 import C000_0\n"
 
         for number in range(3 if index < 100 else 2):
             prefix = "rt" if number % 2 else "t"
-            source += f"\n@component\ndef C{index:03}_{number}() -> Fragment:\n"
+            source += f"\ndef C{index:03}_{number}() -> Fragment:\n"
             source += f"    return pysx({prefix}'''\n        div(style=\"color: red\"):\n"
 
             if index:
@@ -108,10 +108,9 @@ def describe_workspace(root: Path) -> dict[str, JSONValue]:
         tree = ast.parse(body.decode())
         components += sum(
             isinstance(node, ast.FunctionDef)
-            and any(
-                isinstance(decorator, ast.Name) and decorator.id == "component"
-                for decorator in node.decorator_list
-            )
+            and isinstance(node.returns, ast.Name)
+            and node.returns.id == "Fragment"
+            and node.name.startswith("C")
             for node in ast.walk(tree)
         )
 

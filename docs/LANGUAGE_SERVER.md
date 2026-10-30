@@ -71,9 +71,12 @@ once; distinct literals with identical text retain their separate source ranges.
 The VSCode client requests `markupHighlighting: "decorations"` at initialization.
 In this mode the server omits its full-document semantic-token capability so
 Pylance retains Python and interpolation expression coloring. Direct literal
-calls keep the injection grammar's existing TextMate scopes. The client requests
-`pysx/markupTokens` for statically resolved aliases and shared templates outside
-those literal scopes and decorates only their markup ranges. CSS values and
+calls keep the injection grammar's existing TextMate scopes, with green/bold
+component decorations for statically resolved lowercase callable and styled tags.
+Native reserved names retain their native highlighting; unresolved, ambiguous and
+non-callable lowercase names receive no component override. The client requests
+`pysx/markupTokens` for these overrides and for statically resolved aliases and
+shared templates beyond literal injection, decorating only markup ranges. CSS values and
 Python expressions are excluded. Responses carry document versions and analysis
 generations; edits and dependency invalidations clear superseded decorations.
 The `pysx.markup.type`, `.class`, `.property`, `.keyword`, `.variable`, and `.string`

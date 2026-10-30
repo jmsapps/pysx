@@ -1,0 +1,151 @@
+"""Live demos for templates, source state, events and forms."""
+
+import platform
+from importlib.metadata import version
+
+from pysx import BrowserEvent, Fragment, derived, gt, not_, on_event, pysx, signal
+from src.components import Actions, Button, Field, Panel, Readout
+from src.components.code import CodeBlock
+
+CARD_SOURCES = tuple(
+    f'''pysx(t"""
+    p(style="font-weight: {weight}"): {{text}}
+""")'''
+    for weight in ("400", "800")
+)
+
+
+def greeting() -> Fragment:
+    name = signal("Learner")
+    message = derived(lambda: f"Hello, {name()}!")
+    environment = f"Python {platform.python_version()} · pysx {version('pysx')} · server process"
+
+    return pysx(t"""
+        label(for="greeting-name"): "Your name"
+        Field(id="greeting-name" bindValue={name} maxLength={80})
+        Readout(id="greeting-output"): {message}
+        p(id="environment"): {environment}
+    """)
+
+
+def template_card() -> Fragment:
+    text = signal("A readable interface")
+    strong = signal(False)
+    weight = derived(lambda: "font-weight: 800" if strong() else "font-weight: 400")
+    source = derived(lambda: CARD_SOURCES[1 if strong() else 0])
+
+    def toggle(_: object) -> None:
+        strong.set(not strong())
+
+    return pysx(t"""
+        label(for="card-text"): "Card text (ordinary escaped data)"
+        Actions:
+            Field(id="card-text" bindValue={text} maxLength={200})
+            Button(id="card-emphasis" onClick={toggle} ariaPressed={strong}): "Toggle emphasis"
+        Panel:
+            p(id="card-preview" style={weight}): {text}
+        CodeBlock(identifier="card-source" source={source}):
+    """)
+
+
+def counter(prefix: str = "") -> Fragment:
+    count = signal(0)
+    snapshot = count()
+
+    def increment(_: object) -> None:
+        count.update(lambda value: value + 1)
+
+    return pysx(t"""
+        Button(id={prefix + "increment"} onClick={increment}): "Increment"
+        Readout(id={prefix + "live-count"}): {count}
+        p: "Snapshot: "
+        Readout(id={prefix + "snapshot-count"}): {snapshot}
+    """)
+
+
+def calculator() -> Fragment:
+    quantity = signal(1)
+    total = derived(lambda: quantity() * 12)
+    threshold = gt(quantity, 3)
+    within_limit = not_(threshold)
+
+    def increase(_: object) -> None:
+        quantity.update(lambda value: value + 1)
+
+    return pysx(t"""
+        Button(id="quantity-increase" onClick={increase}): "Add one item"
+        p: "Quantity: "
+        Readout(id="quantity"): {quantity}
+        p: "Total at 12 per item: "
+        Readout(id="total"): {total}
+        p: "Quantity exceeds three: "
+        Readout(id="threshold"): {threshold}
+        p: "Quantity at most three: "
+        Readout(id="within-limit"): {within_limit}
+    """)
+
+
+def events() -> Fragment:
+    report = signal("No key yet")
+
+    def key(event: BrowserEvent) -> None:
+        report.set(f"{event.key} · Shift: {event.shift} · Ctrl: {event.ctrl}")
+
+    return pysx(t"""
+        label(for="event-input"): "Press a key here"
+        Field(id="event-input" onKeydown={on_event(key)})
+        Readout(id="event-report" ariaLive="polite"): {report}
+    """)
+
+
+def forms() -> Fragment:
+    name = signal("")
+    accepted = signal(False)
+    result = signal("Not submitted")
+
+    def submit(_: object) -> None:
+        result.set(f"Accepted {name()}" if accepted() else "Accept the terms before submitting")
+
+    def correct(_: object) -> None:
+        name.set("Server correction")
+
+    return pysx(t"""
+        form(id="lesson-form" onSubmit={submit})
+            label(for="form-name"): "Name (required)"
+            Field(id="form-name" bindValue={name} required={True})
+            label(for="form-terms" class="check-field")
+                input(id="form-terms" type="checkbox" bindChecked={accepted})
+                "Accept the demonstration terms"
+            Button(id="form-submit" type="submit"): "Submit"
+        Actions:
+            Button(id="form-correct" onClick={correct}): "Apply server correction"
+        Readout(id="form-echo"): {name}
+        Readout(id="form-result" role="status"): {result}
+    """)
+
+
+def structured_state() -> Fragment:
+    profile = signal({"scores": {"first": 1, "second": 2}})
+    first = profile["scores"]["first"]
+    second = profile["scores"]["second"]
+    copied = signal("No copy yet")
+
+    def increment(_: object) -> None:
+        first.update(lambda value: value + 1)
+
+    def copy(_: object) -> None:
+        snapshot = profile()
+        snapshot["scores"]["first"] = 99
+        copied.set(str(snapshot["scores"]["first"]))
+
+    return pysx(t"""
+        Actions:
+            Button(id="score-increment" onClick={increment}): "Increment first"
+            Button(id="score-copy" onClick={copy}): "Change a private copy"
+        p: "First: "
+        Readout(id="score-first"): {first}
+        p: "Second: "
+        Readout(id="score-second"): {second}
+        p: "Private copy: "
+        Readout(id="score-copy-value"): {copied}
+    """)

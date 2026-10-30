@@ -4,7 +4,6 @@ import asyncio
 
 from pysx import (
     Fragment,
-    component,
     derived,
     on_mount,
     on_setup,
@@ -30,7 +29,6 @@ from .components import (
 )
 
 
-@component
 def app() -> Fragment:
     example_title("Async resources")
     draft = signal("Keep this draft")

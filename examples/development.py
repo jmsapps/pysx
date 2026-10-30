@@ -6,7 +6,7 @@ Follow the on-page steps to test hot updates and fresh page loads.
 
 from pathlib import Path
 
-from pysx import Application, Fragment, StaticAsset, component, pysx, signal
+from pysx import Application, Fragment, StaticAsset, pysx, signal
 
 from .components import (
     Action,
@@ -23,7 +23,6 @@ from .components import (
 from .components.development import StatePanel
 
 
-@component
 def view() -> Fragment:
     example_title("Development")
 
@@ -55,7 +54,7 @@ def view() -> Fragment:
                 Description:
                     "Separately, change count = signal(0) to signal(1) and save. "
                     "The initializer change resets the count to 1. Restore signal(0) afterward."
-            {StatePanel(count)}
+            StatePanel(count={count})
             script(src="/development-panel.js", defer={True})
     """)
 

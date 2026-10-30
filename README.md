@@ -23,10 +23,9 @@ back to the page.
 Templates use Python 3.14+ t-strings to keep markup and live values together:
 
 ```python
-from pysx import component, pysx, signal
+from pysx import pysx, signal
 
 
-@component
 def app():
     count = signal(0)
 
@@ -53,6 +52,23 @@ updates.
   themes. See the [styling guide](docs/STYLING.md).
 - **Editor support:** VSCode syntax highlighting and advisory template diagnostics.
 
+## Playgrounds
+
+Copy runnable starter applications into your own project, then run them the ordinary way:
+
+```sh
+pysx-playground                        # all of them, into ./playgrounds
+pysx-playground counter                # just one
+pysx --app playgrounds.counter         # run it
+pysx --app playgrounds.counter --watch # edit the file and watch it reload
+```
+
+`counter` is the smallest useful live application, `recovery` a draft that survives a restart
+with the tab open, and `durable` declared state reconstructed through a fresh application
+graph.
+Re-running `pysx-playground <name>` restores that playground to its shipped source and
+clears its state, so it is also the reset.
+
 ## Supported platforms
 
 Python 3.14 or newer, on macOS and Linux. Ordinary changes use local verification;
@@ -65,6 +81,9 @@ suite does not pass on it; several components still assume POSIX process and sig
 behaviour. Use WSL in the meantime.
 
 ## Explore
+
+Start with the [quickstart](docs/QUICKSTART.md), work through the
+[interactive tutorial](docs/TUTORIAL.md), or browse the [API index](docs/API.md).
 
 - [Examples](examples/README.md) — run the demos and explore reactive state and live forms.
 - [Tests](tests/README.md) — run the test suite and quality checks.

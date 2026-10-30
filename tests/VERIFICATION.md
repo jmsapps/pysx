@@ -38,6 +38,15 @@ scripts/verify.py gates` executes every check below on a provisioned machine, an
 `--list` prints them. Run the individual commands when iterating on one suite.
 
 ```sh
+uv run --project . pytest -q tests/test_tutorial_website.py -k tutorial_website
+npm --prefix tests run browser -- --suite tutorial_website
+npm --prefix tests run grammar -- --suite tutorial_website
+uv run --project . pytest -q tests/test_field_application.py tests/test_distribution.py -k validate_integrated
+npm --prefix tests run browser -- --suite validate_integrated
+npm --prefix editor test -- --suite validate_integrated
+uv run --project . pytest -q tests/test_parity_corpus.py tests/test_documentation.py -k corpus_executable
+npm --prefix tests run browser -- --suite corpus_executable
+npm --prefix tests run grammar -- --suite corpus_executable
 npm --prefix tests run browser -- --suite examples
 npm --prefix tests run browser -- --suite serialization_live
 npm --prefix tests run browser -- --suite bindings_form
@@ -129,7 +138,12 @@ load that artifact in an isolated profile. The runner discovers local VSCode or 
 the pinned version; `PYSX_VSCODE_EXECUTABLE` explicitly selects a managed executable.
 Inherited VSCode/Node-host environment variables are removed. Activation, saved-file
 diagnostic contents/range and Python-document close cleanup are asserted in the actual
-host; the launcher has a 120-second deadline and removes its profile and process group.
+host; the launcher has a 120-second deadline (240 seconds for interpreter routing)
+and kills its process group on every exit. Successful runs remove their profile.
+Failed runs retain their workspace, including complete `host-output.log` output and
+`profile/logs`, and print its location, suite and activation order. All suites scan
+profile logs for lifecycle failures; failed hosts also surface error context from those
+logs without replacing the original failure. Remove retained workspaces after investigation.
 The worker client is the default; the resident language-server client is enabled with
 `pysx.useLanguageServer`. Both use the configured or selected Python environment,
 with the worker retaining workspace-interpreter fallbacks. The resident router probes

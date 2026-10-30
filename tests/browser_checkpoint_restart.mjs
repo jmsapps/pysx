@@ -106,7 +106,7 @@ try {
   assert.equal(await page.evaluate(() => window.originalInput === document.getElementById("recovery-draft") &&
     document.activeElement === window.originalInput && window.originalInput.selectionStart === 2 &&
     window.originalInput.selectionEnd === 6), true);
-  assert.match(await page.locator("#pysx-connection-status").innerText(), /restored/);
+  assert.equal(await page.locator("#pysx-connection-status").count(), 0);
   await page.click("#increment");
   await page.waitForFunction(() => document.getElementById("recovery-count").textContent === "2");
   const secondEpoch = await page.evaluate(() => window.latestCheckpoint.epoch);

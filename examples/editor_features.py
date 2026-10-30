@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from pysx import Fragment, component, derived, each, pysx, signal, when
+from pysx import Fragment, derived, each, pysx, signal, when
 from pysx.tooling.lsp.edits import apply_edits, format_edits
 from pysx.tooling.lsp.features import (
     Context,
@@ -137,7 +137,6 @@ def formatted_sample() -> str:
     return apply_edits(SAMPLE, [edit for call in calls for edit in format_edits(call)])
 
 
-@component
 def app() -> Fragment:
     example_title("Editor features")
 
