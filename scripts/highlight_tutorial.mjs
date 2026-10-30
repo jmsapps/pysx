@@ -2,6 +2,7 @@
 import {spawnSync} from "node:child_process";
 import {readFileSync, writeFileSync} from "node:fs";
 import {createRequire} from "node:module";
+import {createHash} from "node:crypto";
 import {fileURLToPath} from "node:url";
 import {pylanceHost} from "../tests/pylance_host.mjs";
 
@@ -46,7 +47,25 @@ const kind = scopes => {
 };
 try {
   const grammar = await registry.loadGrammar("source.python");
-  const output = {};
+  const output = [
+    '"""Generated pysx code spans; regenerate with scripts/highlight_tutorial.mjs."""',
+    "", "from hashlib import sha256", "", "from pysx import Fragment, pysx", "", "",
+  ];
+  const renderers = [];
+  const literal = text => JSON.stringify(text).replaceAll("{", "{{").replaceAll("}", "}}");
+  const emit = (style, text) => {
+    const prefix = style === "plain" ? "        " : `        span(data-syntax="${style}"): `;
+    let chunk = "";
+    for (const char of text) {
+      if (chunk && prefix.length + literal(chunk + char).length > 100) {
+        output.push(prefix + literal(chunk));
+        chunk = "";
+      }
+      chunk += char;
+    }
+    if (chunk) output.push(prefix + literal(chunk));
+  };
+  let sourceCount = 0;
   for (const source of new Set(JSON.parse(exported.stdout))) {
     let stack = textmate.INITIAL;
     const parts = [];
@@ -61,12 +80,41 @@ try {
       stack = result.ruleStack;
     }
     if (parts.map(part => part[1]).join("") !== source) throw new Error("highlighting changed source text");
-    output[source] = parts;
+    const merged = [];
+    for (const [style, text] of parts) {
+      if (merged.at(-1)?.[0] === style) merged.at(-1)[1] += text;
+      else merged.push([style, text]);
+    }
+    renderers.push([createHash("sha256").update(source).digest("hex"), `_code_${sourceCount}`]);
+    const start = output.length;
+    for (const [style, text] of merged) emit(style, text);
+    const markup = output.splice(start);
+    const components = [];
+    // Bound individual templates so their generated validation tuples stay inferable.
+    if (markup.length > 128) {
+      for (let index = 0; index < markup.length; index += 64) {
+        const name = `Code${sourceCount}Part${components.length}`;
+        components.push(name);
+        output.push(`def ${name}() -> Fragment:`, '    return pysx(rt"""',
+          ...markup.slice(index, index + 64), '    """)', "", "");
+      }
+    }
+    output.push(`def _code_${sourceCount}() -> Fragment:`, '    return pysx(rt"""',
+      ...(components.length ? components.map(name => `        ${name}:`) : markup),
+      '    """)', "", "");
+    sourceCount++;
   }
-  const filename = fileURLToPath(new URL("../tutorial/src/assets/code-tokens.json", import.meta.url));
-  const serialized = JSON.stringify(output) + "\n";
+  output.push("def highlighted_code(source: str) -> Fragment | None:",
+    '    """Return styled markup for known source, or let the caller show plain text."""',
+    '    match sha256(source.encode()).hexdigest():');
+  for (const [digest, renderer] of renderers) {
+    output.push(`        case "${digest}":`, `            return ${renderer}()`);
+  }
+  output.push("        case _:", "            return None", "");
+  const filename = fileURLToPath(new URL("../tutorial/src/components/highlighted.py", import.meta.url));
+  const serialized = output.join("\n");
   if (args.includes("--check")) {
     if (readFileSync(filename, "utf8") !== serialized) throw new Error("stale tutorial highlighting; run node scripts/highlight_tutorial.mjs");
   } else writeFileSync(filename, serialized);
-  console.log(`Tutorial highlighting ${args.includes("--check") ? "checked" : "generated"}: ${Object.keys(output).length} sources; Pylance ${host.version}; first-party pysx injection`);
+  console.log(`Tutorial highlighting ${args.includes("--check") ? "checked" : "generated"}: ${sourceCount} sources; Pylance ${host.version}; first-party pysx injection`);
 } finally {registry.dispose();}

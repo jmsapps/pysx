@@ -34,8 +34,8 @@ const layoutIssues = root => {
     if (view.getComputedStyle(list).listStyleType !== "none") issues.push(`${list.id} has stray bullets`);
   }
   const reset = root.querySelector(".demo-reset");
-  const demo = reset?.previousElementSibling;
-  if (reset && demo && reset.getBoundingClientRect().top - demo.getBoundingClientRect().bottom < 16) {
+  const demoBottom = Math.max(0, ...controls.filter(({node}) => !reset?.contains(node)).map(({rect}) => rect.bottom));
+  if (reset && reset.getBoundingClientRect().top - demoBottom < 16) {
     issues.push("reset actions crowd the demonstration");
   }
   return issues;

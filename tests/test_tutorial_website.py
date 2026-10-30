@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from src.app import create_application
 from src.catalog import LESSONS, neighbors
-from src.components.code import CodeBlock, highlighted_sources
+from src.components.code import CodeBlock
 from src.components.pages import Inline
 from src.demos import composition, foundations, navigation, operations, runtime
 from src.durable import view as durable_view
@@ -31,6 +31,16 @@ if TYPE_CHECKING:
     from pysx.runtime.wire import JSONValue
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class CodeText(HTMLParser):
+    def __init__(self, source: str) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+        self.feed(source)
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
 
 
 class WalkthroughControls(HTMLParser):
@@ -122,21 +132,55 @@ def test_tutorial_website_pure_multiline_authoring_and_displayed_source() -> Non
                 assert node.end_lineno is not None
                 assert node.end_lineno > node.lineno
 
-    for lesson in LESSONS:
-        parts = highlighted_sources()[lesson.code]
-        assert "".join(part[1] for part in parts) == lesson.code
-        assert any(part[0] != "plain" for part in parts)
+    snippets = [lesson.code for lesson in LESSONS]
+    snippets.extend(foundations.CARD_SOURCES)
+    snippets.extend(
+        (
+            operations.FROZEN_SOURCE,
+            operations.FROZEN_SOURCE.replace("count()", "count"),
+            operations.ATTRIBUTE_SOURCE,
+            operations.CORRECT_SOURCE,
+        )
+    )
+
+    for snippet in snippets:
+        session = Session(partial(CodeBlock, source=snippet))
+
+        try:
+            body = session.rendered.body
+            assert "".join(CodeText(body).parts) == snippet
+            assert 'data-syntax="' in body
+        finally:
+            session.dispose()
 
 
-def test_tutorial_website_highlighted_code_escapes_source(monkeypatch: pytest.MonkeyPatch) -> None:
-    source = '<script>alert("source is data")</script>'
-    monkeypatch.setitem(highlighted_sources(), source, [["string", source]])
+def test_tutorial_website_unknown_code_falls_back_to_escaped_text() -> None:
+    source = '<script>alert("source is data")</script>\n{braces} \\n\t& quotes: " \' '
     session = Session(lambda: CodeBlock(source=source))
 
     try:
         assert "<script>alert" not in session.rendered.body
         assert "&lt;script&gt;" in session.rendered.body
-        assert 'data-syntax="string"' in session.rendered.body
+        assert "".join(CodeText(session.rendered.body).parts) == source
+        assert 'data-syntax="' not in session.rendered.body
+    finally:
+        session.dispose()
+
+
+def test_tutorial_website_code_switches_between_generated_and_unknown_source() -> None:
+    source = signal(operations.FROZEN_SOURCE)
+    session = Session(lambda: CodeBlock(source=source))
+
+    try:
+        assert 'data-syntax="keyword"' in session.rendered.body
+        source.set("<unknown>\n{plain}")
+        body = cast("str", session.transport.repair(session.rendered.css)["html"])
+        assert "".join(CodeText(body).parts) == source()
+        assert 'data-syntax="' not in body
+        source.set(operations.CORRECT_SOURCE)
+        body = cast("str", session.transport.repair(session.rendered.css)["html"])
+        assert "".join(CodeText(body).parts) == source()
+        assert 'data-syntax="keyword"' in body
     finally:
         session.dispose()
 
