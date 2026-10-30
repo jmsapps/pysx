@@ -111,8 +111,9 @@ def forms() -> Fragment:
         form(id="lesson-form" onSubmit={submit})
             label(for="form-name"): "Name (required)"
             Field(id="form-name" bindValue={name} required={True})
-            label(for="form-terms"): "Accept the demonstration terms"
-            input(id="form-terms" type="checkbox" bindChecked={accepted})
+            label(for="form-terms" class="check-field")
+                input(id="form-terms" type="checkbox" bindChecked={accepted})
+                "Accept the demonstration terms"
             Button(id="form-submit" type="submit"): "Submit"
         Actions:
             Button(id="form-correct" onClick={correct}): "Apply server correction"

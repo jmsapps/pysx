@@ -10,10 +10,42 @@ const control = async action => {
 };
 const {base} = await control("/reset");
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
+const layoutIssues = root => {
+  const issues = [];
+  const document = root.ownerDocument;
+  const view = document.defaultView;
+  if (document.documentElement.scrollWidth > view.innerWidth + 1) issues.push("page overflows horizontally");
+  const controls = [...root.querySelectorAll("input, button, textarea, select")]
+    .map(node => ({node, rect: node.getBoundingClientRect()}))
+    .filter(({rect}) => rect.width > 0 && rect.height > 0);
+  for (const [index, {node, rect}] of controls.entries()) {
+    const name = node.id || node.textContent.trim() || node.tagName;
+    if (rect.left < -1 || rect.right > view.innerWidth + 1) issues.push(`${name} leaves the viewport`);
+    if (node.type === "checkbox" && !node.closest("label")) issues.push(`${name} has no grouped label`);
+    for (const other of controls.slice(index + 1)) {
+      const horizontal = Math.min(rect.right, other.rect.right) - Math.max(rect.left, other.rect.left);
+      const vertical = Math.min(rect.bottom, other.rect.bottom) - Math.max(rect.top, other.rect.top);
+      if ((horizontal > 1 && vertical > -8) || (vertical > 1 && horizontal > -8)) {
+        issues.push(`${name} crowds ${other.node.id || other.node.textContent.trim()}`);
+      }
+    }
+  }
+  for (const list of root.querySelectorAll("#keyed-rows, #tasks")) {
+    if (view.getComputedStyle(list).listStyleType !== "none") issues.push(`${list.id} has stray bullets`);
+  }
+  const reset = root.querySelector(".demo-reset");
+  const demo = reset?.previousElementSibling;
+  if (reset && demo && reset.getBoundingClientRect().top - demo.getBoundingClientRect().bottom < 16) {
+    issues.push("reset actions crowd the demonstration");
+  }
+  return issues;
+};
 try {
   const context = await browser.newContext();
   await context.addInitScript(() => {
     const Original = window.WebSocket;
+    window.courseConnectionEvents = [];
+    window.addEventListener("pysx:connection", event => window.courseConnectionEvents.push(event.detail));
     window.WebSocket = class extends Original {
       constructor(...args) { super(...args); window.courseSocket = this; }
     };
@@ -28,7 +60,14 @@ try {
       throw new Error(`expected ${id} = ${value}; observed ${JSON.stringify(state)}`, {cause: error});
     });
   const connected = (target = page) => target.waitForFunction(() =>
-    document.getElementById("pysx-root")?.dataset.pysxConnection === "connected", null, {timeout: 30000});
+    document.getElementById("pysx-root")?.dataset.pysxConnection === "connected", null, {timeout: 30000})
+    .catch(async error => {
+      const state = await target.evaluate(() => ({
+        connection: document.getElementById("pysx-root")?.dataset.pysxConnection,
+        events: window.courseConnectionEvents,
+      }));
+      throw new Error(`${error.message}; ${JSON.stringify(state)}`, {cause: error});
+    });
   const reconnect = async () => {
     await page.evaluate(() => { window.previousSocket = window.courseSocket; window.courseSocket.close(); });
     await page.waitForFunction(() => window.courseSocket !== window.previousSocket &&
@@ -114,6 +153,16 @@ try {
         (expected.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING));
     }));
     assert.equal(await page.getByRole("heading", {name: "Your turn", exact: true}).count(), 0);
+    for (const width of [1280, 375]) {
+      await page.setViewportSize({width, height: 812});
+      assert.deepEqual(await page.locator('.demo').evaluate(layoutIssues), [], `${slug}, ${width}px`);
+      if (["durable-state", "capstone-resilience"].includes(slug)) {
+        const lab = page.frameLocator("#durable-frame").locator("#durable-lab");
+        await lab.waitFor();
+        assert.deepEqual(await lab.evaluate(layoutIssues), [], `${slug} embedded lab, ${width}px`);
+      }
+    }
+    await page.setViewportSize({width: 1280, height: 812});
     if (index === 0) {
       const palette = () => page.evaluate(() => ({
         paper: getComputedStyle(document.body).backgroundColor,

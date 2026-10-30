@@ -106,15 +106,12 @@ def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> 
                 p(id="lesson-expected"):
                     Inline(text={lesson.expected}):
                 {each(revision, build, key=lambda value: value)}
-                Actions:
+                Actions(class="demo-reset"):
                     Button(id="reset-demo" onClick={reset}): "Reset demo"
             h2: "Take this with you"
             p:
                 Inline(text={lesson.recap}):
             Navigation(lesson={lesson} router={router} position="bottom"):
-            footer(class="course-footer"):
-                "Original working material grounded in the runnable examples: "
-                {", ".join(lesson.examples)}
     """)
 
 

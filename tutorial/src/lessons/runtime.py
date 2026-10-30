@@ -25,24 +25,66 @@ LESSONS = (
         "draft should remain editable and a cancelled result must not appear later.",
         dedent('''
             import asyncio
-            from pysx import Fragment, derived, pysx, resource
+            from pysx import Fragment, derived, on_mount, on_setup, push, pysx, resource, signal
 
 
-            def app() -> Fragment:
+            def app(*, server_rendering: bool = False) -> Fragment:
+                draft = signal("")
+                setups = signal(0)
+                mounts = signal(0)
+                generation = 0
+                failing = signal(False)
+                on_setup(lambda: setups.update(lambda value: value + 1))
+                on_mount(lambda: mounts.update(lambda value: value + 1))
+
                 async def load() -> str:
-                    await asyncio.sleep(0.05)
+                    nonlocal generation
+                    generation += 1
+                    current = generation
+                    should_fail = await push(failing)
+                    await asyncio.sleep(0.4)
 
-                    return "Ready"
+                    if should_fail:
+                        raise ValueError("intentional lesson resource failure")
 
-                result = resource("message", load)
-                text = derived(lambda: result().value or result().status)
+                    return f"Result {current}"
+
+                result = resource("lesson-resource", load)
+                status = derived(lambda: result().status)
+                message = derived(lambda: result().value or "No completed result")
+
+                def reload(_: object) -> None:
+                    failing.set(False)
+                    result.reload()
+
+                def cancel(_: object) -> None:
+                    result.cancel()
+
+                def fail(_: object) -> None:
+                    failing.set(True)
+                    result.reload()
 
                 return pysx(t"""
-                    p: {text}
+                    label(for="resource-draft"): "Draft stays editable during work"
+                    input(id="resource-draft" bindValue={draft})
+                    div:
+                        button(id="resource-reload" onClick={reload}): "Reload / retry"
+                        button(id="resource-cancel" onClick={cancel}): "Cancel"
+                        button(id="resource-fail" onClick={fail}): "Fail next request"
+                    output(id="resource-status" role="status"): {status}
+                    output(id="resource-message"): {message}
+                    p: "Server setup: "
+                    output(id="resource-setups"): {setups}
+                    p: "Browser mount: "
+                    output(id="resource-mounts"): {mounts}
+                    if {server_rendering}:
+                        p: "This content was included in the first HTTP response."
                 """)
         ''').strip(),
-        "The `resource` key is stable within its owner. The derived `text` reads its current "
-        "state, so pending and completed output share one live display.",
+        "The loader waits 0.4 seconds and returns a numbered result. Reload replaces work, Cancel "
+        "revokes the pending request, and Fail next request exercises the error path. The "
+        "independent draft remains editable. The status and result readouts derive from the "
+        "resource state.",
         "Reload twice before completion. Cancel a third request and wait past its "
         "original deadline.",
         "Only the latest live request publishes. Cancelled work stays cancelled and your "
@@ -69,29 +111,50 @@ LESSONS = (
         "is visible, then retry. The fallback's retry callback is owned by the current "
         "boundary generation and should not revive an older discarded instance.",
         dedent('''
-            from pysx import ErrorBoundary, ErrorInfo, Fragment, pysx
             from collections.abc import Callable
+            from pysx import ErrorBoundary, ErrorInfo, Fragment, local_state, pysx, signal
 
 
             def app() -> Fragment:
+                sibling = signal(0)
+
                 def content() -> Fragment:
+                    count = local_state("count", 0)
+
+                    def fail(_: object) -> None:
+                        raise ValueError("intentional lesson boundary failure")
+
                     return pysx(t"""
-                        p: "Healthy content"
+                        section(id="boundary-content")
+                            p: "Healthy local panel"
+                            output(id="boundary-count"): {count}
+                            button(id="boundary-fail" onClick={fail}): "Fail this panel"
                     """)
 
                 def fallback(info: ErrorInfo, retry: Callable[[], None]) -> Fragment:
+                    def reset(_: object) -> None:
+                        retry()
+
                     return pysx(t"""
-                        p: {info.message}
+                        section(id="boundary-fallback" role="alert")
+                            p: {info.message}
+                            button(id="boundary-retry" onClick={reset}): "Retry panel"
                     """)
 
                 Boundary = ErrorBoundary(content, fallback)
 
+                def increment(_: object) -> None:
+                    sibling.update(lambda value: value + 1)
+
                 return pysx(t"""
                     Boundary:
+                    button(id="sibling-increment" onClick={increment}): "Increment healthy sibling"
+                    output(id="sibling-count"): {sibling}
                 """)
         ''').strip(),
-        "The boundary receives functions, not eagerly built alternatives. Its fallback "
-        "has safe `ErrorInfo` and a current `retry` capability.",
+        "Fail this panel raises inside the boundary. The fallback displays safe ErrorInfo and its "
+        "retry button invokes the current retry capability. The sibling counter lives outside the "
+        "boundary and remains usable while the failed panel is replaced.",
         "Increment the sibling, fail the panel, increment the sibling again, and retry the panel.",
         "The fallback appears, the sibling keeps its count and the retried panel starts a "
         "fresh lifetime.",
@@ -117,21 +180,67 @@ LESSONS = (
         "HTTP client, then compare it with the attached document. Initial-response tests "
         "and post-attachment interaction tests establish different parts of the contract.",
         dedent('''
-            from pysx import Fragment, on_mount, on_setup, pysx, signal
+            import asyncio
+            from pysx import Fragment, derived, on_mount, on_setup, push, pysx, resource, signal
 
 
-            def app() -> Fragment:
+            def app(*, server_rendering: bool = True) -> Fragment:
+                draft = signal("")
                 setups = signal(0)
                 mounts = signal(0)
-                on_setup(lambda: setups.update(lambda n: n + 1))
-                on_mount(lambda: mounts.update(lambda n: n + 1))
+                generation = 0
+                failing = signal(False)
+                on_setup(lambda: setups.update(lambda value: value + 1))
+                on_mount(lambda: mounts.update(lambda value: value + 1))
+
+                async def load() -> str:
+                    nonlocal generation
+                    generation += 1
+                    current = generation
+                    should_fail = await push(failing)
+                    await asyncio.sleep(0.4)
+
+                    if should_fail:
+                        raise ValueError("intentional lesson resource failure")
+
+                    return f"Result {current}"
+
+                result = resource("lesson-resource", load)
+                status = derived(lambda: result().status)
+                message = derived(lambda: result().value or "No completed result")
+
+                def reload(_: object) -> None:
+                    failing.set(False)
+                    result.reload()
+
+                def cancel(_: object) -> None:
+                    result.cancel()
+
+                def fail(_: object) -> None:
+                    failing.set(True)
+                    result.reload()
 
                 return pysx(t"""
-                    p: "Setup " {setups} " | mount " {mounts}
+                    label(for="resource-draft"): "Draft stays editable during work"
+                    input(id="resource-draft" bindValue={draft})
+                    div:
+                        button(id="resource-reload" onClick={reload}): "Reload / retry"
+                        button(id="resource-cancel" onClick={cancel}): "Cancel"
+                        button(id="resource-fail" onClick={fail}): "Fail next request"
+                    output(id="resource-status" role="status"): {status}
+                    output(id="resource-message"): {message}
+                    p: "Server setup: "
+                    output(id="resource-setups"): {setups}
+                    p: "Browser mount: "
+                    output(id="resource-mounts"): {mounts}
+                    if {server_rendering}:
+                        p: "This content was included in the first HTTP response."
                 """)
         ''').strip(),
-        "`on_setup` belongs to the server lifetime and `on_mount` waits for browser confirmation. "
-        "They count two distinct moments, not two names for initialization.",
+        "`on_setup` counts the server lifetime, while `on_mount` waits for browser attachment. "
+        "The draft and resource share that lifetime. Reload publishes a later result without "
+        "rerunning setup or discarding the draft; the first response already contains the form "
+        "and setup output.",
         "Wait for attachment and the async result, edit the draft, then trigger another "
         "resource load.",
         "Setup remains 1 and mount becomes 1. Later resource updates preserve the draft "
@@ -162,16 +271,38 @@ LESSONS = (
             from pysx import Fragment, pysx, signal
 
 
-            def app() -> Fragment:
-                private_draft = signal("")
+            def counter(prefix: str = "") -> Fragment:
+                count = signal(0)
+                snapshot = count()
+
+                def increment(_: object) -> None:
+                    count.update(lambda value: value + 1)
 
                 return pysx(t"""
-                    input(bindValue={private_draft})
-                    p: {private_draft}
+                    button(id={prefix + "increment"} onClick={increment}): "Increment"
+                    output(id={prefix + "live-count"}): {count}
+                    p: "Snapshot: "
+                    output(id={prefix + "snapshot-count"}): {snapshot}
+                """)
+
+
+            def app() -> Fragment:
+                draft = signal("")
+                first = counter()
+                second = counter("second-")
+
+                return pysx(t"""
+                    label(for="private-draft"): "Private session draft"
+                    input(id="private-draft" bindValue={draft})
+                    output(id="private-echo"): {draft}
+                    {first}
+                    {second}
+                    p: "Open this lesson in a new tab to construct another independent graph."
                 """)
         ''').strip(),
-        "The constructor is inside `app`, so it runs once for each new graph. Moving it "
-        "to module scope would change the ownership and isolation of the same markup.",
+        "`app` creates one private draft and calls `counter` twice. Each call owns its own count "
+        "and initial snapshot. Another tab or a refreshed document constructs a fresh graph; it "
+        "does not inherit either existing counter.",
         "Edit a private draft and increment an instance. Open this lesson in a new tab, "
         "then refresh it.",
         "The new tab and refreshed page start fresh; the existing open tab keeps its own "
@@ -199,24 +330,49 @@ LESSONS = (
         "the retained owner expires, recovery may reconstruct or reset; the next lesson "
         "explains that separate boundary.",
         dedent('''
-            from pysx import Fragment, pysx, signal
+            import asyncio
+            from pysx import Fragment, own_task, push, pysx, signal
+            from uuid import uuid4
 
 
-            def app() -> Fragment:
-                draft = signal("Keep this draft")
+            def app(*, clock: bool = True) -> Fragment:
+                draft = signal("")
                 count = signal(0)
+                ticks = signal(0)
+                generation = uuid4().hex[:10]
+
+                async def run() -> None:
+                    while True:
+                        await asyncio.sleep(0.5)
+                        await push(lambda: ticks.update(lambda value: value + 1))
+
+                if clock:
+                    own_task("lesson-clock", run)
+
+                def increment(_: object) -> None:
+                    count.update(lambda value: value + 1)
 
                 return pysx(t"""
-                    input(bindValue={draft})
-                    p: {count}
+                    label(for="recovery-draft"): "Delivered draft"
+                    input(id="recovery-draft" bindValue={draft})
+                    output(id="recovery-echo"): {draft}
+                    button(id="recovery-increment" onClick={increment}): "Increment delivered count"
+                    output(id="recovery-count"): {count}
+                    output(id="recovery-ticks"): {ticks}
+                    p(id="recovery-setup"): {generation}
+                    p:
+                        "Inspect data-pysx-connection on the root during interruption."
                 """)
         ''').strip(),
-        "Ordinary local state is sufficient for a live graph. Reconnect policy belongs "
-        "to the host/client transport, not a second queue hidden in this component.",
+        "The draft starts empty and the count at zero. The increment handler writes the count; an "
+        "owned task publishes a clock tick every half-second. Transport reattachment repairs the "
+        "existing graph without a second event queue. Built-in connection notices require --watch "
+        "or --dev; otherwise inspect data-pysx-connection on the root in browser developer tools.",
         "Edit, increment and temporarily block the socket. Restore it without reloading "
         "the document.",
-        "The real status reports reconnecting/connected; the delivered draft and count "
-        "remain after reattach.",
+        "The root's data-pysx-connection attribute reports reconnecting/connected; built-in "
+        "notices appear only with --watch or --dev. The delivered draft and count remain "
+        "after reattach.",
         "Reconnect reconciles current state. Unsent actions are not a durable transaction log.",
         ("reconnect",),
     ),
@@ -232,28 +388,52 @@ LESSONS = (
         "Only supported latest-delivered UI state can be restored. The host's key ring, "
         "current authentication session, route and compatibility checks still apply. "
         "An undelivered edit or uncertain action must not become an invented confirmed result.",
-        "Use this lesson's normal draft/counter, keep the tab open, stop the tutorial "
-        "server and start it with the same command and application-state directory. The "
-        "browser should report reconstruction and restore compatible delivered state.\n\n"
+        "Use this lesson's draft/counter to practice delivered edits. For the restart "
+        "exercise, run the recovery playground on a server you control and keep its tab "
+        "open while restarting it with the same command and application-state directory. "
+        "Compatible delivered state should return.\n\n"
         "Now compare a refresh and a new tab: both start fresh ordinary UI. Capsules "
         "are held in document memory, not a cross-device account store. Use application "
         "persistence for saved business records and explicit durable UI state when you "
         "need the contract in the following lesson.",
         dedent('''
-            from pysx import Fragment, pysx, signal
+            import asyncio
+            from pysx import Fragment, own_task, push, pysx, signal
+            from uuid import uuid4
 
 
-            def app() -> Fragment:
+            def app(*, clock: bool = False) -> Fragment:
                 draft = signal("")
                 count = signal(0)
+                ticks = signal(0)
+                generation = uuid4().hex[:10]
+
+                async def run() -> None:
+                    while True:
+                        await asyncio.sleep(0.5)
+                        await push(lambda: ticks.update(lambda value: value + 1))
+
+                if clock:
+                    own_task("lesson-clock", run)
+
+                def increment(_: object) -> None:
+                    count.update(lambda value: value + 1)
 
                 return pysx(t"""
-                    input(bindValue={draft})
-                    p: "Delivered count " {count}
+                    label(for="recovery-draft"): "Delivered draft"
+                    input(id="recovery-draft" bindValue={draft})
+                    output(id="recovery-echo"): {draft}
+                    button(id="recovery-increment" onClick={increment}): "Increment delivered count"
+                    output(id="recovery-count"): {count}
+                    output(id="recovery-ticks"): {ticks}
+                    p(id="recovery-setup"): {generation}
+                    p: "Keep this document open during interruption; refresh starts fresh."
                 """)
         ''').strip(),
-        "There is no special recovery wrapper around these local signals. Compatible "
-        "ordinary state participates in the host's default browser-held recovery policy.",
+        "The empty draft and zero count are ordinary local signals, with an increment handler to "
+        "produce delivered changes. The host supplies browser-held recovery. To restart a server "
+        "you control, use the recovery playground below rather than stopping a public course "
+        "server; its compatible draft/count behavior is the same.",
         "Restarting needs a server you control, so use a playground: scaffold "
         "`pysx-playground recovery`, run `pysx --app playgrounds.recovery`, save a draft "
         "and count by interacting, restart it with the tab open, then compare refresh.",
@@ -282,22 +462,199 @@ LESSONS = (
         "Try the invalid example and inspect the rejection. Persisting a UI draft still "
         "does not make an external payment or account write exactly-once; those operations "
         "need the application's own transactional design.",
-        dedent("""
-            from pysx import StateCodec
+        dedent('''
+            import json
+            from dataclasses import dataclass, replace
+            from pathlib import Path
+            from pysx import (
+                DurableApplication,
+                Fragment,
+                HostConfig,
+                SQLiteOwnershipStore,
+                Signal,
+                StateCodec,
+                derived,
+                project,
+                pysx,
+                signal,
+            )
+            from pysx.runtime.wire import JSONValue
+            from uuid import uuid4
 
 
-            def decode(value: object) -> str:
-                if not isinstance(value, str) or len(value) > 512:
-                    raise ValueError("Expected a bounded draft")
+            @dataclass(frozen=True)
+            class Task:
+                id: int
+                title: str
+                done: bool = False
+                note: str = ""
 
-                return value
+
+            @dataclass(frozen=True)
+            class LabState:
+                draft: str = ""
+                count: int = 0
+                tasks: tuple[Task, ...] = (
+                    Task(
+                        1,
+                        "Read the lesson",
+                    ),
+                    Task(
+                        2,
+                        "Build the interface",
+                    ),
+                )
 
 
-            codec = StateCodec[str](lambda value: value, decode)
-            assert decode("Draft") == "Draft"
-        """).strip(),
-        "Encoding is deliberately simple; decoding proves the expected type and bound. "
-        "The real lab extends that pattern to a dataclass and a versioned host/store.",
+            def encode(state: LabState) -> JSONValue:
+                return {
+                    "draft": state.draft,
+                    "count": state.count,
+                    "tasks": [
+                        {"id": task.id, "title": task.title, "done": task.done, "note": task.note}
+                        for task in state.tasks
+                    ],
+                }
+
+
+            def decode(value: JSONValue) -> LabState:
+                if not isinstance(value, dict):
+                    raise ValueError("expected declared lab state")
+                draft, count = value.get("draft"), value.get("count")
+
+                if (
+                    not isinstance(
+                        draft,
+                        str,
+                    )
+                    or len(
+                        draft,
+                    )
+                    > 512
+                    or type(
+                        count,
+                    )
+                    is not int
+                    or count < 0
+                ):
+                    raise ValueError("invalid declared lab state")
+
+                rows = value.get("tasks", [])
+
+                if not isinstance(rows, list) or len(rows) > 20:
+                    raise ValueError("invalid task collection")
+                tasks: list[Task] = []
+
+                for row in rows:
+                    if not isinstance(row, dict):
+                        raise ValueError("invalid task")
+                    identifier, title, done, note = (
+                        row.get("id"),
+                        row.get("title"),
+                        row.get("done"),
+                        row.get("note"),
+                    )
+
+                    if (
+                        type(identifier) is not int
+                        or identifier < 1
+                        or not isinstance(title, str)
+                        or len(title) > 120
+                        or type(done) is not bool
+                        or not isinstance(note, str)
+                        or len(note) > 512
+                    ):
+                        raise ValueError("invalid task")
+                    tasks.append(Task(identifier, title, done, note))
+
+                if len({task.id for task in tasks}) != len(tasks):
+                    raise ValueError("duplicate task identifiers")
+
+                return LabState(draft, count, tuple(tasks))
+
+
+            def codec_sample() -> Fragment:
+                source = signal('{"draft": "Saved draft", "count": 1}')
+                result = signal("Choose Validate to decode the data")
+
+                def validate(_: object) -> None:
+                    try:
+                        if len(source()) > 2048:
+                            raise ValueError("sample exceeds its input budget")
+                        value = decode(json.loads(source()))
+                        result.set(f"Accepted draft: {value.draft}; count: {value.count}")
+                    except ValueError, TypeError:
+                        result.set(
+                            "Rejected: expected a bounded draft and nonnegative integer count",
+                        )
+
+                def invalid(_: object) -> None:
+                    source.set('{"draft": 42, "count": "invalid"}')
+                    validate(None)
+
+                return pysx(t"""
+                    label(for="codec-source"): "Bounded JSON data, never Python source"
+                    textarea(id="codec-source" bindValue={source} maxLength={2048} rows={4})
+                    div:
+                        button(id="codec-validate" onClick={validate}): "Validate codec sample"
+                        button(id="codec-invalid" onClick={invalid}): "Try invalid data"
+                    output(id="codec-result" role="status"): {result}
+                """)
+
+
+            def view(state: Signal[LabState]) -> Fragment:
+                draft = project(
+                    state,
+                    lambda value: value.draft,
+                    lambda value, text: replace(
+                        value,
+                        draft=text[:512],
+                    ),
+                )
+                count = derived(lambda: state().count)
+                setup = uuid4().hex[:10]
+
+                def increment(_: object) -> None:
+                    state.update(lambda value: replace(value, count=value.count + 1))
+
+                return pysx(t"""
+                    label(for="lab-draft"): "Committed UI draft"
+                    input(id="lab-draft" bindValue={draft} maxLength={512})
+                    output(id="lab-echo"): {draft}
+                    button(onClick={increment}): "Increment declared count"
+                    output(id="lab-count"): {count}
+                    output(id="lab-setup"): {setup}
+                """)
+
+
+            def app() -> Fragment:
+                return codec_sample()
+
+
+            def create_lab(
+                directory: Path, config: HostConfig, *, schema: int = 1
+            ) -> DurableApplication[LabState]:
+                directory.mkdir(parents=True, exist_ok=True)
+
+                return DurableApplication(
+                    view,
+                    initial=LabState,
+                    codec=StateCodec(encode, decode),
+                    store=SQLiteOwnershipStore(directory / "declared-state.sqlite3"),
+                    application="declared-state-workspace",
+                    schema=schema,
+                    config=config,
+                )
+
+
+            codec = StateCodec(encode, decode)
+            assert decode({"draft": "Saved draft", "count": 1}).count == 1
+        ''').strip(),
+        "The codec validates the same LabState shape used by the embedded lab: a bounded draft, "
+        "nonnegative count and bounded task records. The JSON controls call that decoder. The "
+        "reduced durable view shows the draft, count and setup marker used in the restart "
+        "exercise; create_lab wires it to a versioned SQLite store. The embedded lab also "
+        "includes the later capstone controls.",
         "Reject the invalid codec sample here. For the restart, scaffold "
         "`pysx-playground durable`, run `pysx --app playgrounds.durable`, edit its draft, "
         "restart it and compare the setup marker.",

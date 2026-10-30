@@ -40,12 +40,34 @@ pre { white-space: pre; overflow: auto; padding: 22px; border-radius: 10px; font
 [data-syntax=expression] { color: #e8efff; }
 .demo { border-left: 4px solid var(--accent); padding: 10px 22px 22px; margin: 28px 0; background: var(--wash); border-radius: 0 12px 12px 0; }
 .demo h2 { margin-top: 10px; }
+.demo p, #durable-lab p { overflow-wrap: anywhere; }
+.demo label:not(.check-field), #durable-lab label:not(.check-field) { margin-bottom: 6px; }
+.demo form, #durable-lab form { display: grid; gap: 12px; justify-items: start; margin-bottom: 16px; }
+.demo form > label:not(.check-field), #durable-lab form > label:not(.check-field) { margin-bottom: 0; }
+.demo form > input, #durable-lab form > input { margin-bottom: 0; }
+.check-field { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 500; cursor: pointer; }
+.check-field input[type=checkbox] { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.demo section > button, #durable-lab section > button { display: block; margin: 12px 0; }
+.demo textarea { display: block; width: 100%; min-height: 120px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface); resize: vertical; }
+.demo :is(input, textarea):focus-visible, .check-field input:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.demo > .demo-reset { margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
+#keyed-rows, #tasks { list-style: none; padding: 0; display: grid; gap: 16px; }
+[data-row], [data-task] { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+[data-task] h3 { margin: 0 0 12px; }
+[data-row] > div, [data-task] > div { margin-bottom: 0; }
+#choices { list-style: none; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+#choices > li { padding: 6px 10px; border-radius: 4px; }
+#choices > li[aria-selected=true] { background: var(--wash); }
+#lesson-tree, #lesson-tree [role=group] { list-style: none; }
+#lesson-tree { padding-left: 0; }
+#lesson-tree [role=group] { padding-left: 24px; }
+#lesson-tree [role=treeitem] { padding: 4px 8px; border-radius: 4px; }
+#lesson-tree [role=treeitem]:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+#durable-lab { margin: 16px; }
 .exercise { border: 1px solid var(--line); border-radius: 12px; padding: 22px; margin: 26px 0; }
-.course-footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
 .skip-link { position: absolute; left: 18px; top: 0; transform: translateY(-150%); padding: 8px; background: var(--surface); z-index: 10; }
 .skip-link:focus { transform: translateY(0); }
-iframe { width: 100%; min-height: 420px; border: 1px solid var(--line); background: white; }
-[data-row] { padding: 12px; border-bottom: 1px solid var(--line); }
+iframe { width: 100%; min-height: 640px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
 .overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
 .overview-grid a { display: block; border: 1px solid var(--line); padding: 18px; border-radius: 12px; text-decoration: none; background: var(--surface); }
 .overview-grid small { display: block; color: var(--muted); }

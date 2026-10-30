@@ -105,18 +105,19 @@ The browser retains one set of application listeners during disconnect. It retri
 automatically with exponential backoff from 250ms to 10s, 50–100% jitter, at most
 eight retries, and a five-second attachment deadline. One timer/socket generation
 owns recovery; page exit clears it. `ws`/`wss` follows the page scheme. Accessible
-status explains disconnection and rejected edits. Managed actions are gated before
+status in development explains disconnection and rejected edits. Managed actions are gated before
 sequence/form/navigation bookkeeping; unsent and unacknowledged events are never
 replayed. Repair restores authoritative control values and current navigation.
 Browser outgoing buffered messages are limited to 64KiB; excess closes with 4009
-and requires a fresh graph. Exhaustion offers a retry button or the
+and requires a fresh graph. Exhaustion offers a development-only retry button or the
 `pysx:reconnect` window event. Protocol failures stop retries and report the
 distinct `stopped` state, which offers no retry button because neither it nor
 `pysx:reconnect` can revive that page. Unavailable resume
-(4004) explicitly starts a fresh session and visibly reports lost session state.
+(4004) explicitly starts a fresh session and reports lost session state in development.
 
-The built-in status paragraph and retry button are created on the first state worth
-reporting, so an ordinary connected document contains neither. Applications that
+The built-in status paragraph and retry button are created only after the server
+identifies a development session, including an ordinary connected status. Production
+documents contain neither element. Applications that
 render their own connection UI read the `data-pysx-connection` root attribute or the
 `pysx:connection` event below instead of querying those elements at load.
 
@@ -148,11 +149,11 @@ changed reference owners replace their nodes and cannot retain old capabilities.
 Reconstruction installs the new graph's native control defaults and canonical
 values, including uncontrolled checkboxes and selects. Same-graph repair retains
 its existing reset defaults.
-It displays that declared state was restored and uncommitted edits were discarded.
+In development it displays that declared state was restored and uncommitted edits were discarded.
 No old event or changed-control payload is applied to fresh handlers.
 
 An explicit incompatible-schema fresh policy sends `init` with `fresh:true`, a new
-credential and the normal visible fresh-session notification. `fresh` and
+credential and the development-only visible fresh-session notification. `fresh` and
 `recovered` cannot both be true.
 
 A browser normally refuses a reconstructed `init` unless it already holds a recovery

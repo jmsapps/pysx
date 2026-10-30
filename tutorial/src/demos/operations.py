@@ -243,8 +243,9 @@ def capstone(state: Signal[LabState] | None = None) -> Fragment:
             Actions:
                 Button(id="task-reverse" onClick={reverse}): "Reverse tasks"
                 Button(id="task-reset" onClick={reset}): "Reset workspace"
-                label(for="task-active"): "Show active tasks only"
-                input(id="task-active" type="checkbox" bindChecked={only_active})
+                label(for="task-active" class="check-field")
+                    input(id="task-active" type="checkbox" bindChecked={only_active})
+                    "Show active tasks only"
             ul(id="tasks"): {each(visible, row, key=lambda item: item.id)}
             p: "Task count: " {derived(lambda: len(tasks()))}
     """)

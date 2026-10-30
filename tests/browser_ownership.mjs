@@ -59,7 +59,7 @@ try {
     document.getElementById("durable-generation").textContent !== generation, generation, {timeout: 10000});
   assert.equal(await page.locator("#durable-count").textContent(), "1");
   assert.equal(await page.evaluate(() => window.retained === document.getElementById("durable-count")), true);
-  assert.match(await page.locator("#pysx-connection-status").textContent(), /restored/);
+  assert.equal(await page.locator("#pysx-connection-status").count(), 0);
   assert.equal(await page.evaluate(() => window.states.filter(state => state.state === "connected").at(-1).listeners), listeners);
   await page.locator("#durable-increment").click();
   await page.waitForFunction(() => document.getElementById("durable-count").textContent === "2");
@@ -77,12 +77,12 @@ try {
   await control("restart", "&schema=3&fresh=1");
   await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "connected" &&
     document.getElementById("durable-count").textContent === "0", null, {timeout: 10000});
-  assert.match(await page.locator("#pysx-connection-status").textContent(), /fresh session/);
+  assert.equal(await page.locator("#pysx-connection-status").count(), 0);
   await page.locator("#durable-increment").click();
   await page.waitForFunction(() => document.getElementById("durable-count").textContent === "1");
   assert.deepEqual(errors, []);
   assert.ok(await page.evaluate(() => window.states.every(state => state.timers <= 1 && state.pendingBytes <= 65536)));
-  console.log("  ok  incompatible opt-in fresh recovery visibly resets state and keeps bounded reconnect ownership");
+  console.log("  ok  incompatible opt-in fresh recovery resets state without injected UI and keeps bounded reconnect ownership");
   console.log("OWNER ROUTING BROWSER PASSED");
   await context.close();
 } finally { await browser.close(); }

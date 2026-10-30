@@ -32,17 +32,27 @@ LESSONS = (
         "counter above, keep its terminal open; Ctrl+C shuts that server down along with "
         "the work it owns.",
         dedent('''
-            from pysx import Fragment, pysx
+            import platform
+            from importlib.metadata import version
+            from pysx import Fragment, derived, pysx, signal
 
 
             def app() -> Fragment:
+                name = signal("Learner")
+                message = derived(lambda: f"Hello, {name()}!")
+                python_version = platform.python_version()
+                pysx_version = version("pysx")
+                environment = f"Python {python_version} · pysx {pysx_version} · server process"
+
                 return pysx(t"""
-                    h1: "Hello, learner!"
+                    label(for="greeting-name"): "Your name"
+                    input(id="greeting-name" bindValue={name} maxLength={80})
+                    output(id="greeting-output"): {message}
+                    p(id="environment"): {environment}
                 """)
         ''').strip(),
-        "`Fragment` describes composable content. The `t` prefix preserves the template's "
-        "structure, and pysx interprets its native `h1` element. The CLI imports `app` before "
-        "serving it; it does not execute a copy of Python inside the browser.",
+        "`name` starts as Learner. The input writes that signal and `message` derives the "
+        "greeting from it. Both live inside `app`, so a new tab starts its own greeting.",
         "Change the name in the live greeting. Then open the same lesson in another tab "
         "and compare its initial name. Use Reset to repeat the experiment.",
         "The greeting follows your input immediately. Another tab starts with Learner; "
@@ -75,20 +85,31 @@ LESSONS = (
         "Changing data should not require constructing new Python source. Never evaluate "
         "a learner's string as a template.",
         dedent('''
-            from pysx import Fragment, pysx, signal
+            from pysx import Fragment, derived, pysx, signal
 
 
             def app() -> Fragment:
-                name = signal("Learner")
+                text = signal("A readable interface")
+                strong = signal(False)
+                weight = derived(lambda: "font-weight: 800" if strong() else "font-weight: 400")
+
+                def toggle(_: object) -> None:
+                    strong.set(not strong())
 
                 return pysx(t"""
+                    label(for="card-text"): "Card text (ordinary escaped data)"
+                    div:
+                        input(id="card-text" bindValue={text} maxLength={200})
+                        button(id="card-emphasis" onClick={toggle} ariaPressed={strong}):
+                            "Toggle emphasis"
                     section:
-                        h2: {name}
+                        p(id="card-preview" style={weight}): {text}
                 """)
         ''').strip(),
-        "The outer `section` supplies structure and `h2` supplies a heading. Passing `name` "
-        "uncalled retains a live value. If you interpolate `name()` here, the read happens "
-        "while constructing the fragment and becomes a snapshot.",
+        "`text` starts as A readable interface. The input binds it directly; the preview inserts "
+        "it as escaped data. Toggle emphasis flips `strong`, which changes the derived font "
+        "weight between 400 and 800. The course also displays the corresponding markup below the "
+        "preview.",
         "Enter `<em>Hello</em>` as the card's text, then toggle emphasis and reset the card.",
         "Angle brackets stay visible as text. Emphasis changes the preview's attribute; "
         "it does not reinterpret your input as HTML.",
@@ -117,16 +138,22 @@ LESSONS = (
             from pysx import Fragment, pysx, signal
 
 
-            def app() -> Fragment:
+            def app(prefix: str = "") -> Fragment:
                 count = signal(0)
                 snapshot = count()
 
+                def increment(_: object) -> None:
+                    count.update(lambda value: value + 1)
+
                 return pysx(t"""
-                    p: "Live " {count} " | snapshot " {snapshot}
+                    button(id={prefix + "increment"} onClick={increment}): "Increment"
+                    output(id={prefix + "live-count"}): {count}
+                    p: "Snapshot: "
+                    output(id={prefix + "snapshot-count"}): {snapshot}
                 """)
         ''').strip(),
-        "`snapshot` stores the initial integer. The `count` hole retains the `Signal` itself. "
-        "Both belong to the same render, but only one retains a dependency on future writes.",
+        "`snapshot` stores the initial integer, while the `count` hole stays live. Increment "
+        "writes only `count`, so two clicks produce live 2 and snapshot 0.",
         "Increment twice, read both outputs, and reset. Try the same steps in another tab.",
         "Live reaches 2 while snapshot remains 0. Reset returns live to 0 without navigation.",
         "An uncalled readable stays live; an eager read is a snapshot.",
@@ -152,16 +179,32 @@ LESSONS = (
         "Use `eq`/`ne` for reactive payload equality. `Signal` object identity remains useful "
         "to Python containers. A lambda passed to `derived` is also a good place for genuine "
         "Python short-circuiting, because only the sources actually read are tracked.",
-        dedent("""
-            from pysx import derived, signal
+        dedent('''
+            from pysx import Fragment, batch, derived, pysx, signal
 
-            quantity = signal(2)
-            total = derived(lambda: quantity() * 12)
-            quantity.set(3)
-            assert total() == 36
-        """).strip(),
-        "The callback reads `quantity`, which establishes its dependency. The assertion "
-        "checks a later read after changing the source, rather than only checking initialization.",
+
+            def app() -> Fragment:
+                quantity = signal(1)
+                total = derived(lambda: quantity() * 12)
+                threshold = quantity > 3
+
+                def increase(_: object) -> None:
+                    with batch():
+                        quantity.update(lambda value: value + 1)
+
+                return pysx(t"""
+                    button(id="quantity-increase" onClick={increase}): "Add one item"
+                    p: "Quantity: "
+                    output(id="quantity"): {quantity}
+                    p: "Total at 12 per item: "
+                    output(id="total"): {total}
+                    p: "Quantity exceeds three: "
+                    output(id="threshold"): {threshold}
+                """)
+        ''').strip(),
+        "`quantity` starts at 1. The `total` callback reads it and multiplies by 12; the reactive "
+        "comparison `quantity > 3` drives the threshold. Add one item writes only the source. At "
+        "quantity 4 the displays are 48 and True, without setting either dependent value.",
         "Increase quantity past three, observe the threshold, then reset. Explain why "
         "the total needs no separate `set` call.",
         "The total is quantity times 12, and the threshold changes when quantity exceeds three.",
@@ -193,19 +236,22 @@ LESSONS = (
 
 
             def app() -> Fragment:
-                last = signal("No key yet")
+                report = signal("No key yet")
 
                 def key(event: BrowserEvent) -> None:
-                    last.set(event.key)
+                    report.set(f"{event.key} · Shift: {event.shift} · Ctrl: {event.ctrl}")
 
                 return pysx(t"""
-                    input(onKeydown={on_event(key)})
-                    p: {last}
+                    label(for="event-input"): "Press a key here"
+                    input(id="event-input" onKeydown={on_event(key)})
+                    output(id="event-report" ariaLive="polite"): {report}
                 """)
         ''').strip(),
-        "The callback takes `BrowserEvent` and records its key. The input's `onKeydown` "
-        "binding is an event contract, while the paragraph is an ordinary live binding.",
-        "Focus the event field. Press A, Shift+A and ArrowDown, then clear the readout.",
+        "`on_event` delivers a `BrowserEvent`. The handler records its actual key plus Shift and "
+        "Ctrl flags, exactly as shown by the live readout. Reset demo clears the report by "
+        "creating a new instance.",
+        "Focus the event field. Press A, Shift+A and ArrowDown, then use Reset demo to "
+        "clear the readout.",
         "The readout reports the actual key and modifier values delivered by your browser.",
         "Server callbacks receive snapshots; immediate cancellation belongs in local policy.",
         ("events",),
@@ -236,15 +282,35 @@ LESSONS = (
 
             def app() -> Fragment:
                 name = signal("")
+                accepted = signal(False)
+                result = signal("Not submitted")
+
+                def submit(_: object) -> None:
+                    if accepted():
+                        result.set(f"Accepted {name()}")
+                    else:
+                        result.set("Accept the terms before submitting")
+
+                def correct(_: object) -> None:
+                    name.set("Server correction")
 
                 return pysx(t"""
-                    label(for="name"): "Name"
-                    input(id="name" bindValue={name} required={True})
-                    p: {name}
+                    form(id="lesson-form" onSubmit={submit})
+                        label(for="form-name"): "Name (required)"
+                        input(id="form-name" bindValue={name} required={True})
+                        label(for="form-terms" class="check-field")
+                            input(id="form-terms" type="checkbox" bindChecked={accepted})
+                            "Accept the demonstration terms"
+                        button(id="form-submit" type="submit"): "Submit"
+                    div:
+                        button(id="form-correct" onClick={correct}): "Apply server correction"
+                    output(id="form-echo"): {name}
+                    output(id="form-result" role="status"): {result}
                 """)
         ''').strip(),
-        "The `label` points to the same `id` as the `input`. The writable `name` `Signal` supplies "
-        "the binding, and `required` remains a native boolean property rather than a string.",
+        "The name and checkbox bind to separate writable signals. Native `required` blocks an "
+        "empty name; submit checks acceptance and reports the name. Apply server correction "
+        "writes the same name signal that controls the field and preview.",
         "Try submitting an empty name. Enter a name, accept the terms, submit, then "
         "apply the server correction and reset.",
         "Empty input is rejected. A valid submit shows the accepted name; correction "
@@ -272,18 +338,39 @@ LESSONS = (
         "copy experiment is intentionally visible: it changes the copy's readout while "
         "the live first-score readout stays put. This distinguishes real ownership from "
         "a demonstration that happens to print the expected initial value.",
-        dedent("""
-            from pysx import signal
+        dedent('''
+            from pysx import Fragment, pysx, signal
 
-            profile = signal({"scores": {"first": 1, "second": 2}})
-            first = profile["scores"]["first"]
-            first.set(3)
-            copy = profile()
-            copy["scores"]["first"] = 99
-            assert first() == 3
-        """).strip(),
-        "`first` remains attached to the owned root. `copy` is a detached dictionary. The "
-        "last assertion proves that editing a snapshot is not a hidden live write.",
+
+            def app() -> Fragment:
+                profile = signal({"scores": {"first": 1, "second": 2}})
+                first = profile["scores"]["first"]
+                second = profile["scores"]["second"]
+                copied = signal("No copy yet")
+
+                def increment(_: object) -> None:
+                    first.update(lambda value: value + 1)
+
+                def copy(_: object) -> None:
+                    snapshot = profile()
+                    snapshot["scores"]["first"] = 99
+                    copied.set(str(snapshot["scores"]["first"]))
+
+                return pysx(t"""
+                    div:
+                        button(id="score-increment" onClick={increment}): "Increment first"
+                        button(id="score-copy" onClick={copy}): "Change a private copy"
+                    p: "First: "
+                    output(id="score-first"): {first}
+                    p: "Second: "
+                    output(id="score-second"): {second}
+                    p: "Private copy: "
+                    output(id="score-copy-value"): {copied}
+                """)
+        ''').strip(),
+        "`first` and `second` project into the same owned root. Increment writes through `first`; "
+        "Change a private copy edits the detached dictionary returned by `profile()` and displays "
+        "99 without writing the live scores.",
         "Increment the first score, then change a private copy. Compare first, second "
         "and the displayed copy before resetting.",
         "Only the first live score changes through its projection. The copy can show 99 "

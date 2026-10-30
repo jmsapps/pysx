@@ -6,6 +6,8 @@ import html
 import importlib
 import sys
 import urllib.request
+from functools import partial
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -14,15 +16,94 @@ from src.app import create_application
 from src.catalog import LESSONS, neighbors
 from src.components.code import CodeBlock, highlighted_sources
 from src.components.pages import Inline
+from src.demos import composition, foundations, navigation, operations, runtime
+from src.durable import view as durable_view
+from src.model import LabState
+from src.themes import course_themes
 
-from pysx import RequestContext
+from pysx import Fragment, RequestContext, Route, Router, signal
 from pysx.compiler.loader import install_loader
 from pysx.hosting.server import Session
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pysx.runtime.wire import JSONValue
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class WalkthroughControls(HTMLParser):
+    """Compare teaching controls and values independently of course styling."""
+
+    def __init__(self, source: str) -> None:
+        super().__init__()
+        self.controls: list[tuple[str, tuple[tuple[str, str | None], ...], str]] = []
+        self.current: int | None = None
+        self.feed(source)
+        self.controls = [(tag, attrs, " ".join(text.split())) for tag, attrs, text in self.controls]
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag not in {"input", "button", "output", "textarea"}:
+            return
+        relevant = tuple(
+            sorted(
+                (key, value)
+                for key, value in attrs
+                if key in {"id", "value", "checked", "required", "type"}
+                or (key.startswith("data-") and not key.startswith("data-pysx"))
+            )
+        )
+        self.controls.append((tag, relevant, ""))
+        self.current = None if tag == "input" else len(self.controls) - 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"button", "output", "textarea"}:
+            self.current = None
+
+    def handle_data(self, data: str) -> None:
+        if self.current is not None:
+            tag, attrs, text = self.controls[self.current]
+            self.controls[self.current] = tag, attrs, text + data
+
+
+def walkthrough_demo(number: int) -> Fragment:
+    demos: dict[int, Callable[[], Fragment]] = {
+        1: foundations.greeting,
+        2: foundations.template_card,
+        3: foundations.counter,
+        4: foundations.calculator,
+        5: foundations.events,
+        6: foundations.forms,
+        7: foundations.structured_state,
+        8: composition.branches,
+        9: composition.loops,
+        10: composition.keyed_rows,
+        11: composition.components,
+        12: composition.effects,
+        13: partial(navigation.styles, course_themes()),
+        16: navigation.keyboard,
+        17: runtime.async_resource,
+        18: runtime.errors,
+        19: partial(runtime.async_resource, server_rendering=True),
+        20: runtime.sessions,
+        21: partial(runtime.recovery, clock=True),
+        22: runtime.recovery,
+        23: operations.codec,
+        24: operations.authentication,
+        25: operations.diagnostics,
+        26: operations.hosting,
+        27: operations.capstone,
+        28: operations.codec,
+    }
+
+    if number in (14, 15):
+        slug = LESSONS[number - 1].slug
+        router = Router([Route("/", lambda state: navigation.routes(router, slug, state))])
+
+        return router.view()
+
+    return demos[number]()
 
 
 def test_tutorial_website_pure_multiline_authoring_and_displayed_source() -> None:
@@ -155,8 +236,68 @@ def test_tutorial_website_every_code_walkthrough_executes(number: int, tmp_path:
 
             try:
                 assert session.rendered.body
+                reference = Session(lambda: walkthrough_demo(number))
+
+                try:
+                    assert (
+                        WalkthroughControls(session.rendered.body).controls
+                        == WalkthroughControls(reference.rendered.body).controls
+                    )
+
+                    if number == 4:
+                        for quantity in (2, 3, 4):
+                            changes = session.dispatch(next(iter(session.rendered.handlers)), None)
+                            expected = reference.dispatch(
+                                next(iter(reference.rendered.handlers)), None
+                            )
+                            values = [op["v"] for op in changes if op["op"] == "text"]
+                            assert values == [op["v"] for op in expected if op["op"] == "text"]
+                            assert str(quantity) in values
+                            assert str(quantity * 12) in values
+
+                            if quantity == 4:
+                                assert "True" in values
+                finally:
+                    reference.dispose()
             finally:
                 session.dispose()
+                await asyncio.sleep(0)
+
+        if number in (23, 28):
+            declared = Session(lambda: module.view(signal(module.LabState())))
+            reference = Session(lambda: durable_view(signal(LabState())))
+
+            try:
+                actual_controls = WalkthroughControls(declared.rendered.body).controls
+                expected_controls = WalkthroughControls(reference.rendered.body).controls
+
+                if number == 23:
+                    ids = {"lab-draft", "lab-echo", "lab-count", "lab-setup"}
+                    actual_controls = [
+                        control for control in actual_controls if dict(control[1]).get("id") in ids
+                    ]
+                    expected_controls = [
+                        control
+                        for control in expected_controls
+                        if dict(control[1]).get("id") in ids
+                    ]
+
+                def without_setup(
+                    controls: list[tuple[str, tuple[tuple[str, str | None], ...], str]],
+                ) -> list[tuple[str, tuple[tuple[str, str | None], ...], str]]:
+                    return [
+                        (tag, attrs, "" if dict(attrs).get("id") == "lab-setup" else text)
+                        for tag, attrs, text in controls
+                    ]
+
+                assert without_setup(actual_controls) == without_setup(expected_controls)
+                assert module.decode({"draft": "Saved draft", "count": 1}).count == 1
+
+                with pytest.raises(ValueError, match="invalid declared lab state"):
+                    module.decode({"draft": 42, "count": "invalid"})
+            finally:
+                declared.dispose()
+                reference.dispose()
                 await asyncio.sleep(0)
 
     try:

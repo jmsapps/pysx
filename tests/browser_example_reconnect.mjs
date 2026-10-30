@@ -26,13 +26,13 @@ try {
     field.focus(); field.setSelectionRange(2, 6);
     const lost = new Promise(resolve => window.addEventListener("pysx:disconnected", resolve, {once: true}));
     window.testSocket.close(); await lost;
-    const status = document.querySelector("#pysx-connection-status").textContent;
+    const status = document.querySelector("#pysx-connection-status");
     document.querySelector("#reconnect-increment").click();
     await new Promise(resolve => setTimeout(resolve, 1000));
     return {status, ticks: Number(document.querySelector("#reconnect-ticks").textContent)};
   });
-  assert.match(away.status, /Disconnected/);
-  console.log("  ok  the example reports a disconnected status and refuses offline clicks");
+  assert.equal(away.status, null);
+  console.log("  ok  the example refuses offline clicks without injected connection UI");
   await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "connected");
   assert.equal(await page.locator("#reconnect-generation").textContent(), session);
   assert.equal(await page.locator("#reconnect-clicks").textContent(), "1");

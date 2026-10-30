@@ -690,8 +690,7 @@ function clearTransportTimer() {
   transportTimer = null;
 }
 
-// Built on the first state worth reporting, so an ordinary connected page carries
-// no injected status markup at all.
+// Built-in connection UI belongs only to development sessions.
 function connectionElements() {
   if (connectionStatus !== null) return;
   connectionStatus = document.createElement("p");
@@ -707,11 +706,11 @@ function connectionElements() {
 
 function connectionState(state, retryMs = 0) {
   root.dataset.pysxConnection = state;
-  const hidden = state === "connected" && !freshSession && !restoredSession;
+  const hidden = !developing;
   const text = state === "connected" ? (restoredSession ? (partialReset ?
     "Connected. Session state was restored; some fields restarted with their defaults and uncommitted edits were discarded." :
     "Connected. Session state was restored; uncommitted edits were discarded.") :
-    "Connected. A fresh session started; previous session state was lost.") :
+    freshSession ? "Connected. A fresh session started; previous session state was lost." : "Connected.") :
     state === "reconnecting" ? "Disconnected. Reconnecting; offline edits are rejected." :
     state === "fresh" ? "Previous session expired. Starting a fresh session." :
     state === "stopped" ? "Disconnected by a protocol failure. Offline edits are rejected. Reload the page to continue." :
