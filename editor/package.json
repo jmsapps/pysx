@@ -21,7 +21,7 @@
   "contributes": {
     "colors": [
       { "id": "pysx.markup.type", "description": "Resolved native markup tags outside literal calls.", "defaults": { "dark": "symbolIcon.keywordForeground", "light": "symbolIcon.keywordForeground", "highContrast": "symbolIcon.keywordForeground" } },
-      { "id": "pysx.markup.class", "description": "Resolved markup component tags outside literal calls.", "defaults": { "dark": "symbolIcon.classForeground", "light": "symbolIcon.classForeground", "highContrast": "symbolIcon.classForeground" } },
+      { "id": "pysx.markup.class", "description": "Resolved markup component tags, including lowercase components in direct literals.", "defaults": { "dark": "#4EC9B0", "light": "#4EC9B0", "highContrast": "#4EC9B0" } },
       { "id": "pysx.markup.property", "description": "Resolved markup attribute names outside literal calls.", "defaults": { "dark": "symbolIcon.propertyForeground", "light": "symbolIcon.propertyForeground", "highContrast": "symbolIcon.propertyForeground" } },
       { "id": "pysx.markup.keyword", "description": "Resolved markup control keywords outside literal calls.", "defaults": { "dark": "symbolIcon.keywordForeground", "light": "symbolIcon.keywordForeground", "highContrast": "symbolIcon.keywordForeground" } },
       { "id": "pysx.markup.variable", "description": "Resolved markup binding names outside literal calls.", "defaults": { "dark": "symbolIcon.variableForeground", "light": "symbolIcon.variableForeground", "highContrast": "symbolIcon.variableForeground" } },

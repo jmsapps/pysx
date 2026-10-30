@@ -64,7 +64,7 @@ try {
     }
     tokens += result.length;
     if (fixture === "tutorial_website") {
-      for (const word of ["article", "section", "h1", "h2", "pre", "footer", "details", "summary", "nav", "ol"]) {
+      for (const word of ["article", "section", "h1", "h2", "h3", "pre", "details", "summary", "nav", "ol"]) {
         check(result.some(token => token.text === word && token.scopes.includes("entity.name.tag.pysx")), `actual course native ${word}`);
       }
       for (const word of ["Navigation", "Paragraphs", "Button", "CodeBlock"]) {

@@ -55,7 +55,7 @@ def view() -> Fragment:
                 Description:
                     "Separately, change count = signal(0) to signal(1) and save. "
                     "The initializer change resets the count to 1. Restore signal(0) afterward."
-            {StatePanel(count)}
+            StatePanel(count={count})
             script(src="/development-panel.js", defer={True})
     """)
 

@@ -22,6 +22,11 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 if (!SUITES.includes(suite)) throw new Error("empty editor selection");
+if (suite === "client_verify") {
+  const result = spawnSync(process.execPath, ["--test", "editor/test/highlighting.test.cjs"],
+    { cwd: root, stdio: "inherit" });
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
 if (["client_verify", "editor_surface"].includes(suite) && !process.env.PYSX_EDITOR_ACTIVATION_ORDER) {
   for (const order of ["client-first", "pylance-first"]) {
     const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--suite", suite],

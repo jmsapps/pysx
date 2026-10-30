@@ -1,11 +1,12 @@
 const vscode = require("vscode");
 
-// TextMate owns direct literals. These theme-aware decorations cover statically
-// resolved aliases/shared templates without registering a Python token provider.
+// TextMate owns direct literals except binding-aware lowercase component names.
+// Decorations also cover shared templates without a competing Python token provider.
 exports.activate = function (client, output, owns = () => true) {
   const types = new Map(["type", "class", "property", "keyword", "variable", "string"]
     .map((kind) => [kind, vscode.window.createTextEditorDecorationType({
       color: new vscode.ThemeColor(`pysx.markup.${kind}`),
+      ...(kind === "class" ? { fontWeight: "bold" } : {}),
     })]));
   const timers = new Map();
   const serials = new Map();
@@ -15,12 +16,16 @@ exports.activate = function (client, output, owns = () => true) {
   const key = (uri) => uri.toString();
   const eligible = (document) => !disposed && !paused && document.languageId === "python" &&
     document.uri.scheme === "file" && owns(document);
-  function clear(uri) {
+  function invalidate(uri) {
     const name = key(uri);
     clearTimeout(timers.get(name));
     timers.delete(name);
     serials.set(name, (serials.get(name) ?? 0) + 1);
     results.delete(name);
+  }
+  function clear(uri) {
+    invalidate(uri);
+    const name = key(uri);
     for (const editor of vscode.window.visibleTextEditors) {
       if (key(editor.document.uri) === name) {
         for (const type of types.values()) editor.setDecorations(type, []);
@@ -29,8 +34,11 @@ exports.activate = function (client, output, owns = () => true) {
   }
   async function refresh(document) {
     const name = key(document.uri);
-    clear(document.uri);
-    if (!eligible(document) || document.isClosed) return;
+    invalidate(document.uri);
+    if (!eligible(document) || document.isClosed) {
+      clear(document.uri);
+      return;
+    }
     const serial = serials.get(name);
     const version = document.version;
     try {
@@ -55,8 +63,12 @@ exports.activate = function (client, output, owns = () => true) {
     }
   }
   function schedule(document) {
-    clear(document.uri);
-    if (!eligible(document)) return;
+    // Keep anchored ranges visible until a current response replaces them.
+    invalidate(document.uri);
+    if (!eligible(document) || document.isClosed) {
+      clear(document.uri);
+      return;
+    }
     const name = key(document.uri);
     timers.set(name, setTimeout(() => {
       timers.delete(name);

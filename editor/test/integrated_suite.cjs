@@ -23,7 +23,7 @@ exports.run = async function () {
   const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
   const filename = path.join(root, "lesson.py");
   fs.writeFileSync(filename, `from pysx import Fragment, pysx
-from tutorial.components.pages import Paragraphs
+from src.components.pages import Paragraphs
 def app() -> Fragment:
     return pysx(t"Paragraphs(text={'Installed lesson'})")
 `);
@@ -39,7 +39,7 @@ def app() -> Fragment:
     const definitions = await vscode.commands.executeCommand("vscode.executeDefinitionProvider", doc.uri, tag);
     return definitions?.some(item => {
       const filename = (item.uri ?? item.targetUri).fsPath;
-      return filename.includes("site-packages") && filename.endsWith("tutorial/components/pages.py");
+      return filename.includes("site-packages") && filename.endsWith("src/components/pages.py");
     });
   }, "definition into installed course wheel");
   const replace = async (before, after) => {
