@@ -1,6 +1,6 @@
 """Typed keyboard snapshots, immediate browser policies and owned focus."""
 
-from pysx import Fragment, component, pysx
+from pysx import Fragment, pysx
 
 from .components import (
     Card,
@@ -14,7 +14,6 @@ from .components import (
 from .components.events import EventControls
 
 
-@component
 def app() -> Fragment:
     example_title("Events")
 

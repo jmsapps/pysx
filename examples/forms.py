@@ -3,7 +3,7 @@
 import json
 from typing import cast
 
-from pysx import Fragment, component, derived, pysx, signal
+from pysx import Fragment, derived, pysx, signal
 
 from .components import (
     Card,
@@ -20,7 +20,6 @@ from .components import (
 )
 
 
-@component
 def app() -> Fragment:
     example_title("Forms")
 

@@ -23,10 +23,9 @@ back to the page.
 Templates use Python 3.14+ t-strings to keep markup and live values together:
 
 ```python
-from pysx import component, pysx, signal
+from pysx import pysx, signal
 
 
-@component
 def app():
     count = signal(0)
 

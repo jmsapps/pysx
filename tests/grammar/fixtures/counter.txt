@@ -1,6 +1,5 @@
-from pysx import component, pysx
+from pysx import pysx
 
-@component
 def app():
     return pysx(
         t"""

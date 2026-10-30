@@ -1,6 +1,5 @@
-from pysx import component, pysx
+from pysx import pysx
 
-@component
 def bad():
     return pysx(t"""
         Page(id="container":

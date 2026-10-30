@@ -5,7 +5,6 @@ from pysx import (
     all_of,
     any_of,
     batch,
-    component,
     concat,
     contains,
     derived,
@@ -40,7 +39,6 @@ from .components import (
 )
 
 
-@component
 def app() -> Fragment:
     example_title("Operators")
 

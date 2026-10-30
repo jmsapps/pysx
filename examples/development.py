@@ -6,7 +6,7 @@ Follow the on-page steps to test hot updates and fresh page loads.
 
 from pathlib import Path
 
-from pysx import Application, Fragment, StaticAsset, component, pysx, signal
+from pysx import Application, Fragment, StaticAsset, pysx, signal
 
 from .components import (
     Action,
@@ -23,7 +23,6 @@ from .components import (
 from .components.development import StatePanel
 
 
-@component
 def view() -> Fragment:
     example_title("Development")
 

@@ -96,11 +96,11 @@ VOLATILE_SOURCE = (
     HOT_SOURCE.split("\napp = DurableApplication", 1)[0]
     .replace(
         "    derived, project, own_task, own_effect, on_mount)",
-        "    derived, project, own_task, own_effect, on_mount, component, signal)",
+        "    derived, project, own_task, own_effect, on_mount, signal)",
     )
     .replace(
         "def view(state):",
-        '@component\ndef app():\n    state = signal({"count": 0, "draft": "initial"})',
+        'def app():\n    state = signal({"count": 0, "draft": "initial"})',
     )
 )
 

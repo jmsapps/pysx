@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Literal
 from pysx import (
     Fragment,
     Signal,
-    component,
     derived,
     each,
     local_state,
@@ -45,7 +44,6 @@ class Todo:
     done: bool
 
 
-@component
 def app() -> Fragment:
     example_title("Todos")
 
