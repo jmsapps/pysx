@@ -197,8 +197,10 @@ try {
       await page.locator("#increment").click(); await text("live-count", "2");
       assert.equal(await page.locator("#snapshot-count").textContent(), "0");
     } else if (slug === "derived-values") {
+      await text("threshold", "False"); await text("within-limit", "True");
       for (let i = 0; i < 3; i++) await page.locator("#quantity-increase").click();
       await text("total", "48"); await text("threshold", "True");
+      await text("within-limit", "False");
     } else if (slug === "browser-events") {
       await page.locator("#event-input").press("Shift+A");
       await page.waitForFunction(() => document.querySelector("#event-report").textContent.includes("Shift: True"));

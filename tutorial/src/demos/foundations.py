@@ -3,7 +3,7 @@
 import platform
 from importlib.metadata import version
 
-from pysx import BrowserEvent, Fragment, batch, derived, on_event, pysx, signal
+from pysx import BrowserEvent, Fragment, derived, gt, not_, on_event, pysx, signal
 from src.components import Actions, Button, Field, Panel, Readout
 from src.components.code import CodeBlock
 
@@ -66,11 +66,11 @@ def counter(prefix: str = "") -> Fragment:
 def calculator() -> Fragment:
     quantity = signal(1)
     total = derived(lambda: quantity() * 12)
-    threshold = quantity > 3
+    threshold = gt(quantity, 3)
+    within_limit = not_(threshold)
 
     def increase(_: object) -> None:
-        with batch():
-            quantity.update(lambda value: value + 1)
+        quantity.update(lambda value: value + 1)
 
     return pysx(t"""
         Button(id="quantity-increase" onClick={increase}): "Add one item"
@@ -80,6 +80,8 @@ def calculator() -> Fragment:
         Readout(id="total"): {total}
         p: "Quantity exceeds three: "
         Readout(id="threshold"): {threshold}
+        p: "Quantity at most three: "
+        Readout(id="within-limit"): {within_limit}
     """)
 
 

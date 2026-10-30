@@ -270,7 +270,7 @@ def _code_3() -> Fragment:
         span(data-syntax="keyword"): "from"
         " pysx "
         span(data-syntax="keyword"): "import"
-        " Fragment, batch, derived, pysx, signal\n\n\n"
+        " Fragment, derived, gt, not_, pysx, signal\n\n\n"
         span(data-syntax="keyword"): "def"
         " app() -> Fragment:\n    quantity "
         span(data-syntax="keyword"): "="
@@ -286,15 +286,13 @@ def _code_3() -> Fragment:
         span(data-syntax="number"): "12"
         ")\n    threshold "
         span(data-syntax="keyword"): "="
-        " quantity "
-        span(data-syntax="keyword"): ">"
-        " "
+        " gt(quantity, "
         span(data-syntax="number"): "3"
-        "\n\n    "
+        ")\n    within_limit "
+        span(data-syntax="keyword"): "="
+        " not_(threshold)\n\n    "
         span(data-syntax="keyword"): "def"
-        " increase(_: object) -> None:\n        "
-        span(data-syntax="keyword"): "with"
-        " batch():\n            quantity.update("
+        " increase(_: object) -> None:\n        quantity.update("
         span(data-syntax="keyword"): "lambda"
         " value: value "
         span(data-syntax="keyword"): "+"
@@ -353,6 +351,18 @@ def _code_3() -> Fragment:
         span(data-syntax="string"): "\"threshold\""
         "): {{"
         span(data-syntax="expression"): "threshold"
+        "}}\n        "
+        span(data-syntax="tag"): "p"
+        ": "
+        span(data-syntax="string"): "\"Quantity at most three: \""
+        "\n        "
+        span(data-syntax="tag"): "output"
+        "("
+        span(data-syntax="attribute"): "id"
+        span(data-syntax="keyword"): "="
+        span(data-syntax="string"): "\"within-limit\""
+        "): {{"
+        span(data-syntax="expression"): "within_limit"
         "}}\n    \"\"\")"
     """)
 
@@ -6908,7 +6918,7 @@ def highlighted_code(source: str) -> Fragment | None:
             return _code_1()
         case "eaea5b86eb3e304fd766bd5181cda69416aefe50475c9807eba18992b638dd89":
             return _code_2()
-        case "ea6b11d2fe2c478daf3c3d30b523dd61a2fcb694a72162a25d89fb230208328c":
+        case "b973c40256777718238babfc4ed04811e10723153f02e7e04a40f1cde90cc475":
             return _code_3()
         case "0a80d0688daf07f92453fd3817b2b4ae105dada007233f8f4f8c75a9122dd1a1":
             return _code_4()

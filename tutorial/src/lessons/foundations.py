@@ -169,28 +169,27 @@ LESSONS = (
         "of source state. Storing each consequence independently creates extra work: every "
         "handler must remember to update them all. A derived value records the sources "
         "read by its callback and recomputes from those sources.\n\n"
-        "Python permits reactive arithmetic and ordering results, but some protocols "
-        "require primitives. Python's `and`, `or`, `not`, `in` and `len` cannot faithfully return "
-        "a `Signal`. Use the named helpers or ordinary Python inside `derived`.",
+        "Named helpers build reactive expressions too: `gt(quantity, 3)` returns a signal "
+        "that says whether the quantity exceeds three. Python's `not` always returns a plain "
+        "boolean, so use `not_(threshold)` to keep the opposite condition reactive. "
+        "Alternatively, put ordinary Python inside `derived`, such as "
+        "`derived(lambda: not threshold())`.",
         "The calculator below has `quantity` as a source and `total` as a consequence. Its "
-        "threshold indicator reads the same source. A single write can update both while "
-        "keeping them consistent. Batch groups synchronous writes; it is not a transaction "
-        "rollback and must not span an await.\n\n"
-        "Use `eq`/`ne` for reactive payload equality. `Signal` object identity remains useful "
-        "to Python containers. A lambda passed to `derived` is also a good place for genuine "
-        "Python short-circuiting, because only the sources actually read are tracked.",
+        "threshold uses `gt` to read that source, and `within_limit` uses `not_` to read the "
+        "threshold. Changing only `quantity` updates the total and both conditions. "
+        "Pass the signals into the template without calling them so the outputs stay live.",
         dedent('''
-            from pysx import Fragment, batch, derived, pysx, signal
+            from pysx import Fragment, derived, gt, not_, pysx, signal
 
 
             def app() -> Fragment:
                 quantity = signal(1)
                 total = derived(lambda: quantity() * 12)
-                threshold = quantity > 3
+                threshold = gt(quantity, 3)
+                within_limit = not_(threshold)
 
                 def increase(_: object) -> None:
-                    with batch():
-                        quantity.update(lambda value: value + 1)
+                    quantity.update(lambda value: value + 1)
 
                 return pysx(t"""
                     button(id="quantity-increase" onClick={increase}): "Add one item"
@@ -200,14 +199,18 @@ LESSONS = (
                     output(id="total"): {total}
                     p: "Quantity exceeds three: "
                     output(id="threshold"): {threshold}
+                    p: "Quantity at most three: "
+                    output(id="within-limit"): {within_limit}
                 """)
         ''').strip(),
         "`quantity` starts at 1. The `total` callback reads it and multiplies by 12; the reactive "
-        "comparison `quantity > 3` drives the threshold. Add one item writes only the source. At "
-        "quantity 4 the displays are 48 and True, without setting either dependent value.",
-        "Increase quantity past three, observe the threshold, then reset. Explain why "
-        "the total needs no separate `set` call.",
-        "The total is quantity times 12, and the threshold changes when quantity exceeds three.",
+        "helper `gt(quantity, 3)` drives the threshold, while `not_(threshold)` drives its "
+        "opposite. Add one item writes only the source. At quantity 4 the total is 48, "
+        "the threshold is True and `within_limit` is False, without setting any dependent value.",
+        "Increase quantity past three, observe both conditions, then reset. Explain why "
+        "the total and conditions need no separate `set` calls.",
+        "The total is quantity times 12. At quantity 4 the conditions flip to True and False; "
+        "reset returns quantity to 1, total to 12 and the conditions to False and True.",
         "Store sources; derive consequences. Choose helpers when Python forces a primitive.",
         ("operators", "reactive_state"),
     ),

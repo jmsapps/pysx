@@ -301,6 +301,7 @@ def test_tutorial_website_every_code_walkthrough_executes(number: int, tmp_path:
 
                             if quantity == 4:
                                 assert "True" in values
+                                assert "False" in values
                 finally:
                     reference.dispose()
             finally:
