@@ -27,12 +27,16 @@ LESSONS = (
             import asyncio
             from pysx import Fragment, derived, pysx, resource
 
+
             def app() -> Fragment:
                 async def load() -> str:
                     await asyncio.sleep(0.05)
+
                     return "Ready"
+
                 result = resource("message", load)
                 text = derived(lambda: result().value or result().status)
+
                 return pysx(t"""
                     p: {text}
                 """)
@@ -68,16 +72,20 @@ LESSONS = (
             from pysx import ErrorBoundary, ErrorInfo, Fragment, pysx
             from collections.abc import Callable
 
+
             def app() -> Fragment:
                 def content() -> Fragment:
                     return pysx(t"""
                         p: "Healthy content"
                     """)
+
                 def fallback(info: ErrorInfo, retry: Callable[[], None]) -> Fragment:
                     return pysx(t"""
                         p: {info.message}
                     """)
+
                 Boundary = ErrorBoundary(content, fallback)
+
                 return pysx(t"""
                     Boundary:
                 """)
@@ -111,11 +119,13 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, on_mount, on_setup, pysx, signal
 
+
             def app() -> Fragment:
                 setups = signal(0)
                 mounts = signal(0)
                 on_setup(lambda: setups.update(lambda n: n + 1))
                 on_mount(lambda: mounts.update(lambda n: n + 1))
+
                 return pysx(t"""
                     p: "Setup " {setups} " | mount " {mounts}
                 """)
@@ -151,8 +161,10 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, pysx, signal
 
+
             def app() -> Fragment:
                 private_draft = signal("")
+
                 return pysx(t"""
                     input(bindValue={private_draft})
                     p: {private_draft}
@@ -189,9 +201,11 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, pysx, signal
 
+
             def app() -> Fragment:
                 draft = signal("Keep this draft")
                 count = signal(0)
+
                 return pysx(t"""
                     input(bindValue={draft})
                     p: {count}
@@ -228,9 +242,11 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, pysx, signal
 
+
             def app() -> Fragment:
                 draft = signal("")
                 count = signal(0)
+
                 return pysx(t"""
                     input(bindValue={draft})
                     p: "Delivered count " {count}
@@ -269,10 +285,13 @@ LESSONS = (
         dedent("""
             from pysx import StateCodec
 
+
             def decode(value: object) -> str:
                 if not isinstance(value, str) or len(value) > 512:
                     raise ValueError("Expected a bounded draft")
+
                 return value
+
 
             codec = StateCodec[str](lambda value: value, decode)
             assert decode("Draft") == "Draft"

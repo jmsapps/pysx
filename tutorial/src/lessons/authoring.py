@@ -26,8 +26,10 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, pysx, signal
 
+
             def app() -> Fragment:
                 visible = signal(True)
+
                 return pysx(t"""
                     if {visible}:
                         p: "Visible"
@@ -64,12 +66,15 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, each, pysx, signal
 
+
             def app() -> Fragment:
                 rows = signal(["Read", "Build"])
+
                 def row(text: str) -> Fragment:
                     return pysx(t"""
                         li: {text}
                     """)
+
                 return pysx(t"""
                     ul: {each(rows, row, key=str)}
                 """)
@@ -103,14 +108,18 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, each, local_state, pysx, signal
 
+
             def app() -> Fragment:
                 rows = signal([1, 2])
+
                 def row(key: int) -> Fragment:
                     draft = local_state("draft", "")
+
                     return pysx(t"""
                         li:
                             input(bindValue={draft})
                     """)
+
                 return pysx(t"""
                     ul: {each(rows, row, key=lambda key: key)}
                 """)
@@ -144,12 +153,14 @@ LESSONS = (
         dedent('''
             from pysx import Children, Fragment, pysx
 
+
             def Card(*, title: str, children: Children | None = None) -> Fragment:
                 return pysx(t"""
                     section:
                         h2: {title}
                         div: {children}
                 """)
+
 
             def app() -> Fragment:
                 return pysx(t"""
@@ -225,6 +236,7 @@ LESSONS = (
                 color: teal;
             """)
 
+
             def app() -> Fragment:
                 return pysx(t"""
                     Notice: "A scoped style"
@@ -258,14 +270,18 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, Route, Router, RouteState, derived, pysx
 
+
             def project(state: RouteState) -> Fragment:
                 identifier = derived(lambda: state.params()["id"])
+
                 return pysx(t"""
                     h2: {identifier}
                 """)
 
+
             def app() -> Fragment:
                 router = Router([Route("/projects/:id", project)])
+
                 return pysx(t"""
                     main: {router.view()}
                 """)
@@ -299,13 +315,16 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, Link, Route, Router, RouteState, pysx
 
+
             def home(_: RouteState) -> Fragment:
                 return pysx(t"""
                     p: "Home"
                 """)
 
+
             def app() -> Fragment:
                 router = Router([Route("/", home)])
+
                 return pysx(t"""
                     main: {Link("Home", router=router, href="/")} {router.view()}
                 """)
@@ -339,11 +358,14 @@ LESSONS = (
         dedent('''
             from pysx import Dom, Fragment, pysx
 
+
             def app() -> Fragment:
                 dom = Dom()
                 field = dom.ref()
+
                 async def focus(_: object) -> None:
                     await field.handle().focus()
+
                 return pysx(t"""
                     input(ref={field} ariaLabel="Name")
                     button(onClick={focus}): "Focus name"

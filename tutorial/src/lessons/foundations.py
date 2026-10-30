@@ -34,6 +34,7 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, pysx
 
+
             def app() -> Fragment:
                 return pysx(t"""
                     h1: "Hello, learner!"
@@ -76,8 +77,10 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, pysx, signal
 
+
             def app() -> Fragment:
                 name = signal("Learner")
+
                 return pysx(t"""
                     section:
                         h2: {name}
@@ -113,9 +116,11 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, pysx, signal
 
+
             def app() -> Fragment:
                 count = signal(0)
                 snapshot = count()
+
                 return pysx(t"""
                     p: "Live " {count} " | snapshot " {snapshot}
                 """)
@@ -186,10 +191,13 @@ LESSONS = (
         dedent('''
             from pysx import BrowserEvent, Fragment, on_event, pysx, signal
 
+
             def app() -> Fragment:
                 last = signal("No key yet")
+
                 def key(event: BrowserEvent) -> None:
                     last.set(event.key)
+
                 return pysx(t"""
                     input(onKeydown={on_event(key)})
                     p: {last}
@@ -225,8 +233,10 @@ LESSONS = (
         dedent('''
             from pysx import Fragment, pysx, signal
 
+
             def app() -> Fragment:
                 name = signal("")
+
                 return pysx(t"""
                     label(for="name"): "Name"
                     input(id="name" bindValue={name} required={True})

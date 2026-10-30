@@ -27,8 +27,10 @@ LESSONS = (
         dedent("""
             from pysx import AccessDenied, RequestContext, SecurityPolicy
 
+
             def authorize(request: RequestContext, action: str, target: str) -> bool:
                 return action != "write" or request.principal == "writer"
+
 
             policy = SecurityPolicy(authorize=authorize)
             assert not authorize(RequestContext(principal="reader"), "write", "draft")
@@ -111,6 +113,7 @@ LESSONS = (
 
             config = HostConfig(render_capacity=25)
             assert config.render_capacity == 25
+
             try:
                 HostConfig(production=True)
             except ValueError:
@@ -153,11 +156,13 @@ LESSONS = (
             from dataclasses import dataclass, replace
             from pysx import signal
 
+
             @dataclass(frozen=True)
             class Task:
                 id: int
                 title: str
                 done: bool = False
+
 
             tasks = signal([Task(1, "Build")])
             tasks.update(lambda rows: [replace(row, done=True) for row in rows])

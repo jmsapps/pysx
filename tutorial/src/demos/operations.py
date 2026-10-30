@@ -27,17 +27,20 @@ if TYPE_CHECKING:
     from src.model import Task
 
 FROZEN_SOURCE = '''from pysx import pysx, signal
+
 count = signal(0)
 view = pysx(t"""
     p: {count()}
 """)
 '''
 ATTRIBUTE_SOURCE = '''from pysx import pysx
+
 view = pysx(t"""
     div(hreff="bad")
 """)
 '''
 CORRECT_SOURCE = '''from pysx import pysx
+
 view = pysx(t"""
     div(title="valid")
 """)
