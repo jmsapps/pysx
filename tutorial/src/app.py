@@ -214,6 +214,7 @@ def course() -> Fragment:
     return pysx(
         t"""
         link(rel="stylesheet" href="/assets/course.css")
+        script(src="/assets/course.js" defer={True}):
         header(class="course-header")
             Link(router={router} href="/" class_name="brand"):
                 "pysx"
@@ -243,6 +244,9 @@ class CourseApplication(Application):
             ),
             "/assets/course.css": StaticAsset(
                 files("src").joinpath("assets/course.css").read_bytes(), "text/css"
+            ),
+            "/assets/course.js": StaticAsset(
+                files("src").joinpath("assets/course.js").read_bytes(), "text/javascript"
             ),
         }
         config = HostConfig(

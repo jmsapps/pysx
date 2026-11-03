@@ -304,7 +304,38 @@ try {
     } else if (["reconnection", "browser-recovery"].includes(slug)) {
       await page.locator("#recovery-draft").fill("Delivered draft"); await text("recovery-echo", "Delivered draft");
       await page.locator("#recovery-increment").click(); await text("recovery-count", "1");
-      if (slug === "reconnection") await reconnect();
+      if (slug === "reconnection") {
+        const setup = await page.locator("#recovery-setup").textContent();
+        const ticks = Number(await page.locator("#recovery-ticks").textContent());
+        await text("recovery-connection", "Connected");
+        // Invalid durations must not interrupt a healthy connection.
+        await page.evaluate(() => {
+          window.previousSocket = window.courseSocket;
+          for (const durationMs of [-1, 0, 10001, Infinity, "5000"]) {
+            window.dispatchEvent(new CustomEvent("pysx:disconnect", {detail: {durationMs}}));
+          }
+        });
+        assert(await page.evaluate(() => window.courseSocket === window.previousSocket &&
+          window.courseSocket.readyState === WebSocket.OPEN));
+        const started = Date.now();
+        await page.locator("#recovery-disconnect").click();
+        await text("recovery-connection", "Disconnected. Reconnecting…");
+        assert(await page.locator("#recovery-disconnect").isDisabled());
+        // A manual retry cannot bypass the pause; clicks are rejected, never replayed.
+        await page.evaluate(() => {
+          window.dispatchEvent(new Event("pysx:reconnect"));
+          document.getElementById("recovery-increment").click();
+          window.dispatchEvent(new CustomEvent("pysx:disconnect", {detail: {durationMs: 1}}));
+        });
+        await connected();
+        assert(Date.now() - started >= 4900, "real socket stayed disconnected for five seconds");
+        assert(await page.evaluate(() => window.courseSocket !== window.previousSocket));
+        await text("recovery-connection", "Connected");
+        assert(await page.locator("#recovery-disconnect").isEnabled());
+        assert.equal(await page.locator("#recovery-setup").textContent(), setup, "same server owner");
+        assert(Number(await page.locator("#recovery-ticks").textContent()) >= ticks + 8,
+          "server clock continued during disconnect");
+      }
       else {
         const setup = await page.locator("#recovery-setup").textContent();
         await control("/restart"); await connected();

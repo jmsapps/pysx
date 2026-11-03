@@ -276,6 +276,14 @@ def test_tutorial_website_every_page_http_ssr_and_cleanup(path: str, tmp_path: P
             assert "Previous:" in body
             assert "Next:" in body
             assert 'href="/assets/course.css"' in body
+            assert 'src="/assets/course.js"' in body
+
+            if path == "/learn/reconnection":
+                assert 'id="recovery-disconnect"' in body
+                assert "Disconnect for 5 seconds" in body
+                assert 'id="recovery-connection"' in body
+            else:
+                assert 'id="recovery-disconnect"' not in body
 
             if path.startswith("/learn/"):
                 lesson = next(lesson for lesson in LESSONS if lesson.path == path)

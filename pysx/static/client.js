@@ -27,6 +27,7 @@ let developing = false;
 let connected = false;
 let retryAttempt = 0;
 let transportTimer = null;
+let reconnectAfter = 0;
 let stopped = false;
 let freshSession = false;
 let restoredSession = false;
@@ -771,6 +772,12 @@ function resetSession(restored = false) {
 
 function scheduleReconnect() {
   if (stopped || transportTimer !== null) return;
+  const pause = Math.max(0, reconnectAfter - performance.now());
+  if (pause > 0) {
+    transportTimer = setTimeout(() => { transportTimer = null; reconnect(false); }, pause);
+    connectionState("reconnecting", pause);
+    return;
+  }
   if (retryAttempt >= 8) { connectionState("disconnected"); return; }
   const ceiling = Math.min(10000, 250 * 2 ** retryAttempt++);
   const delay = Math.round(ceiling * (0.5 + Math.random() * 0.5));
@@ -817,6 +824,7 @@ function attachSocket() {
 
 function reconnect(manual = true) {
   if (socket.readyState !== WebSocket.CLOSED || stopped) return;
+  if (performance.now() < reconnectAfter) { scheduleReconnect(); return; }
   clearTransportTimer();
   if (manual) retryAttempt = 0;
   endpoint.search = `protocol=${protocolVersion}${resumeToken ? "&resume=1" : recoveryToken || capsule ? "&recover=1" : ""}&location=${encodeURIComponent(browserLocation())}${ownerHint ? `&owner=${encodeURIComponent(ownerHint)}` : ""}`;
@@ -827,6 +835,14 @@ function reconnect(manual = true) {
 
 attachSocket();
 window.addEventListener("pysx:reconnect", () => reconnect());
+window.addEventListener("pysx:disconnect", event => {
+  const duration = event.detail?.durationMs ?? 5000;
+  if (!Number.isFinite(duration) || duration < 1 || duration > 10000 || !connected || stopped) return;
+  reconnectAfter = performance.now() + duration;
+  connected = false;
+  clearTransportTimer();
+  socket.close(1000, "temporary disconnect");
+});
 let resetting = false;
 window.addEventListener("pysx:reset", async () => {
   if (resetting) return;

@@ -106,6 +106,11 @@ def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> 
                 p(id="lesson-expected"):
                     Inline(text={lesson.expected}):
                 {each(revision, build, key=lambda value: value)}
+                if {lesson.slug == "reconnection"}:
+                    Actions:
+                        Button(id="recovery-disconnect" type="button" disabled={True}):
+                            "Disconnect for 5 seconds"
+                        p(id="recovery-connection" role="status" aria-live="polite"): "Connecting…"
                 Actions(class="demo-reset"):
                     Button(id="reset-demo" onClick={reset}): "Reset demo"
             h2: "Take this with you"

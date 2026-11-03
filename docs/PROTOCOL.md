@@ -115,6 +115,15 @@ distinct `stopped` state, which offers no retry button because neither it nor
 `pysx:reconnect` can revive that page. Unavailable resume
 (4004) explicitly starts a fresh session and reports lost session state in development.
 
+Applications can temporarily interrupt the real transport by dispatching a
+`pysx:disconnect` CustomEvent on `window`, with optional `detail.durationMs`
+(default 5000, finite number from 1 through 10000). Invalid durations and requests
+while disconnected or stopped are ignored. The socket closes normally, retaining
+the server session under its usual retention policy. Automatic and manual retries
+wait for the pause to end, then use ordinary attachment/resume. Offline interaction
+gating still applies; server-owned work continues. This does not emulate a server
+restart or extend session retention.
+
 The built-in status paragraph and retry button are created only after the server
 identifies a development session, including an ordinary connected status. Production
 documents contain neither element. Applications that

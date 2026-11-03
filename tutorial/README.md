@@ -56,8 +56,10 @@ course URL and site-wide theme. Reset workspace restores the capstone's declared
 task data. Navigating to another lesson disposes the previous lesson's inline demo.
 The routing exercises use real course-prefixed URLs and actual browser history.
 
-For reconnect, temporarily block the page's WebSocket using browser network tools
-and restore it without refreshing. For browser recovery, edit a draft/count, keep
+For reconnect, use **Disconnect for 5 seconds** in the live exercise. The button
+closes the real WebSocket, pauses retries, and reconnects automatically. Watch the
+connection status, retained draft/count, and advancing server clock without
+refreshing. For browser recovery, edit a draft/count, keep
 the tab open, stop the server and restart the same command. The actual connection
 indicator reports restoration; a refresh still starts fresh.
 

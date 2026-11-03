@@ -135,8 +135,9 @@ LESSONS = (
         "The client reports disconnection and bounds its retry policy. It does not "
         "quietly accumulate an unlimited queue of clicks or promise to replay actions "
         "whose effects are uncertain. That would be a different consistency contract.",
-        "Type a draft and increment the live count. Use browser network tools to block "
-        "the WebSocket temporarily, then restore the connection. The status indicator "
+        "Type a draft and increment the live count. Click **Disconnect for 5 seconds** "
+        "to close the real WebSocket and pause retries briefly. It reconnects automatically. "
+        "Keep this page open without reloading. The status indicator "
         "comes from the actual client connection, not a demonstration-only `Signal`.\n\n"
         "The server clock deliberately keeps running. On a healthy reattach you should "
         "see its current total rather than a replay of every missed visual tick. After "
@@ -145,13 +146,13 @@ LESSONS = (
         CodeSample(code.reconnection),
         "The draft starts empty and the count at zero. The increment handler writes the count; an "
         "owned task publishes a clock tick every half-second. Transport reattachment repairs the "
-        "existing graph without a second event queue. Built-in connection notices require --watch "
-        "or --dev; otherwise inspect data-pysx-connection on the root in browser developer tools.",
-        "Edit, increment and temporarily block the socket. Restore it without reloading "
-        "the document.",
-        "The root's data-pysx-connection attribute reports reconnecting/connected; built-in "
-        "notices appear only with --watch or --dev. The delivered draft and count remain "
-        "after reattach.",
+        "existing graph without a second event queue. The exercise's connection status follows "
+        "the actual client connection in both development and production.",
+        "Type a draft, increment the count, then click **Disconnect for 5 seconds**. "
+        "Watch the connection status and clock without reloading the document.",
+        "The status changes from Connected to Disconnected, then back to Connected. "
+        "The delivered draft and count remain after reattach, and the clock jumps to its "
+        "current total. Actions taken while disconnected are rejected rather than replayed.",
         "Reconnect reconciles current state. Unsent actions are not a durable transaction log.",
         ("reconnect",),
     ),
