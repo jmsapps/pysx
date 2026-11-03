@@ -48,6 +48,7 @@ let previousRestoration = null;
 const historyPositions = new Map();
 let pendingScroll = null;
 let scrollTimer = null;
+const temporaryFocus = new WeakSet();
 
 function rememberPosition() {
   if (!routing || !historyEntry) return;
@@ -66,6 +67,7 @@ function enableRouting() {
   routing = true;
   previousRestoration = history.scrollRestoration;
   history.scrollRestoration = "manual";
+  if (historyEntry !== null && history.state?.pysxEntry === historyEntry) return;
   const entry = newHistoryEntry();
   history.replaceState(entry.state, "", location.href);
   historyEntry = entry.key;
@@ -75,7 +77,9 @@ function focusRoute(target) {
   if (!target || !root.contains(target)) return;
   if (!target.hasAttribute("tabindex")) {
     target.setAttribute("tabindex", "-1");
+    temporaryFocus.add(target);
     target.addEventListener("blur", () => {
+      temporaryFocus.delete(target);
       if (target.getAttribute("tabindex") === "-1") target.removeAttribute("tabindex");
     }, {once: true});
   }
@@ -135,6 +139,12 @@ function commitNavigation(message) {
   if (message.rev !== navigationRevision) return;
   if (message.mode === "external") {
     location.assign(message.url);
+    return;
+  }
+  if (message.scroll === "preserve" && message.url === browserLocation()) {
+    cancelRouteScroll();
+    observedLocation = committedLocation = browserLocation();
+    restorePosition = null;
     return;
   }
   const crossRoute = new URL(committedLocation, location.origin).pathname !==
@@ -546,7 +556,8 @@ function validMessage(message) {
     ["success", "duplicate", "gap", "epoch", "revision"].includes(message.status);
   if (message.t === "mount") return Array.isArray(message.ids) && message.ids.length <= 1024 && message.ids.every(id => typeof id === "string");
   if (message.t === "navigation") return typeof message.url === "string" && Number.isSafeInteger(message.rev) &&
-    ["push", "replace", "observe", "external"].includes(message.mode);
+    ["push", "replace", "observe", "external"].includes(message.mode) &&
+    (!("scroll" in message) || message.scroll === "preserve");
   if (message.t === "routing") return typeof message.on === "boolean";
   if (message.t === "dom") return ["id", "target", "root", "op"].every(key => typeof message[key] === "string") &&
     message.args && typeof message.args === "object" && !Array.isArray(message.args);
@@ -598,8 +609,10 @@ function acceptMessage(event) {
     const parser = document.createRange(); parser.selectNodeContents(root);
     const fresh = parser.createContextualFragment(message.html);
     hydrate(fresh);
-    preserveInteraction(() => morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true));
-    style.textContent = message.css;
+    preserveInteraction(() => {
+      style.textContent = message.css;
+      morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true);
+    });
     registerTyped(root); syncDom();
     eventSequence = message.expected - 1;
     repairing = false;
@@ -611,20 +624,23 @@ function acceptMessage(event) {
   } else
   if (message.t === "init") {
     if (message.routing) enableRouting();
-    style.textContent = message.css;
     if (message.recovered === true) {
       const parser = document.createRange(); parser.selectNodeContents(root);
       const fresh = parser.createContextualFragment(message.html);
       hydrate(fresh);
-      preserveInteraction(() => morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true, true));
+      preserveInteraction(() => {
+        style.textContent = message.css;
+        morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true, true);
+      });
     } else {
+      style.textContent = message.css;
       root.innerHTML = message.html;
       hydrate(root);
     }
     root.dataset.pysxAttached = "true";
     attachmentReady();
     syncDom();
-    if (routing) queueRouteScroll(browserLocation());
+    if (routing && message.recovered !== true) queueRouteScroll(browserLocation());
   } else if (message.t === "adopted") {
     if (message.routing) enableRouting();
     registerTyped(root);
@@ -766,7 +782,7 @@ function resetSession(restored = false) {
   for (const control of root.querySelectorAll("[data-pysx-binding]")) edits.delete(control);
   if (previousRestoration !== null) history.scrollRestoration = previousRestoration;
   routing = false; navigationRevision = 0;
-  historyPositions.clear();
+  if (!restored) { historyPositions.clear(); historyEntry = null; }
   observedLocation = browserLocation(); committedLocation = observedLocation;
 }
 
@@ -997,7 +1013,11 @@ function morphNode(old, fresh, complete = false, resetDefaults = false) {
   } : null;
   const incoming = new Map([...fresh.attributes].map(attr => [attr.name, attr.value]));
   const controlled = new Set([...old.attributes].filter(attr => PROPERTIES.has(attr.name)).map(attr => attr.name));
-  for (const attr of [...old.attributes]) if (!incoming.has(attr.name) && !PROPERTIES.has(attr.name)) old.removeAttribute(attr.name);
+  for (const attr of [...old.attributes]) {
+    // Navigation owns this temporary attribute until the focused target blurs.
+    const focusedTarget = attr.name === "tabindex" && temporaryFocus.has(old) && old === document.activeElement;
+    if (!incoming.has(attr.name) && !PROPERTIES.has(attr.name) && !focusedTarget) old.removeAttribute(attr.name);
+  }
   for (const [name, value] of incoming) {
     if (PROPERTIES.has(name)) {
       if (resetDefaults) old.setAttribute(name, value);
@@ -1057,6 +1077,7 @@ function morphChildren(parent, previousNodes, nextNodes, boundary = null, comple
 }
 
 function preserveInteraction(change) {
+  const viewport = {x: scrollX, y: scrollY};
   const active = document.activeElement;
   const caret = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
   const selection = window.getSelection();
@@ -1073,6 +1094,7 @@ function preserveInteraction(change) {
     selection.setBaseAndExtent(selected[0], Math.min(selected[1], extent(selected[0])), selected[2], Math.min(selected[3], extent(selected[2])));
   }
   for (const [node, left, top] of scroll) if (node.isConnected) { node.scrollLeft = left; node.scrollTop = top; }
+  window.scrollTo({left: viewport.x, top: viewport.y, behavior: "instant"});
 }
 
 function reconcileRanges(op) {

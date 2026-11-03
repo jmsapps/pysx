@@ -91,6 +91,10 @@ DOM, retaining compatible nodes, focus and caret. They replace old handlers and
 capabilities, reset form defaults to canonical values, and discard unsent edits.
 A genuinely fresh fallback remains a fresh session with default state.
 
+Same-page hot updates also preserve the viewport and current history entry. A
+shorter updated page clamps the scroll position to its available range. Actual
+navigation keeps its normal top/fragment/history policy.
+
 Before replacing a healthy worker, the candidate renders the captured state in
 disposable graphs. These probes stage owned resources and dispose every graph;
 they do not start subscriptions, effects or tasks. A restored-state render failure

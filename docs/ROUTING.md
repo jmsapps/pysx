@@ -120,6 +120,8 @@ Navigation applies scroll/focus after the route's DOM patch commits. Fragment ID
 decode UTF-8 safely and match IDs or named anchors inside the app root. Nonfocusable
 targets receive temporary `tabindex="-1"`, removed on blur, and focus without a second
 scroll. Targets introduced by a later mount patch retry for at most two seconds.
+Temporary focusability survives compatible reconciliation while its target remains
+focused and is removed on blur.
 Every retry checks the navigation revision and current URL; a newer navigation
 cancels stale target work. Repeated native fragment links scroll/focus again without
 an extra history entry.
@@ -129,6 +131,12 @@ app root). A missing target on a different pathname uses that same fallback; a
 missing target on the same pathname preserves position. Query-only navigation is
 a new navigation and uses the top policy. Replace navigation applies the same policy
 while replacing the current entry.
+
+Same-URL resume synchronization preserves the viewport, focus and current history
+entry, including across compatible hot reload. Reconciliation restores viewport
+coordinates after DOM/CSS changes; the browser clamps them if the page becomes
+shorter. Resume to a different URL and fresh-session fallbacks retain normal
+navigation behavior.
 
 Routing uses manual browser scroll restoration and retains up to 128 history
 positions and focus IDs in the current document. Back/forward restores a known

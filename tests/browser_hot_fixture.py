@@ -20,6 +20,37 @@ if TYPE_CHECKING:
     from websockets.http11 import Request, Response
 
 
+def routed_source(source: str, *, volatile: bool) -> str:
+    """Exercise hot handoff through the same routing seam as ordinary apps."""
+    source = (
+        "from pysx import Route, Router\nfrom pysx.reactive.reactive import untracked\n" + source
+    )
+
+    if volatile:
+        return source.replace("def app():", "def page():") + (
+            "\n\ndef app():\n"
+            "    def route_page(_route):\n"
+            "        with untracked():\n            return page()\n"
+            '    return Router([Route("*", route_page)]).view()\n'
+        )
+
+    return source.replace("def view(state):", "def page(state):").replace(
+        "\napp = DurableApplication",
+        "\ndef view(state):\n"
+        "    def route_page(_route):\n"
+        "        with untracked():\n            return page(state)\n"
+        '    return Router([Route("*", route_page)]).view()\n'
+        "\napp = DurableApplication",
+    )
+
+
+def routed_project(root: Path, *, volatile: bool) -> None:
+    hot_project(root, volatile=volatile)
+    source = root / "user_app.py"
+    source.write_text(routed_source(source.read_text(), volatile=volatile))
+    (root / "style.css").write_text("min-height: 3000px; color: rgb(255, 0, 0)")
+
+
 class Fixture(Supervisor):
     volatile: bool = False
 
@@ -50,7 +81,9 @@ class Fixture(Supervisor):
                     '    return "bad"\n'
                 )
             elif action == "css":
-                (root / "style.css").write_text("color: rgb(0, 0, 255)")
+                (root / "style.css").write_text("min-height: 3000px; color: rgb(0, 0, 255)")
+            elif action == "shrink":
+                (root / "style.css").write_text("min-height: 300px; color: rgb(0, 0, 255)")
             elif action == "template":
                 (root / "note.txt").write_text("template two")
             elif action == "incompatible":
@@ -62,9 +95,9 @@ class Fixture(Supervisor):
                     if self.volatile
                     else HOT_SOURCE.replace("SCHEMA = 1", "SCHEMA = 2")
                 )
-                (root / "user_app.py").write_text(source)
+                (root / "user_app.py").write_text(routed_source(source, volatile=self.volatile))
             elif action == "original":
-                hot_project(root, volatile=self.volatile)
+                routed_project(root, volatile=self.volatile)
             else:
                 source = COMPONENT.replace("STEP = 1", "STEP = 2").replace(
                     '"original"', repr(action)
@@ -88,7 +121,7 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="pysx-hot-") as directory:
         root = Path(directory)
-        hot_project(root, volatile=args.volatile)
+        routed_project(root, volatile=args.volatile)
         os.environ["PYTHONPATH"] = str(original)
         os.chdir(root)
 

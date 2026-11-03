@@ -346,6 +346,13 @@ command and after a rejected payload or failed DOM command, so a turn that navig
 and then fails still commits the navigation it decided on. This contract covers the
 current serialized connection. Resume restores current routing state after repair.
 
+Resume synchronization uses optional `"scroll":"preserve"` on its navigation
+command, except for a fresh-session fallback. When the URL exactly matches the
+browser's current path/query/hash, the client keeps the current history entry,
+viewport and focus instead of treating reattachment as a new visit. A different
+URL still follows normal navigation scroll/focus policy. Unsupported `scroll`
+values are rejected. Scroll coordinates remain browser-local.
+
 Navigation acknowledgement is also the scroll/focus commit boundary. Entry keys,
 up to 128 saved positions/focus IDs, and bounded two-second fragment retries stay in
 the browser. Later DOM patches can satisfy the current retry; URL/revision checks

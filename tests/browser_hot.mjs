@@ -15,6 +15,10 @@ try {
   const label = (target, value) => target.waitForFunction(value => document.getElementById("label").textContent === value, value);
   const status = async () => (await page.request.get(base + "/__pysx_dev__/status")).json();
   const metrics = async () => (await page.request.get(base + "/__fixture__/metrics")).json();
+  const settledScroll = async (target, expected) => {
+    await target.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert(Math.abs(await target.evaluate(() => scrollY) - expected) < 2, `expected scroll ${expected}`);
+  };
   const volatile = Boolean((await metrics()).volatile);
   await page.goto(base); await other.goto(base);
   await connected(page); await connected(other);
@@ -32,12 +36,17 @@ try {
   await page.evaluate(() => {
     window.retainedField = document.getElementById("field");
     window.retainedField.setSelectionRange(2, 4);
+    window.retainedEntry = history.state.pysxEntry;
+    window.scrollTo({top: 900, behavior: "instant"});
   });
+  await other.evaluate(() => window.scrollTo({top: 1100, behavior: "instant"}));
   const before = await metrics();
   await edit("updated");
   await label(page, "updated"); await label(other, "updated");
   await connected(page); await connected(other);
   await count(page, 1); await count(other, 3);
+  await settledScroll(page, 900); await settledScroll(other, 1100);
+  assert(await page.evaluate(() => history.state.pysxEntry === window.retainedEntry));
   assert.equal(await page.locator("#field").inputValue(), "first draft");
   assert.equal(await other.locator("#field").inputValue(), "second draft");
   assert.equal(await page.evaluate(() => window.retainedField === document.getElementById("field")), true);
@@ -64,9 +73,11 @@ try {
   await connected(page); await connected(other); await count(page, 7); await count(other, 3);
   console.log("  ok  state-dependent render and mutating failed import preserve old globals, handlers and repairability");
 
+  await page.evaluate(() => window.scrollTo({top: 900, behavior: "instant"}));
   await edit("css");
   await page.waitForFunction(() => getComputedStyle(document.querySelector("main")).color === "rgb(0, 0, 255)");
   await count(page, 7); await count(other, 3);
+  await connected(page); await settledScroll(page, 900);
   await edit("template");
   await page.waitForFunction(() => document.getElementById("note").textContent === "template two");
   await count(page, 7); await connected(page);
@@ -82,8 +93,40 @@ try {
   }
   console.log("  ok  CSS/templates, in-flight edits and repeated reloads preserve state with one worker");
 
+  await page.evaluate(() => { location.hash = "note"; });
+  await page.waitForFunction(() => document.activeElement?.id === "note");
+  await page.evaluate(() => {
+    window.retainedNote = document.getElementById("note");
+    window.scrollTo({top: 900, behavior: "instant"});
+  });
+  await edit("hash"); await label(page, "hash"); await connected(page);
+  await settledScroll(page, 900);
+  const focusAfterHot = await page.evaluate(() => ({active: document.activeElement?.id,
+    retained: window.retainedNote === document.getElementById("note")}));
+  assert.equal(focusAfterHot.active, "note", JSON.stringify(focusAfterHot));
+  await edit("shrink");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector("main")).minHeight === "300px");
+  await connected(page); await settledScroll(page, 0);
+  await edit("css");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector("main")).minHeight === "3000px");
+  await connected(page);
+  await page.evaluate(() => {
+    window.scrollTo({top: 700, behavior: "instant"});
+    history.pushState(null, "", "/?page=2");
+    dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await page.waitForFunction(() => scrollY === 0 && document.activeElement?.tagName === "MAIN");
+  assert.equal(await page.locator("#note").getAttribute("tabindex"), null);
+  await page.goBack();
+  await page.waitForFunction(() => location.hash === "#note" && Math.abs(scrollY - 700) < 2);
+  console.log("  ok  routed hot updates retain viewport/history/focus, clamp shorter pages and preserve navigation policy");
+
   await edit("incompatible");
   await count(page, 0); await count(other, 0); await connected(page);
+  // An ordinary initializer change resets its value within the retained hot document.
+  if (volatile) await settledScroll(page, 700);
+  else await page.waitForFunction(() => document.activeElement?.id === "note" &&
+    Math.abs(document.getElementById("note").getBoundingClientRect().top) < 2);
   assert.equal(await page.locator("#field").inputValue(), "initial");
   await edit("original"); await label(page, "original"); await label(other, "original");
   await connected(page); await connected(other);
