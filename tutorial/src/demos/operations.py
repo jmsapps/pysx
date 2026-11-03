@@ -20,31 +20,18 @@ from pysx import (
 from pysx.tooling.check import apply_fix, diagnostics_for_source
 from src.components import Actions, Button, Field, Panel, Readout
 from src.components.code import CodeBlock
+from src.components.code_sample import CodeSample
 from src.model import LabState
+from src.snippets import demos as code
 
 if TYPE_CHECKING:
     from pysx import Signal
     from src.model import Task
 
-FROZEN_SOURCE = '''from pysx import pysx, signal
-
-count = signal(0)
-view = pysx(t"""
-    p: {count()}
-""")
-'''
-ATTRIBUTE_SOURCE = '''from pysx import pysx
-
-view = pysx(t"""
-    div(hreff="bad")
-""")
-'''
-CORRECT_SOURCE = '''from pysx import pysx
-
-view = pysx(t"""
-    div(title="valid")
-""")
-'''
+FROZEN_SAMPLE = CodeSample(code.frozen_signal)
+LIVE_SAMPLE = CodeSample(code.live_signal)
+ATTRIBUTE_SAMPLE = CodeSample(code.invalid_attribute)
+CORRECT_SAMPLE = CodeSample(code.valid_attribute)
 
 
 def authentication() -> Fragment:
@@ -77,27 +64,33 @@ def authentication() -> Fragment:
 
 
 def diagnostics() -> Fragment:
-    source = signal(FROZEN_SOURCE)
+    source: Signal[CodeSample | str] = signal(FROZEN_SAMPLE)
+
+    def source_text() -> str:
+        sample = source()
+
+        return sample.text if isinstance(sample, CodeSample) else sample
 
     def report() -> str:
-        findings = diagnostics_for_source(source())
+        findings = diagnostics_for_source(source_text())
 
         return "\n".join(item["message"] for item in findings) or "No diagnostics ([])"
 
     result = derived(report)
 
     def fix(_: object) -> None:
-        for finding in diagnostics_for_source(source()):
+        for finding in diagnostics_for_source(source_text()):
             fixes = finding.get("fixes", [])
 
             if fixes:
-                source.set(apply_fix(source(), fixes[0]))
+                corrected = apply_fix(source_text(), fixes[0])
+                source.set(LIVE_SAMPLE if corrected == LIVE_SAMPLE.text else corrected)
 
                 return
-        source.set(CORRECT_SOURCE)
+        source.set(CORRECT_SAMPLE)
 
     def warning(_: object) -> None:
-        source.set(ATTRIBUTE_SOURCE)
+        source.set(ATTRIBUTE_SAMPLE)
 
     return pysx(t"""
         CodeBlock(identifier="diagnostic-source" source={source}):

@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import textmate from "vscode-textmate";
@@ -79,8 +78,6 @@ try {
       const firstImport = lines.findIndex(line => line.startsWith("from pysx import"));
       check(firstImport >= 0 && !result.some(token => token.line === firstImport && token.scopes.some(scope => scope.includes("pysx"))), "course imports stay host Python");
       check(!lines.some(line => line.includes("native.")), "course shared UI uses templates throughout");
-      const highlighted = spawnSync(process.execPath, [fileURLToPath(new URL("../../scripts/highlight_tutorial.mjs", import.meta.url)), "--check"], {encoding: "utf8"});
-      check(highlighted.status === 0, `displayed course scopes match actual editor grammar: ${highlighted.stderr}`);
       continue;
     }
     if (fixture === "corpus_executable") {

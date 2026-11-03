@@ -15,13 +15,14 @@ import pytest
 from src.app import create_application
 from src.catalog import LESSONS, neighbors
 from src.components.code import CodeBlock
+from src.components.code_sample import CodeSample
 from src.components.pages import Inline
 from src.demos import composition, foundations, navigation, operations, runtime
 from src.durable import view as durable_view
 from src.model import LabState
 from src.themes import course_themes
 
-from pysx import Fragment, RequestContext, Route, Router, signal
+from pysx import Fragment, RequestContext, Route, Router, Signal, pysx, signal
 from pysx.compiler.loader import install_loader
 from pysx.hosting.server import Session
 
@@ -132,14 +133,14 @@ def test_tutorial_website_pure_multiline_authoring_and_displayed_source() -> Non
                 assert node.end_lineno is not None
                 assert node.end_lineno > node.lineno
 
-    snippets = [lesson.code for lesson in LESSONS]
-    snippets.extend(foundations.CARD_SOURCES)
+    snippets = [lesson.sample for lesson in LESSONS]
+    snippets.extend(foundations.CARD_SAMPLES)
     snippets.extend(
         (
-            operations.FROZEN_SOURCE,
-            operations.FROZEN_SOURCE.replace("count()", "count"),
-            operations.ATTRIBUTE_SOURCE,
-            operations.CORRECT_SOURCE,
+            operations.FROZEN_SAMPLE,
+            operations.LIVE_SAMPLE,
+            operations.ATTRIBUTE_SAMPLE,
+            operations.CORRECT_SAMPLE,
         )
     )
 
@@ -148,7 +149,7 @@ def test_tutorial_website_pure_multiline_authoring_and_displayed_source() -> Non
 
         try:
             body = session.rendered.body
-            assert "".join(CodeText(body).parts) == snippet
+            assert "".join(CodeText(body).parts) == snippet.text
             assert 'data-syntax="' in body
         finally:
             session.dispose()
@@ -167,8 +168,8 @@ def test_tutorial_website_unknown_code_falls_back_to_escaped_text() -> None:
         session.dispose()
 
 
-def test_tutorial_website_code_switches_between_generated_and_unknown_source() -> None:
-    source = signal(operations.FROZEN_SOURCE)
+def test_tutorial_website_code_switches_between_authored_and_plain_source() -> None:
+    source: Signal[CodeSample | str] = signal(operations.FROZEN_SAMPLE)
     session = Session(lambda: CodeBlock(source=source))
 
     try:
@@ -177,12 +178,41 @@ def test_tutorial_website_code_switches_between_generated_and_unknown_source() -
         body = cast("str", session.transport.repair(session.rendered.css)["html"])
         assert "".join(CodeText(body).parts) == source()
         assert 'data-syntax="' not in body
-        source.set(operations.CORRECT_SOURCE)
+        source.set(operations.CORRECT_SAMPLE)
         body = cast("str", session.transport.repair(session.rendered.css)["html"])
-        assert "".join(CodeText(body).parts) == source()
+        assert "".join(CodeText(body).parts) == operations.CORRECT_SAMPLE.text
         assert 'data-syntax="keyword"' in body
     finally:
         session.dispose()
+
+
+def test_tutorial_website_authored_colors_survive_source_formatting() -> None:
+    def compact() -> Fragment:
+        return pysx(rt"""
+            "len(shown) "
+            span(data-syntax="keyword"): "-"
+            " "
+            span(data-syntax="number"): "1"
+        """)
+
+    sample = CodeSample(compact)
+    session = Session(lambda: CodeBlock(source=sample))
+
+    try:
+        assert sample.text == "len(shown) - 1"
+        assert "".join(CodeText(session.rendered.body).parts) == sample.text
+        assert 'data-syntax="keyword"' in session.rendered.body
+        assert 'data-syntax="number"' in session.rendered.body
+    finally:
+        session.dispose()
+
+    plain = Session(lambda: CodeBlock(source=sample.text))
+
+    try:
+        assert "".join(CodeText(plain.rendered.body).parts) == sample.text
+        assert 'data-syntax="' not in plain.rendered.body
+    finally:
+        plain.dispose()
 
 
 def test_tutorial_website_inline_code_spans_render_and_escape() -> None:

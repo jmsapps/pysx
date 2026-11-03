@@ -96,7 +96,7 @@ def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> 
             h2: "Understand the moving parts"
             Paragraphs(text={lesson.explanation}):
             h2: "Walk through the code"
-            CodeBlock(source={lesson.code}):
+            CodeBlock(source={lesson.sample}):
             Paragraphs(text={lesson.walkthrough}):
             section(class="demo" aria-label="Interactive lesson")
                 h2: "Try it live"

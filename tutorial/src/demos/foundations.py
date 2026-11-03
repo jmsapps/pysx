@@ -6,13 +6,10 @@ from importlib.metadata import version
 from pysx import BrowserEvent, Fragment, derived, gt, not_, on_event, pysx, signal
 from src.components import Actions, Button, Field, Panel, Readout
 from src.components.code import CodeBlock
+from src.components.code_sample import CodeSample
+from src.snippets import demos as code
 
-CARD_SOURCES = tuple(
-    f'''pysx(t"""
-    p(style="font-weight: {weight}"): {{text}}
-""")'''
-    for weight in ("400", "800")
-)
+CARD_SAMPLES = (CodeSample(code.card_normal), CodeSample(code.card_strong))
 
 
 def greeting() -> Fragment:
@@ -32,7 +29,7 @@ def template_card() -> Fragment:
     text = signal("A readable interface")
     strong = signal(False)
     weight = derived(lambda: "font-weight: 800" if strong() else "font-weight: 400")
-    source = derived(lambda: CARD_SOURCES[1 if strong() else 0])
+    source = derived(lambda: CARD_SAMPLES[1 if strong() else 0])
 
     def toggle(_: object) -> None:
         strong.set(not strong())

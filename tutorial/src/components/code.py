@@ -1,28 +1,27 @@
-"""Escaped code spans generated from the editor's Python/pysx grammars."""
+"""Display authored pysx samples or escaped plain source."""
 
 from typing import TYPE_CHECKING
 
 from pysx import Fragment, each, pysx
 
+from .code_sample import CodeSample
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-def CodeBlock(*, source: str | Callable[[], str], identifier: str | None = None) -> Fragment:
-    # Source discovery must also work before generated markup exists.
-    from .highlighted import highlighted_code
-
-    def display_source(text: str) -> Fragment:
-        highlighted = highlighted_code(text)
-
-        if highlighted is not None:
-            return highlighted
+def CodeBlock(
+    *, source: CodeSample | str | Callable[[], CodeSample | str], identifier: str | None = None
+) -> Fragment:
+    def display_source(sample: CodeSample | str) -> Fragment:
+        if isinstance(sample, CodeSample):
+            return sample.content()
 
         return pysx(t"""
-            {text}
+            {sample}
         """)
 
-    def current_source() -> tuple[str]:
+    def current_source() -> tuple[CodeSample | str]:
         return (source() if callable(source) else source,)
 
     return pysx(t"""
