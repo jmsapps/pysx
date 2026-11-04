@@ -5,9 +5,11 @@ import asyncio
 import html
 import importlib
 import sys
+import tokenize
 import urllib.request
 from functools import partial
 from html.parser import HTMLParser
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -117,6 +119,17 @@ def walkthrough_demo(number: int) -> Fragment:
     return demos[number]()
 
 
+def displayed_samples() -> list[CodeSample]:
+    return [
+        *(lesson.sample for lesson in LESSONS),
+        *foundations.CARD_SAMPLES,
+        operations.FROZEN_SAMPLE,
+        operations.LIVE_SAMPLE,
+        operations.ATTRIBUTE_SAMPLE,
+        operations.CORRECT_SAMPLE,
+    ]
+
+
 def test_tutorial_website_pure_multiline_authoring_and_displayed_source() -> None:
     sources = [path.read_text() for path in (ROOT / "tutorial/src").rglob("*.py")]
     sources.extend(lesson.code for lesson in LESSONS)
@@ -133,18 +146,7 @@ def test_tutorial_website_pure_multiline_authoring_and_displayed_source() -> Non
                 assert node.end_lineno is not None
                 assert node.end_lineno > node.lineno
 
-    snippets = [lesson.sample for lesson in LESSONS]
-    snippets.extend(foundations.CARD_SAMPLES)
-    snippets.extend(
-        (
-            operations.FROZEN_SAMPLE,
-            operations.LIVE_SAMPLE,
-            operations.ATTRIBUTE_SAMPLE,
-            operations.CORRECT_SAMPLE,
-        )
-    )
-
-    for snippet in snippets:
+    for snippet in displayed_samples():
         session = Session(partial(CodeBlock, source=snippet))
 
         try:
@@ -153,6 +155,47 @@ def test_tutorial_website_pure_multiline_authoring_and_displayed_source() -> Non
             assert 'data-syntax="' in body
         finally:
             session.dispose()
+
+
+def test_tutorial_website_short_expressions_stay_readable() -> None:
+    expected = """    if (
+        not isinstance(draft, str)
+        or len(draft) > 512
+        or type(count) is not int
+        or count < 0
+    ):
+        raise ValueError("invalid declared lab state")"""
+    assert expected in LESSONS[22].code
+    assert expected in LESSONS[27].code
+
+    for sample in displayed_samples():
+        source = sample.text
+
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, (ast.Call, ast.Compare)) or node.lineno == node.end_lineno:
+                continue
+
+            # Keep multiline templates, lambdas, strings and explanatory comments intact.
+            if any(
+                isinstance(part, (ast.TemplateStr, ast.Lambda))
+                or (
+                    isinstance(part, ast.Constant)
+                    and isinstance(part.value, str)
+                    and "\n" in part.value
+                )
+                for part in ast.walk(node)
+            ):
+                continue
+            segment = ast.get_source_segment(source, node)
+            assert segment is not None
+
+            if any(
+                token.type == tokenize.COMMENT
+                for token in tokenize.generate_tokens(StringIO(segment).readline)
+            ):
+                continue
+            compact = ast.unparse(node)
+            assert len(compact) + node.col_offset > 100, (sample.content.__name__, compact)
 
 
 def test_tutorial_website_unknown_code_falls_back_to_escaped_text() -> None:
