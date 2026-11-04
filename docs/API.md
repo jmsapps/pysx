@@ -15,7 +15,6 @@ See [authoring](AUTHORING.md), [grammar](GRAMMAR.md) and [ownership](OWNERSHIP.m
 | `render` | Render a callable into a `Rendered` result; dispose the result when its lifetime ends. |
 | `Fragment` | Composable rendered/template content returned by app and component callables. |
 | `Rendered` | Rendered body, styles, watchers and owned resources; `dispose()` ends ownership. |
-| `component` | Mark a callable for stable component identity and owned rendering. |
 | `Component`, `Children` | Callable component and composable children typing contracts. |
 | `Each`, `each`, `each_indexed` | Reactive collection regions; row callbacks receive values and optionally indices. Supply stable keys to retain record identity. |
 | `when` | Lazily construct a conditional branch instead of eagerly evaluating both alternatives. |

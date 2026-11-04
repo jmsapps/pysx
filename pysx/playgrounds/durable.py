@@ -2,7 +2,7 @@
 
 Scaffold this playground, then run it:
 
-    pysx --playground durable
+    pysx-playground durable
     pysx --app playgrounds.durable
 """
 

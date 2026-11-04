@@ -188,7 +188,7 @@ def capstone(state: Signal[LabState] | None = None) -> Fragment:
 
     def reset(_: object) -> None:
         nonlocal next_id
-        root.set(LabState())
+        tasks.set(list(LabState().tasks))
         draft.set("")
         only_active.set(False)
         next_id = 3

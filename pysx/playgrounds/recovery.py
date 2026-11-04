@@ -2,7 +2,7 @@
 
 Scaffold this playground, then run it:
 
-    pysx --playground recovery
+    pysx-playground recovery
     pysx --app playgrounds.recovery
 """
 
