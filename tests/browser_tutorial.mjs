@@ -380,11 +380,53 @@ try {
     }
   }
   await page.goto(base + "/"); await connected();
+  await page.setViewportSize({width: 1280, height: 812});
+  await page.goto(base + "/learn/durable-state"); await connected();
+  const headerTop = await page.locator(".course-header").evaluate(node => node.getBoundingClientRect().top);
+  const sidebar = page.locator(".course-layout > aside");
+  const main = page.locator("#lesson-main");
+  await sidebar.hover();
+  await page.mouse.wheel(0, 10000);
+  await page.waitForFunction(() => {
+    const list = document.querySelector(".course-layout > aside");
+    return list.scrollTop > 0 && list.scrollTop + list.clientHeight >= list.scrollHeight - 2;
+  });
+  assert.equal(await main.evaluate(node => node.scrollTop), 0);
+  assert.equal(await page.evaluate(() => scrollY), 0);
+  assert.equal(await page.locator(".course-header").evaluate(node => node.getBoundingClientRect().top), headerTop);
+  const sidebarPosition = await sidebar.evaluate(node => node.scrollTop);
+  await main.hover({position: {x: 10, y: 10}});
+  // Firefox limits a single wheel gesture; exercise several ordinary gestures.
+  for (let gesture = 0; gesture < 12; gesture += 1) {
+    await page.mouse.wheel(0, 1000);
+    if (await main.evaluate(node => node.scrollTop + node.clientHeight >= node.scrollHeight - 2)) break;
+    await main.evaluate(() => new Promise(requestAnimationFrame));
+  }
+  await page.waitForFunction(() => {
+    const main = document.getElementById("lesson-main");
+    return main.scrollTop > 0 && main.scrollTop + main.clientHeight >= main.scrollHeight - 2;
+  });
+  assert.equal(await sidebar.evaluate(node => node.scrollTop), sidebarPosition);
+  assert.equal(await page.evaluate(() => scrollY), 0);
+  assert.equal(await page.locator(".course-header").evaluate(node => node.getBoundingClientRect().top), headerTop);
+  const readingPosition = await main.evaluate(node => node.scrollTop);
+  await page.locator('[data-next="bottom"]').click();
+  await page.waitForURL("**/learn/authentication");
+  await page.waitForFunction(() => document.querySelector('[data-lesson="authentication"]') &&
+    document.getElementById("lesson-main").scrollTop === 0);
+  await page.goBack();
+  await page.waitForFunction(position => document.querySelector('[data-lesson="durable-state"]') &&
+    Math.abs(document.getElementById("lesson-main").scrollTop - position) < 2, readingPosition);
+  await page.goto(base + "/"); await connected();
   await page.locator(".lesson-nav a").click(); await page.waitForURL("**/learn/getting-started");
   await page.locator('[data-next="bottom"]').click(); await page.waitForURL("**/learn/templates-and-elements");
   await page.waitForFunction(() => document.querySelector('.contents a[aria-current="page"]')?.getAttribute('href') === '/learn/templates-and-elements');
   await page.locator('[data-previous="top"]').click(); await page.waitForURL("**/learn/getting-started");
   await page.setViewportSize({width: 375, height: 812});
+  assert.equal(await main.evaluate(node => getComputedStyle(node).overflowY), "visible");
+  assert.equal(await sidebar.evaluate(node => getComputedStyle(node).overflowY), "visible");
+  await page.locator('[data-next="bottom"]').scrollIntoViewIfNeeded();
+  assert(await page.evaluate(() => scrollY > 0));
   await page.evaluate(() => window.scrollTo(0, 0));
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({path: `${tmpdir()}/pysx-course-narrow-${process.env.PYSX_BROWSER_ENGINE}.png`, fullPage: true});
