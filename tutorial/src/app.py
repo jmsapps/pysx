@@ -24,6 +24,7 @@ from pysx import (
     each,
     pysx,
 )
+from pysx.reactive.reactive import untracked
 
 from .catalog import LESSONS
 from .components import Button
@@ -159,7 +160,9 @@ def course() -> Fragment:
         """)
 
     def review(_: RouteState) -> Fragment:
-        exercise = operations.capstone()
+        # Setup reads belong to the exercise, not the parent route's dependencies.
+        with untracked():
+            exercise = operations.capstone()
 
         return pysx(t"""
             article(class="lesson" data-page="review")

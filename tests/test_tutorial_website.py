@@ -4,6 +4,7 @@ import ast
 import asyncio
 import html
 import importlib
+import re
 import sys
 import tokenize
 import urllib.request
@@ -14,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from src.app import create_application
+from src.app import course, create_application
 from src.catalog import LESSONS, neighbors
 from src.components.code import CodeBlock
 from src.components.code_sample import CodeSample
@@ -330,6 +331,33 @@ def test_tutorial_website_playground_walkthroughs_match_shipped_code() -> None:
         docstring = ast.parse(original).body[0]
         body = "".join(original.splitlines(keepends=True)[docstring.end_lineno :]).lstrip("\n")
         assert LESSONS[number - 1].code == body, name
+
+
+def test_tutorial_website_review_practice_keeps_task_edits() -> None:
+    session = Session(course, location="/review")
+
+    def body() -> str:
+        return str(session.transport.repair(session.rendered.css)["html"])
+
+    def handler(identifier: str, event: str) -> str:
+        found = re.search(rf'<[^>]*id="{identifier}"[^>]*data-pysx-{event}="([^"]+)"', body())
+        assert found is not None
+
+        return found.group(1)
+
+    try:
+        session.dispatch(handler("new-task", "input"), "Review task")
+        session.dispatch(handler("task-form", "submit"), None)
+        assert "Review task" in body()
+        session.dispatch(handler("task-note-3", "input"), "Keep this note")
+        session.dispatch(handler("task-reverse", "click"), None)
+        assert "Review task" in body()
+        assert "Keep this note" in body()
+        session.dispatch(handler("task-reset", "click"), None)
+        assert "Review task" not in body()
+        assert "Keep this note" not in body()
+    finally:
+        session.dispose()
 
 
 @pytest.mark.parametrize("path", ["/", "/review", *(lesson.path for lesson in LESSONS)])

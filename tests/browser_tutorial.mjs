@@ -433,6 +433,24 @@ try {
   await page.locator("summary").focus();
   assert(await page.locator("summary").evaluate(node => document.activeElement === node));
   await page.goto(base + "/review"); await connected();
+  await page.locator("#new-task").fill("Finish the review");
+  await page.locator("#task-add").click(); await page.locator('[data-task="3"]').waitFor();
+  await page.locator("#task-note-3").fill("Retain the final practice note");
+  await page.locator("#task-reverse").click();
+  await page.waitForFunction(() => document.querySelector("[data-task]")?.dataset.task === "3");
+  assert.equal(await page.locator("#task-note-3").inputValue(), "Retain the final practice note");
+  await page.locator('[data-task-toggle="3"]').click();
+  await page.locator("#task-active").check();
+  await page.waitForFunction(() => !document.querySelector('[data-task="3"]'));
+  await page.locator("#task-active").uncheck(); await page.locator('[data-task="3"]').waitFor();
+  assert.equal(await page.locator("#task-note-3").inputValue(), "Retain the final practice note");
+  await page.locator('[data-task-remove="3"]').click();
+  await page.waitForFunction(() => !document.querySelector('[data-task="3"]'));
+  await page.locator("#task-reset").click();
+  await page.waitForFunction(() => document.querySelectorAll("[data-task]").length === 2 &&
+    document.querySelector("[data-task]")?.dataset.task === "1" &&
+    document.getElementById("task-note-1")?.value === "");
+  console.log("  ok  final review practice retains task edits, notes, order and filters until explicit removal/reset");
   assert.equal(await page.locator('[aria-disabled="true"]').count(), 0);
   const returnToOverview = page.getByRole("link", {name: "Return to course overview", exact: true});
   assert.equal(await returnToOverview.count(), 1);
