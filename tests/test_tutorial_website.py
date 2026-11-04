@@ -340,7 +340,12 @@ def test_tutorial_website_every_page_http_ssr_and_cleanup(path: str, tmp_path: P
             assert response.status == 200
             body = html.unescape(response.body.decode())
             assert "Previous:" in body
-            assert "Next:" in body
+
+            if path == "/review":
+                assert "Return to course overview" in body
+                assert "Next:" not in body
+            else:
+                assert "Next:" in body
             assert 'href="/assets/course.css"' in body
             assert 'src="/assets/course.js"' in body
 

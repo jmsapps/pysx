@@ -182,8 +182,7 @@ def course() -> Fragment:
                     li: "I can test isolation, authorization and reconstruction separately."
                 nav(class="lesson-nav" aria-label="Course boundary navigation")
                     Link(router={router} href={LESSONS[-1].path}): "Previous: " {LESSONS[-1].title}
-                    span(aria-disabled="true"): "Next: End of course"
-                Link(router={router} href="/"): "Return to the course overview"
+                    Link(router={router} href="/"): "Return to course overview"
         """)
 
     def missing(_: RouteState) -> Fragment:

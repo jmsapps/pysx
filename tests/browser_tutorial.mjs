@@ -391,7 +391,14 @@ try {
   await page.locator("summary").focus();
   assert(await page.locator("summary").evaluate(node => document.activeElement === node));
   await page.goto(base + "/review"); await connected();
-  assert.equal(await page.locator('[aria-disabled="true"]').textContent(), "Next: End of course");
+  assert.equal(await page.locator('[aria-disabled="true"]').count(), 0);
+  const returnToOverview = page.getByRole("link", {name: "Return to course overview", exact: true});
+  assert.equal(await returnToOverview.count(), 1);
+  assert.equal(await returnToOverview.getAttribute("href"), "/");
+  assert(await returnToOverview.evaluate(node => node.parentElement.matches("nav.lesson-nav")));
+  await returnToOverview.click();
+  await page.waitForURL(base + "/");
+  await connected();
   assert.deepEqual(errors, []);
   console.log("  ok  overview/review boundaries, actual adjacent links, responsive layout and keyboard access");
   console.log("TUTORIAL WEBSITE BROWSER PASSED");
