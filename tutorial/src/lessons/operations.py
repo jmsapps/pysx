@@ -3,6 +3,7 @@
 from src.components.code_sample import CodeSample
 from src.content import Lesson
 from src.snippets import operations as code
+from src.snippets import playgrounds
 
 LESSONS = (
     Lesson(
@@ -45,9 +46,9 @@ LESSONS = (
         "Fast feedback helps you reason about live templates before opening a browser. "
         "The checker and editor understand markup alongside Python, but template "
         "diagnostics remain advisory. A successful editor check is not a runtime proof.\n\n"
-        "The source panel below is analyzed as text. Its fix changes an eager `count()` "
-        "hole to a live `count` reference. This is safe static analysis, not evaluation of "
-        "whatever source a learner supplies.",
+        "Static analysis reads source without running it. For example, replacing an eager "
+        "`count()` hole with a live `count` reference fixes a frozen display. Watch mode "
+        "then lets you observe compatible edits in your own running application.",
         "Watching requires a server you control, so this lesson's exercise uses a "
         "playground rather than the course you are reading. Scaffold the counter from "
         "lesson 1 again, then run it with `pysx --app playgrounds.counter --watch` and edit "
@@ -59,17 +60,24 @@ LESSONS = (
         "Keep Python/Pylance ownership of Python expressions and use the framework's "
         "template-aware tooling for markup. The final installed qualification uses the "
         "real editor host, not a mock completion provider.",
-        CodeSample(code.development_workflow),
-        "The initial source contains the eager count() hole. Apply correction uses the actual "
-        "suggested fix; the second sample has the misspelled hreff attribute and the final valid "
-        "sample uses title. diagnostics_for_source reads source without executing it. The course "
-        "adds syntax highlighting to the same source display.",
-        "Inspect the frozen-hole warning, apply its real suggested fix, then show and "
-        "correct an attribute warning.",
-        "The actual diagnostic report changes with the sample, and a repaired sample has "
-        "no finding.",
+        CodeSample(playgrounds.counter),
+        "This is the counter copied into `playgrounds/counter.py`. `count` is a local "
+        "signal, `increment` updates it and the live hole displays it. Run with `--watch` "
+        "to keep that compatible state while changing the `h1` text. Saving a Python "
+        "syntax error demonstrates candidate rejection without adding a separate demo "
+        "application. The editor and terminal provide feedback on the file you actually run.",
+        "Increment the counter a few times.\n\n"
+        "Open `playgrounds/counter.py` in your editor and change the heading text. "
+        "Save the file.\n\n"
+        "Keep the browser tab open and wait for the updated heading. Compare the counter.\n\n"
+        "Introduce a Python syntax error and save, then correct it and save again.",
+        "A compatible heading edit appears while the counter keeps its value. A syntax "
+        "error is reported in the terminal; the previous working page remains available "
+        "until you save a valid correction.",
         "Combine static feedback, a real watch journey and runtime verification.",
         ("development", "diagnostics", "editor_features"),
+        "pip install 'pysx[lsp]'\npysx-playground counter\n"
+        "pysx --app playgrounds.counter --watch\n",
     ),
     Lesson(
         26,
@@ -142,34 +150,39 @@ LESSONS = (
         "capstone-resilience",
         "Make the capstone resilient",
         "Build and operate",
-        "Add real async failure/retry, authorization and reconstruction to the completed "
-        "workspace.",
-        "A useful application must explain what happens when work fails. Extend the "
-        "workspace with an owned validation resource, a protected commit and an explicit "
-        "declared state root. A retry changes only the work that needs to be retried.\n\n"
-        "The resilient capstone uses the same real durable lab as the persistence "
-        "lesson, with a complete task journey rather than an invented saved label. "
-        "A new setup marker after worker loss proves that code and resources were rebuilt.",
-        "Edit a draft, perform an authorized commit, simulate a resource failure and "
-        "retry it. Keep the document open through the documented server restart, then "
-        "continue using rebuilt handlers. Compare a new tab and an authentication change.\n\n"
-        "These are several different guarantees: live reattach, reconstruction of "
-        "committed declared state, current authorization and ordinary fresh-session "
-        "behavior. None promises exactly-once external transactions. The installed "
-        "application checks and your final review judge this entire story together.",
-        CodeSample(code.capstone_resilience),
-        "This combines the same bounded codec, declared workspace, protected commit and owned "
-        "validation resource as the embedded lab. Failure and retry replace resource work; "
-        "commits check current host authorization. create_lab binds the declared root to a "
-        "versioned store, while the setup marker and callbacks are rebuilt. The surrounding "
-        "course supplies the authenticated HostConfig and sign-in links; use the durable "
-        "playground for your own server restart.",
-        "Complete the embedded lab's draft/commit/fail/retry workflow here. Then, for the "
-        "restart half, scaffold `pysx-playground durable`, run `pysx --app "
-        "playgrounds.durable`, stop it with the tab open and start it again.",
-        "Committed declared state is reconstructed, the setup marker changes, retry works "
-        "and current policy still applies.",
+        "Reconstruct declared application data while rebuilding handlers in a fresh graph.",
+        "A useful application must explain what happens when its server stops. The "
+        "workspace from the previous lesson stores task data in ordinary signals. To "
+        "make selected data durable, declare a state root, supply its codec and give the "
+        "host a persistent store.\n\n"
+        "The durable playground isolates that reconstruction pattern with a draft and "
+        "counter. It keeps the restart experiment small enough to inspect completely. "
+        "A changed setup marker after worker loss proves that the application graph "
+        "was rebuilt rather than merely reattached.",
+        "`State` contains the saved data. `encode` converts it to JSON-compatible values, "
+        "and `decode` checks those values before constructing a new root. The SQLite "
+        "store retains a snapshot while application code creates new handlers. Keep "
+        "the browser document open through the restart so it can resume its session.\n\n"
+        "After reconstruction, use Increment again. Restored data is useful only if "
+        "the rebuilt interface can continue working with it. Apply this pattern to "
+        "the workspace's task records when extending your own application. UI state "
+        "persistence does not make external transactions exactly-once.",
+        CodeSample(playgrounds.durable),
+        "The code shown is the durable playground used below. `StateCodec` validates "
+        "the declared draft and counter, and `SQLiteOwnershipStore` retains their "
+        "snapshot. The `setup` marker and `increment` handler are created inside `view`, "
+        "so they are rebuilt around restored data after a restart. This experiment "
+        "isolates reconstruction; the authorization, task and async patterns from "
+        "earlier lessons remain separate concerns when you extend your own workspace.",
+        "Edit the saved draft and increment the counter in the durable playground.\n\n"
+        "Stop the server with Ctrl+C, leaving the browser tab open.\n\n"
+        "Start the same run command again from the same project directory.\n\n"
+        "Compare the draft, counter and setup marker, then increment again to exercise "
+        "a rebuilt handler.",
+        "Declared data reconstructs while the setup marker changes. The increment button "
+        "still works because the new graph builds new handlers around the restored data.",
         "Resilience is an observed workflow across boundaries, not one successful initial render.",
         ("browser_recovery", "durable_state", "resources", "session_security"),
+        "pip install pysx\npysx-playground durable\npysx --app playgrounds.durable\n",
     ),
 )

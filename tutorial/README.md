@@ -2,7 +2,8 @@
 
 A standalone, server-rendered tutorial website: 28 lessons, a course overview,
 live exercises and a final review. Each lesson has named Previous/Next links,
-explanations, a runnable code walkthrough and an interactive demo. The course
+explanations, a runnable code walkthrough and either a live exercise or local playground
+instructions. The course
 owns its shared components, themes, routes and assets.
 
 ## Prepare and run
@@ -46,8 +47,9 @@ aligned when deliberately upgrading. Do not use an unpinned dependency range.
 
 ## Learning journeys
 
-Start at the overview and follow the course in order. Each lesson has Reset demo
-and an exercise describing an observable outcome. Marking a lesson practiced is a
+Start at the overview and follow the course in order. Live exercises have Reset demo;
+playground lessons provide local run instructions. Both describe observable outcomes.
+Marking a lesson practiced is a
 self-assessment, not a claim that the application checked your answer.
 
 Private lesson state is per session. A fresh tab and refresh start fresh ordinary
@@ -59,16 +61,18 @@ The routing exercises use real course-prefixed URLs and actual browser history.
 For reconnect, use **Disconnect for 5 seconds** in the live exercise. The button
 closes the real WebSocket, pauses retries, and reconnects automatically. Watch the
 connection status, retained draft/count, and advancing server clock without
-refreshing. For browser recovery, edit a draft/count, keep
-the tab open, stop the server and restart the same command. The actual connection
-indicator reports restoration; a refresh still starts fresh.
+refreshing. Lessons that use playgrounds instead have a **Try it locally** section:
+installation and run commands, **What you’ll do**, and **What you’ll see**.
+Run the browser-recovery experiment in the recovery playground, keeping its tab
+open while stopping and restarting its server. A refresh still starts fresh.
 
-The explicit durable-state lesson embeds a separate real durable graph on the
-same host. Its SQLite store and host key ring live under `.artifacts/tutorial-state`
-in the launch directory by default. Set `TUTORIAL_STATE_DIR` to a private persistent
-directory to retain them across deployment directories. Keep the embedded document
+The explicit durable-state lesson uses the durable playground. Keep its document
 open through a restart: its declared draft/count reconstruct and its setup marker
-changes. Only declared state is persisted; callbacks/resources are rebuilt.
+changes. Only declared state is persisted; callbacks/resources are rebuilt. Restart
+with the run command rather than scaffolding again, which resets playground state.
+The course's standalone qualification lab remains available at `/labs/durable`.
+Its store and host key ring live under `.artifacts/tutorial-state` by default;
+`TUTORIAL_STATE_DIR` selects a private persistent directory.
 
 The authorization lesson's reader/writer sign-in links are local teaching roles,
 not production login. No real credentials are requested. The protected action uses

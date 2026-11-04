@@ -19,7 +19,8 @@ try {
   const response = await context.request.get(base + "/assets/course.css");
   assert.equal(response.status(), 200);
   assert((await response.text()).includes("--accent"));
-  const frame = await (await page.locator("#durable-frame").elementHandle()).contentFrame();
+  await page.goto(base + "/labs/durable");
+  const frame = page;
   const connected = () => frame.waitForFunction(() => document.getElementById("pysx-root")?.dataset.pysxConnection === "connected");
   const text = (id, value) => frame.waitForFunction(([id, value]) => document.getElementById(id)?.textContent === value, [id, value]);
   await connected();

@@ -3,6 +3,7 @@
 from src.components.code_sample import CodeSample
 from src.content import Lesson
 from src.snippets import foundations as code
+from src.snippets import playgrounds
 
 LESSONS = (
     Lesson(
@@ -16,9 +17,9 @@ LESSONS = (
         "to the server for later events. You do not need a JavaScript application toolchain "
         "to make your first button work.\n\n"
         "Use Python 3.14 or newer: t-strings preserve expressions instead of immediately "
-        "flattening them into text. The environment panel below reports the interpreter "
-        "actually running this course. It is not a browser simulation of Python.",
-        "The panel above copies a runnable counter into your own project and serves it. "
+        "flattening them into text. The local playground runs Python on your machine "
+        "and sends updates to the browser.",
+        "The commands below copy a runnable counter into your own project and serve it. "
         "That counter is an ordinary file you own; nothing about it is special to this "
         "course.\n\n"
         "The run command is shorthand: given `playgrounds.counter`, pysx looks for a callable "
@@ -29,21 +30,21 @@ LESSONS = (
         "`pysx --app foo:bar`.\n\n"
         "The initial page is already meaningful HTML. A later input event travels to "
         "Python and the resulting small patch returns to this document. If you started the "
-        "counter above, keep its terminal open; Ctrl+C shuts that server down along with "
+        "counter locally, keep its terminal open; Ctrl+C shuts that server down along with "
         "the work it owns.",
-        CodeSample(code.getting_started),
-        "`name` starts as Learner. The input writes that signal and `message` derives the "
-        "greeting from it. Both live inside `app`, so a new tab starts its own greeting.",
-        "Change the name in the live greeting. Then open the same lesson in another tab "
-        "and compare its initial name. Use Reset to repeat the experiment.",
-        "The greeting follows your input immediately. Another tab starts with Learner; "
-        "its private form does not inherit your edit.",
+        CodeSample(playgrounds.counter),
+        "`count` starts at zero inside `app`, so each browser tab gets its own signal. "
+        "Clicking Increment sends an event to `increment`, which updates the signal with "
+        "`count.set`. The live `{count}` hole updates the displayed number without "
+        "reloading the document. The code below is the counter copied by the scaffold command.",
+        "Click Increment in the counter playground.\n\n"
+        "Open the same local URL in another tab and compare its initial counter.\n\n"
+        "Stop the server with Ctrl+C when you finish.",
+        "Each click updates the counter through Python on the server. A new tab starts "
+        "with its own counter at zero.",
         "The server owns application Python. The browser displays HTML and delivers events.",
         ("hello", "counter"),
-        "pip install pysx\n"
-        "pysx-playground counter\n\n"
-        "# pysx-playground writes the file; this runs it\n"
-        "pysx --app playgrounds.counter\n",
+        "pip install pysx\npysx-playground counter\npysx --app playgrounds.counter\n",
     ),
     Lesson(
         2,

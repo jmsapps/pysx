@@ -2,6 +2,7 @@
 
 from src.components.code_sample import CodeSample
 from src.content import Lesson
+from src.snippets import playgrounds
 from src.snippets import runtime as code
 
 LESSONS = (
@@ -168,27 +169,29 @@ LESSONS = (
         "Only supported latest-delivered UI state can be restored. The host's key ring, "
         "current authentication session, route and compatibility checks still apply. "
         "An undelivered edit or uncertain action must not become an invented confirmed result.",
-        "Use this lesson's draft/counter to practice delivered edits. For the restart "
-        "exercise, run the recovery playground on a server you control and keep its tab "
+        "Run the recovery playground on a server you control and keep its tab "
         "open while restarting it with the same command and application-state directory. "
         "Compatible delivered state should return.\n\n"
         "Now compare a refresh and a new tab: both start fresh ordinary UI. Capsules "
         "are held in document memory, not a cross-device account store. Use application "
         "persistence for saved business records and explicit durable UI state when you "
         "need the contract in the following lesson.",
-        CodeSample(code.browser_recovery),
-        "The empty draft and zero count are ordinary local signals, with an increment handler to "
-        "produce delivered changes. The host supplies browser-held recovery. To restart a server "
-        "you control, use the recovery playground below rather than stopping a public course "
-        "server; its compatible draft/count behavior is the same.",
-        "Restarting needs a server you control, so use a playground: scaffold "
-        "`pysx-playground recovery`, run `pysx --app playgrounds.recovery`, save a draft "
-        "and count by interacting, restart it with the tab open, then compare refresh.",
-        "The open document restores compatible state after server loss; refresh starts a "
-        "new draft.",
+        CodeSample(playgrounds.recovery),
+        "`name` and `notes` are ordinary local signals bound to form fields. Add a revision "
+        "updates `revisions` and appends to `history`; `each` renders the revision rows "
+        "with stable keys. Reverse revisions changes their order. The host supplies "
+        "browser-held recovery for this delivered state without an explicit durable root "
+        "or application store. The code shown is the recovery playground you run below.",
+        "Fill in Name and Notes, then click Add a revision a few times.\n\n"
+        "Stop the server with Ctrl+C, leaving the tab open.\n\n"
+        "Start the same run command again and compare the fields and revision history.\n\n"
+        "Refresh the page, then open the local URL in a new tab to compare fresh state.",
+        "The open document restores compatible fields and revision history after server loss. "
+        "Refresh and a new tab start with empty fields and no revisions.",
         "UI continuity reconstructs a new authorized graph; it does not persist business "
         "transactions.",
         ("browser_recovery",),
+        "pip install pysx\npysx-playground recovery\npysx --app playgrounds.recovery\n",
     ),
     Lesson(
         23,
@@ -202,25 +205,28 @@ LESSONS = (
         "A store retains versioned snapshots and ownership information. New graphs "
         "rebuild callbacks and resources from application code. A schema change needs "
         "a declared migration or an explicit unavailable/reset policy.",
-        "The embedded lab is a real `DurableApplication` with a SQLite ownership store. "
+        "The durable playground is a real `DurableApplication` with a SQLite ownership store. "
         "Edit its declared draft, increment and keep the document open through a server "
         "restart. The setup marker changes while the committed root is reconstructed.\n\n"
-        "The codec exercise beside it accepts bounded JSON data, not Python source. "
-        "Try the invalid example and inspect the rejection. Persisting a UI draft still "
+        "Its codec accepts bounded JSON data, not Python source. Persisting a UI draft still "
         "does not make an external payment or account write exactly-once; those operations "
         "need the application's own transactional design.",
-        CodeSample(code.durable_state),
-        "The codec validates the same LabState shape used by the embedded lab: a bounded draft, "
-        "nonnegative count and bounded task records. The JSON controls call that decoder. The "
-        "reduced durable view shows the draft, count and setup marker used in the restart "
-        "exercise; create_lab wires it to a versioned SQLite store. The embedded lab also "
-        "includes the later capstone controls.",
-        "Reject the invalid codec sample here. For the restart, scaffold "
-        "`pysx-playground durable`, run `pysx --app playgrounds.durable`, edit its draft, "
-        "restart it and compare the setup marker.",
-        "Committed declared state survives reconstruction, callbacks/resources are new "
-        "and invalid data is rejected.",
+        CodeSample(playgrounds.durable),
+        "`State` declares the two saved fields: draft and count. "
+        "Its StateCodec encodes and validates those fields, and SQLiteOwnershipStore "
+        "retains them at `STORE`. `project` writes draft edits back into the state root; "
+        "increment replaces that root with an updated count. The setup marker is created "
+        "inside view, outside the declared root, "
+        "so reconstruction creates a new marker without replacing the saved data.",
+        "Edit the draft and increment the counter. Wait for the counter to update.\n\n"
+        "Stop the server with Ctrl+C, leaving this tab open.\n\n"
+        "Start the same run command again, using the same project directory.\n\n"
+        "Compare the restored draft and counter with the setup marker.",
+        "The draft and counter reconstruct from the declared state. The setup marker "
+        "changes because the application graph is new. No separate Save action is needed "
+        "in this playground; delivered edits update the declared root.",
         "Declare data and schema explicitly; rebuild behavior from trusted code.",
         ("durable_state",),
+        "pip install pysx\npysx-playground durable\npysx --app playgrounds.durable\n",
     ),
 )

@@ -20,8 +20,6 @@ from src.components.code import CodeBlock
 from src.components.code_sample import CodeSample
 from src.components.pages import Inline
 from src.demos import composition, foundations, navigation, operations, runtime
-from src.durable import view as durable_view
-from src.model import LabState
 from src.themes import course_themes
 
 from pysx import Fragment, RequestContext, Route, Router, Signal, pysx, signal
@@ -34,6 +32,13 @@ if TYPE_CHECKING:
     from pysx.runtime.wire import JSONValue
 
 ROOT = Path(__file__).resolve().parents[1]
+PLAYGROUND_LESSONS = {
+    1: "counter",
+    22: "recovery",
+    23: "durable",
+    25: "counter",
+    28: "durable",
+}
 
 
 class CodeText(HTMLParser):
@@ -165,8 +170,11 @@ def test_tutorial_website_short_expressions_stay_readable() -> None:
         or count < 0
     ):
         raise ValueError("invalid declared lab state")"""
-    assert expected in LESSONS[22].code
-    assert expected in LESSONS[27].code
+    from src.snippets import operations as capstone_code
+    from src.snippets import runtime as runtime_code
+
+    assert expected in CodeSample(runtime_code.durable_state).text
+    assert expected in CodeSample(capstone_code.capstone_resilience).text
 
     for sample in displayed_samples():
         source = sample.text
@@ -289,6 +297,13 @@ def test_tutorial_website_complete_course_graph_and_grounding() -> None:
     assert len(LESSONS) == 28
     assert [lesson.number for lesson in LESSONS] == list(range(1, 29))
     assert len({lesson.slug for lesson in LESSONS}) == 28
+    assert {lesson.slug for lesson in LESSONS if lesson.commands} == {
+        "getting-started",
+        "browser-recovery",
+        "durable-state",
+        "development-workflow",
+        "capstone-resilience",
+    }
 
     for lesson in LESSONS:
         assert len((lesson.introduction + lesson.explanation + lesson.walkthrough).split()) >= 120
@@ -305,6 +320,14 @@ def test_tutorial_website_complete_course_graph_and_grounding() -> None:
         assert previous[0] == (LESSONS[lesson.number - 2].path if lesson.number > 1 else "/")
         assert following[0] == (LESSONS[lesson.number].path if lesson.number < 28 else "/review")
     assert not (ROOT / "examples/tutorial.py").exists()
+
+
+def test_tutorial_website_playground_walkthroughs_match_shipped_code() -> None:
+    for number, name in PLAYGROUND_LESSONS.items():
+        original = (ROOT / "pysx/playgrounds" / f"{name}.py").read_text()
+        docstring = ast.parse(original).body[0]
+        body = "".join(original.splitlines(keepends=True)[docstring.end_lineno :]).lstrip("\n")
+        assert LESSONS[number - 1].code == body, name
 
 
 @pytest.mark.parametrize("path", ["/", "/review", *(lesson.path for lesson in LESSONS)])
@@ -331,8 +354,19 @@ def test_tutorial_website_every_page_http_ssr_and_cleanup(path: str, tmp_path: P
             if path.startswith("/learn/"):
                 lesson = next(lesson for lesson in LESSONS if lesson.path == path)
                 assert lesson.title in body
-                assert 'id="reset-demo"' in body
+                assert ('id="reset-demo"' in body) is not bool(lesson.commands)
                 assert 'id="lesson-exercise"' in body
+
+                if lesson.commands:
+                    assert "Try it locally" in body
+                    assert "What you'll do" in body
+                    assert "What you'll see" in body
+                    assert "pip install" in body
+                    assert "pysx-playground" in body
+                    assert 'aria-label="Interactive lesson"' not in body
+                    assert 'id="durable-frame"' not in body
+                    assert 'id="codec-invalid"' not in body
+                    assert '<ol id="lesson-exercise"' in body
                 assert body.count('data-previous="') == 2
                 assert body.count('data-next="') == 2
             assert response.adoption is not None
@@ -354,6 +388,40 @@ def test_tutorial_website_every_code_walkthrough_executes(number: int, tmp_path:
 
     async def exercise() -> None:
         module = importlib.import_module(name)
+
+        if number in PLAYGROUND_LESSONS:
+            if PLAYGROUND_LESSONS[number] == "durable":
+                try:
+                    response = await module.app.http(
+                        RequestContext(path="/", headers={"host": "localhost"})
+                    )
+                    assert response.status == 200
+                    assert b"Durable declared state" in response.body
+                    assert module.decode({"draft": "Saved", "count": 1}).count == 1
+                    with pytest.raises(ValueError, match="invalid counter or draft"):
+                        module.decode({"draft": 42, "count": "invalid"})
+                finally:
+                    await module.app.close()
+            else:
+                session = Session(module.app)
+
+                try:
+                    assert 'id="count"' in session.rendered.body or (
+                        'id="history"' in session.rendered.body
+                    )
+                    payload = "Edited name" if PLAYGROUND_LESSONS[number] == "recovery" else None
+                    changes = session.dispatch(next(iter(session.rendered.handlers)), payload)
+
+                    if payload is None:
+                        assert changes
+                    else:
+                        assert payload in str(
+                            session.transport.repair(session.rendered.css)["html"]
+                        )
+                finally:
+                    session.dispose()
+
+            return
         view = getattr(module, "app", None)
 
         if view is not None:
@@ -387,43 +455,6 @@ def test_tutorial_website_every_code_walkthrough_executes(number: int, tmp_path:
                     reference.dispose()
             finally:
                 session.dispose()
-                await asyncio.sleep(0)
-
-        if number in (23, 28):
-            declared = Session(lambda: module.view(signal(module.LabState())))
-            reference = Session(lambda: durable_view(signal(LabState())))
-
-            try:
-                actual_controls = WalkthroughControls(declared.rendered.body).controls
-                expected_controls = WalkthroughControls(reference.rendered.body).controls
-
-                if number == 23:
-                    ids = {"lab-draft", "lab-echo", "lab-count", "lab-setup"}
-                    actual_controls = [
-                        control for control in actual_controls if dict(control[1]).get("id") in ids
-                    ]
-                    expected_controls = [
-                        control
-                        for control in expected_controls
-                        if dict(control[1]).get("id") in ids
-                    ]
-
-                def without_setup(
-                    controls: list[tuple[str, tuple[tuple[str, str | None], ...], str]],
-                ) -> list[tuple[str, tuple[tuple[str, str | None], ...], str]]:
-                    return [
-                        (tag, attrs, "" if dict(attrs).get("id") == "lab-setup" else text)
-                        for tag, attrs, text in controls
-                    ]
-
-                assert without_setup(actual_controls) == without_setup(expected_controls)
-                assert module.decode({"draft": "Saved draft", "count": 1}).count == 1
-
-                with pytest.raises(ValueError, match="invalid declared lab state"):
-                    module.decode({"draft": 42, "count": "invalid"})
-            finally:
-                declared.dispose()
-                reference.dispose()
                 await asyncio.sleep(0)
 
     try:

@@ -23,7 +23,9 @@ def app() -> Fragment:
         history.set(list(reversed(history())))
 
     def revision(value: int) -> Fragment:
-        return pysx(t"li(data-revision={value}): {value}")
+        return pysx(t"""
+            li(data-revision={value}): {value}
+        """)
 
     return pysx(t"""
         main:

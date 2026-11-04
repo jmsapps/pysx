@@ -67,6 +67,19 @@ def Navigation(*, lesson: Lesson, router: Router, position: str) -> Fragment:
     """)
 
 
+def Steps(*, text: str) -> Fragment:
+    def step(part: tuple[int, str]) -> Fragment:
+        return pysx(t"""
+            li:
+                Inline(text={part[1]}):
+        """)
+
+    return pysx(t"""
+        ol(id="lesson-exercise"):
+            {each(tuple(enumerate(text.split("\n\n"))), step, key=lambda part: part[0])}
+    """)
+
+
 def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> Fragment:
     revision = signal([0])
     generation = derived(lambda: revision()[0])
@@ -89,30 +102,46 @@ def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> 
             p(class="lede"):
                 Inline(text={lesson.objective}):
             Paragraphs(text={lesson.introduction}):
-            if {bool(lesson.commands)}:
-                h2: "Run this on your own machine"
-                p: "Copy a runnable example into your own project and serve it."
-                pre: {lesson.commands}
             h2: "Understand the moving parts"
             Paragraphs(text={lesson.explanation}):
             h2: "Walk through the code"
             CodeBlock(source={lesson.sample}):
             Paragraphs(text={lesson.walkthrough}):
-            section(class="demo" aria-label="Interactive lesson")
-                h2: "Try it live"
-                p(id="lesson-exercise"):
-                    Inline(text={lesson.exercise}):
-                h3: "What to observe"
-                p(id="lesson-expected"):
-                    Inline(text={lesson.expected}):
-                {each(revision, build, key=lambda value: value)}
-                if {lesson.slug == "reconnection"}:
-                    Actions:
-                        Button(id="recovery-disconnect" type="button" disabled={True}):
-                            "Disconnect for 5 seconds"
-                        p(id="recovery-connection" role="status" aria-live="polite"): "Connecting…"
-                Actions(class="demo-reset"):
-                    Button(id="reset-demo" onClick={reset}): "Reset demo"
+            if {bool(lesson.commands)}:
+                section(class="demo" aria-label="Local playground")
+                    h2: "Try it locally"
+                    p:
+                        "Use Python 3.14 or newer. "
+                        "In your project's activated virtual environment, run:"
+                    pre: {lesson.commands}
+                    p:
+                        "Open the local URL printed in the terminal. "
+                        "Keep that terminal open while you try the playground."
+                    p:
+                        "Scaffold once. To restart, repeat only the pysx --app command; "
+                        "scaffolding again resets the playground's saved state."
+                    h3: "What you'll do"
+                    Steps(text={lesson.exercise}):
+                    h3: "What you'll see"
+                    p(id="lesson-expected"):
+                        Inline(text={lesson.expected}):
+            else:
+                section(class="demo" aria-label="Interactive lesson")
+                    h2: "Try it live"
+                    p(id="lesson-exercise"):
+                        Inline(text={lesson.exercise}):
+                    h3: "What to observe"
+                    p(id="lesson-expected"):
+                        Inline(text={lesson.expected}):
+                    {each(revision, build, key=lambda value: value)}
+                    if {lesson.slug == "reconnection"}:
+                        Actions:
+                            Button(id="recovery-disconnect" type="button" disabled={True}):
+                                "Disconnect for 5 seconds"
+                            p(id="recovery-connection" role="status" aria-live="polite"):
+                                "Connecting…"
+                    Actions(class="demo-reset"):
+                        Button(id="reset-demo" onClick={reset}): "Reset demo"
             h2: "Take this with you"
             p:
                 Inline(text={lesson.recap}):

@@ -75,7 +75,6 @@ try {
   };
   const fresh = async (target, slug) => {
     const initial = {
-      "getting-started": ["greeting-output", "Hello, Learner!"],
       "templates-and-elements": ["card-preview", "A readable interface"],
       "live-signals": ["live-count", "0"],
       "derived-values": ["total", "12"],
@@ -92,7 +91,6 @@ try {
       "errors-and-retry": ["sibling-count", "0"],
       "session-isolation": ["private-echo", ""],
       "reconnection": ["recovery-count", "0"],
-      "browser-recovery": ["recovery-count", "0"],
       "authentication": ["auth-count", "0"],
       "hosting-and-deployment": ["host-result", "Local host: render capacity 25"],
     }[slug];
@@ -105,16 +103,8 @@ try {
         [inputs[slug], expected]);
     }
     if (["routes-and-parameters", "links-and-history"].includes(slug)) await text("route-count", "0", target);
-    if (["durable-state", "capstone-resilience"].includes(slug)) {
-      await text("codec-result", "Choose Validate to decode the data", target);
-      const lab = target.frameLocator("#durable-frame");
-      await lab.locator("#lab-count").waitFor();
-      assert.equal(await lab.locator("#lab-count").textContent(), "0");
-    }
     if (slug === "capstone-workspace") await target.waitForFunction(() =>
       document.querySelectorAll("[data-task]").length === 2 && document.querySelector("#task-note-1")?.value === "");
-    if (slug === "development-workflow") await target.waitForFunction(() =>
-      document.querySelector("#diagnostic-source")?.textContent.includes("count()"));
   };
   const slugs = [
     "getting-started", "templates-and-elements", "live-signals", "derived-values", "browser-events",
@@ -124,6 +114,11 @@ try {
     "session-isolation", "reconnection", "browser-recovery", "durable-state", "authentication",
     "development-workflow", "hosting-and-deployment", "capstone-workspace", "capstone-resilience",
   ];
+  const localPlaygrounds = new Map([
+    ["getting-started", "counter"], ["browser-recovery", "recovery"],
+    ["durable-state", "durable"], ["development-workflow", "counter"],
+    ["capstone-resilience", "durable"],
+  ]);
   for (const [index, slug] of slugs.entries()) {
     if (slug === "capstone-resilience") await page.request.get(base + "/demo-login/writer");
     const response = await page.goto(base + "/learn/" + slug);
@@ -144,23 +139,19 @@ try {
     assert(await page.locator("article pre code [data-syntax]").count() > 0);
     await page.locator("#lesson-main").focus();
     assert.equal(await page.locator("#lesson-main").evaluate(node => getComputedStyle(node).outlineStyle), "none");
-    assert(await page.locator(".demo").evaluate(node => {
+    const playground = localPlaygrounds.get(slug);
+    assert(await page.locator(".demo").evaluate((node, playground) => {
       const exercise = node.querySelector("#lesson-exercise");
       const expected = node.querySelector("#lesson-expected");
       const reset = node.querySelector("#reset-demo");
-      return Boolean(exercise && expected && reset &&
+      return Boolean(exercise && expected && (playground ? !reset : reset) &&
         (exercise.compareDocumentPosition(expected) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-        (expected.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING));
-    }));
+        (playground || (expected.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING)));
+    }, playground));
     assert.equal(await page.getByRole("heading", {name: "Your turn", exact: true}).count(), 0);
     for (const width of [1280, 375]) {
       await page.setViewportSize({width, height: 812});
       assert.deepEqual(await page.locator('.demo').evaluate(layoutIssues), [], `${slug}, ${width}px`);
-      if (["durable-state", "capstone-resilience"].includes(slug)) {
-        const lab = page.frameLocator("#durable-frame").locator("#durable-lab");
-        await lab.waitFor();
-        assert.deepEqual(await lab.evaluate(layoutIssues), [], `${slug} embedded lab, ${width}px`);
-      }
     }
     await page.setViewportSize({width: 1280, height: 812});
     if (index === 0) {
@@ -176,18 +167,31 @@ try {
       await page.screenshot({path: `${tmpdir()}/pysx-course-dark-${process.env.PYSX_BROWSER_ENGINE}.png`, fullPage: true});
       await page.locator('#course-theme').click();
       await text('course-theme', 'Theme: light');
-      await page.locator('#reset-demo').focus();
+    }
+    if (slug === "templates-and-elements") {
+      await page.locator('#card-emphasis').focus();
       await page.keyboard.press("Shift+Tab");
-      assert(await page.locator('#greeting-name').evaluate(node =>
+      assert(await page.locator('#card-text').evaluate(node =>
         node === document.activeElement && node.matches(":focus-visible") &&
         getComputedStyle(node).outlineStyle !== "none" && parseFloat(getComputedStyle(node).outlineWidth) > 0));
     }
+    if (playground) {
+      assert.deepEqual(await page.locator(".demo h2, .demo h3").allTextContents(),
+        ["Try it locally", "What you'll do", "What you'll see"]);
+      const commands = await page.locator(".demo pre").textContent();
+      assert(commands.includes("pip install"));
+      assert(commands.includes(`pysx-playground ${playground}`));
+      assert(commands.includes(`pysx --app playgrounds.${playground}`));
+      assert(await page.locator("#lesson-exercise li").count() >= 3);
+      assert.equal(await page.locator(".demo input, .demo button, .demo textarea, .demo iframe").count(), 0);
+      await page.reload(); await connected();
+      assert.equal(await page.getByRole("heading", {name: "Try it locally", exact: true}).count(), 1);
+      console.log(`  ok  ${index + 1}: ${slug} local playground instructions, reload and named navigation`);
+      continue;
+    }
     const isolated = await context.newPage();
     await isolated.goto(base + "/learn/" + slug); await connected(isolated);
-    if (slug === "getting-started") {
-      await page.locator("#greeting-name").fill("Ada"); await text("greeting-output", "Hello, Ada!");
-      assert((await page.locator("#environment").textContent()).includes("Python 3.14"));
-    } else if (slug === "templates-and-elements") {
+    if (slug === "templates-and-elements") {
       await page.locator("#card-text").fill("<em>Hello</em>"); await text("card-preview", "<em>Hello</em>");
       assert.equal(await page.locator("#card-preview em").count(), 0);
       await page.locator("#card-emphasis").click();
@@ -301,7 +305,7 @@ try {
       await page.locator("#private-draft").fill("Only here"); await text("private-echo", "Only here");
       const other = await context.newPage(); await other.goto(page.url()); await connected(other);
       assert.equal(await other.locator("#private-draft").inputValue(), ""); await other.close();
-    } else if (["reconnection", "browser-recovery"].includes(slug)) {
+    } else if (slug === "reconnection") {
       await page.locator("#recovery-draft").fill("Delivered draft"); await text("recovery-echo", "Delivered draft");
       await page.locator("#recovery-increment").click(); await text("recovery-count", "1");
       if (slug === "reconnection") {
@@ -336,41 +340,7 @@ try {
         assert(Number(await page.locator("#recovery-ticks").textContent()) >= ticks + 8,
           "server clock continued during disconnect");
       }
-      else {
-        const setup = await page.locator("#recovery-setup").textContent();
-        await control("/restart"); await connected();
-        await page.waitForFunction(setup => document.querySelector("#recovery-setup").textContent !== setup, setup);
-      }
       await text("recovery-count", "1"); assert.equal(await page.locator("#recovery-draft").inputValue(), "Delivered draft");
-    } else if (["durable-state", "capstone-resilience"].includes(slug)) {
-      await page.locator("#codec-invalid").click();
-      await page.waitForFunction(() => document.querySelector("#codec-result").textContent.startsWith("Rejected:"));
-      const element = await page.locator("#durable-frame").elementHandle();
-      const frame = await element.contentFrame();
-      assert(frame, "real durable lab document"); await connected(frame);
-      await frame.locator("#lab-draft").fill("Declared committed draft"); await text("lab-echo", "Declared committed draft", frame);
-      await frame.locator("#lab-increment").click(); await text("lab-count", "1", frame);
-      if (slug === "capstone-resilience") {
-        await frame.locator("#new-task").fill("Persist this task"); await frame.locator("#task-add").click();
-        await frame.waitForSelector('[data-task="3"]');
-        await frame.locator("#task-note-1").fill("Persist this row note");
-        await frame.locator("#lab-commit").click(); await text("lab-count", "2", frame);
-        await text("lab-commit-status", "Allowed by current host policy", frame);
-        await frame.locator("#lab-resource-fail").click(); await text("lab-resource-status", "error", frame);
-        await frame.locator("#lab-resource-retry").click(); await text("lab-resource-status", "success", frame);
-      }
-      const setup = await frame.locator("#lab-setup").textContent();
-      await control(slug === "capstone-resilience" ? "/upgrade" : "/restart");
-      await frame.waitForFunction(setup => document.querySelector("#lab-setup")?.textContent !== setup &&
-        document.getElementById("pysx-root")?.dataset.pysxConnection === "connected", setup, {timeout: 30000});
-      await text("lab-count", slug === "capstone-resilience" ? "2" : "1", frame);
-      assert.equal(await frame.locator("#lab-draft").inputValue(), "Declared committed draft");
-      if (slug === "capstone-resilience") {
-        assert.equal(await frame.locator('[data-task="3"] h3').textContent(), "Persist this task");
-        assert.equal(await frame.locator("#task-note-1").inputValue(), "Persist this row note");
-        await frame.locator("#lab-resource-fail").click(); await text("lab-resource-status", "error", frame);
-        await frame.locator("#lab-resource-retry").click(); await text("lab-resource-status", "success", frame);
-      }
     } else if (slug === "authentication") {
       await page.locator("#auth-reader").click(); await connected(); await text("auth-principal", "reader");
       await page.locator("#auth-write").click(); await text("auth-result", "Denied by current host policy");
@@ -383,11 +353,6 @@ try {
       assert.equal(changedLogin.status(), 303);
       await reconnect(); await text("auth-principal", "reader"); await text("auth-count", "0");
       await page.locator("#auth-logout").click(); await connected(); await text("auth-principal", "learner"); await text("auth-count", "0");
-    } else if (slug === "development-workflow") {
-      await page.locator("#diagnostic-fix").click(); await text("diagnostic-result", "No diagnostics ([])");
-      await page.locator("#diagnostic-warning").click();
-      await page.waitForFunction(() => document.querySelector("#diagnostic-result").textContent.includes("hreff"));
-      await page.locator("#diagnostic-fix").click(); await text("diagnostic-result", "No diagnostics ([])");
     } else if (slug === "hosting-and-deployment") {
       await page.locator("#host-invalid").click();
       await page.waitForFunction(() => document.querySelector("#host-result").textContent.startsWith("Rejected:"));
