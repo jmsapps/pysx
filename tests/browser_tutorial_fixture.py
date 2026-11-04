@@ -11,6 +11,7 @@ import tempfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from threading import Event, Thread
+from typing import cast
 
 from acceptance_support import stop_process
 from prototypes.distribution import ROOT, clean_env
@@ -24,6 +25,10 @@ class TutorialWorker:
             listener.bind(("127.0.0.1", 0))
             self.port = listener.getsockname()[1]
         self.process: subprocess.Popen[str] | None = None
+        self.playground_process: subprocess.Popen[str] | None = None
+        self.playground_port = 0
+        self.playground_name = ""
+        self.playground_original = ""
         self.schema = 1
         uv = shutil.which("uv")
 
@@ -160,6 +165,8 @@ class TutorialWorker:
         wait_for(lambda: "pysx ready" in log.read_text(), log)
 
     def stop(self, *, crash: bool = False) -> None:
+        self.stop_playground()
+
         if self.process is not None:
             if crash:
                 self.process.kill()
@@ -167,6 +174,88 @@ class TutorialWorker:
             else:
                 stop_process(self.process)
             self.process = None
+
+    def stop_playground(self) -> None:
+        if self.playground_process is not None:
+            stop_process(self.playground_process)
+            self.playground_process = None
+
+    def start_playground(self, name: str, *, scaffold: bool = True) -> str:
+        if name not in ("development", "capstone"):
+            raise ValueError("unknown playground")
+        self.stop_playground()
+        directory = self.workspace / "exercises"
+        directory.mkdir(exist_ok=True)
+        self.playground_name = name
+
+        if scaffold:
+            subprocess.run(
+                [str(self.python.with_name("pysx-playground")), name],
+                cwd=directory,
+                env=clean_env(),
+                capture_output=True,
+                check=True,
+            )
+            self.playground_original = (directory / "playgrounds" / f"{name}.py").read_text()
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                self.playground_port = listener.getsockname()[1]
+        command = [
+            str(self.python.with_name("pysx")),
+            "--app",
+            f"playgrounds.{name}",
+            "--port",
+            str(self.playground_port),
+        ]
+
+        if name == "development":
+            command.append("--watch")
+        log = self.workspace / "playground.log"
+        with log.open("w") as stream:
+            self.playground_process = subprocess.Popen(
+                command,
+                cwd=directory,
+                env=clean_env(),
+                stdout=stream,
+                stderr=stream,
+                text=True,
+                start_new_session=True,
+            )
+        wait_for(lambda: "pysx ready" in log.read_text(), log)
+
+        return f"http://127.0.0.1:{self.playground_port}"
+
+    def edit_playground(self, action: str) -> list[object]:
+        if self.playground_name != "development":
+            raise ValueError("development playground required")
+        content = self.playground_original.replace(
+            'h1: "Development playground"', f'h1: "Edited development playground: {action}"'
+        )
+
+        if action == "eager":
+            content = content.replace('span(id="count"): {count}', 'span(id="count"): {count()}')
+        elif action == "attribute":
+            content = content.replace('title="A derived value"', 'tittle="A derived value"')
+        elif action == "broken":
+            content += "\ninvalid syntax !!!\n"
+        elif action not in ("heading", "repair"):
+            raise ValueError("unknown source edit")
+        source = self.workspace / "exercises/playgrounds/development.py"
+        source.write_text(content)
+        result = subprocess.run(
+            [str(self.python), "-m", "pysx.tooling.check", str(source)],
+            cwd=source.parent.parent,
+            env=clean_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        rows: object = json.loads(result.stdout)
+
+        if not isinstance(rows, list):
+            raise ValueError("invalid diagnostic response")
+
+        return cast("list[object]", rows)
 
 
 def run(port: int, *, packaged: bool = False) -> None:
@@ -184,7 +273,21 @@ def run(port: int, *, packaged: bool = False) -> None:
 
             def do_GET(self) -> None:
                 try:
-                    if self.path in ("/restart", "/upgrade", "/reset"):
+                    response: dict[str, object] = {"base": f"http://127.0.0.1:{worker.port}"}
+
+                    if self.path.startswith("/playground/start/"):
+                        response["base"] = worker.start_playground(self.path.rsplit("/", 1)[-1])
+                    elif self.path == "/playground/restart":
+                        response["base"] = worker.start_playground(
+                            worker.playground_name, scaffold=False
+                        )
+                    elif self.path == "/playground/stop":
+                        worker.stop_playground()
+                    elif self.path.startswith("/playground/edit/"):
+                        response["diagnostics"] = worker.edit_playground(
+                            self.path.rsplit("/", 1)[-1]
+                        )
+                    elif self.path in ("/restart", "/upgrade", "/reset"):
                         worker.stop(crash=self.path != "/reset")
                         worker.schema = 2 if self.path == "/upgrade" else 1
 
@@ -193,7 +296,7 @@ def run(port: int, *, packaged: bool = False) -> None:
                         worker.start()
                     elif self.path != "/status":
                         raise ValueError("unknown control")
-                    body = json.dumps({"base": f"http://127.0.0.1:{worker.port}"}).encode()
+                    body = json.dumps(response).encode()
                     self.send_response(200)
                 except Exception:
                     body = b"tutorial worker control failed"

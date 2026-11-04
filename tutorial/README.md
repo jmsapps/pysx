@@ -74,6 +74,13 @@ The course's standalone qualification lab remains available at `/labs/durable`.
 Its store and host key ring live under `.artifacts/tutorial-state` by default;
 `TUTORIAL_STATE_DIR` selects a private persistent directory.
 
+The development-workflow lesson uses `pysx-playground development` with
+`pysx --app playgrounds.development --watch` for its diagnostic and reload edits.
+The resilient capstone has its own `pysx-playground capstone` application, run with
+`pysx --app playgrounds.capstone`: it retains task records, notes and ordering
+through server reconstruction and provides real validation failure/retry controls.
+Each lesson's code walkthrough matches its scaffolded playground source.
+
 The authorization lesson's reader/writer sign-in links are local teaching roles,
 not production login. No real credentials are requested. The protected action uses
 the host's actual current authorization policy. For real hosting, supply your

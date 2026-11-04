@@ -38,3 +38,4 @@ tests/migration/
 
 # Tutorials
 playgrounds/
+!pysx/playgrounds/

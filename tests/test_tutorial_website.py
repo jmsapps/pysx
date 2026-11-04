@@ -36,8 +36,8 @@ PLAYGROUND_LESSONS = {
     1: "counter",
     22: "recovery",
     23: "durable",
-    25: "counter",
-    28: "durable",
+    25: "development",
+    28: "capstone",
 }
 
 
@@ -323,6 +323,8 @@ def test_tutorial_website_complete_course_graph_and_grounding() -> None:
 
 
 def test_tutorial_website_playground_walkthroughs_match_shipped_code() -> None:
+    assert len(set(PLAYGROUND_LESSONS.values())) == len(PLAYGROUND_LESSONS)
+
     for number, name in PLAYGROUND_LESSONS.items():
         original = (ROOT / "pysx/playgrounds" / f"{name}.py").read_text()
         docstring = ast.parse(original).body[0]
@@ -395,16 +397,23 @@ def test_tutorial_website_every_code_walkthrough_executes(number: int, tmp_path:
         module = importlib.import_module(name)
 
         if number in PLAYGROUND_LESSONS:
-            if PLAYGROUND_LESSONS[number] == "durable":
+            if PLAYGROUND_LESSONS[number] in ("durable", "capstone"):
                 try:
                     response = await module.app.http(
                         RequestContext(path="/", headers={"host": "localhost"})
                     )
                     assert response.status == 200
-                    assert b"Durable declared state" in response.body
-                    assert module.decode({"draft": "Saved", "count": 1}).count == 1
-                    with pytest.raises(ValueError, match="invalid counter or draft"):
-                        module.decode({"draft": 42, "count": "invalid"})
+
+                    if PLAYGROUND_LESSONS[number] == "durable":
+                        assert b"Durable declared state" in response.body
+                        assert module.decode({"draft": "Saved", "count": 1}).count == 1
+                        with pytest.raises(ValueError, match="invalid counter or draft"):
+                            module.decode({"draft": 42, "count": "invalid"})
+                    else:
+                        assert b"Resilient task workspace" in response.body
+                        assert module.decode(module.encode(module.State())) == module.State()
+                        with pytest.raises(ValueError, match="invalid task"):
+                            module.decode({"tasks": [{"id": True}]})
                 finally:
                     await module.app.close()
             else:
@@ -414,7 +423,11 @@ def test_tutorial_website_every_code_walkthrough_executes(number: int, tmp_path:
                     assert 'id="count"' in session.rendered.body or (
                         'id="history"' in session.rendered.body
                     )
-                    payload = "Edited name" if PLAYGROUND_LESSONS[number] == "recovery" else None
+                    payload = (
+                        "Edited draft"
+                        if PLAYGROUND_LESSONS[number] in ("recovery", "development")
+                        else None
+                    )
                     changes = session.dispatch(next(iter(session.rendered.handlers)), payload)
 
                     if payload is None:

@@ -116,8 +116,8 @@ try {
   ];
   const localPlaygrounds = new Map([
     ["getting-started", "counter"], ["browser-recovery", "recovery"],
-    ["durable-state", "durable"], ["development-workflow", "counter"],
-    ["capstone-resilience", "durable"],
+    ["durable-state", "durable"], ["development-workflow", "development"],
+    ["capstone-resilience", "capstone"],
   ]);
   for (const [index, slug] of slugs.entries()) {
     if (slug === "capstone-resilience") await page.request.get(base + "/demo-login/writer");
@@ -441,6 +441,88 @@ try {
   await returnToOverview.click();
   await page.waitForURL(base + "/");
   await connected();
+  const development = await control("/playground/start/development");
+  const editorPage = await context.newPage();
+  editorPage.on("pageerror", error => errors.push(error.message));
+  await editorPage.goto(development.base); await connected(editorPage);
+  await editorPage.locator("#increment").click(); await text("count", "1", editorPage);
+  await editorPage.locator("#draft").fill("Keep this draft");
+  await text("draft-echo", "Keep this draft", editorPage);
+  const edit = async action => {
+    const result = await control("/playground/edit/" + action);
+    if (action !== "broken") {
+      await editorPage.waitForFunction(action => document.querySelector("h1")?.textContent ===
+        `Edited development playground: ${action}`, action);
+      await connected(editorPage);
+    }
+    return result.diagnostics;
+  };
+  assert.deepEqual(await edit("heading"), []);
+  await text("count", "1", editorPage);
+  assert.equal(await editorPage.locator("#draft").inputValue(), "Keep this draft");
+  assert(/eager|frozen|snapshot/i.test(JSON.stringify(await edit("eager"))));
+  const frozenCount = await editorPage.locator("#count").textContent();
+  await editorPage.locator("#increment").click(); await text("doubled", "4", editorPage);
+  assert.equal(await editorPage.locator("#count").textContent(), frozenCount);
+  assert(JSON.stringify(await edit("attribute")).includes("tittle"));
+  await text("count", "2", editorPage);
+  await edit("broken");
+  await editorPage.waitForFunction(async () => {
+    const state = await (await fetch("/__pysx_dev__/status")).json();
+    return Boolean(state.error);
+  });
+  await editorPage.locator("#increment").click(); await text("count", "3", editorPage);
+  assert.deepEqual(await edit("repair"), []);
+  await text("count", "3", editorPage);
+  assert.equal(await editorPage.locator("#draft").inputValue(), "Keep this draft");
+  await editorPage.close(); await control("/playground/stop");
+  console.log("  ok  scaffolded development: diagnostics, eager/live correction, retained edits and broken-candidate recovery");
+
+  const capstone = await control("/playground/start/capstone");
+  const workspace = await context.newPage();
+  workspace.on("pageerror", error => errors.push(error.message));
+  await workspace.goto(capstone.base); await connected(workspace);
+  await text("validation-status", "success", workspace);
+  await workspace.locator("#new-task").fill("Persist this task");
+  await workspace.locator("#task-add").click(); await workspace.locator('[data-task="3"]').waitFor();
+  await workspace.locator("#task-note-1").fill("First row note");
+  await workspace.locator("#task-note-3").fill("Saved new row note");
+  await workspace.locator("#task-reverse").click();
+  await workspace.waitForFunction(() => document.querySelector("[data-task]")?.dataset.task === "3");
+  await workspace.locator('[data-task-toggle="1"]').click();
+  await workspace.locator("#task-active").check();
+  await workspace.waitForFunction(() => !document.querySelector('[data-task="1"]'));
+  await workspace.locator("#task-active").uncheck();
+  await workspace.locator('[data-task="1"]').waitFor();
+  await workspace.locator("#validation-fail").click(); await text("validation-status", "error", workspace);
+  await workspace.locator("#validation-retry").click(); await text("validation-status", "success", workspace);
+  const setup = await workspace.locator("#setup").textContent();
+  await control("/playground/restart");
+  await workspace.waitForFunction(setup => document.getElementById("setup")?.textContent !== setup &&
+    document.getElementById("pysx-root")?.dataset.pysxConnection === "connected", setup);
+  assert.equal(await workspace.locator("#task-note-1").inputValue(), "First row note");
+  assert.equal(await workspace.locator("#task-note-3").inputValue(), "Saved new row note");
+  assert.equal(await workspace.locator('[data-task="3"] h3').textContent(), "Persist this task");
+  assert.equal(await workspace.locator("[data-task]").first().getAttribute("data-task"), "3");
+  await workspace.locator("#task-active").check();
+  await workspace.waitForFunction(() => !document.querySelector('[data-task="1"]'));
+  await workspace.locator("#task-active").uncheck();
+  await workspace.locator("#new-task").fill("Added after restart");
+  await workspace.locator("#task-add").click();
+  await workspace.locator('[data-task="4"]').waitFor();
+  await workspace.locator("#validation-fail").click(); await text("validation-status", "error", workspace);
+  await workspace.locator("#validation-retry").click(); await text("validation-status", "success", workspace);
+  await text("validation-message", "Validated 4 tasks", workspace);
+  const freshWorkspace = await context.newPage();
+  await freshWorkspace.goto(capstone.base); await connected(freshWorkspace);
+  assert.equal(await freshWorkspace.locator("[data-task]").count(), 2);
+  assert.equal(await freshWorkspace.locator("#task-note-1").inputValue(), "");
+  await freshWorkspace.close();
+  await workspace.locator("#task-reset").click();
+  await workspace.waitForFunction(() => document.querySelectorAll("[data-task]").length === 2 &&
+    document.getElementById("task-note-1")?.value === "");
+  await workspace.close(); await control("/playground/stop");
+  console.log("  ok  scaffolded capstone: keyed edits, filters, real restart, task reconstruction, rebuilt resources and isolation");
   assert.deepEqual(errors, []);
   console.log("  ok  overview/review boundaries, actual adjacent links, responsive layout and keyboard access");
   console.log("TUTORIAL WEBSITE BROWSER PASSED");

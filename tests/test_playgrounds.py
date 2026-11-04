@@ -1,5 +1,6 @@
 """Scaffolded playground sources, scoped replacement and per-playground state."""
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -58,17 +59,19 @@ def test_scaffold_wipes_only_the_requested_playgrounds_state(tmp_path: Path) -> 
     scaffold((), root=tmp_path)
     state = tmp_path / "playgrounds" / ".state"
 
-    for name in ("counter", "durable"):
+    for name in ("counter", "durable", "capstone"):
         (state / name).mkdir(parents=True)
         (state / name / "store").write_text("kept", encoding="utf-8")
     scaffold(("counter",), root=tmp_path)
 
     assert not (state / "counter").exists()
     assert (state / "durable" / "store").read_text(encoding="utf-8") == "kept"
+    assert (state / "capstone" / "store").read_text(encoding="utf-8") == "kept"
 
     scaffold((), root=tmp_path)
 
     assert not (state / "durable").exists()
+    assert not (state / "capstone").exists()
 
 
 def test_scaffold_preserves_an_existing_package_marker(tmp_path: Path) -> None:
@@ -140,3 +143,35 @@ def test_console_script_is_registered() -> None:
     config = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     assert 'pysx-playground = "pysx.tooling.playground:main"' in config
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        {"tasks": "invalid"},
+        {"tasks": [{"id": True, "title": "Task", "done": False, "note": ""}]},
+        {"tasks": [{"id": 1, "title": " ", "done": False, "note": ""}]},
+        {"tasks": [{"id": 1, "title": "Task", "done": 1, "note": ""}]},
+        {"tasks": [{"id": 1, "title": "Task", "done": False, "note": "x" * 513}]},
+        {"tasks": [{"id": 1, "title": "Task", "done": False, "note": ""}] * 2},
+        {"tasks": [{"id": n, "title": "Task", "done": False, "note": ""} for n in range(1, 22)]},
+    ],
+)
+def test_capstone_codec_rejects_invalid_records(tmp_path: Path, value: object) -> None:
+    scaffold(("capstone",), root=tmp_path)
+    probe = (
+        "import json,sys; sys.path.insert(0, '.'); "
+        "from playgrounds.capstone import decode\n"
+        "try:\n    decode(json.loads(sys.argv[1]))\n"
+        "except ValueError:\n    pass\n"
+        "else:\n    raise AssertionError('invalid task state accepted')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe, json.dumps(value)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

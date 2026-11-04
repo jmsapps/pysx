@@ -42,7 +42,7 @@ LESSONS = (
         "development-workflow",
         "Development workflow and editor tools",
         "Build and operate",
-        "Use actual static diagnostics and a compatible watch workflow without executing samples.",
+        "Practice editor diagnostics, live bindings and compatible hot reload in your own project.",
         "Fast feedback helps you reason about live templates before opening a browser. "
         "The checker and editor understand markup alongside Python, but template "
         "diagnostics remain advisory. A successful editor check is not a runtime proof.\n\n"
@@ -50,9 +50,9 @@ LESSONS = (
         "`count()` hole with a live `count` reference fixes a frozen display. Watch mode "
         "then lets you observe compatible edits in your own running application.",
         "Watching requires a server you control, so this lesson's exercise uses a "
-        "playground rather than the course you are reading. Scaffold the counter from "
-        "lesson 1 again, then run it with `pysx --app playgrounds.counter --watch` and edit "
-        "`playgrounds/counter.py` while it serves. Compatible "
+        "development playground rather than the course you are reading. Run it with "
+        "`pysx --app playgrounds.development --watch` and edit "
+        "`playgrounds/development.py` while it serves. Compatible "
         "saved edits preserve supported UI state while a broken candidate leaves the "
         "previous worker available. The documented CLI uses the same application entry "
         "as ordinary serving.\n\n"
@@ -60,24 +60,28 @@ LESSONS = (
         "Keep Python/Pylance ownership of Python expressions and use the framework's "
         "template-aware tooling for markup. The final installed qualification uses the "
         "real editor host, not a mock completion provider.",
-        CodeSample(playgrounds.counter),
-        "This is the counter copied into `playgrounds/counter.py`. `count` is a local "
-        "signal, `increment` updates it and the live hole displays it. Run with `--watch` "
-        "to keep that compatible state while changing the `h1` text. Saving a Python "
-        "syntax error demonstrates candidate rejection without adding a separate demo "
-        "application. The editor and terminal provide feedback on the file you actually run.",
-        "Increment the counter a few times.\n\n"
-        "Open `playgrounds/counter.py` in your editor and change the heading text. "
-        "Save the file.\n\n"
-        "Keep the browser tab open and wait for the updated heading. Compare the counter.\n\n"
+        CodeSample(playgrounds.development),
+        "`count` and `draft` retain delivered edits during compatible reloads. `doubled` "
+        "derives twice the count. Both number displays use live holes. Changing the count "
+        "span to `count()` freezes that display and produces an advisory warning; the "
+        "derived display remains live. The doubled span's `title` attribute gives you "
+        "a concrete markup diagnostic to try. All edits happen in the file you actually run.",
+        "Increment the count and enter a draft. Change the heading in "
+        "`playgrounds/development.py` and save while keeping the tab open.\n\n"
+        "Change the count span's hole from `count` to `count()`. Inspect the editor warning, "
+        "increment again, then restore `count`.\n\n"
+        "Misspell `title` as `tittle` on the doubled span, inspect the attribute warning, "
+        "then correct it.\n\n"
         "Introduce a Python syntax error and save, then correct it and save again.",
-        "A compatible heading edit appears while the counter keeps its value. A syntax "
+        "A compatible heading edit preserves the count and draft. An eager hole freezes "
+        "one display while the derived value still updates. The editor flags the eager "
+        "hole and misspelled attribute; correcting them clears those findings. A syntax "
         "error is reported in the terminal; the previous working page remains available "
         "until you save a valid correction.",
         "Combine static feedback, a real watch journey and runtime verification.",
         ("development", "diagnostics", "editor_features"),
-        "pip install 'pysx[lsp]'\npysx-playground counter\n"
-        "pysx --app playgrounds.counter --watch\n",
+        "pip install 'pysx[lsp]'\npysx-playground development\n"
+        "pysx --app playgrounds.development --watch\n",
     ),
     Lesson(
         26,
@@ -150,39 +154,44 @@ LESSONS = (
         "capstone-resilience",
         "Make the capstone resilient",
         "Build and operate",
-        "Reconstruct declared application data while rebuilding handlers in a fresh graph.",
+        "Keep the task workspace working through validation failures and server reconstruction.",
         "A useful application must explain what happens when its server stops. The "
         "workspace from the previous lesson stores task data in ordinary signals. To "
         "make selected data durable, declare a state root, supply its codec and give the "
         "host a persistent store.\n\n"
-        "The durable playground isolates that reconstruction pattern with a draft and "
-        "counter. It keeps the restart experiment small enough to inspect completely. "
+        "The capstone playground keeps the same tasks, row notes, reordering and active "
+        "filter, and adds a durable task root plus an owned validation resource. "
         "A changed setup marker after worker loss proves that the application graph "
         "was rebuilt rather than merely reattached.",
-        "`State` contains the saved data. `encode` converts it to JSON-compatible values, "
+        "`State` contains the saved task records. `encode` converts them to "
+        "JSON-compatible values, "
         "and `decode` checks those values before constructing a new root. The SQLite "
         "store retains a snapshot while application code creates new handlers. Keep "
         "the browser document open through the restart so it can resume its session.\n\n"
-        "After reconstruction, use Increment again. Restored data is useful only if "
-        "the rebuilt interface can continue working with it. Apply this pattern to "
-        "the workspace's task records when extending your own application. UI state "
+        "Simulate a validation failure and retry it without replacing your tasks. After "
+        "reconstruction, add another task and validate again: restored data is useful "
+        "only if the rebuilt interface can continue working with it. UI state "
         "persistence does not make external transactions exactly-once.",
-        CodeSample(playgrounds.durable),
-        "The code shown is the durable playground used below. `StateCodec` validates "
-        "the declared draft and counter, and `SQLiteOwnershipStore` retains their "
-        "snapshot. The `setup` marker and `increment` handler are created inside `view`, "
-        "so they are rebuilt around restored data after a restart. This experiment "
-        "isolates reconstruction; the authorization, task and async patterns from "
-        "earlier lessons remain separate concerns when you extend your own workspace.",
-        "Edit the saved draft and increment the counter in the durable playground.\n\n"
+        CodeSample(playgrounds.capstone),
+        "`Task` retains each row's stable id, title, completion flag and note. `StateCodec` "
+        "bounds and validates these records, and `SQLiteOwnershipStore` saves the root. "
+        "The row note projects back into that root, so reversing or filtering rows "
+        "preserves the correct record. `validation` is an owned async resource; failure "
+        "and retry reload its work without clearing tasks. The setup marker, handlers "
+        "and resource are rebuilt after restart. The new-task draft and filter remain "
+        "temporary UI rather than saved task records.",
+        "Add a task and edit a row note. Reverse the tasks, toggle completion and try "
+        "the active filter; turn the filter off before restarting.\n\n"
+        "Click Simulate validation failure, then Retry validation. Check that the tasks remain.\n\n"
         "Stop the server with Ctrl+C, leaving the browser tab open.\n\n"
         "Start the same run command again from the same project directory.\n\n"
-        "Compare the draft, counter and setup marker, then increment again to exercise "
-        "a rebuilt handler.",
-        "Declared data reconstructs while the setup marker changes. The increment button "
-        "still works because the new graph builds new handlers around the restored data.",
+        "Compare the tasks, notes, completion flags, row order and setup marker. Add another "
+        "task and retry validation to exercise the rebuilt handlers and resource.",
+        "Failure is visible and retry succeeds without losing task edits. Saved task "
+        "records and order reconstruct after restart, while the setup marker changes. "
+        "New tasks and validation still work in the rebuilt graph.",
         "Resilience is an observed workflow across boundaries, not one successful initial render.",
         ("browser_recovery", "durable_state", "resources", "session_security"),
-        "pip install pysx\npysx-playground durable\npysx --app playgrounds.durable\n",
+        "pip install pysx\npysx-playground capstone\npysx --app playgrounds.capstone\n",
     ),
 )
