@@ -14,7 +14,8 @@ from pysx.compiler.loader import install_loader
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tutorial"))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tutorial"))
 install_loader(packages=("examples", "src"))
 
 
@@ -58,10 +59,21 @@ def _asyncio_hang_watchdog() -> Iterator[None]:
 
     def report() -> None:
         name = os.environ.get("PYTEST_CURRENT_TEST", "unknown test")
-        sys.stderr.write(
+        entry = (
             f"\nPYSX TASK WATCHDOG: {name} still running after {seconds}s\n"
             f"{_pending_task_stacks()}\n"
         )
+        # pytest captures sys.stderr per test, and a test that never finishes never
+        # has its capture reported, so the report has to leave the process.
+        logs = Path(os.environ.get("PYSX_DEPLOYMENT_LOGS", "") or ROOT / ".pysx-logs")
+
+        try:
+            logs.mkdir(parents=True, exist_ok=True)
+            with (logs / "task-watchdog.log").open("a", encoding="utf-8") as stream:
+                stream.write(entry)
+        except OSError:
+            pass
+        sys.stderr.write(entry)
         sys.stderr.flush()
 
     timer = threading.Timer(seconds, report)

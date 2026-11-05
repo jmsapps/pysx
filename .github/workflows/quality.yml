@@ -19,6 +19,7 @@ jobs:
       PYSX_DEPLOYMENT_LOGS: ${{ github.workspace }}/.pysx-logs
       PYSX_EDITOR_SAVE_BUDGET: '3'
       PYSX_EDITOR_VISIBLE_BUDGET: '5'
+      PYSX_TASK_WATCHDOG_SECONDS: '30'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
