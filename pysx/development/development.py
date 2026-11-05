@@ -243,7 +243,7 @@ class Worker:
     async def close(self) -> None:
         if self.process.returncode is None:
             with suppress(ProcessLookupError):
-                if os.name == "posix":
+                if sys.platform != "win32":
                     os.killpg(self.process.pid, signal.SIGTERM)
                 else:
                     self.process.terminate()
@@ -253,13 +253,13 @@ class Worker:
                     await self.process.wait()
             except TimeoutError:
                 with suppress(ProcessLookupError):
-                    if os.name == "posix":
+                    if sys.platform != "win32":
                         os.killpg(self.process.pid, signal.SIGKILL)
                     else:
                         self.process.kill()
                 await self.process.wait()
 
-        if os.name == "posix":
+        if sys.platform != "win32":
             # An import can start descendants before it raises. The leader may
             # already have exited while those descendants still own its pipes.
             with suppress(ProcessLookupError):
@@ -376,7 +376,7 @@ class Supervisor:
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
-                    start_new_session=os.name == "posix",
+                    start_new_session=sys.platform != "win32",
                     env={
                         **os.environ,
                         "PYSX_DEV_ROOTS": json.dumps([str(root) for root in self.config.roots]),
@@ -428,7 +428,7 @@ class Supervisor:
             "--dev",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            start_new_session=os.name == "posix",
+            start_new_session=sys.platform != "win32",
             env={
                 **os.environ,
                 "PYSX_DEV_CONTROL_PORT": str(control_port),

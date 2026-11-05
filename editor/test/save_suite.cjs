@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict");
+const SAVE_BUDGET = Number(process.env.PYSX_EDITOR_SAVE_BUDGET ?? 1);
+const VISIBLE_BUDGET = Number(process.env.PYSX_EDITOR_VISIBLE_BUDGET ?? 1.5);
 const fs = require("node:fs");
 const path = require("node:path");
 const {spawn} = require("node:child_process");
@@ -150,8 +152,8 @@ exports.run = async function () {
           samples.push(sample);
           console.log(`PYSX EDITOR SAVE: ${JSON.stringify(sample)}`);
           if (mode !== "autosave-delay") assert.ok(sample.import_requests > 0, `${mode} must exercise the resident import action`);
-          assert.ok(sample.save_seconds < 1, `${mode} save stalled: ${JSON.stringify(sample)}`);
-          assert.ok(sample.visible_seconds < 1.5, `${mode} update stalled: ${JSON.stringify(sample)}`);
+          assert.ok(sample.save_seconds < SAVE_BUDGET, `${mode} save stalled (budget ${SAVE_BUDGET}s): ${JSON.stringify(sample)}`);
+          assert.ok(sample.visible_seconds < VISIBLE_BUDGET, `${mode} update stalled (budget ${VISIBLE_BUDGET}s): ${JSON.stringify(sample)}`);
         } finally { changed.dispose(); }
         // Let the page's restored signal differ from the next initializer.
         if (edit === "title" && mode === "manual") {

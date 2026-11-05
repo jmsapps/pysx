@@ -60,6 +60,9 @@ def posix_key_storage() -> bool:
 def _directory(path: Path, *, create: bool) -> int:
     """Traverse by directory descriptor: no symlink following or path races."""
 
+    if sys.platform == "win32":
+        raise RuntimeError("posix recovery key storage is unavailable on this platform")
+
     if not path.is_absolute():
         raise ValueError("recovery key directory must be absolute")
     descriptor = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
@@ -88,6 +91,9 @@ def _directory(path: Path, *, create: bool) -> int:
 
 
 def _read(directory: int, name: str) -> KeyRing:
+    if sys.platform == "win32":
+        raise RuntimeError("posix recovery key storage is unavailable on this platform")
+
     descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
 
     try:
@@ -107,6 +113,9 @@ def _read(directory: int, name: str) -> KeyRing:
 
 
 def load_keys(directory: Path, *, provision: bool = False) -> KeyRing:
+    if sys.platform == "win32":
+        raise RuntimeError("posix recovery key storage is unavailable on this platform")
+
     """Read a platform mount, or atomically provision the local single-host ring."""
 
     if not posix_key_storage():

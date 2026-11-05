@@ -18,6 +18,22 @@ from prototypes.distribution import ROOT, clean_env
 from test_dev_server import wait_for
 
 
+def _checked(
+    command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        command, cwd=cwd, env=env, capture_output=True, text=True, check=False
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{' '.join(command)} exited {result.returncode}\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+
+    return result
+
+
 class TutorialWorker:
     def __init__(self, workspace: Path, *, packaged: bool = False, editor: bool = False) -> None:
         self.workspace = workspace
@@ -35,7 +51,7 @@ class TutorialWorker:
         if uv is None:
             raise RuntimeError("uv is required for installed course verification")
         artifacts = workspace / "candidate"
-        subprocess.run(
+        _checked(
             [
                 uv,
                 "build",
@@ -47,10 +63,6 @@ class TutorialWorker:
                 sys.executable,
             ],
             cwd=ROOT,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
         )
         self.site = workspace / "application"
         shutil.copytree(
@@ -58,7 +70,7 @@ class TutorialWorker:
             self.site,
             ignore=shutil.ignore_patterns(".venv", ".artifacts", "__pycache__"),
         )
-        subprocess.run(
+        _checked(
             [
                 sys.executable,
                 str(self.site / "bootstrap.py"),
@@ -67,26 +79,17 @@ class TutorialWorker:
             ],
             cwd=workspace,
             env=clean_env(),
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
         )
         self.python = self.site / ".venv/bin/python"
         self.wheel: Path | None = None
 
         if packaged:
-            subprocess.run(
-                [uv, "build", str(self.site), "--wheel", "--out-dir", str(artifacts)],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            _checked([uv, "build", str(self.site), "--wheel", "--out-dir", str(artifacts)])
             self.wheel = artifacts / "pysx_tutorial-0.1.0-py3-none-any.whl"
             self.reinstall()
 
         if editor:
-            subprocess.run(
+            _checked(
                 [
                     uv,
                     "pip",
@@ -94,10 +97,7 @@ class TutorialWorker:
                     "--python",
                     str(self.python),
                     str(artifacts / "pysx-0.1.0-py3-none-any.whl") + "[lsp]",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
+                ]
             )
         probe = subprocess.run(
             [
@@ -120,7 +120,7 @@ class TutorialWorker:
 
     def reinstall(self) -> None:
         if self.wheel is not None:
-            subprocess.run(
+            _checked(
                 [
                     "uv",
                     "pip",
@@ -132,9 +132,6 @@ class TutorialWorker:
                     "pysx-tutorial",
                     str(self.wheel),
                 ],
-                check=True,
-                capture_output=True,
-                text=True,
             )
 
     def start(self) -> None:

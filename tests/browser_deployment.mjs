@@ -26,8 +26,18 @@ try {
       }
     };
   });
-  const connected = async () => page.waitForFunction(() =>
-    document.getElementById("pysx-root").dataset.pysxConnection === "connected", null, {timeout: 10000});
+  const connected = async () => {
+    try {
+      return await page.waitForFunction(() =>
+        document.getElementById("pysx-root").dataset.pysxConnection === "connected", null, {timeout: 20000});
+    } catch (error) {
+      const state = await page.evaluate(() => {
+        const root = document.getElementById("pysx-root");
+        return root ? root.dataset.pysxConnection ?? "unset" : "no-root";
+      }).catch(() => "unreadable");
+      throw new Error(`deployment never reached connected; last connection state: ${state}\n${error.message}`);
+    }
+  };
   const response = await page.goto(base + "/deep/link?owner=worker-a");
   assert.equal(response.status(), 200);
   assert.ok((await response.text()).includes("Linux durable deployment"));

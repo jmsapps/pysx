@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PYTHON_VERSION = "3.14.4"
 BROWSER_ENGINES = ("chromium", "firefox", "webkit")
+MEASUREMENT_MARKERS = ("PYSX EDITOR WAIT:", "PYSX EDITOR SAVE:")
 
 BOOTSTRAP: tuple[tuple[str, ...], ...] = (
     ("uv", "python", "install", PYTHON_VERSION),
@@ -195,6 +196,10 @@ def main() -> int:
 
         if passed:
             print(f"   ok {gate.name} ({elapsed:.1f}s)", flush=True)
+
+            for line in output.splitlines():
+                if line.startswith(MEASUREMENT_MARKERS):
+                    print(f"   | {line}", flush=True)
 
             continue
         print(f"   FAILED {gate.name} ({elapsed:.1f}s): {' '.join(resolve(gate))}", flush=True)
