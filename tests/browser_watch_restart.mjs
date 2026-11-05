@@ -47,8 +47,9 @@ async function stop() {
     try { process.kill(-owned.child.pid, "SIGKILL"); } catch {}
   }, 10000);
   try {
-    const [code] = await owned.ended;
-    assert.equal(code, 0, output);
+    const [code, signal] = await owned.ended;
+    assert.equal(code, 0,
+      `watch CLI exited code=${code} signal=${signal} platform=${process.platform}\n${output}`);
   } finally { clearTimeout(timer); }
 }
 

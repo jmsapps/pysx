@@ -46,6 +46,7 @@ module-root = ""
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = ["acceptance: real HTTP and WebSocket headless acceptance"]
+faulthandler_timeout = 120
 
 [tool.mypy]
 mypy_path = ["tutorial"]

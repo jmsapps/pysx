@@ -4,12 +4,15 @@ const path = require("node:path");
 const vscode = require("vscode");
 
 async function until(predicate, label, timeout = 15000) {
-  const deadline = Date.now() + timeout;
+  const started = Date.now();
+  const deadline = started + timeout;
+  let polls = 0;
   while (Date.now() < deadline) {
+    polls += 1;
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`timeout waiting for ${label}`);
+  throw new Error(`timeout waiting for ${label} after ${((Date.now() - started) / 1000).toFixed(3)}s (budget ${timeout}ms), ${polls} polls`);
 }
 exports.run = async function () {
   if (process.env.PYSX_EDITOR_SUITE === "validate_integrated") return require("./integrated_suite.cjs").run();

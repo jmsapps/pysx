@@ -11,9 +11,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 75
     env:
       PYSX_EXTENSIONS_DIR: ${{ github.workspace }}/.vscode-test/extensions
       PYSX_DEPLOYMENT_LOGS: ${{ github.workspace }}/.pysx-logs
