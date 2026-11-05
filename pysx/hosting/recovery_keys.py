@@ -144,7 +144,9 @@ def _dpapi(raw: bytes, *, protect: bool) -> bytes:
     buffer = ctypes.create_string_buffer(raw)
     source = Blob(len(raw), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_char)))
     result = Blob()
-    library = cast("object", ctypes.WinDLL("crypt32"))  # type: ignore[attr-defined]
+    # Not use_last_error: ctypes would then save and restore the thread error around
+    # the call, and WinError() below would report the restored value, not DPAPI's.
+    library = cast("object", ctypes.WinDLL("crypt32"))  # type: ignore[attr-defined, unused-ignore]
     entry = cast(
         "Callable[..., int]",
         getattr(library, "CryptProtectData" if protect else "CryptUnprotectData"),
@@ -164,12 +166,17 @@ def _dpapi(raw: bytes, *, protect: bool) -> bytes:
     )
 
     if not ok:
-        raise ValueError("recovery key ring could not be sealed to this user account")
+        reason = cast("Callable[[], BaseException]", ctypes.WinError)()  # type: ignore[attr-defined, unused-ignore]
+        action = "sealed to" if protect else "unsealed for"
+
+        raise ValueError(
+            f"recovery key ring could not be {action} this user account: {reason}"
+        )
 
     try:
         return ctypes.string_at(result.pbData, result.cbData)
     finally:
-        ctypes.windll.kernel32.LocalFree(result.pbData)  # type: ignore[attr-defined]
+        ctypes.windll.kernel32.LocalFree(result.pbData)  # type: ignore[attr-defined, unused-ignore]
 
 
 def _windows_reparse(path: Path) -> bool:
