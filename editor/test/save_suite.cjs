@@ -10,13 +10,16 @@ const {createHash} = require("node:crypto");
 const vscode = require("vscode");
 
 async function until(predicate, label, timeout = 60000) {
-  const deadline = Date.now() + timeout;
+  const started = Date.now();
+  const deadline = started + timeout;
+  let polls = 0;
   while (Date.now() < deadline) {
+    polls += 1;
     const value = await predicate();
     if (value) return value;
     await new Promise(resolve => setTimeout(resolve, 20));
   }
-  throw new Error(`timeout waiting for ${label}`);
+  throw new Error(`timeout waiting for ${label} after ${((Date.now() - started) / 1000).toFixed(3)}s (budget ${timeout}ms), ${polls} polls`);
 }
 
 exports.run = async function () {
