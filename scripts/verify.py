@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PYTHON_VERSION = "3.14.4"
 BROWSER_ENGINES = ("chromium", "firefox", "webkit")
 MEASUREMENT_MARKERS = ("PYSX EDITOR WAIT:", "PYSX EDITOR SAVE:")
+PYTEST_TIMEOUT = 3600.0 if sys.platform == "win32" else 1200.0
 
 BOOTSTRAP: tuple[tuple[str, ...], ...] = (
     ("uv", "python", "install", PYTHON_VERSION),
@@ -75,7 +76,13 @@ GATES: tuple[Gate, ...] = (
     ),
     # Linux finishes this in about six minutes, so a gate still running at twenty
     # is hung rather than slow, and the remaining tiers still fit the job budget.
-    Gate("python", "pytest", ("uv", "run", "--project", ".", "pytest", "-q"), timeout=1200),
+    # Windows runs the same suite several times slower, so it gets its own budget.
+    Gate(
+        "python",
+        "pytest",
+        ("uv", "run", "--project", ".", "pytest", "-q"),
+        timeout=PYTEST_TIMEOUT,
+    ),
     Gate("browser", "browser", ("npm", "--prefix", "tests", "run", "browser")),
     Gate("grammar", "grammar", ("npm", "--prefix", "tests", "run", "grammar")),
     Gate("editor", "editor", ("npm", "--prefix", "editor", "test"), needs_display=True),

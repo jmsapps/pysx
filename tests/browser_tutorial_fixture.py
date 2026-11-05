@@ -80,7 +80,11 @@ class TutorialWorker:
             cwd=workspace,
             env=clean_env(),
         )
-        self.python = self.site / ".venv/bin/python"
+        self.python = (
+            self.site / ".venv/Scripts/python.exe"
+            if sys.platform == "win32"
+            else self.site / ".venv/bin/python"
+        )
         self.wheel: Path | None = None
 
         if packaged:
