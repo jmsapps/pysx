@@ -17,7 +17,10 @@ async def run(port: int) -> None:
     loop = asyncio.get_running_loop()
 
     for name in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(name, stop.set)
+        try:
+            loop.add_signal_handler(name, stop.set)
+        except NotImplementedError:
+            signal.signal(name, lambda _signal, _frame: loop.call_soon_threadsafe(stop.set))
     external = f"https://127.0.0.1:{port}"
     application = Application(
         app,

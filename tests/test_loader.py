@@ -20,6 +20,18 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
 
+def _run(command: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=False)
+
+    if result.returncode != 0:
+        raise AssertionError(
+            f"{' '.join(command)} exited {result.returncode}\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+
+    return result
+
+
 @pytest.fixture
 def app_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     root = tmp_path / "source"
@@ -304,16 +316,13 @@ def app():
     shutil.rmtree(app_root)
     project = Path(__file__).resolve().parents[1]
     artifacts = tmp_path / "wheels"
-    subprocess.run(
+    _run(
         ["uv", "build", "--offline", "--wheel", "--out-dir", str(artifacts)],
         cwd=project,
-        check=True,
-        capture_output=True,
-        text=True,
     )
     wheel = next(artifacts.glob("*.whl"))
     installed = tmp_path / "installed"
-    subprocess.run(
+    _run(
         [
             "uv",
             "pip",
@@ -324,10 +333,7 @@ def app():
             "--target",
             str(installed),
             str(wheel),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
+        ]
     )
     script = """from pathlib import Path
 import sys
