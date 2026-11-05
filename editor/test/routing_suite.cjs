@@ -17,14 +17,17 @@ async function withDeadline(operation, label, timeout = 90000) {
 }
 
 async function until(predicate, label, timeout = 90000) {
-  const deadline = Date.now() + timeout;
+  const started = Date.now();
+  const deadline = started + timeout;
+  let polls = 0;
   let last;
   while (Date.now() < deadline) {
+    polls += 1;
     last = await withDeadline(predicate, label, deadline - Date.now());
     if (last) return last;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  throw new Error(`timeout waiting for ${typeof label === "function" ? label() : label}`);
+  throw new Error(`timeout waiting for ${typeof label === "function" ? label() : label} after ${((Date.now() - started) / 1000).toFixed(3)}s (budget ${timeout}ms), ${polls} polls, last: ${JSON.stringify(last) ?? "undefined"}`);
 }
 
 function alive(pid) {

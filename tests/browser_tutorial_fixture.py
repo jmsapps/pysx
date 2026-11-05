@@ -18,6 +18,12 @@ from prototypes.distribution import ROOT, clean_env
 from test_dev_server import wait_for
 
 
+def _console(python: Path, name: str) -> str:
+    suffix = ".exe" if sys.platform == "win32" else ""
+
+    return str(python.with_name(name + suffix))
+
+
 def _checked(
     command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
@@ -150,7 +156,7 @@ class TutorialWorker:
         with log.open("w") as stream:
             self.process = subprocess.Popen(
                 [
-                    str(self.python.with_name("pysx")),
+                    _console(self.python, "pysx"),
                     "--app",
                     "src:app",
                     "--port",
@@ -191,7 +197,7 @@ class TutorialWorker:
 
         if scaffold:
             subprocess.run(
-                [str(self.python.with_name("pysx-playground")), name],
+                [_console(self.python, "pysx-playground"), name],
                 cwd=directory,
                 env=clean_env(),
                 capture_output=True,
@@ -202,7 +208,7 @@ class TutorialWorker:
                 listener.bind(("127.0.0.1", 0))
                 self.playground_port = listener.getsockname()[1]
         command = [
-            str(self.python.with_name("pysx")),
+            _console(self.python, "pysx"),
             "--app",
             f"playgrounds.{name}",
             "--port",

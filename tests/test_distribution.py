@@ -19,6 +19,12 @@ from test_dev_server import get, project, serving, wait_for
 from pysx.tooling.tools import RUFF_REQUIREMENT
 
 
+def _console(python: Path, name: str) -> str:
+    suffix = ".exe" if sys.platform == "win32" else ""
+
+    return str(python.with_name(name + suffix))
+
+
 def test_installed_serve_fresh_wheel_outside_checkout(tmp_path: Path) -> None:
     uv = shutil.which("uv")
     assert uv is not None
@@ -50,7 +56,7 @@ def test_installed_serve_fresh_wheel_outside_checkout(tmp_path: Path) -> None:
     consumer.mkdir()
     project(consumer)
 
-    with serving(consumer, [str(python.with_name("pysx"))]) as (port, log):
+    with serving(consumer, [_console(python, "pysx")]) as (port, log):
         assert b"original" in get(port)
         (consumer / "component.py").write_text('def label():\n    return "installed edit"\n')
         wait_for(lambda: b"installed edit" in get(port), log)
@@ -97,7 +103,7 @@ def test_host_config_fresh_actual_wheel_user_app(tmp_path: Path, *, asgi: bool) 
         'assets={"/note.txt": StaticAsset.from_path(Path("note.txt"))}))\n'
     )
     (consumer / "note.txt").write_text("user asset")
-    console = python.with_name("pysx")
+    console = Path(_console(python, "pysx"))
     imports = command(
         [
             str(python),

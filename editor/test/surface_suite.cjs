@@ -4,14 +4,17 @@ const path = require("node:path");
 const vscode = require("vscode");
 
 async function until(predicate, label, timeout = 90000) {
-  const deadline = Date.now() + timeout;
+  const started = Date.now();
+  const deadline = started + timeout;
+  let polls = 0;
   let last;
   while (Date.now() < deadline) {
+    polls += 1;
     last = await predicate();
     if (last) return last;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  throw new Error(`timeout waiting for ${label}`);
+  throw new Error(`timeout waiting for ${label} after ${((Date.now() - started) / 1000).toFixed(3)}s (budget ${timeout}ms), ${polls} polls, last: ${JSON.stringify(last) ?? "undefined"}`);
 }
 
 const LIBRARY = [
