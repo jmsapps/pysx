@@ -1,10 +1,12 @@
 """Execute maintained lessons in checkout and isolated installed environments."""
 
+import ast
 import re
 import shutil
 import socket
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -81,6 +83,13 @@ def test_corpus_executable_public_api_and_contract_links() -> None:
     documented = set(re.findall(r"`([A-Za-z_]\w*)`", api))
     assert set(pysx.__all__) <= documented
 
+    indexed = {
+        name
+        for row in re.findall(r"^\|\s*(`[^|]+?)\s*\|", api, re.MULTILINE)
+        for name in re.findall(r"`([A-Za-z_]\w*)`", row)
+    }
+    assert indexed == set(pysx.__all__)
+
     for name in pysx.__all__:
         assert getattr(pysx, name) is not None
 
@@ -90,6 +99,41 @@ def test_corpus_executable_public_api_and_contract_links() -> None:
         for target in re.findall(r"\]\(([^)]+)\)", path.read_text()):
             if not target.startswith(("https:", "http:", "#")):
                 assert (path.parent / target.split("#")[0]).is_file(), (filename, target)
+
+
+def test_corpus_executable_playground_commands() -> None:
+    scripts: dict[str, str] = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"][
+        "scripts"
+    ]
+    invocations: list[tuple[str, str, list[str]]] = []
+
+    for path in sorted((ROOT / "pysx/playgrounds").glob("[!_]*.py")):
+        docstring = ast.get_docstring(ast.parse(path.read_text()))
+        assert docstring is not None, path.name
+
+        for line in docstring.splitlines():
+            words = line.split()
+
+            if not words or not words[0].startswith("pysx"):
+                continue
+
+            assert words[0] in scripts, (path.name, line)
+            invocations.append((path.name, line, words))
+
+    assert invocations
+
+    usage: dict[str, str] = {}
+
+    for name in sorted({words[0] for _, _, words in invocations}):
+        module, _, attribute = scripts[name].partition(":")
+        usage[name] = command(
+            [sys.executable, "-c", f"from {module} import {attribute}; {attribute}()", "--help"],
+            ROOT,
+        ).stdout
+
+    for filename, line, words in invocations:
+        for flag in (word for word in words[1:] if word.startswith("--")):
+            assert flag in usage[words[0]], (filename, line, flag)
 
 
 @pytest.mark.parametrize(("identity", "source"), SNIPPETS, ids=[row[0] for row in SNIPPETS])
