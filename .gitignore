@@ -35,3 +35,7 @@ PLAN.md
 # Port-only verification material
 tests/migration/
 .pysx-logs/
+
+# Tutorials
+playgrounds/
+!pysx/playgrounds/

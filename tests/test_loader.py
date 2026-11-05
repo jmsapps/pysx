@@ -151,6 +151,16 @@ def test_late_install_is_reported(app_root: Path) -> None:
         install_loader(packages=("author_app",))
 
 
+def test_explicit_installed_app_root_keeps_nested_exclusions() -> None:
+    root = Path("/consumer/.venv/lib/python3.14/site-packages/installed_course")
+    finder = install_loader(packages=("installed_course",), roots=(root,))
+    assert finder.covers("installed_course.pages", root / "pages.py")
+    assert not finder.covers("installed_course.vendor.pages", root / "vendor/pages.py")
+    assert not finder.covers("installed_course.hidden", root / ".hidden/pages.py")
+    assert not finder.covers("unrelated", root.parent / "unrelated.py")
+    assert not finder.covers("pysx", root / "pysx.py")
+
+
 def test_dependency_change_invalidates_cached_marker(app_root: Path) -> None:
     marker = _write(app_root, "marker.py", "from unrelated import pysx\n")
     view = _write(

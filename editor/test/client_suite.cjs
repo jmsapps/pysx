@@ -54,11 +54,15 @@ const SOURCE = [
   "    return pysx(t'p: {title}')",
   "",
   "",
+  "panel = Panel",
+  "",
+  "",
   "def view() -> Fragment:",
   "    return pysx(",
   '        t"""',
   "        div(class=\"wrap\", css=\"color: rebeccapurple;\"):",
   "              Panel(title=\"hello\")",
+  "              panel(title=\"lowercase\")",
   '    """,',
   "    )",
   "",
@@ -140,6 +144,13 @@ exports.run = async function () {
   }
   assert(!markup.tokens.some((token) => ["div", "Panel", "label", "AFTER_SENTINEL"]
     .includes(decoratedText(token))), "decorations avoid direct literals and Python expressions");
+  assert(markup.tokens.some((token) => token.kind === "class" && decoratedText(token) === "panel"),
+    "resolved lowercase component in a direct literal receives component coloring");
+  const componentColor = extension.packageJSON.contributes.colors.find(color => color.id === "pysx.markup.class");
+  const componentRule = extension.packageJSON.contributes.configurationDefaults["editor.tokenColorCustomizations"]
+    .textMateRules.find(rule => rule.scope === "support.class.component.pysx");
+  assert.equal(componentColor.defaults.dark, componentRule.settings.foreground,
+    "component decorations match the uppercase TextMate green");
   const cssOffset = SOURCE.indexOf("color: rebeccapurple;", SOURCE.indexOf("shared = t"));
   const cssEnd = cssOffset + "color: rebeccapurple;".length;
   const offsetAt = (position) => document.offsetAt(
@@ -148,6 +159,29 @@ exports.run = async function () {
     offsetAt(token.range.start) < cssEnd &&
     offsetAt(token.range.end) > cssOffset), "markup decorations do not overlay CSS values");
   assert(Number.isInteger(markup.generation), "decoration metadata carries its analysis generation");
+  const replacePanelAlias = async value => {
+    const start = document.getText().indexOf("panel = ");
+    const end = document.getText().indexOf("\n", start);
+    const change = new vscode.WorkspaceEdit();
+    change.replace(document.uri, new vscode.Range(document.positionAt(start), document.positionAt(end)),
+      `panel = ${value}`);
+    assert(await vscode.workspace.applyEdit(change));
+  };
+  await replacePanelAlias("0");
+  await until(async () => {
+    await api.highlighting.refresh(document);
+    const applied = api.highlighting.applied(document.uri);
+    return applied?.version === document.version && !applied.tokens.some(token =>
+      token.kind === "class" && decoratedText(token) === "panel");
+  }, "unsaved non-callable binding clears the lowercase component decoration");
+  await replacePanelAlias("Panel");
+  await until(async () => {
+    await api.highlighting.refresh(document);
+    const applied = api.highlighting.applied(document.uri);
+    return applied?.version === document.version && applied.tokens.some(token =>
+      token.kind === "class" && decoratedText(token) === "panel");
+  }, "unsaved restored alias regains its component decoration");
+  await pythonSemantics(document, [["view", "function"], ["label", "parameter", "{label}"]]);
 
   const symbols = await until(async () => {
     const found = await vscode.commands.executeCommand(

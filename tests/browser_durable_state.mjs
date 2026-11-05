@@ -53,7 +53,7 @@ try {
   assert.equal(await page.locator("#durable-count").textContent(), "1");
   assert.equal(await page.locator("#durable-draft").inputValue(), "A draft preserved across worker loss");
   await page.waitForFunction(() => document.getElementById("durable-resource").textContent === "Resource rebuilt");
-  assert.match(await page.locator("#pysx-connection-status").textContent(), /restored/);
+  assert.equal(await page.locator("#pysx-connection-status").count(), 0);
   await page.locator("#durable-increment").click();
   await page.waitForFunction(() => document.getElementById("durable-count").textContent === "2");
   console.log("  ok  worker loss preserves committed typed state and rebuilds working handlers and resource setup");

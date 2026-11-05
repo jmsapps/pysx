@@ -227,8 +227,8 @@ or both.
 ## Callable composition
 
 Names bound to ordinary callables are component tags, including uppercase and lowercase
-aliases; reserved native tag names retain their native meaning. The compatibility
-`@component` decorator is optional. Attribute values are forwarded as keyword props,
+aliases; reserved native tag names retain their native meaning. No decorator is
+required. Attribute values are forwarded as keyword props,
 preserving live objects. Nonempty child blocks are forwarded as `children`,
 a `Children` object retaining the caller's parsed nodes, hole values and namespace.
 For callable bases declaring `*children`, that object is passed positionally, matching

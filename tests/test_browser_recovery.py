@@ -852,7 +852,13 @@ def test_publication_resumed_route_and_capsule_share_repair() -> None:
                     await asyncio.sleep(0.001)
             repair = connection.frames("repair")[0]
             assert repair["navigations"] == [
-                {"t": "navigation", "url": "/next", "rev": 0, "mode": "replace"}
+                {
+                    "t": "navigation",
+                    "url": "/next",
+                    "rev": 0,
+                    "mode": "replace",
+                    "scroll": "preserve",
+                }
             ]
             assert not connection.frames("navigation")
             service.issuer.open(

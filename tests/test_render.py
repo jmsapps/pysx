@@ -9,7 +9,6 @@ from pysx import (
     Fragment,
     Signal,
     batch,
-    component,
     derived,
     dict_key,
     div,
@@ -292,14 +291,13 @@ def test_sessions_do_not_share_state() -> None:
 
 
 def test_hole_value_is_escaped() -> None:
-    from pysx import component, div, pysx, styled
+    from pysx import div, pysx, styled
 
     Box = styled(div)(t"""color: red;""")  # noqa: N806 - DSL component name
     payload = signal("<script>alert(1)</script>")
 
     ns = {"Box": Box}
 
-    @component
     def view() -> Fragment:
         return pysx(t"""
             Box:
@@ -319,7 +317,7 @@ def mk(fn: Callable[[], Fragment]) -> Callable[[], Fragment]:
     """Give a component a namespace the renderer can resolve tags from."""
     cast("dict[str, object]", fn.__globals__).setdefault("Box", Box)
 
-    return component(fn)
+    return fn
 
 
 def test_reactive_attribute_gets_element_id_and_emits_attr_op() -> None:
@@ -438,7 +436,6 @@ class Row:
 
 
 def _list_view(items: Signal[list[Row]]) -> Callable[[], Fragment]:
-    @component
     def item(row: Row) -> Fragment:
         return pysx(t"""
             li: {row.text}

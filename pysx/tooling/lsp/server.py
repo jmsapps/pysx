@@ -49,6 +49,7 @@ from .features import (
     completions,
     document_symbols,
     folding_ranges,
+    lowercase_component_tokens,
     mapped_locations,
     selection_spans,
     semantic_tokens,
@@ -987,9 +988,10 @@ def create_server() -> ResidentServer:
         if selected is None:
             return {"version": document.version, "generation": 0, "tokens": []}
         session, item, calls = selected
-        # Direct pysx(...) literal arguments already have TextMate scopes. Only
-        # decorate static aliases/shared literals that the injection cannot see.
+        # Direct literals keep TextMate scopes except for binding-aware lowercase
+        # component overrides. Shared literals still need all markup decorations.
         uncovered: list[TemplateCall] = []
+        overrides: list[tuple[SourceSpan, str, tuple[str, ...]]] = []
 
         for call in calls:
             prefix = item.source[call.call_span.start : call.source.span.start]
@@ -998,8 +1000,15 @@ def create_server() -> ResidentServer:
                 prefix = re.sub(r"#[^\n]*(?:\n|$)", "", prefix)
 
                 if re.match(r"(?:[A-Za-z_]\w*\s*\.\s*)?pysx\s*\(\s*[rRtT]*$", prefix):
+                    overrides.extend(lowercase_component_tokens([call]))
+
                     continue
             uncovered.append(call)
+
+        tokens = sorted(
+            set(semantic_tokens(uncovered)) | set(overrides),
+            key=lambda token: (token[0].start, token[0].end),
+        )
 
         return {
             "version": item.version,
@@ -1010,7 +1019,7 @@ def create_server() -> ResidentServer:
                     "kind": kind,
                     "modifiers": list(modifiers),
                 }
-                for span, kind, modifiers in semantic_tokens(uncovered)
+                for span, kind, modifiers in tokens
             ],
         }
 

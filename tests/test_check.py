@@ -6,7 +6,7 @@ import pytest
 from pysx.compiler.source_map import EditorPosition, Positions
 from pysx.tooling.check import Diagnostic, apply_fix, diagnostics, diagnostics_for_source
 
-HEADER = "from pysx import component, div, pysx, signal, styled\n\n"
+HEADER = "from pysx import div, pysx, signal, styled\n\n"
 
 
 @pytest.mark.parametrize(
@@ -686,7 +686,6 @@ def test_unknown_tag_after_non_ascii_line() -> None:
         'Page = styled(div)(t"""color: red;""")\n'
         'NOTE = "café ☕ — a non-ASCII line before the diagnostic"\n'
         "\n"
-        "@component\n"
         "def app():\n"
         '    return pysx(t"""\n'
         "        Pge:\n"
@@ -705,7 +704,6 @@ def test_called_signal_column_is_utf16_on_a_non_ascii_line() -> None:
     body = (
         'Page = styled(div)(t"""color: red;""")\n'
         "\n"
-        "@component\n"
         "def app():\n"
         "    count = signal(0)\n"
         '    return pysx(t"""\n'
@@ -735,7 +733,6 @@ def test_bare_lambda_reports_the_parenthesis_fix() -> None:
     body = (
         'Page = styled(div)(t"""color: red;""")\n'
         "\n"
-        "@component\n"
         "def app():\n"
         '    return pysx(t"""\n'
         "        Page(onClick={lambda _e: None}):\n"
@@ -751,7 +748,6 @@ def test_fstring_instead_of_tstring() -> None:
     body = (
         'Page = styled(div)(t"""color: red;""")\n'
         "\n"
-        "@component\n"
         "def app():\n"
         '    return pysx(f"""\n'
         "        Page:\n"
@@ -767,7 +763,6 @@ def test_parser_error_is_reported() -> None:
     body = (
         'Page = styled(div)(t"""color: red;""")\n'
         "\n"
-        "@component\n"
         "def app():\n"
         '    return pysx(t"""\n'
         "        Page:\n"

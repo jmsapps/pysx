@@ -805,14 +805,47 @@ def semantic_tokens(calls: Sequence[TemplateCall]) -> list[tuple[SourceSpan, str
 
     for call in calls:
         for node in _walk(call.skeleton.root):
-            # Categories come from the literal grammar, so resolving one literal
-            # at multiple call sites cannot create a second token at its origin.
+            # Shared literals can have multiple call sites; emit their original
+            # token ranges only once.
             tokens.update(_node_tokens(call, node))
 
     return sorted(
         (token for token in tokens if token[0].start < token[0].end),
         key=lambda token: (token[0].start, token[0].end, token[1], token[2]),
     )
+
+
+def _resolved_component_tag(call: TemplateCall, tag: str) -> bool:
+    owner = call.scope.owner(tag)
+
+    if tag in NATIVE_TAGS or "-" in tag or owner is None or tag in owner.type_only:
+        return False
+    expression = ast.Name(tag, ast.Load())
+
+    return (
+        native_base_for(expression, call.scope, call.resolver) is not None
+        or component_signature(expression, call.scope, call.resolver) is not None
+    )
+
+
+def lowercase_component_tokens(
+    calls: Sequence[TemplateCall],
+) -> list[tuple[SourceSpan, str, tuple[str, ...]]]:
+    """Resolved component overrides for lowercase names TextMate cannot classify."""
+    tokens: set[tuple[SourceSpan, str, tuple[str, ...]]] = set()
+
+    for call in calls:
+        for node in _walk(call.skeleton.root):
+            if (
+                isinstance(node, Element)
+                and isinstance(node.tag, str)
+                and not node.tag[:1].isupper()
+                and node.span is not None
+                and _resolved_component_tag(call, node.tag)
+            ):
+                tokens.add((call.source.location(node.span.start, len(node.tag)), "class", ()))
+
+    return sorted(tokens, key=lambda token: (token[0].start, token[0].end))
 
 
 def _node_tokens(call: TemplateCall, node: object) -> list[tuple[SourceSpan, str, tuple[str, ...]]]:
@@ -822,13 +855,15 @@ def _node_tokens(call: TemplateCall, node: object) -> list[tuple[SourceSpan, str
     if isinstance(node, Element):
         if isinstance(node.tag, str) and node.span is not None:
             native = node.tag in NATIVE_TAGS
-            out.append(
-                (
-                    call.source.location(node.span.start, len(node.tag)),
-                    "type" if native else "class",
-                    ("defaultLibrary",) if native else (),
+
+            if native or node.tag[:1].isupper() or _resolved_component_tag(call, node.tag):
+                out.append(
+                    (
+                        call.source.location(node.span.start, len(node.tag)),
+                        "type" if native else "class",
+                        ("defaultLibrary",) if native else (),
+                    )
                 )
-            )
 
         for name, value in node.attrs:
             if isinstance(name, LiteralText):

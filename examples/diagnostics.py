@@ -1,6 +1,6 @@
 """Inspect and repair static template samples without executing their source."""
 
-from pysx import Fragment, component, derived, pysx, signal
+from pysx import Fragment, derived, pysx, signal
 from pysx.tooling.check import apply_fix, diagnostics_for_source
 
 from .components import (
@@ -36,7 +36,6 @@ def _report(source: str) -> str:
     )
 
 
-@component
 def app() -> Fragment:
     example_title("Diagnostics")
 

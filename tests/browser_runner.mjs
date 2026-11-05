@@ -16,6 +16,19 @@ for (let i = 0; i < args.length; i += 2) {
   suite = args[i + 1];
 }
 const registry = [
+  { suite: "validate_integrated", cases: [
+    [0, "integrated_tutorial_fixture", "browser_integrated.mjs", "INTEGRATED TUTORIAL BROWSER PASSED"],
+  ] },
+  { suite: "tutorial_website", cases: [
+    [0, "tutorial_fixture", "browser_tutorial.mjs", "TUTORIAL WEBSITE BROWSER PASSED"],
+  ] },
+  { suite: "corpus_executable", cases: [
+    [5, "todos", "browser_todo_edit.mjs", "TODO EDIT BROWSER PASSED"],
+    [4, "hello", "browser_hello.mjs", "HELLO BROWSER PASSED"],
+    [0, "attributes", "browser_attributes.mjs", "ATTRIBUTES BROWSER PASSED"],
+    [1, "effects", "browser_effects.mjs", "EFFECTS BROWSER PASSED"],
+    [3, "operators", "browser_operator_catalog.mjs", "OPERATOR CATALOG BROWSER PASSED"],
+  ] },
   { suite: "editor_browser", cases: [
     [0, "qualification_fixture", "browser_qualification.mjs", "QUALIFICATION BROWSER PASSED"],
   ] },
@@ -317,7 +330,11 @@ try {
       continue;
     }
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
-    const server = name ? start(interpreter, name === "development_fixture" ?
+    const server = name ? start(interpreter, name === "integrated_tutorial_fixture" ?
+      ["tests/browser_tutorial_fixture.py", "--port", String(port), "--packaged"] :
+      name === "tutorial_fixture" ?
+      ["tests/browser_tutorial_fixture.py", "--port", String(port)] :
+      name === "development_fixture" ?
       ["tests/browser_development_fixture.py", "--port", String(port)] :
       name === "development_no_inspector_fixture" ?
       ["tests/browser_development_fixture.py", "--port", String(port), "--no-inspect"] :
@@ -399,13 +416,15 @@ try {
     if (server) {
       const deployment = name === "deployment_fixture" || name === "durable_state_fixture";
       if (deployment) server.cleanupTimeout = 45000;
-      await wait(server, name === "host_asgi" || name === "security_asgi" ? "Uvicorn running" : "pysx ready", deployment ? 180000 : 15000);
+      if (["tutorial_fixture", "integrated_tutorial_fixture"].includes(name)) server.cleanupTimeout = 20000;
+      await wait(server, name === "host_asgi" || name === "security_asgi" ? "Uvicorn running" : "pysx ready",
+        deployment ? 180000 : ["tutorial_fixture", "integrated_tutorial_fixture"].includes(name) ? 60000 : 15000);
     }
     for (const engine of ["chromium", "firefox", "webkit"]) {
       const suite = start(process.execPath, [`tests/${script}`, String(port)], { PYSX_BROWSER_ENGINE: engine, PYSX_BROWSER_CASE: name ?? "" });
       // A browser timeout usually means the server refused the request, so its
       // own output belongs in the failure rather than in a discarded buffer.
-      const output = await wait(suite, null, 60000).catch((error) => {
+      const output = await wait(suite, null, script === "browser_tutorial.mjs" ? 180000 : 60000).catch((error) => {
         throw server?.tail ? new Error(`${error.message}\n--- server ---\n${server.tail}`) : error;
       });
       if (!output.includes(banner)) throw new Error(`missing suite banner: ${output}`);

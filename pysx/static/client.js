@@ -27,19 +27,13 @@ let developing = false;
 let connected = false;
 let retryAttempt = 0;
 let transportTimer = null;
+let reconnectAfter = 0;
 let stopped = false;
 let freshSession = false;
 let restoredSession = false;
 let partialReset = false;
-const connectionStatus = document.createElement("p");
-connectionStatus.id = "pysx-connection-status";
-connectionStatus.setAttribute("role", "status");
-connectionStatus.hidden = true;
-const retryButton = document.createElement("button");
-retryButton.type = "button";
-retryButton.textContent = "Retry connection";
-retryButton.hidden = true;
-root.after(connectionStatus, retryButton);
+let connectionStatus = null;
+let retryButton = null;
 let epoch = null;
 let stateRevision = 0;
 let eventSequence = 0;
@@ -54,6 +48,7 @@ let previousRestoration = null;
 const historyPositions = new Map();
 let pendingScroll = null;
 let scrollTimer = null;
+const temporaryFocus = new WeakSet();
 
 function rememberPosition() {
   if (!routing || !historyEntry) return;
@@ -72,6 +67,7 @@ function enableRouting() {
   routing = true;
   previousRestoration = history.scrollRestoration;
   history.scrollRestoration = "manual";
+  if (historyEntry !== null && history.state?.pysxEntry === historyEntry) return;
   const entry = newHistoryEntry();
   history.replaceState(entry.state, "", location.href);
   historyEntry = entry.key;
@@ -81,7 +77,9 @@ function focusRoute(target) {
   if (!target || !root.contains(target)) return;
   if (!target.hasAttribute("tabindex")) {
     target.setAttribute("tabindex", "-1");
+    temporaryFocus.add(target);
     target.addEventListener("blur", () => {
+      temporaryFocus.delete(target);
       if (target.getAttribute("tabindex") === "-1") target.removeAttribute("tabindex");
     }, {once: true});
   }
@@ -141,6 +139,12 @@ function commitNavigation(message) {
   if (message.rev !== navigationRevision) return;
   if (message.mode === "external") {
     location.assign(message.url);
+    return;
+  }
+  if (message.scroll === "preserve" && message.url === browserLocation()) {
+    cancelRouteScroll();
+    observedLocation = committedLocation = browserLocation();
+    restorePosition = null;
     return;
   }
   const crossRoute = new URL(committedLocation, location.origin).pathname !==
@@ -552,7 +556,8 @@ function validMessage(message) {
     ["success", "duplicate", "gap", "epoch", "revision"].includes(message.status);
   if (message.t === "mount") return Array.isArray(message.ids) && message.ids.length <= 1024 && message.ids.every(id => typeof id === "string");
   if (message.t === "navigation") return typeof message.url === "string" && Number.isSafeInteger(message.rev) &&
-    ["push", "replace", "observe", "external"].includes(message.mode);
+    ["push", "replace", "observe", "external"].includes(message.mode) &&
+    (!("scroll" in message) || message.scroll === "preserve");
   if (message.t === "routing") return typeof message.on === "boolean";
   if (message.t === "dom") return ["id", "target", "root", "op"].every(key => typeof message[key] === "string") &&
     message.args && typeof message.args === "object" && !Array.isArray(message.args);
@@ -604,8 +609,10 @@ function acceptMessage(event) {
     const parser = document.createRange(); parser.selectNodeContents(root);
     const fresh = parser.createContextualFragment(message.html);
     hydrate(fresh);
-    preserveInteraction(() => morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true));
-    style.textContent = message.css;
+    preserveInteraction(() => {
+      style.textContent = message.css;
+      morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true);
+    });
     registerTyped(root); syncDom();
     eventSequence = message.expected - 1;
     repairing = false;
@@ -617,20 +624,23 @@ function acceptMessage(event) {
   } else
   if (message.t === "init") {
     if (message.routing) enableRouting();
-    style.textContent = message.css;
     if (message.recovered === true) {
       const parser = document.createRange(); parser.selectNodeContents(root);
       const fresh = parser.createContextualFragment(message.html);
       hydrate(fresh);
-      preserveInteraction(() => morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true, true));
+      preserveInteraction(() => {
+        style.textContent = message.css;
+        morphChildren(root, [...root.childNodes], [...fresh.childNodes], null, true, true);
+      });
     } else {
+      style.textContent = message.css;
       root.innerHTML = message.html;
       hydrate(root);
     }
     root.dataset.pysxAttached = "true";
     attachmentReady();
     syncDom();
-    if (routing) queueRouteScroll(browserLocation());
+    if (routing && message.recovered !== true) queueRouteScroll(browserLocation());
   } else if (message.t === "adopted") {
     if (message.routing) enableRouting();
     registerTyped(root);
@@ -697,19 +707,38 @@ function clearTransportTimer() {
   transportTimer = null;
 }
 
+// Built-in connection UI belongs only to development sessions.
+function connectionElements() {
+  if (connectionStatus !== null) return;
+  connectionStatus = document.createElement("p");
+  connectionStatus.id = "pysx-connection-status";
+  connectionStatus.setAttribute("role", "status");
+  retryButton = document.createElement("button");
+  retryButton.type = "button";
+  retryButton.textContent = "Retry connection";
+  retryButton.hidden = true;
+  retryButton.addEventListener("click", () => reconnect());
+  root.after(connectionStatus, retryButton);
+}
+
 function connectionState(state, retryMs = 0) {
   root.dataset.pysxConnection = state;
-  connectionStatus.hidden = state === "connected" && !freshSession && !restoredSession;
+  const hidden = !developing;
   const text = state === "connected" ? (restoredSession ? (partialReset ?
     "Connected. Session state was restored; some fields restarted with their defaults and uncommitted edits were discarded." :
     "Connected. Session state was restored; uncommitted edits were discarded.") :
-    "Connected. A fresh session started; previous session state was lost.") :
+    freshSession ? "Connected. A fresh session started; previous session state was lost." : "Connected.") :
     state === "reconnecting" ? "Disconnected. Reconnecting; offline edits are rejected." :
     state === "fresh" ? "Previous session expired. Starting a fresh session." :
     state === "stopped" ? "Disconnected by a protocol failure. Offline edits are rejected. Reload the page to continue." :
     "Disconnected. Offline edits are rejected. Retry to connect.";
-  connectionStatus.textContent = text;
-  retryButton.hidden = state !== "disconnected";
+  if (!hidden) connectionElements();
+
+  if (connectionStatus !== null) {
+    connectionStatus.hidden = hidden;
+    connectionStatus.textContent = text;
+    retryButton.hidden = state !== "disconnected";
+  }
   window.dispatchEvent(new CustomEvent("pysx:connection", {detail: {
     state, attempt: retryAttempt, retryMs, fresh: freshSession, partialReset,
     timers: transportTimer === null ? 0 : 1,
@@ -753,12 +782,18 @@ function resetSession(restored = false) {
   for (const control of root.querySelectorAll("[data-pysx-binding]")) edits.delete(control);
   if (previousRestoration !== null) history.scrollRestoration = previousRestoration;
   routing = false; navigationRevision = 0;
-  historyPositions.clear();
+  if (!restored) { historyPositions.clear(); historyEntry = null; }
   observedLocation = browserLocation(); committedLocation = observedLocation;
 }
 
 function scheduleReconnect() {
   if (stopped || transportTimer !== null) return;
+  const pause = Math.max(0, reconnectAfter - performance.now());
+  if (pause > 0) {
+    transportTimer = setTimeout(() => { transportTimer = null; reconnect(false); }, pause);
+    connectionState("reconnecting", pause);
+    return;
+  }
   if (retryAttempt >= 8) { connectionState("disconnected"); return; }
   const ceiling = Math.min(10000, 250 * 2 ** retryAttempt++);
   const delay = Math.round(ceiling * (0.5 + Math.random() * 0.5));
@@ -805,6 +840,7 @@ function attachSocket() {
 
 function reconnect(manual = true) {
   if (socket.readyState !== WebSocket.CLOSED || stopped) return;
+  if (performance.now() < reconnectAfter) { scheduleReconnect(); return; }
   clearTransportTimer();
   if (manual) retryAttempt = 0;
   endpoint.search = `protocol=${protocolVersion}${resumeToken ? "&resume=1" : recoveryToken || capsule ? "&recover=1" : ""}&location=${encodeURIComponent(browserLocation())}${ownerHint ? `&owner=${encodeURIComponent(ownerHint)}` : ""}`;
@@ -815,6 +851,14 @@ function reconnect(manual = true) {
 
 attachSocket();
 window.addEventListener("pysx:reconnect", () => reconnect());
+window.addEventListener("pysx:disconnect", event => {
+  const duration = event.detail?.durationMs ?? 5000;
+  if (!Number.isFinite(duration) || duration < 1 || duration > 10000 || !connected || stopped) return;
+  reconnectAfter = performance.now() + duration;
+  connected = false;
+  clearTransportTimer();
+  socket.close(1000, "temporary disconnect");
+});
 let resetting = false;
 window.addEventListener("pysx:reset", async () => {
   if (resetting) return;
@@ -834,7 +878,6 @@ window.addEventListener("pysx:reset", async () => {
   } catch { connectionState("stopped"); }
   finally { resetting = false; }
 });
-retryButton.addEventListener("click", () => reconnect());
 window.addEventListener("pagehide", () => {
   stopped = true;
   clearTransportTimer();
@@ -970,7 +1013,11 @@ function morphNode(old, fresh, complete = false, resetDefaults = false) {
   } : null;
   const incoming = new Map([...fresh.attributes].map(attr => [attr.name, attr.value]));
   const controlled = new Set([...old.attributes].filter(attr => PROPERTIES.has(attr.name)).map(attr => attr.name));
-  for (const attr of [...old.attributes]) if (!incoming.has(attr.name) && !PROPERTIES.has(attr.name)) old.removeAttribute(attr.name);
+  for (const attr of [...old.attributes]) {
+    // Navigation owns this temporary attribute until the focused target blurs.
+    const focusedTarget = attr.name === "tabindex" && temporaryFocus.has(old) && old === document.activeElement;
+    if (!incoming.has(attr.name) && !PROPERTIES.has(attr.name) && !focusedTarget) old.removeAttribute(attr.name);
+  }
   for (const [name, value] of incoming) {
     if (PROPERTIES.has(name)) {
       if (resetDefaults) old.setAttribute(name, value);
@@ -1030,6 +1077,7 @@ function morphChildren(parent, previousNodes, nextNodes, boundary = null, comple
 }
 
 function preserveInteraction(change) {
+  const viewport = {x: scrollX, y: scrollY};
   const active = document.activeElement;
   const caret = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
   const selection = window.getSelection();
@@ -1046,6 +1094,7 @@ function preserveInteraction(change) {
     selection.setBaseAndExtent(selected[0], Math.min(selected[1], extent(selected[0])), selected[2], Math.min(selected[3], extent(selected[2])));
   }
   for (const [node, left, top] of scroll) if (node.isConnected) { node.scrollLeft = left; node.scrollTop = top; }
+  window.scrollTo({left: viewport.x, top: viewport.y, behavior: "instant"});
 }
 
 function reconcileRanges(op) {

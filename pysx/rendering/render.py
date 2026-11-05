@@ -249,12 +249,6 @@ def _hole_position(nodes: Sequence[Node], index: int) -> Position | None:
     return None
 
 
-def component[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
-    setattr(fn, "_pysx_component", True)  # noqa: B010 - dynamic compatibility marker
-
-    return fn
-
-
 @dataclass(frozen=True)
 class Each[T]:
     source: Readable[Iterable[T]]

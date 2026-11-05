@@ -13,6 +13,7 @@ from pysx.tooling.lsp.features import (
     SEMANTIC_TOKEN_MODIFIERS,
     SEMANTIC_TOKEN_TYPES,
     folding_ranges,
+    lowercase_component_tokens,
     semantic_tokens,
     template_calls,
 )
@@ -230,6 +231,94 @@ create_server().start_io()
         assert tokens_of(instance, path)
     finally:
         release.touch()
+        instance.close()
+
+
+def test_lowercase_component_tokens_resolve_bindings_and_shadowing(tmp_path: Path) -> None:
+    path = tmp_path / "view.py"
+    external = tmp_path / "external.py"
+    external_source = "from pysx import Fragment\ndef External() -> Fragment: ...\n"
+    source = """from pysx import Fragment, pysx, styled
+from external import External as imported
+from pysx import div as native_alias
+
+def local() -> Fragment:
+    return pysx(t'p: "local"')
+
+alias = local
+custom = styled.div(t'color: red')
+value = 42
+view = pysx(t'"🌍"; div; local; alias; imported; custom; native_alias; value; missing; custom-tag')
+shared = t'local; imported; value; missing'
+other = pysx(shared)
+
+def shadowed() -> Fragment:
+    local = 42
+    return pysx(t'local; imported')
+"""
+    calls = template_calls(
+        source, str(path), tmp_path, {str(path): source, str(external): external_source}
+    )
+    tokens = lowercase_component_tokens(calls)
+    names = [source[span.start : span.end] for span, kind, modifiers in tokens]
+    assert set(names) == {"local", "alias", "imported", "custom", "native_alias"}
+    assert names.count("local") == 2
+    assert names.count("imported") == 3
+    assert all(kind == "class" and modifiers == () for _, kind, modifiers in tokens)
+    assert len(tokens) == len({span for span, _, _ in tokens})
+    classified = {(source[span.start : span.end], kind) for span, kind, _ in semantic_tokens(calls)}
+    assert ("div", "type") in classified
+    assert not any(
+        name in {"value", "missing", "custom-tag"} and kind == "class" for name, kind in classified
+    )
+    changed = template_calls(
+        source, str(path), tmp_path, {str(path): source, str(external): "External = 42\n"}
+    )
+    assert "imported" not in {
+        source[span.start : span.end] for span, _, _ in lowercase_component_tokens(changed)
+    }
+
+
+def test_lowercase_components_decorate_direct_literals_and_clear_on_unsaved_change(
+    tmp_path: Path,
+) -> None:
+    instance = Client(tmp_path, options={"markupHighlighting": "decorations"})
+    path = tmp_path / "view.py"
+    source = """from pysx import Fragment, pysx, styled
+
+def Local() -> Fragment:
+    return pysx(t'p: "local"')
+
+lower = Local
+custom = styled.div(t'color: red')
+view = pysx(t'"🌍"; div; lower; custom; Local; missing; span: {lower}')
+"""
+
+    def classified() -> tuple[int, list[tuple[str, str]]]:
+        result = cast("dict[str, Any]", instance.request("pysx/markupTokens", document(path)))
+        found: list[tuple[str, str]] = []
+
+        for token in cast("list[dict[str, Any]]", result["tokens"]):
+            target = cast("dict[str, dict[str, int]]", token["range"])
+            start, end = target["start"], target["end"]
+            line = source.splitlines()[start["line"]].encode("utf-16-le")
+            text = line[start["character"] * 2 : end["character"] * 2].decode("utf-16-le")
+            found.append((text, token["kind"]))
+
+        return result["version"], found
+
+    try:
+        instance.open(path, source)
+        assert "semanticTokensProvider" not in instance.initialization["capabilities"]
+        version, found = classified()
+        assert version == 1
+        assert found == [("lower", "class"), ("custom", "class")]
+        source = source.replace("lower = Local", "lower = 42")
+        instance.change(path, source, 2)
+        version, found = classified()
+        assert version == 2
+        assert found == [("custom", "class")]
+    finally:
         instance.close()
 
 

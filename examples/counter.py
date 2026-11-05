@@ -1,4 +1,4 @@
-from pysx import Fragment, component, pysx, signal
+from pysx import Fragment, pysx, signal
 
 from .components import (
     Action,
@@ -14,7 +14,6 @@ from .components import (
 )
 
 
-@component
 def app() -> Fragment:
     example_title("Counter")
 

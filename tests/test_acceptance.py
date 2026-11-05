@@ -100,7 +100,13 @@ def test_example_commands(example: str, entry: str) -> None:
     command = (
         [sys.executable, "run_example.py"]
         if entry == "root-script"
-        else [str(Path(sys.executable).with_name("example.exe" if os.name == "nt" else "example"))]
+        else [
+            str(
+                Path(sys.executable).with_name(
+                    "pysx-example.exe" if os.name == "nt" else "pysx-example"
+                )
+            )
+        ]
     )
     # Keep the smoke port separate from headless suites and the development server.
     port = 8754

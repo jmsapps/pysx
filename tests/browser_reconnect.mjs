@@ -50,19 +50,19 @@ try {
     window.savedField.dispatchEvent(new Event("input", {bubbles: true}));
     document.querySelector("#reconnect-increment").click();
     window.dispatchEvent(new Event("hashchange"));
-    window.statusDuringLoss = document.querySelector("#pysx-connection-status").textContent;
+    window.statusDuringLoss = document.querySelector("#pysx-connection-status");
   });
   await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "connected");
-  assert.match(await page.evaluate(() => window.statusDuringLoss), /Disconnected/);
+  assert.equal(await page.evaluate(() => window.statusDuringLoss), null);
   assert.equal(await page.locator("#reconnect-field").inputValue(), "server draft");
   assert.ok(await page.evaluate(() => window.testRejected >= 2));
   assert.ok(await page.evaluate(() => window.testStates.every(state => state.timers <= 1 && state.pendingBytes <= 65536)));
   if (expired) {
     assert.notEqual(await page.locator("#reconnect-generation").textContent(), generation);
     assert.equal(await page.locator("#reconnect-clicks").textContent(), legacy ? "0" : "1");
-    assert.match(await page.locator("#pysx-connection-status").textContent(), legacy ? /fresh session/ : /restored/);
+    assert.equal(await page.locator("#pysx-connection-status").count(), 0);
     assert.equal(await page.evaluate(() => window.savedField.isConnected), !legacy);
-    console.log(legacy ? "  ok  legacy v3 expiry visibly starts fresh and drops unsent events" :
+    console.log(legacy ? "  ok  legacy v3 expiry starts fresh without injected UI and drops unsent events" :
       "  ok  v4 expiry reconstructs delivered state into a new graph and drops unsent events");
   } else {
     assert.equal(await page.locator("#reconnect-generation").textContent(), generation);
@@ -106,9 +106,9 @@ try {
     assert.equal(attempts, 9);
     assert.ok(await policy.evaluate(() => window.retryStates.every(state => state.timers <= 1 && state.retryMs <= 10000)));
     assert.equal(await policy.evaluate(() => window.retryStates.at(-1).timers), 0);
-    assert.equal(await policy.getByRole("button", {name: "Retry connection"}).isVisible(), true);
+    assert.equal(await policy.getByRole("button", {name: "Retry connection"}).count(), 0);
     await policy.close();
-    console.log("  ok  capped retry exhaustion leaves no transport timer and offers explicit retry");
+    console.log("  ok  capped retry exhaustion leaves no transport timer or injected retry UI");
     const broken = await context.newPage();
     await broken.addInitScript(() => {
       window.retryAttempts = 0;
@@ -121,8 +121,8 @@ try {
     });
     await broken.goto(url);
     await broken.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "stopped");
-    assert.equal(await broken.getByRole("button", {name: "Retry connection"}).isVisible(), false);
-    assert.match(await broken.locator("#pysx-connection-status").textContent(), /protocol failure/);
+    assert.equal(await broken.getByRole("button", {name: "Retry connection"}).count(), 0);
+    assert.equal(await broken.locator("#pysx-connection-status").count(), 0);
     await broken.evaluate(() => window.dispatchEvent(new CustomEvent("pysx:reconnect")));
     await broken.waitForTimeout(250);
     assert.equal(sockets, 1);

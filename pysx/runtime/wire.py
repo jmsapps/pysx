@@ -274,6 +274,7 @@ class NavigationMessage(TypedDict):
     url: str
     rev: int
     mode: Literal["push", "replace", "observe", "external"]
+    scroll: NotRequired[Literal["preserve"]]
 
 
 class RoutingMessage(TypedDict):

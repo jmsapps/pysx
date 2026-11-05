@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING, Literal
 from pysx import (
     Fragment,
     Signal,
-    component,
     derived,
     each,
+    local_state,
     pysx,
     signal,
 )
@@ -44,7 +44,6 @@ class Todo:
     done: bool
 
 
-@component
 def app() -> Fragment:
     example_title("Todos")
 
@@ -114,6 +113,22 @@ def app() -> Fragment:
         return handler
 
     def TodoItem(todo: Todo) -> Fragment:
+        editing = local_state("editing", False)
+        text = local_state("text", todo.text)
+
+        def edit_item(_e: object) -> None:
+            text.set(todo.text)
+            editing.set(True)
+
+        def save_item(_e: object) -> None:
+            value = text().strip()
+
+            if value:
+                todos.set(
+                    [replace(item, text=value) if item.id == todo.id else item for item in todos()]
+                )
+                editing.set(False)
+
         def toggle_item(_e: object) -> None:
             toggle(todo.id)
 
@@ -126,6 +141,12 @@ def app() -> Fragment:
                 Row:
                     Checkbox(type="checkbox", checked={todo.done}, onChange={toggle_item})
                     Text(class="todo-text"): {todo.text}
+                if {editing}:
+                    label(for={f"todo-edit-{todo.id}"}): "Edit todo"
+                    Field(id={f"todo-edit-{todo.id}"}, type="text", bindValue={text})
+                    Remove(type="button", data-save={todo.id}, onClick={save_item}): "Save"
+                else:
+                    Remove(type="button", data-edit={todo.id}, onClick={edit_item}): "Edit"
                 Remove(type="button", onClick={remove_item}):
                     "Remove"
         """,

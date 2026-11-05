@@ -29,6 +29,9 @@ SUBSYSTEMS = (
     "styling",
     "tooling",
 )
+# Shipped resource packages: data the wheel carries, not subsystems, so they are
+# exempt from the subsystem initializer and import rules.
+RESOURCES = ("static", "playgrounds")
 
 
 def canonical_sources() -> Iterator[Path]:
@@ -45,7 +48,7 @@ def test_canonical_layout_directories_are_subsystems_or_assets() -> None:
     directories = {
         path.name for path in PACKAGE.iterdir() if path.is_dir() and path.name != "__pycache__"
     }
-    assert directories == {*SUBSYSTEMS, "static"}
+    assert directories == {*SUBSYSTEMS, *RESOURCES}
 
 
 def test_canonical_layout_subsystem_initializers_export_nothing() -> None:
@@ -73,7 +76,7 @@ def test_canonical_imports_carry_no_retired_module_path() -> None:
         offenders += [
             f"{path.relative_to(ROOT)}: {name}"
             for name in imported_modules(tree, package)
-            if name.startswith("pysx.") and name.split(".")[1] not in SUBSYSTEMS
+            if name.startswith("pysx.") and name.split(".")[1] not in (*SUBSYSTEMS, *RESOURCES)
         ]
 
     assert offenders == []

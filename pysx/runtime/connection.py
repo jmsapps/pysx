@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from pysx.hosting.request import RequestContext
 
     from .session import Session
-    from .wire import InitMessage, JSONValue, PatchMessage
+    from .wire import InitMessage, JSONValue, NavigationMessage, PatchMessage
 
 
 class Connection(Protocol):
@@ -854,28 +854,26 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             attachment["recovery"] = recovery
             attachment["owner"] = runtime.owner_hint
 
-        if browser_recovery is not None and resuming and session.routes.routers:
-            session.routes.commands.insert(
-                0,
-                {
-                    "t": "navigation",
-                    "url": session.routes.location.url,
-                    "rev": session.routes.revision,
-                    "mode": "replace",
-                },
-            )
+        resume_navigation: NavigationMessage | None = None
+
+        if resuming and session.routes.routers:
+            resume_navigation = {
+                "t": "navigation",
+                "url": session.routes.location.url,
+                "rev": session.routes.revision,
+                "mode": "replace",
+            }
+
+            if attachment.get("fresh") is not True:
+                resume_navigation["scroll"] = "preserve"
+
+            if browser_recovery is not None:
+                session.routes.commands.insert(0, resume_navigation)
         await send(attachment)
         await send_patch()
 
-        if resuming and session.routes.routers and browser_recovery is None:
-            await send(
-                {
-                    "t": "navigation",
-                    "url": session.routes.location.url,
-                    "rev": session.routes.revision,
-                    "mode": "replace",
-                }
-            )
+        if resume_navigation is not None and browser_recovery is None:
+            await send(dict(resume_navigation))
         await send_navigation()
         await send_mounts()
         worker = asyncio.create_task(event_worker())

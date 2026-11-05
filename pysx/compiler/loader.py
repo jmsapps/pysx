@@ -99,10 +99,14 @@ class SourceFinder(importlib.abc.MetaPathFinder):
         self.compiler_version = VERSION
 
     def covers(self, name: str, path: Path) -> bool:
+        scoped_path = next(
+            (path.relative_to(root) for root in self.roots if path.is_relative_to(root)), path
+        )
+
         if (
             name == "pysx"
             or name.startswith("pysx.")
-            or any(part.startswith(".") or part in _EXCLUDED for part in path.parts)
+            or any(part.startswith(".") or part in _EXCLUDED for part in scoped_path.parts)
         ):
             return False
 

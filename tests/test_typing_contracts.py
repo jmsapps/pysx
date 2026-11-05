@@ -528,7 +528,7 @@ def test_schema_native_types(tmp_path: Path, checker: str, valid: bool) -> None:
 
 
 POSITIVE = '''from typing import assert_type
-from pysx import Each, Fragment, Signal, component, derived, each, pysx, signal
+from pysx import Each, Fragment, Signal, derived, each, pysx, signal
 from pysx.runtime.wire import Op, PatchMessage
 
 count = signal(1)
@@ -538,7 +538,6 @@ label = derived(lambda: str(count()))
 assert_type(label, Signal[str])
 rows = signal([1, 2])
 
-@component
 def item(value: int) -> Fragment:
     return pysx(t"""\n    div: {value}\n""")
 

@@ -1,25 +1,39 @@
 # Running examples
 
+New users can start with the [installed quickstart](../docs/QUICKSTART.md),
+[interactive tutorial](../docs/TUTORIAL.md), [API index](../docs/API.md) and
+[migration guide](../docs/MIGRATION.md). The full course is a separate application
+in [tutorial](../tutorial/README.md), launched with `pysx-tutorial` in
+its own environment. Run
+`hello` for a minimal greeting, `attributes` for native/ARIA/keyed attributes and
+`effects` for cleanup, automatic increments and cancelled/replaced work.
+
+In `todos`, choose **Edit** on a row, change its text and **Save**. The same keyed
+row remains; toggling or removing it acts on the edited record. Other tabs keep
+their own lists. In `navigation`, the files root and missing-route links expose
+wildcard/fallback matching; the last links demonstrate native downloads, new tabs
+and external navigation.
+
 Run commands from the repository root with [uv](https://docs.astral.sh/uv/).
 Python 3.14+ is required for t-strings; uv selects the project's interpreter and
 prepares the environment without activation.
 
 ```sh
-uv run --project . example run counter
-uv run --project . example run todos
-uv run --project . example run recovery
-uv run --project . example run reconnect
-uv run --project . example run browser_recovery
-uv run --project . example run resources
-uv run --project . example run reactive_state
-uv run --project . example run operators
-uv run --project . example run forms
-uv run --project . example run events
-uv run --project . example run templates
-uv run --project . example run keyed_rows
-uv run --project . example run durable_state
-uv run --project . example run development
-uv run --project . example run
+uv run --project . pysx-example run counter
+uv run --project . pysx-example run todos
+uv run --project . pysx-example run recovery
+uv run --project . pysx-example run reconnect
+uv run --project . pysx-example run browser_recovery
+uv run --project . pysx-example run resources
+uv run --project . pysx-example run reactive_state
+uv run --project . pysx-example run operators
+uv run --project . pysx-example run forms
+uv run --project . pysx-example run events
+uv run --project . pysx-example run templates
+uv run --project . pysx-example run keyed_rows
+uv run --project . pysx-example run durable_state
+uv run --project . pysx-example run development
+uv run --project . pysx-example run
 ```
 
 The last command lists available apps. Examples serve at http://127.0.0.1:8750.
@@ -46,15 +60,15 @@ is demonstrated separately by `durable_state`. See
 Choose another port with `--port` or `PSX_PORT`:
 
 ```sh
-uv run --project . example run counter --port 9100
-PSX_PORT=9100 uv run --project . example run counter
+uv run --project . pysx-example run counter --port 9100
+PSX_PORT=9100 uv run --project . pysx-example run counter
 ```
 
 Press Ctrl+C to stop the server. To use `example` directly, activate the environment:
 
 ```sh
 source .venv/bin/activate
-example run counter
+pysx-example run counter
 ```
 
 The command is installed into the environment's bin directory. A new terminal
@@ -65,7 +79,7 @@ needs activation again, or you can keep using the `uv run --project .` prefix.
 Add two revisions, then use **Reverse revisions** to move the same keyed rows.
 **Check draft** completes asynchronously while your name and notes stay editable.
 
-Run `uv run --project . example run browser_recovery`. This ordinary callable uses
+Run `uv run --project . pysx-example run browser_recovery`. This ordinary callable uses
 shared controls and ordinary local signals, with no state codec, database, recovery
 decorator or custom form wiring.
 
@@ -92,7 +106,7 @@ Use normal business persistence for saved account data and cross-device access.
 
 ## Durable state
 
-Run `uv run --project . example run durable_state`. Edit the saved draft and increment
+Run `uv run --project . pysx-example run durable_state`. Edit the saved draft and increment
 the counter, then keep the page open while stopping and restarting the server with
 the same command. The browser restores committed count/draft state and reports that
 recovery; the setup marker changes and a new resource loads. Another tab and a page
@@ -120,7 +134,7 @@ declared snapshots and atomic leases, while each live graph has one owner.
 
 ## Bounded reconnect
 
-Run `uv run --project . example run reconnect`. Type a draft, increment the counter,
+Run `uv run --project . pysx-example run reconnect`. Type a draft, increment the counter,
 then interrupt the connection — switch the network off, suspend the machine, or close
 the socket from the browser console. The page shows a disconnected status and refuses
 clicks and edits instead of queuing them. It retries on its own with capped backoff and
@@ -135,7 +149,7 @@ version and the configurable transport limits.
 
 ## Async resources
 
-Run `uv run --project . example run resources`. The first HTTP response already
+Run `uv run --project . pysx-example run resources`. The first HTTP response already
 contains the styled page, draft and pending state. Wait without clicking: a message
 loads, the delivered count increases through server push, and a timer posts a server
 notice. **Reload message** starts another load; **Cancel load** stops pending work.
@@ -149,7 +163,7 @@ checkout dev environment; installed users need `pysx[asgi]`). See
 
 ## Keyed rows
 
-Run `uv run --project . example run keyed_rows`. Type a private draft, increase its
+Run `uv run --project . pysx-example run keyed_rows`. Type a private draft, increase its
 count, then reverse the rows or rename Alpha: both edits stay with that row.
 **Focus draft and reverse** focuses its input using an owned ref before moving the
 row; keyboard focus and caret stay in the field. **Add and reverse children** moves
@@ -160,7 +174,7 @@ drafts, counters, choices and rows. No extra host setup is needed.
 
 ## Keyboard and focus
 
-Run `uv run --project . example run events`. In the color chooser, Up/Down opens
+Run `uv run --project . pysx-example run events`. In the color chooser, Up/Down opens
 the list and changes its active option; Enter selects it and Escape closes it.
 Click an option to select it while keeping input focus. The event status shows
 the key and modifier snapshot received by the server. Tab reaches the shortcut
@@ -175,7 +189,7 @@ imperative zones, supported operations and limits.
 
 ## Templates
 
-Run `uv run --project . example run diagnostics` for the static diagnostic workflow.
+Run `uv run --project . pysx-example run diagnostics` for the static diagnostic workflow.
 **Apply suggested fix** changes the frozen `count()` sample into an uncalled Signal
 reference and clears its finding. **Show attribute warning** demonstrates an advisory
 schema finding without a guessed fix; **Reset sample** restores the first case.
@@ -184,7 +198,7 @@ are displayed and analyzed as text, never executed. No additional setup is neede
 See [diagnostic APIs, codes and edits](../docs/DIAGNOSTICS.md) for the matching
 buffer/CLI workflow; checking `examples/diagnostics.py` itself reports `[]`.
 
-Run `uv run --project . example run templates` for live template controls.
+Run `uv run --project . pysx-example run templates` for live template controls.
 **Update heading** changes a live heading followed by two styled break siblings on
 one row. The action is a later inline sibling, and each session owns its heading.
 Reverse/add/remove groups, pick a nested row and switch through three branches.
@@ -219,7 +233,7 @@ short-circuiting `and`, `or` and `not`. Signals have no `&`, `|` or `~` overload
 ## Live forms
 
 ```sh
-uv run --project . example run forms
+uv run --project . pysx-example run forms
 ```
 
 Open http://127.0.0.1:8750. Edit the required text, notes, checkbox, radio group,
@@ -241,7 +255,7 @@ The [verification guide](../tests/VERIFICATION.md) lists reproducible browser se
 ## Themes and CSS variables
 
 ```sh
-uv run --project . example run themes
+uv run --project . pysx-example run themes
 ```
 
 Open http://127.0.0.1:8750. Light/Dark switch this connection's named theme; Clear theme
@@ -254,7 +268,7 @@ Press Ctrl+C to stop the server. See [styling](../docs/STYLING.md) for the publi
 ## Callable components and lifetimes
 
 ```sh
-uv run --project . example run composition
+uv run --project . pysx-example run composition
 ```
 
 Open http://127.0.0.1:8750. The panel is an inherited styled callable that receives
@@ -270,7 +284,7 @@ See [component ownership](../docs/GRAMMAR.md#component-ownership) for state and 
 
 ## Local recovery
 
-Run `uv run --project . example run recovery`. Increment the panel, enter text in
+Run `uv run --project . pysx-example run recovery`. Increment the panel, enter text in
 the healthy sibling, and click "Fail this panel". Only that panel shows fallback;
 the committed failed-attempt count increases. The sibling's text and counter remain
 usable. "Retry panel" recreates the failed panel with its count at zero. Each
@@ -285,7 +299,7 @@ removed by an empty filter receive fresh handlers when they return.
 
 ## Routing and navigation
 
-Run `uv run --project . example run navigation`. Open User 1 and increment its
+Run `uv run --project . pysx-example run navigation`. Open User 1 and increment its
 counter, then switch to User 2: the route keeps its local count as the parameter
 changes. Activity (`./activity`) descends into a nested route; Parent (`../`) returns
 to its user, and User 3 (`../3`) selects a sibling. Plain child names also append to
@@ -305,7 +319,7 @@ navigates home; another tab keeps its own state. The effect is disposed with the
 
 ## Session security
 
-Run `uv run --project . example run session_security`. The Writer identity can
+Run `uv run --project . pysx-example run session_security`. The Writer identity can
 increment its counter. Choose Read-only and Attempt write: the page shows a denial
 and the counter stays zero. Both identities can edit their private drafts. Open
 another tab, including another Writer tab, to see independent drafts and counters.
