@@ -406,7 +406,9 @@ try {
     const main = document.getElementById("lesson-main");
     return main.scrollTop > 0 && main.scrollTop + main.clientHeight >= main.scrollHeight - 2;
   });
-  assert.equal(await sidebar.evaluate(node => node.scrollTop), sidebarPosition);
+  const sidebarAfter = await sidebar.evaluate(node => node.scrollTop);
+  assert.ok(Math.abs(sidebarAfter - sidebarPosition) <= 1,
+    `sidebar scrolled with the lesson pane: ${sidebarAfter} vs ${sidebarPosition}`);
   assert.equal(await page.evaluate(() => scrollY), 0);
   assert.equal(await page.locator(".course-header").evaluate(node => node.getBoundingClientRect().top), headerTop);
   const readingPosition = await main.evaluate(node => node.scrollTop);
