@@ -217,8 +217,8 @@ def test_keys_reject_unsafe_files(tmp_path: Path, kind: str) -> None:
     elif kind == "directory":
         key.mkdir()
     elif kind == "fifo":
-        import os
-
+        if sys.platform == "win32":
+            pytest.skip("named pipes are not created with os.mkfifo on Windows")
         os.mkfifo(key, 0o600)
     else:
         key.write_bytes(b"x" * (93 if kind == "oversize" else 44))

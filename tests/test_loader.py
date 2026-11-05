@@ -328,6 +328,7 @@ def app():
             "pip",
             "install",
             "--offline",
+            "--no-deps",
             "--python",
             sys.executable,
             "--target",
