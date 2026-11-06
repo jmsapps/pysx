@@ -62,11 +62,19 @@ function probe(python, args) {
   return new Promise((resolve) => {
     // A neutral directory keeps the probe about the selected environment
     // instead of whatever directory the editor happens to have been started in.
-    execFile(python, args, { timeout: 30000, cwd: os.tmpdir() }, (error, stdout) => {
+    execFile(python, args, { timeout: 30000, cwd: os.tmpdir() }, (error, stdout, stderr) => {
+      // Discarding the error made every environment failure indistinguishable
+      // from "the lsp extra is missing", which is the message the router then
+      // reports no matter what actually went wrong.
+      probe.lastFailure = error
+        ? `${python} ${args.join(" ")} failed: ${error.message}` +
+          `${stderr ? `\n${String(stderr).trim()}` : ""}`
+        : null;
       resolve(error ? null : stdout.trim());
     });
   });
 }
+probe.lastFailure = null;
 
 function createClient({ python, output, serverOptions, documentSelector, workspaceFolder, owns,
   watched }) {
