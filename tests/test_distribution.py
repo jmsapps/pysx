@@ -156,7 +156,16 @@ def test_host_config_fresh_actual_wheel_user_app(tmp_path: Path, *, asgi: bool) 
     output = tmp_path / "host.log"
 
     with output.open("w") as log:
-        process = subprocess.Popen(args, cwd=consumer, env=clean_env(), stdout=log, stderr=log)
+        # interrupt() aims CTRL_BREAK_EVENT at this child on Windows, and that event
+        # reaches the whole group: without its own group it kills the test runner.
+        process = subprocess.Popen(
+            args,
+            cwd=consumer,
+            env=clean_env(),
+            stdout=log,
+            stderr=log,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
 
         try:
             deadline = time.monotonic() + 15

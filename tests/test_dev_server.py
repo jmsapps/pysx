@@ -99,7 +99,16 @@ def serving(
     ]
 
     with log.open("w") as stream:
-        process = subprocess.Popen(args, cwd=root, env=env, stdout=stream, stderr=stream)
+        # interrupt() aims CTRL_BREAK_EVENT at this child on Windows, and that event
+        # reaches the whole group: without its own group it kills the test runner.
+        process = subprocess.Popen(
+            args,
+            cwd=root,
+            env=env,
+            stdout=stream,
+            stderr=stream,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
         ready = False
 
         def started() -> bool:
