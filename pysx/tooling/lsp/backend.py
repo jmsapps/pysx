@@ -302,8 +302,15 @@ class TypeBackend:
         def finished(done: asyncio.Task[object]) -> None:
             self.requests.discard(done)
 
-            if not done.cancelled():
-                done.exception()
+            if done.cancelled():
+                return
+            # Retrieving the exception keeps asyncio quiet, but discarding it left a
+            # failing backend indistinguishable from a slow one: the server stays up,
+            # answers nothing, and logs nothing for the client to report.
+            failure = done.exception()
+
+            if failure is not None:
+                LOG.error("Type backend request failed", exc_info=failure)
 
         erased.add_done_callback(finished)
 
