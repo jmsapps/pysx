@@ -29,7 +29,7 @@ from websockets.http11 import Response
 from websockets.typing import Origin
 
 from pysx.hosting._http_connection import HTTPMethodConnection as _HTTPConnection
-from pysx.hosting.hosting import request_from_headers
+from pysx.hosting.hosting import request_from_headers, shutdown_signals
 from pysx.hosting.security import AccessDenied, SecurityPolicy
 from pysx.runtime.wire import JSONValue
 
@@ -887,7 +887,7 @@ class Supervisor:
             tuple[signal.Signals, int | Callable[[int, FrameType | None], object] | None]
         ] = []
 
-        for name in (signal.SIGINT, signal.SIGTERM):
+        for name in shutdown_signals():
             installed.append((name, signal.getsignal(name)))
 
             try:

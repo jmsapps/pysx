@@ -18,7 +18,7 @@ from pysx.compiler.loader import import_app
 from pysx.runtime.session import Session, close_session
 
 from .durable_host import DurableApplication
-from .hosting import Application, HostConfig
+from .hosting import Application, HostConfig, shutdown_signals
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -167,7 +167,7 @@ def main() -> None:
             tuple[signal.Signals, int | Callable[[int, FrameType | None], object] | None]
         ] = []
 
-        for name in (signal.SIGINT, signal.SIGTERM):
+        for name in shutdown_signals():
             previous = signal.getsignal(name)
 
             try:
