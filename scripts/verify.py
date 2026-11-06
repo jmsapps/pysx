@@ -190,6 +190,26 @@ def _end_tree(process: subprocess.Popen[str]) -> None:
     process.kill()
 
 
+def _drain_watchdog() -> None:
+    """Print and clear any hang report the gate's tests left behind.
+
+    The report cannot travel on the gate's stdout: pytest captures stderr per test
+    and never reports the capture of a test that does not finish. Relying on the
+    uploaded artifact instead hid it twice, so it is printed here as well.
+    """
+
+    logs = Path(os.environ.get("PYSX_DEPLOYMENT_LOGS", "") or ROOT / ".pysx-logs")
+    report = logs / "task-watchdog.log"
+
+    try:
+        if not report.is_file():
+            return
+        print(report.read_text(encoding="utf-8", errors="replace"), flush=True)
+        report.unlink()
+    except OSError as error:
+        print(f"   | watchdog report unreadable: {error}", flush=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("selector", nargs="?", default="gates", choices=sorted(SELECTORS))
@@ -209,6 +229,7 @@ def main() -> int:
     for gate in selected:
         print(f"-> {gate.tier}/{gate.name}", flush=True)
         passed, elapsed, output = run(gate, stream=args.verbose)
+        _drain_watchdog()
 
         if passed:
             print(f"   ok {gate.name} ({elapsed:.1f}s)", flush=True)

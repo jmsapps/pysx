@@ -76,13 +76,16 @@ def _asyncio_hang_watchdog() -> Iterator[None]:
 
         # pytest captures sys.stderr per test, and a test that never finishes never
         # has its capture reported, so the report has to leave the process.
+        target = Path(os.environ.get("PYSX_DEPLOYMENT_LOGS", "") or ROOT / ".pysx-logs")
+
         try:
-            logs = Path(os.environ.get("PYSX_DEPLOYMENT_LOGS", "") or ROOT / ".pysx-logs")
-            logs.mkdir(parents=True, exist_ok=True)
-            with (logs / "task-watchdog.log").open("a", encoding="utf-8") as stream:
+            target.mkdir(parents=True, exist_ok=True)
+            with (target / "task-watchdog.log").open("a", encoding="utf-8") as stream:
                 stream.write(entry)
-        except BaseException:
-            pass
+        except BaseException as error:
+            # A swallowed write looks exactly like "nothing was slow", which is the
+            # wrong conclusion to hand someone reading a red build.
+            entry += f"watchdog could not write {target}: {error!r}\n"
 
         with suppress(BaseException):
             sys.stderr.write(entry)
