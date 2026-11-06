@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from acceptance_support import interrupt
+from acceptance_support import alive, interrupt
 from test_server_limits import http_method_parser
 
 from pysx.development.development import Supervisor, WatchConfig
@@ -142,8 +142,7 @@ def serving(
                     process.wait(timeout=5)
 
             for pid in children:
-                with pytest.raises(ProcessLookupError):
-                    os.kill(pid, 0)
+                assert not alive(pid)
         with socket.socket() as probe:
             assert probe.connect_ex(("127.0.0.1", port)) != 0
 
@@ -335,12 +334,7 @@ def test_installed_serve_rejected_import_reaps_descendants(tmp_path: Path) -> No
         child = int((tmp_path / ".childpid").read_text())
 
         def reaped() -> bool:
-            try:
-                os.kill(child, 0)
-            except ProcessLookupError:
-                return True
-
-            return False
+            return not alive(child)
 
         wait_for(reaped, log)
         (tmp_path / "user_app.py").write_text(SOURCE)
