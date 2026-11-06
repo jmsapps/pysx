@@ -35,6 +35,25 @@ async def receive(ws: ClientConnection, seconds: float = 5) -> ServerMessage:
     return cast("ServerMessage", message)
 
 
+STATUS_CONTROL_C_EXIT = 0xC000013A
+
+
+def shutdown_status(code: int | None) -> int | None:
+    """Normalise the exit status of a process asked to stop with Ctrl+C.
+
+    Console control events reach an entire process group, and these commands run
+    behind a `uv run` wrapper that installs no handler for them, so on Windows the
+    wrapper reports STATUS_CONTROL_C_EXIT no matter how cleanly the pysx host
+    underneath it drained. The host's own behaviour is asserted from its output;
+    the wrapper's status carries no information on that platform.
+    """
+
+    if sys.platform == "win32" and code in (STATUS_CONTROL_C_EXIT, -STATUS_CONTROL_C_EXIT):
+        return 0
+
+    return code
+
+
 def alive(pid: int) -> bool:
     """Report whether a pid is still running, without signalling it.
 
