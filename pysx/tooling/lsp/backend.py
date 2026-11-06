@@ -138,8 +138,13 @@ class TypeBackend:
 
         if not entry.is_file():
             raise RuntimeError("Pyright language server is missing; reinstall pysx[lsp]")
+        # The backend's whole lifecycle was silent, so a Pyright that never starts and
+        # one that starts and never answers looked the same from the client: pysx's own
+        # diagnostics publish either way and nothing else ever arrives.
+        LOG.warning("Type backend: launching %s %s in %s", node, entry, root)
         await cast("ClientProcess", self.client).start_io(node, str(entry), "--stdio", cwd=root)
         self.starts += 1
+        LOG.warning("Type backend: started pid %s", self.pid)
         self.stderr_task = asyncio.create_task(self._drain_stderr())
         await asyncio.wait_for(
             self.client.initialize_async(
@@ -152,6 +157,7 @@ class TypeBackend:
             ),
             15,
         )
+        LOG.warning("Type backend: initialize completed")
         self.client.initialized(types.InitializedParams())
         self.client.workspace_did_change_configuration(
             types.DidChangeConfigurationParams(
