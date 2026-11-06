@@ -134,7 +134,13 @@ def type_project(root: Path, backend: str) -> int:
             mapped = compilation.projection()
             target = tree / path.relative_to(root)
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(mapped.text, encoding="utf-8")
+            # newline="" disables translation. The checker reports positions against
+            # the bytes on disk while they are mapped back through `mapped.text`, so
+            # the two must agree on where the lines are. Default translation rewrites
+            # every \n to os.linesep, so on Windows a CRLF source becomes \r\r\n; the
+            # checker counts the stray CR as its own line break and reports rows this
+            # text does not have, while `Positions` splits on \n alone.
+            target.write_text(mapped.text, encoding="utf-8", newline="")
             models[target] = (path, buffers[str(path)], mapped)
         config = root / "pyproject.toml"
 
