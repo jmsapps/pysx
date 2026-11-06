@@ -40,8 +40,12 @@ def interrupt(proc: subprocess.Popen[str] | subprocess.Popen[bytes]) -> None:
 
     Windows `Popen.send_signal` accepts only SIGTERM, CTRL_C_EVENT and
     CTRL_BREAK_EVENT, so sending SIGINT there raises `ValueError: Unsupported
-    signal: 2` rather than stopping anything. CTRL_BREAK_EVENT is the one that can
-    be aimed at a specific child, and it needs CREATE_NEW_PROCESS_GROUP at spawn.
+    signal: 2` rather than stopping anything.
+
+    **The child must have been spawned with CREATE_NEW_PROCESS_GROUP.**
+    CTRL_BREAK_EVENT is delivered to an entire process group, so a child sharing
+    the runner's group takes pytest down with it — silently, leaving a gate that
+    simply stops producing output.
     """
 
     if sys.platform == "win32":
