@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+from acceptance_support import alive
 from lsprotocol import types
 
 from pysx.compiler.compiler import analyze
@@ -798,9 +799,7 @@ def test_editor_surface_closing_every_document_releases_the_backend(
     deadline = time.monotonic() + 15
 
     while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except OSError:
+        if not alive(pid):
             return
         time.sleep(0.05)
     pytest.fail("the analysis backend outlived its last open document")

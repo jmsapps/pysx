@@ -35,6 +35,47 @@ async def receive(ws: ClientConnection, seconds: float = 5) -> ServerMessage:
     return cast("ServerMessage", message)
 
 
+def alive(pid: int) -> bool:
+    """Report whether a pid is still running, without signalling it.
+
+    `os.kill(pid, 0)` is the POSIX idiom and means something else entirely on
+    Windows: anything other than a console control event is routed to
+    `TerminateProcess`, so signal 0 asks to *kill* the process with exit code 0 and
+    raises `OSError(87)` from `OpenProcess` when the pid is already gone. Probing
+    liveness there needs a handle, not a signal.
+    """
+
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined, unused-ignore]
+        # PROCESS_QUERY_LIMITED_INFORMATION: enough to read an exit code, and it
+        # does not require rights to affect the process.
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+
+        if not handle:
+            return False
+
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+
+            # STILL_ACTIVE
+            return code.value == 259
+        finally:
+            kernel32.CloseHandle(handle)
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+    return True
+
+
 def interrupt(proc: subprocess.Popen[str] | subprocess.Popen[bytes]) -> None:
     """Ask a child to shut down the way a console Ctrl+C would.
 
