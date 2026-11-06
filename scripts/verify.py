@@ -16,6 +16,10 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 PYTHON_VERSION = "3.14.4"
@@ -220,7 +224,25 @@ def _drain_watchdog() -> None:
         print(f"   | watchdog report unreadable: {error}", flush=True)
 
 
+def _utf8_console() -> None:
+    """Make this process able to print what its gates produced.
+
+    Three encodings sit between a gate's output and the build log: what the child
+    emits, how the pipes are decoded, and how this process writes to its own
+    stdout. All three must be UTF-8, and the last one is the easiest to forget —
+    the suites emit emoji, and a cp1252 console turns that into a crash that
+    discards the whole report.
+    """
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+
+        if reconfigure is not None:
+            cast("Callable[..., None]", reconfigure)(encoding="utf-8", errors="replace")
+
+
 def main() -> int:
+    _utf8_console()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("selector", nargs="?", default="gates", choices=sorted(SELECTORS))
     parser.add_argument("--verbose", action="store_true", help="stream gate output as it runs")
