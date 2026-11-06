@@ -152,6 +152,11 @@ def run(gate: Gate, *, stream: bool) -> tuple[bool, float, str]:
         stdout=subprocess.PIPE if not stream else None,
         stderr=subprocess.PIPE if not stream else None,
         text=True,
+        # The gates run under PYTHONUTF8, so decode their pipes as UTF-8 rather than
+        # the locale encoding: on Windows that is cp1252, and a byte it cannot decode
+        # kills the reader thread and discards everything the gate had written.
+        encoding="utf-8",
+        errors="replace",
         start_new_session=sys.platform != "win32",
         # Named dynamically: the flag only exists in the Windows subprocess module.
         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
