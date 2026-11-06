@@ -248,6 +248,17 @@ class Session:
 
     def accept(self, params: types.PublishDiagnosticsParams) -> None:
         if self.closed or self.snapshot is None or self.snapshot.stamp != self.stamp:
+            # The other silent exit on this path: a diagnostic that arrives against a
+            # superseded snapshot is correctly ignored, but so far indistinguishably
+            # from one that never arrived.
+            LOG.warning(
+                "Backend diagnostics ignored: closed=%s snapshot=%s stamp=%s current=%s",
+                self.closed,
+                self.snapshot is not None,
+                None if self.snapshot is None else self.snapshot.stamp,
+                self.stamp,
+            )
+
             return
 
         projected = path_for_uri(params.uri)
@@ -261,6 +272,14 @@ class Session:
         )
 
         if item is None:
+            # Dropping this silently makes a backend whose diagnostics never match
+            # a known projection indistinguishable from one that published nothing.
+            LOG.warning(
+                "Backend diagnostics for an unknown projection: %s (projected root %s)",
+                projected,
+                self.index.projected,
+            )
+
             return
         self.republished.add(item.relative)
 
