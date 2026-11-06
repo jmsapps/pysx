@@ -15,15 +15,17 @@ import urllib.error
 import urllib.request
 from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Self, cast
 
 from websockets.asyncio.client import ClientConnection, connect
 
 if TYPE_CHECKING:
-    from pathlib import Path
     from types import TracebackType
     from typing import IO
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def free_port() -> int:
@@ -146,10 +148,36 @@ class Workers:
     def __exit__(
         self,
         _kind: type[BaseException] | None,
-        _error: BaseException | None,
+        error: BaseException | None,
         _trace: TracebackType | None,
     ) -> None:
         self.close()
+
+        if error is not None:
+            self.collect_logs()
+
+    def collect_logs(self) -> None:
+        """Move worker output somewhere that outlives the fixture's temp directory.
+
+        These workers are separate processes, so a failure in the client only ever
+        surfaces as a close code — the reason lives in the worker's own log, which
+        the temporary directory then discards. Every CI run of this suite so far has
+        produced an empty `fixture-logs` artifact for exactly this reason.
+        """
+
+        destination = Path(os.environ.get("PYSX_DEPLOYMENT_LOGS") or ROOT / ".pysx-logs")
+
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+
+            for worker in self.workers:
+                source = self.directory / f"worker-{worker.identifier}.log"
+
+                if source.is_file():
+                    target = destination / f"ownership-{worker.identifier}.log"
+                    target.write_text(source.read_text(errors="replace"), encoding="utf-8")
+        except OSError:
+            return
 
 
 class Client:
