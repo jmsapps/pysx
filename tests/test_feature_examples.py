@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import re
-import signal
 import socket
 import urllib.request
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 import pytest
-from acceptance_support import ready_server
+from acceptance_support import interrupt, ready_server
 
 from examples.browser_recovery import app as browser_recovery_app
 from examples.composition import app as composition_app
@@ -137,7 +136,7 @@ def test_browser_recovery_example_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
             assert response.status == 200
             assert b"recovery-name" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -171,7 +170,7 @@ def test_browser_recovery_hosting_and_unchanged_counter(mode: str, application: 
         with urllib.request.urlopen(reset, timeout=5) as response:
             assert response.status == 204
             assert response.headers["set-cookie"].split(";", 1)[0] != cookie
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=8) == 0
 
 
@@ -247,7 +246,7 @@ def test_diagnostics_example_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
             assert response.status == 200
             assert b"Diagnostics" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -334,7 +333,7 @@ def test_resources_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen("http://127.0.0.1:8776/", timeout=5) as response:
             assert response.status == 200
             assert b"Async resources" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -388,7 +387,7 @@ def test_recovery_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen("http://127.0.0.1:8775/", timeout=5) as response:
             assert response.status == 200
             assert b"client.js" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -487,7 +486,7 @@ def test_pysx_12_st_4navigation_report_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen("http://127.0.0.1:8768/", timeout=5) as response:
             assert response.status == 200
             assert b"client.js" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -547,7 +546,7 @@ def test_templates_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen("http://127.0.0.1:8761/", timeout=5) as response:
             assert response.status == 200
             assert b"client.js" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -667,7 +666,7 @@ def test_themes_example_cli_startup_cleanup() -> None:
         assert server.poll() is None
         assert response.status == 200
         assert b"client.js" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
     assert server.returncode == 0
@@ -949,7 +948,7 @@ def test_keyed_rows_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen("http://127.0.0.1:8764/", timeout=5) as response:
             assert response.status == 200
             assert b"client.js" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -1041,7 +1040,7 @@ def test_reconnect_cli_startup_and_ctrl_c_exit() -> None:
         with urllib.request.urlopen("http://127.0.0.1:8777/", timeout=5) as response:
             assert response.status == 200
             assert b"Bounded reconnect" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -1121,7 +1120,7 @@ def test_session_security_cli_startup_interaction_and_ctrl_c_exit() -> None:
             body = response.read()
             assert b"Session security" in body
             assert b"reader" in body
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -1213,7 +1212,7 @@ def test_development_cli_startup_and_ctrl_c_exit() -> None:
             body = response.read()
             assert b"Try a hot update" in body
             assert b"development-state-count" in body
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -1261,7 +1260,7 @@ def test_durable_state_cli_startup_and_ctrl_c_exit(
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
             assert response.status == 200
             assert b"Declared session state" in response.read()
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 
@@ -1339,7 +1338,7 @@ def test_editor_features_cli_startup_and_ctrl_c_exit() -> None:
             body = response.read()
             assert b"Editor features" in body
             assert b"show-navigation" in body
-        server.send_signal(signal.SIGINT)
+        interrupt(server)
         assert server.wait(timeout=5) == 0
 
 

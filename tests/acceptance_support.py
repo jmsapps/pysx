@@ -35,6 +35,22 @@ async def receive(ws: ClientConnection, seconds: float = 5) -> ServerMessage:
     return cast("ServerMessage", message)
 
 
+def interrupt(proc: subprocess.Popen[str] | subprocess.Popen[bytes]) -> None:
+    """Ask a child to shut down the way a console Ctrl+C would.
+
+    Windows `Popen.send_signal` accepts only SIGTERM, CTRL_C_EVENT and
+    CTRL_BREAK_EVENT, so sending SIGINT there raises `ValueError: Unsupported
+    signal: 2` rather than stopping anything. CTRL_BREAK_EVENT is the one that can
+    be aimed at a specific child, and it needs CREATE_NEW_PROCESS_GROUP at spawn.
+    """
+
+    if sys.platform == "win32":
+        proc.send_signal(signal.CTRL_BREAK_EVENT)
+
+        return
+    proc.send_signal(signal.SIGINT)
+
+
 def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> None:
     """Stop the child and its server descendants, escalating after five seconds."""
 
@@ -78,6 +94,9 @@ def ready_server(
         stderr=subprocess.STDOUT,
         text=True,
         start_new_session=owns_group,
+        # `interrupt` aims CTRL_BREAK_EVENT at this child, and Windows only delivers
+        # that to a process that owns its group.
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
     )
     lines: Queue[str | None] = Queue()
     assert proc.stdout is not None

@@ -7,7 +7,6 @@ import json
 import os
 import re
 import shutil
-import signal
 import socket
 import subprocess
 import sys
@@ -21,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from acceptance_support import interrupt
 from test_server_limits import http_method_parser
 
 from pysx.development.development import Supervisor, WatchConfig
@@ -120,7 +120,7 @@ def serving(
             )
 
             if process.poll() is None:
-                process.send_signal(signal.SIGINT)
+                interrupt(process)
 
             try:
                 result = process.wait(timeout=10)
