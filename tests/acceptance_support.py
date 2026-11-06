@@ -49,10 +49,40 @@ def interrupt(proc: subprocess.Popen[str] | subprocess.Popen[bytes]) -> None:
     """
 
     if sys.platform == "win32":
-        proc.send_signal(signal.CTRL_BREAK_EVENT)
+        try:
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+        except OSError as error:
+            raise OSError(f"{error}\n{_console_state(proc)}") from error
 
         return
     proc.send_signal(signal.SIGINT)
+
+
+def _console_state(proc: subprocess.Popen[str] | subprocess.Popen[bytes]) -> str:
+    """Report what the failing CTRL_BREAK_EVENT actually had to work with.
+
+    `WinError 87` from `GenerateConsoleCtrlEvent` is ambiguous on its own: an already
+    dead child, a child that does not lead its own process group, and a caller with no
+    console all surface the same code. Guessing between them produced one wrong
+    conclusion already, so the call site records the distinguishing facts instead.
+    """
+
+    if sys.platform != "win32":
+        return ""
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined, unused-ignore]
+    window = kernel32.GetConsoleWindow()
+    buffer = (ctypes.c_uint32 * 256)()
+    attached = kernel32.GetConsoleProcessList(buffer, 256)
+    sharing = sorted(buffer[index] for index in range(min(attached, 256)))
+
+    return (
+        f"caller console window: {window!r}; "
+        f"caller console holds {attached} process(es): {sharing}; "
+        f"child pid {proc.pid} exit status {proc.poll()!r}; "
+        f"child shares the caller's console: {proc.pid in sharing}"
+    )
 
 
 def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> None:
