@@ -153,7 +153,9 @@ def type_project(root: Path, backend: str) -> int:
             if config.is_file():
                 settings = cast(
                     "dict[str, object]",
-                    tomllib.loads(config.read_text()).get("tool", {}).get("pyright", {}),
+                    tomllib.loads(config.read_text(encoding="utf-8"))
+                    .get("tool", {})
+                    .get("pyright", {}),
                 )
             (tree / "pyrightconfig.json").write_text(
                 json.dumps(dict(settings, reportUnusedFunction="error")), encoding="utf-8"
