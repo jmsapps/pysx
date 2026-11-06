@@ -78,7 +78,7 @@ def _configuration(root: Path, files: tuple[Path, ...], tooling: str) -> str:
         seen.add(path)
 
         if path.is_file() and path.suffix == ".toml":
-            settings = tomllib.loads(path.read_text())
+            settings = tomllib.loads(path.read_text(encoding="utf-8"))
             settings = (
                 settings.get("tool", {}).get("ruff", {})
                 if path.name == "pyproject.toml"

@@ -101,6 +101,11 @@ def environment() -> dict[str, str]:
     # Output is captured, so a gate that hangs is only diagnosable from what it
     # already wrote; buffering would discard exactly that.
     env["PYTHONUNBUFFERED"] = "1"
+    # The suites read and write source containing emoji and Greek throughout. Python
+    # picks the locale encoding for text IO, which is cp1252 on Windows and cannot
+    # represent any of it, so the gates fix UTF-8 for every platform rather than
+    # depending on whichever locale the runner happens to have.
+    env["PYTHONUTF8"] = "1"
     managed = ROOT / ".vscode-test" / "extensions"
 
     if "PYSX_EXTENSIONS_DIR" not in env and managed.is_dir():
