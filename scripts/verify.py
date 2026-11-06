@@ -154,9 +154,18 @@ def run(gate: Gate, *, stream: bool) -> tuple[bool, float, str]:
 
     try:
         stdout, stderr = process.communicate(timeout=gate.timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as expired:
         _end_tree(process)
-        stdout, stderr = process.communicate(timeout=30)
+
+        # A tree that outlives its own kill must still be reported as this gate
+        # failing. Letting the second wait raise loses the gate name, every other
+        # gate behind it, and whatever output the timed-out command had produced.
+        try:
+            stdout, stderr = process.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            stdout = (expired.stdout or b"").decode(errors="replace")
+            previous = (expired.stderr or b"").decode(errors="replace")
+            stderr = f"{previous}\nprocess tree survived kill"
         elapsed = time.monotonic() - started
 
         return False, elapsed, f"timed out after {gate.timeout}s\n{stdout or ''}{stderr or ''}"

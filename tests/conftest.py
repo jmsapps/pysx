@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 import threading
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -37,13 +38,18 @@ def _pending_task_stacks() -> str:
     ]
 
     for task in pending:
-        if task.done():
-            continue
-        frames = task.get_stack(limit=12)
-        rendered = (
-            "".join(traceback.format_list(traceback.extract_stack(frames[-1]))) if frames else ""
-        )
-        report.append(f"--- {task!r}\n{rendered}")
+        try:
+            if task.done():
+                continue
+            frames = task.get_stack(limit=12)
+            rendered = (
+                "".join(traceback.format_list(traceback.extract_stack(frames[-1])))
+                if frames
+                else ""
+            )
+            report.append(f"--- {task!r}\n{rendered}")
+        except Exception as error:
+            report.append(f"--- unreadable task: {error!r}")
 
     return "\n".join(report) or "no pending tasks found"
 
@@ -59,22 +65,28 @@ def _asyncio_hang_watchdog() -> Iterator[None]:
 
     def report() -> None:
         name = os.environ.get("PYTEST_CURRENT_TEST", "unknown test")
-        entry = (
-            f"\nPYSX TASK WATCHDOG: {name} still running after {seconds}s\n"
-            f"{_pending_task_stacks()}\n"
-        )
+        header = f"\nPYSX TASK WATCHDOG: {name} still running after {seconds}s\n"
+
+        # Nothing here may raise. A timer thread that dies takes the whole report
+        # with it, and the silence reads as "no slow tests" rather than as a fault.
+        try:
+            entry = header + _pending_task_stacks() + "\n"
+        except BaseException as error:
+            entry = f"{header}task inspection failed: {error!r}\n"
+
         # pytest captures sys.stderr per test, and a test that never finishes never
         # has its capture reported, so the report has to leave the process.
-        logs = Path(os.environ.get("PYSX_DEPLOYMENT_LOGS", "") or ROOT / ".pysx-logs")
-
         try:
+            logs = Path(os.environ.get("PYSX_DEPLOYMENT_LOGS", "") or ROOT / ".pysx-logs")
             logs.mkdir(parents=True, exist_ok=True)
             with (logs / "task-watchdog.log").open("a", encoding="utf-8") as stream:
                 stream.write(entry)
-        except OSError:
+        except BaseException:
             pass
-        sys.stderr.write(entry)
-        sys.stderr.flush()
+
+        with suppress(BaseException):
+            sys.stderr.write(entry)
+            sys.stderr.flush()
 
     timer = threading.Timer(seconds, report)
     timer.daemon = True
