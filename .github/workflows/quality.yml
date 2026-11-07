@@ -2,12 +2,19 @@ name: Python quality
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Full qualification or diagnostic probes only
+        type: choice
+        options: [all, probe]
+        default: all
 
 permissions:
   contents: read
 
 jobs:
   quality:
+    name: ${{ inputs.mode == 'probe' && 'diagnostic probe' || 'quality' }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -15,6 +22,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     env:
+      PYSX_CI_PROBE: ${{ inputs.mode == 'probe' && '1' || '0' }}
       PYSX_EXTENSIONS_DIR: ${{ github.workspace }}/.vscode-test/extensions
       PYSX_DEPLOYMENT_LOGS: ${{ github.workspace }}/.pysx-logs
       PYSX_EDITOR_SAVE_BUDGET: '3'

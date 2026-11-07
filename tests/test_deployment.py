@@ -47,7 +47,7 @@ def test_operational_topology_probe_store_failure_drain_and_redaction(tmp_path: 
         moved = tmp_path / "lost.db"
         path.rename(moved)
         assert (await host.http(request)).status == 503
-        moved.rename(path)
+        moved.replace(path)
         assert (await host.http(request)).status == 200
         host.begin_drain()
         assert (await host.http(request)).status == 503

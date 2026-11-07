@@ -93,10 +93,44 @@ GATES: tuple[Gate, ...] = (
 )
 
 TIERS: tuple[str, ...] = ("setup", "python", "browser", "grammar", "editor")
+PROBE_GATES: tuple[Gate, ...] = (
+    Gate(
+        "diagnostic",
+        "ruff-fixtures",
+        (
+            "uv",
+            "run",
+            "--project",
+            ".",
+            "pytest",
+            "-q",
+            "tests/test_editor_distribution.py",
+            "-k",
+            "lint_qualification or ruff",
+        ),
+        timeout=180,
+    ),
+    Gate(
+        "diagnostic",
+        "lsp-projection",
+        (
+            "uv",
+            "run",
+            "--project",
+            ".",
+            "pytest",
+            "-q",
+            "-s",
+            "tests/test_lsp.py::test_resident_protocol_lifecycle_unsaved_and_stale_versions",
+        ),
+        timeout=180,
+    ),
+)
 SELECTORS: dict[str, tuple[str, ...]] = {
     "all": TIERS,
     "gates": tuple(tier for tier in TIERS if tier != "setup"),
     **{tier: (tier,) for tier in TIERS},
+    "probe": ("diagnostic",),
 }
 
 
@@ -248,8 +282,21 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true", help="stream gate output as it runs")
     parser.add_argument("--list", action="store_true", help="print the selected gates and exit")
     args = parser.parse_args()
+
+    if args.selector == "all" and os.environ.get("PYSX_CI_PROBE") == "1":
+        args.selector = "probe"
     tiers = SELECTORS[args.selector]
-    selected = [gate for gate in GATES if gate.tier in tiers]
+    selected = (
+        list(PROBE_GATES)
+        if args.selector == "probe"
+        else [gate for gate in GATES if gate.tier in tiers]
+    )
+
+    if args.selector == "probe":
+        print(
+            "DIAGNOSTIC PROBE ONLY: this does not qualify the full verification manifest",
+            flush=True,
+        )
 
     if args.list:
         for gate in selected:
@@ -257,6 +304,7 @@ def main() -> int:
 
         return 0
     failures: list[tuple[Gate, str]] = []
+    label = "DIAGNOSTIC PROBE" if args.selector == "probe" else "VERIFICATION"
 
     for gate in selected:
         print(f"-> {gate.tier}/{gate.name}", flush=True)
@@ -282,10 +330,10 @@ def main() -> int:
 
     if failures:
         names = ", ".join(gate.name for gate, _output in failures)
-        print(f"VERIFICATION FAILED: {len(failures)} gate(s): {names}", flush=True)
+        print(f"{label} FAILED: {len(failures)} gate(s): {names}", flush=True)
 
         return 1
-    print(f"VERIFICATION PASSED: {len(selected)} gates ({args.selector})", flush=True)
+    print(f"{label} PASSED: {len(selected)} gates ({args.selector})", flush=True)
 
     return 0
 

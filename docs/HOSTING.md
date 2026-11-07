@@ -146,14 +146,17 @@ declines browser checkpoints for the application and builds no ring. Explicit du
 hosts keep their existing store/lease credentials and require no browser key ring.
 A single ordinary host generates
 it automatically, without import-time writes, under the application's hashed namespace
-in `~/Library/Application Support/pysx` on macOS or `$XDG_STATE_HOME/pysx` on Linux
-(falling back to `~/.local/state/pysx` when XDG is absent or relative). Keep this private
-state directory across deployments. Directories are owned with mode 0700, key files
-0600, and symlinks are rejected. Missing or unsafe configured keys fail startup. The
-ring needs POSIX directory descriptors and file ownership; a host without them reports
-that requirement at startup and must set `recovery=False`.
+in `~/Library/Application Support/pysx` on macOS, `$XDG_STATE_HOME/pysx` on Linux
+(falling back to `~/.local/state/pysx` when XDG is absent or relative), or
+`%LOCALAPPDATA%/pysx` on Windows. Keep this private state directory across deployments.
+On POSIX, directories are owned with mode 0700, key files 0600, and symlinks are
+rejected. On Windows, the ring is sealed with DPAPI for the current user account,
+and reparse points are rejected. Concurrent first starts publish one complete ring
+without overwriting a ring another host has already loaded. Missing or unsafe
+configured keys fail startup. A host without the platform's storage capability
+must set `recovery=False`.
 
-For multiple hosts, set a stable `HostConfig.recovery_namespace` and mount the same
+For multiple POSIX hosts, set a stable `HostConfig.recovery_namespace` and mount the same
 ring at `HostConfig.recovery_key_directory / "recovery.keys"` on each host. An explicit
 directory is read-only to the framework and must already exist with mode 0700; its
 regular key file may be 0400 or 0600. The bounded binary ring is `PSK1`, an 8-byte

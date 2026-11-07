@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from typing import TYPE_CHECKING, cast
+from unittest.mock import patch
 
 import pytest
 
@@ -22,6 +23,19 @@ SOURCE = """from pysx import pysx
 from pysx.components.native import Strong, Em
 view = pysx(t"br; Strong: 'Hello'")
 """
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_template_import_usage_ruff_receives_exact_utf8_bytes(tmp_path: Path, newline: str) -> None:
+    source = SOURCE.replace("Hello", "Hello 😀").replace("\n", newline)
+
+    with patch("pysx.tooling.lint.subprocess.run", wraps=subprocess.run) as run:
+        findings = lint_source(source, str(tmp_path / "view.py"))
+    checks = [call for call in run.call_args_list if call.args[0][1] == "check"]
+    assert checks
+    assert checks[0].kwargs["input"] == source.encode("utf-8")
+    assert all(isinstance(call.kwargs["input"], bytes) for call in checks)
+    assert any(item.code == "F401" and "Em" in item.message for item in findings)
 
 
 def test_template_import_usage_real_ruff_and_safe_cleanup(tmp_path: Path) -> None:
