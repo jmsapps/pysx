@@ -19,6 +19,7 @@ from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Self, cast
 
+from acceptance_support import interrupt
 from websockets.asyncio.client import ClientConnection, connect
 
 if TYPE_CHECKING:
@@ -52,7 +53,12 @@ class Worker:
 
     def stop(self, *, kill: bool = False) -> None:
         if self.process.poll() is None:
-            self.process.kill() if kill else self.process.terminate()
+            if kill:
+                self.process.kill()
+            elif sys.platform == "win32":
+                interrupt(self.process)
+            else:
+                self.process.terminate()
 
             try:
                 self.process.wait(timeout=7)
@@ -113,6 +119,7 @@ class Workers:
             text=True,
             stdout=log,
             stderr=subprocess.STDOUT,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
         worker = Worker(process, selected, identifier, log)
         self.workers.append(worker)

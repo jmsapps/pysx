@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import {spawn} from "node:child_process";
 import {once} from "node:events";
 import {cp, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {createServer} from "node:net";
@@ -7,6 +6,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import playwright from "playwright";
+import {spawnCli, signalCli} from "./cli_process.mjs";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), "pysx-watch-restart-"));
@@ -22,7 +22,7 @@ let running = null;
 let output = "";
 
 async function start() {
-  const child = spawn("uv", ["run", "--project", repository, "pysx", "--app",
+  const child = spawnCli(repository, ["--app",
     "examples.durable_state:app", "--watch", "--port", String(port)], {
     cwd: directory, detached: process.platform !== "win32",
     env: {...process.env, PYSX_STATE_PATH:join(directory, "state.sqlite3")},
@@ -42,9 +42,9 @@ async function start() {
 async function stop() {
   if (!running) return;
   const owned = running; running = null;
-  if (owned.child.exitCode === null) process.kill(-owned.child.pid, "SIGINT");
+  if (owned.child.exitCode === null) signalCli(owned.child, "SIGINT");
   const timer = setTimeout(() => {
-    try { process.kill(-owned.child.pid, "SIGKILL"); } catch {}
+    try { signalCli(owned.child, "SIGKILL"); } catch {}
   }, 10000);
   try {
     const [code, signal] = await owned.ended;

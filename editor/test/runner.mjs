@@ -122,11 +122,34 @@ try {
     // environment discovery and the missing-extra checks intact.
     const delay = startupDelay ?
       `if [ "$1" = "-m" ] && [ "$2" = "pysx.tooling.lsp.lsp" ]; then sleep ${startupDelay / 1000}; fi\n` : "";
-    writeFileSync(alternate, `#!/bin/sh\n${delay}exec ${JSON.stringify(interpreter)} "$@"\n`, { mode: 0o755 });
+    if (process.platform === "win32") {
+      // Use a real executable identity: execFile cannot launch a shell script
+      // as a selected Python interpreter on Windows.
+      const environment = path.join(workspace, "alternate");
+      const created = spawnSync("uv", ["venv", "--python", interpreter, environment],
+        { cwd: root, encoding: "utf8", timeout: 120000 });
+      if (created.status !== 0) throw new Error(`alternate environment creation failed: ${created.stderr}`);
+      alternate = path.join(environment, "Scripts", "python.exe");
+      const described = spawnSync(interpreter,
+        ["-c", "import json, site; print(json.dumps(site.getsitepackages()))"],
+        { cwd: root, encoding: "utf8", timeout: 30000 });
+      if (described.status !== 0) throw new Error(`selected environment discovery failed: ${described.stderr}`);
+      const sites = JSON.parse(described.stdout);
+      const library = path.join(environment, "Lib", "site-packages");
+      // Process the selected environment's .pth files as well as its packages,
+      // so editable installs remain available to this isolated executable.
+      writeFileSync(path.join(library, "selected-environment.pth"),
+        `import site; [site.addsitedir(p) for p in ${JSON.stringify(sites)}]\n`);
+      writeFileSync(path.join(library, "sitecustomize.py"),
+        "import sys, time\n" +
+        `if sys.orig_argv[-2:] == ['-m', 'pysx.tooling.lsp.lsp']: time.sleep(${startupDelay / 1000})\n`);
+    } else {
+      writeFileSync(alternate, `#!/bin/sh\n${delay}exec ${JSON.stringify(interpreter)} "$@"\n`, { mode: 0o755 });
+    }
     bare = path.join(workspace, "bare");
     const created = spawnSync("uv", ["venv", "--python", interpreter, bare], { cwd: root, encoding: "utf8", timeout: 120000 });
     if (created.status !== 0) throw new Error(`bare environment creation failed: ${created.stderr}`);
-    bare = path.join(bare, "bin", "python");
+    bare = path.join(bare, process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
     if (!existsSync(bare)) throw new Error("bare environment has no interpreter");
   }
   const manifest = JSON.parse(readFileSync(path.join(extension, "package.json"), "utf8"));

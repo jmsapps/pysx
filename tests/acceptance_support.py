@@ -191,13 +191,18 @@ def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> 
 
 @contextmanager
 def ready_server(
-    command: Sequence[str], timeout: float = 10, *, ready_banner: str = "pysx ready"
+    command: Sequence[str],
+    timeout: float = 10,
+    *,
+    ready_banner: str = "pysx ready",
+    input_pipe: bool = False,
 ) -> Generator[subprocess.Popen[str]]:
     """Wait for the ready banner with a bounded reader and guaranteed cleanup."""
     owns_group = sys.platform != "win32" and os.environ.get("PYSX_ACCEPTANCE_GROUP") != "shared"
     proc = subprocess.Popen(
         command,
         cwd=ROOT,
+        stdin=subprocess.PIPE if input_pipe else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -233,6 +238,9 @@ def ready_server(
         raise RuntimeError("server did not start within deadline: " + "".join(output))
     finally:
         timer.cancel()
+
+        if proc.stdin is not None:
+            proc.stdin.close()
         stop_process(proc, process_group=owns_group)
         reader.join(timeout=5)
 
