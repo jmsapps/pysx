@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import sys
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -113,10 +112,6 @@ def test_host_config_shutdown_finishes_after_cleanup_and_hook_failure() -> None:
     asyncio.run(exercise())
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="PYSX-24-ci-debug scaffolding: hangs in the ProactorEventLoop, see F4",
-)
 def test_host_config_shutdown_waits_for_startup_and_disposes_racing_get() -> None:
     async def exercise() -> None:
         entering = asyncio.Event()
@@ -137,7 +132,7 @@ def test_host_config_shutdown_waits_for_startup_and_disposes_racing_get() -> Non
             app, config=HostConfig(startup=(startup,), shutdown=(lambda: order.append("stop"),))
         )
         request = asyncio.create_task(application.http(request_from_headers("/", [])))
-        await entering.wait()
+        await asyncio.wait_for(entering.wait(), 5)
         closing = asyncio.create_task(application.close())
         await asyncio.sleep(0)
         assert order == []

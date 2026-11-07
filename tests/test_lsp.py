@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import queue
@@ -20,6 +21,7 @@ from lsprotocol import types
 from pysx.compiler.compiler import analyze
 from pysx.tooling.editor.types import diagnostics
 from pysx.tooling.lsp.backend import Stamp
+from pysx.tooling.lsp.server import ResidentServer, Session
 from pysx.tooling.lsp.workspace import WorkspaceIndex, position
 
 if TYPE_CHECKING:
@@ -35,6 +37,32 @@ SOURCE = (
     "    return pysx(t'p: {title}')\n"
     "view = pysx(t'Panel(title={42})')\n"
 )
+
+
+@pytest.mark.parametrize("version", [1, 0, None])
+def test_resident_diagnostics_match_equivalent_projection_uris(
+    tmp_path: Path, version: int | None
+) -> None:
+    async def exercise() -> None:
+        path = tmp_path / "view.py"
+        path.write_bytes(SOURCE.encode("utf-8"))
+        session = Session(ResidentServer("test", "0"), tmp_path)
+
+        try:
+            session.snapshot = session.index.build(
+                {str(path): {"source": SOURCE, "version": 1}}, session.stamp
+            )
+            item = session.snapshot.files[0]
+            uri = (session.index.projected / item.relative).as_uri()
+            session.sent[uri] = 1
+            equivalent = uri.replace("/view.py", "/%76iew.py")
+            assert equivalent != uri
+            session.accept(types.PublishDiagnosticsParams(equivalent, [], version))
+            assert (item.filename in session.typed) == (version == 1)
+        finally:
+            await session.close()
+
+    asyncio.run(exercise())
 
 
 class Client:

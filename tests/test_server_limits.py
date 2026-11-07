@@ -285,7 +285,7 @@ def test_bound_sends_shutdown_cancels_stalled_startup() -> None:
             lambda: native.P("unused"), config=HostConfig(startup=(startup,), shutdown_timeout=0.05)
         )
         request = asyncio.create_task(application.http(request_from_headers("/", [])))
-        await started.wait()
+        await asyncio.wait_for(started.wait(), 5)
         with pytest.raises(TimeoutError, match="shutdown deadline"):
             await application.close()
         await asyncio.gather(request, return_exceptions=True)
