@@ -43,5 +43,6 @@ jobs:
         with:
           name: fixture-logs-${{ matrix.os }}
           path: .pysx-logs/
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
