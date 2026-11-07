@@ -94,6 +94,7 @@ GATES: tuple[Gate, ...] = (
 
 TIERS: tuple[str, ...] = ("setup", "python", "browser", "grammar", "editor")
 PROBE_GATES: tuple[Gate, ...] = (
+    *(gate for gate in GATES if gate.tier == "setup"),
     Gate(
         "diagnostic",
         "worker-ownership",
@@ -142,6 +143,8 @@ PROBE_GATES: tuple[Gate, ...] = (
             "tests/test_hosts.py::test_host_config_shutdown_waits_for_startup_and_disposes_racing_get",
             "tests/test_server_limits.py::test_bound_sends_shutdown_cancels_stalled_startup",
             "tests/test_server_limits.py::test_bound_sends_real_signal_shutdown",
+            "tests/test_verification_harness.py::test_cli_control_fixture_distinguishes_shutdown_from_process_loss",
+            "tests/test_verification_harness.py::test_editor_timeout_cleanup",
         ),
         timeout=60,
     ),
@@ -177,6 +180,25 @@ PROBE_GATES: tuple[Gate, ...] = (
             "tests/test_lsp_edits.py",
         ),
         timeout=600,
+    ),
+    Gate(
+        "diagnostic",
+        "browser-recovery",
+        ("npm", "--prefix", "tests", "run", "browser", "--", "--suite", "browser_recovery"),
+        timeout=180,
+    ),
+    Gate(
+        "diagnostic",
+        "browser-watch-restart",
+        ("npm", "--prefix", "tests", "run", "browser", "--", "--suite", "watch_restart"),
+        timeout=180,
+    ),
+    Gate(
+        "diagnostic",
+        "editor-diagnostics",
+        ("npm", "--prefix", "editor", "test", "--", "--suite", "diagnostics"),
+        needs_display=True,
+        timeout=180,
     ),
 )
 SELECTORS: dict[str, tuple[str, ...]] = {
@@ -366,6 +388,9 @@ def main() -> int:
 
         if passed:
             print(f"   ok {gate.name} ({elapsed:.1f}s)", flush=True)
+
+            if args.selector == "probe" and output:
+                print(output, flush=True)
 
             for line in output.splitlines():
                 if line.startswith(MEASUREMENT_MARKERS):

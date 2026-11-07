@@ -706,10 +706,29 @@ def test_client_lifecycle_abrupt_server_death_reaps_backend(tmp_path: Path) -> N
         client.open(tmp_path / "view.py")
         client.diagnostic(tmp_path / "view.py", 1, "reportArgumentType")
         status = client.status()
-        assert status["processId"] == client.process.pid
+        server_pid = int(status["processId"])
+
+        if server_pid != client.process.pid:
+            assert sys.platform == "win32"
+            # A Windows venv's python.exe redirects to the real interpreter.
+            # Verify ownership, then kill the server itself rather than its launcher.
+            parent = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f"(Get-CimInstance Win32_Process -Filter 'ProcessId = {server_pid}')"
+                    ".ParentProcessId",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            )
+            assert int(parent.stdout.strip()) == client.process.pid
         assert status["interpreter"] == sys.executable
         pid = str(status["workspaces"][0]["pid"])
-        client.process.kill()
+        os.kill(server_pid, 9)
         client.process.wait(timeout=10)
         deadline = time.monotonic() + 10
 
