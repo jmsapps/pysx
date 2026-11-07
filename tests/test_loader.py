@@ -163,8 +163,8 @@ def test_late_install_is_reported(app_root: Path) -> None:
         install_loader(packages=("author_app",))
 
 
-def test_explicit_installed_app_root_keeps_nested_exclusions() -> None:
-    root = Path("/consumer/.venv/lib/python3.14/site-packages/installed_course")
+def test_explicit_installed_app_root_keeps_nested_exclusions(tmp_path: Path) -> None:
+    root = (tmp_path / ".venv/lib/python3.14/site-packages/installed_course").resolve()
     finder = install_loader(packages=("installed_course",), roots=(root,))
     assert finder.covers("installed_course.pages", root / "pages.py")
     assert not finder.covers("installed_course.vendor.pages", root / "vendor/pages.py")

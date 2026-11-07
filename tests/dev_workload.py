@@ -92,7 +92,7 @@ def app() -> Fragment:
         remaining = size - len(source.encode())
         assert remaining >= 2
         source += "#" + "x" * (remaining - 2) + "\n"
-        (root / name).write_text(source)
+        (root / name).write_bytes(source.encode("utf-8"))
 
     assert sum(path.stat().st_size for path in root.glob("*.py")) == TOTAL_BYTES
 

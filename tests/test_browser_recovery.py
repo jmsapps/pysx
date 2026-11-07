@@ -193,6 +193,7 @@ def test_keys_concurrent_first_start_and_mount(tmp_path: Path) -> None:
     with ThreadPoolExecutor(max_workers=16) as pool:
         rings = list(pool.map(start, range(64)))
     assert all(ring == rings[0] for ring in rings)
+
     if sys.platform != "win32":
         assert stat.S_IMODE(directory.stat().st_mode) == 0o700
         assert stat.S_IMODE((directory / "recovery.keys").stat().st_mode) == 0o600
