@@ -283,7 +283,18 @@ class Session:
             return
         self.republished.add(item.relative)
 
-        if params.version is None or self.sent.get(params.uri) != params.version:
+        # Backend URI spelling may differ (notably drive case/escaping on Windows).
+        # The projection has already been matched by filesystem identity above.
+        uri = (self.index.projected / item.relative).as_uri()
+
+        if params.version is None or self.sent.get(uri) != params.version:
+            LOG.warning(
+                "Backend diagnostics version ignored: uri=%s received=%s expected=%s",
+                params.uri,
+                params.version,
+                self.sent.get(uri),
+            )
+
             return
         mapped: list[types.Diagnostic] = []
 
