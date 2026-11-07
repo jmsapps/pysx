@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from urllib.request import urlopen
 
 import pytest
-from acceptance_support import interrupt, ready_server, shutdown_status
+from acceptance_support import interrupt, raised_signal_status, ready_server, shutdown_status
 from test_connection_pump import FakeConnection
 from test_transport import wait_for
 from uvicorn import Config
@@ -452,7 +452,11 @@ def test_bound_sends_real_signal_shutdown(
                 assert time.monotonic() - started < 5
 
         asyncio.run(exercise())
-        expected = -int(name) if asgi and name == signals.SIGTERM else 0
+        expected = (
+            raised_signal_status(name)
+            if asgi and (sys.platform == "win32" or name == signals.SIGTERM)
+            else 0
+        )
         assert shutdown_status(process.returncode) == expected
     data: dict[str, JSONValue] = json.loads(report.read_text())
     assert data == {"graphs": 0, "tasks": 0, "connections": 0, "created": 2, "cleaned": 2}

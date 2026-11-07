@@ -54,6 +54,19 @@ def shutdown_status(code: int | None) -> int | None:
     return code
 
 
+def raised_signal_status(name: signal.Signals) -> int:
+    """Observe the interpreter's default status when an adapter re-raises a signal."""
+    result = subprocess.run(
+        [sys.executable, "-c", f"import signal; signal.raise_signal({int(name)})"],
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    assert result.returncode != 0, "the default signal action did not terminate the child"
+
+    return result.returncode
+
+
 def alive(pid: int) -> bool:
     """Report whether a pid is still running, without signalling it.
 
