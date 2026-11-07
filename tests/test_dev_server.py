@@ -13,6 +13,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -683,13 +684,23 @@ def test_watch_latency_closed_notification_clients_release_handlers(tmp_path: Pa
             port = server.sockets[0].getsockname()[1]
             baseline = asyncio.all_tasks()
 
+            def kinds(tasks: set[asyncio.Task[object]]) -> Counter[str]:
+                return Counter(
+                    str(getattr(task.get_coro(), "__qualname__", type(task.get_coro()).__name__))
+                    for task in tasks
+                )
+
+            # Proactor replaces its pending accept task after each connection.
+            # Listener turnover is valid; extra coroutine counts expose leaks.
+            baseline_kinds = kinds(baseline)
+
             for _ in range(10):
                 async with connect(f"ws://127.0.0.1:{port}") as client:
                     assert json.loads(await client.recv())["generation"] == 0
 
                 try:
                     async with asyncio.timeout(2):
-                        while handlers or asyncio.all_tasks() - baseline:
+                        while handlers or kinds(asyncio.all_tasks()) - baseline_kinds:
                             await asyncio.sleep(0.001)
                 except TimeoutError:
                     pytest.fail(

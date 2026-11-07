@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import sqlite3
 import sys
 import time
 from dataclasses import replace
@@ -359,10 +360,12 @@ def test_owner_routing_lost_store_fails_closed_and_restores_last_commit(tmp_path
             original, survivor = topology.workers
             client = await Client.attach(original)
             await client.event()
-            saved = topology.store.with_suffix(".saved")
-            topology.store.rename(saved)
+            # A real exclusive database lock denies reads and writes on every OS.
+            # Renaming an in-use SQLite file relies on POSIX filesystem semantics.
+            blocked = sqlite3.connect(topology.store, timeout=1)
 
             try:
+                blocked.execute("BEGIN EXCLUSIVE")
                 await asyncio.wait_for(client.socket.wait_closed(), 4)
                 assert client.socket.close_code == 1013
                 with pytest.raises(ConnectionClosed) as unavailable:
@@ -370,8 +373,8 @@ def test_owner_routing_lost_store_fails_closed_and_restores_last_commit(tmp_path
                 assert unavailable.value.rcvd is not None
                 assert unavailable.value.rcvd.code == 1013
             finally:
-                topology.store.unlink(missing_ok=True)
-                saved.rename(topology.store)
+                blocked.rollback()
+                blocked.close()
             restored = await recover(original, client)
 
             try:
