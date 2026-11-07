@@ -96,6 +96,21 @@ TIERS: tuple[str, ...] = ("setup", "python", "browser", "grammar", "editor")
 PROBE_GATES: tuple[Gate, ...] = (
     Gate(
         "diagnostic",
+        "worker-ownership",
+        (
+            "uv",
+            "run",
+            "--project",
+            ".",
+            "pytest",
+            "-q",
+            "tests/test_worker_ownership.py",
+            "tests/test_dev_server.py::test_watch_latency_closed_notification_clients_release_handlers",
+        ),
+        timeout=300,
+    ),
+    Gate(
+        "diagnostic",
         "storage-source-fixtures",
         (
             "uv",
