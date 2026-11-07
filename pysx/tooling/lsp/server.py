@@ -476,7 +476,7 @@ class Session:
                     else types.FileChangeType.Created
                 )
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(item.text, encoding="utf-8")
+                target.write_text(item.text, encoding="utf-8", newline="")
                 disk_events.append(types.FileEvent(target.as_uri(), kind))
 
         if complete and baseline is not None:

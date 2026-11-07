@@ -20,7 +20,7 @@ from lsprotocol import types
 
 from pysx.compiler.compiler import analyze
 from pysx.tooling.editor.types import diagnostics
-from pysx.tooling.lsp.backend import Stamp
+from pysx.tooling.lsp.backend import Stamp, TypeBackend
 from pysx.tooling.lsp.server import ResidentServer, Session
 from pysx.tooling.lsp.workspace import WorkspaceIndex, position
 
@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
     from pysx.compiler.compiler import Compilation
     from pysx.tooling.editor.model import Buffer
+    from pysx.tooling.lsp.backend import ClientProcess
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (
@@ -61,6 +62,35 @@ def test_resident_diagnostics_match_equivalent_projection_uris(
             assert (item.filename in session.typed) == (version == 1)
         finally:
             await session.close()
+
+    asyncio.run(exercise())
+
+
+def test_resident_backend_cleanup_after_a_truncated_protocol_frame(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        marker = tmp_path / "ready"
+        backend = TypeBackend(lambda _params: None, lambda: None)
+        program = (
+            "import sys,time; from pathlib import Path; "
+            "sys.stdout.buffer.write(b'Content-Length: 100\\r\\n\\r\\n{'); "
+            "sys.stdout.buffer.flush(); Path(sys.argv[1]).touch(); time.sleep(60)"
+        )
+        await cast("ClientProcess", backend.client).start_io(
+            sys.executable, "-u", "-c", program, str(marker), cwd=tmp_path
+        )
+        process = backend.client.process
+        assert process is not None
+
+        try:
+            async with asyncio.timeout(5):
+                while not marker.exists():
+                    await asyncio.sleep(0.01)
+            process.kill()
+            await process.wait()
+        finally:
+            if process.returncode is None:
+                process.kill()
+            await backend.close()
 
     asyncio.run(exercise())
 

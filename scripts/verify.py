@@ -110,6 +110,7 @@ PROBE_GATES: tuple[Gate, ...] = (
             "tests/test_editor_config.py",
             "tests/test_playgrounds.py",
             "tests/test_deployment.py::test_operational_topology_probe_store_failure_drain_and_redaction",
+            "tests/test_distribution.py::test_host_config_fresh_actual_wheel_user_app",
         ),
         timeout=300,
     ),
@@ -156,10 +157,11 @@ PROBE_GATES: tuple[Gate, ...] = (
             "pytest",
             "-q",
             "-s",
-            "tests/test_lsp.py::test_resident_protocol_lifecycle_unsaved_and_stale_versions",
-            "tests/test_lsp.py::test_resident_diagnostics_match_equivalent_projection_uris",
+            "tests/test_lsp.py",
+            "tests/test_lsp_features.py",
+            "tests/test_lsp_edits.py",
         ),
-        timeout=180,
+        timeout=600,
     ),
 )
 SELECTORS: dict[str, tuple[str, ...]] = {

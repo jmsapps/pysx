@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from acceptance_support import interrupt, shutdown_status
+from acceptance_support import interrupt, raised_signal_status, shutdown_status
 from prototypes.distribution import ROOT, clean_env, command, dependency_cache, installed, qualify
 from test_dev_server import get, project, serving, wait_for
 
@@ -194,7 +194,15 @@ def test_host_config_fresh_actual_wheel_user_app(tmp_path: Path, *, asgi: bool) 
             ) as response:
                 assert b"new WebSocket" in response.read()
             interrupt(process)
-            assert shutdown_status(process.wait(timeout=8)) == 0
+            status = shutdown_status(process.wait(timeout=8))
+
+            if sys.platform == "win32" and asgi:
+                import signal
+
+                assert status == raised_signal_status(signal.SIGBREAK)
+                assert "Application shutdown complete" in output.read_text()
+            else:
+                assert status == 0
         finally:
             if process.poll() is None:
                 process.kill()

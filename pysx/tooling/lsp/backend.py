@@ -344,7 +344,13 @@ class TypeBackend:
 
             if process is not None:
                 await process.wait()
-            await cast("ClientProcess", self.client).stop()
+
+            try:
+                await cast("ClientProcess", self.client).stop()
+            except asyncio.IncompleteReadError:
+                # A killed backend may leave its final frame incomplete. It has
+                # already been reaped; an EOF here must not prevent its restart.
+                LOG.warning("Type backend exited with an incomplete protocol frame")
             await asyncio.gather(*self.requests, return_exceptions=True)
         finally:
             if self.stderr_task is not None:
