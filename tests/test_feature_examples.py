@@ -669,7 +669,7 @@ def test_themes_example_cli_startup_cleanup() -> None:
         interrupt(server)
         assert shutdown_status(server.wait(timeout=5)) == 0
 
-    assert server.returncode == 0
+    assert shutdown_status(server.returncode) == 0
 
 
 def test_forms_example_interactions_isolation_and_cleanup() -> None:

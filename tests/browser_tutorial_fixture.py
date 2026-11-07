@@ -27,9 +27,7 @@ def _console(python: Path, name: str) -> str:
 def _checked(
     command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        command, cwd=cwd, env=env, capture_output=True, text=True, check=False
-    )
+    result = subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True, check=False)
 
     if result.returncode != 0:
         raise RuntimeError(

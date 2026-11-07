@@ -90,8 +90,7 @@ class TypeBackend:
         )(diagnostics)
 
         def message(params: types.LogMessageParams) -> None:
-            if params.type == types.MessageType.Error:
-                LOG.error("Type backend: %s", params.message[:2000])
+            LOG.warning("Type backend message (%s): %s", params.type, params.message[:2000])
 
         cast("FeatureRegistry", self.client.protocol.fm).feature(types.WINDOW_LOG_MESSAGE)(message)
 

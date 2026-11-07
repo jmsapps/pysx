@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-from pysx.tooling.editor.config import MIRRORS, RULES, configuration_edit
+from pysx.tooling.editor.config import MIRRORS, RULES, configuration_edit, parse_json_configuration
 from pysx.tooling.editor.ownership import (
     PROJECTION_GLOB,
     RUFF_IGNORED,
@@ -41,7 +41,7 @@ ignore = [
 [tool.ruff]
 line-length = 90
 """
-    path.write_text(source)
+    path.write_bytes(source.encode("utf-8"))
     edit = configuration_edit(tmp_path)
     assert edit is not None
     assert edit["source"] == source
@@ -52,7 +52,7 @@ line-length = 90
     settings = original["tool"]["pyright"]
     settings.update(dict.fromkeys(RULES, False), ignore=["generated/**", MIRRORS])
     assert result == original
-    path.write_text(edit["text"])
+    path.write_bytes(edit["text"].encode("utf-8"))
     assert configuration_edit(tmp_path) is None
 
 
@@ -74,7 +74,9 @@ def test_jsonc_handoff_preserves_comments_extends_and_other_settings(tmp_path: P
     assert "// retain inheritance and strict typing" in edit["text"]
     assert '"extends": "base.json"' in edit["text"]
     assert all(f'"{name}": false' in edit["text"] for name in RULES)
-    assert str(tmp_path / "generated/**") in edit["text"]
+    assert str(tmp_path / "generated/**") in cast(
+        "list[str]", parse_json_configuration(edit["text"])["ignore"]
+    )
     assert MIRRORS in edit["text"]
     path.write_text(edit["text"])
     assert configuration_edit(tmp_path) is None

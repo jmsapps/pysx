@@ -478,6 +478,21 @@ class Session:
                         types.FileEvent(target.as_uri(), types.FileChangeType.Deleted)
                     )
         config_changed = self.index.write_config()
+        LOG.warning(
+            "Type projection snapshot: generation=%s complete=%s root=%s files=%s buffers=%s",
+            generation,
+            complete,
+            self.index.projected,
+            [
+                (
+                    item.filename,
+                    item.relative,
+                    (self.index.projected / item.relative).is_file(),
+                )
+                for item in snapshot.files
+            ],
+            list(self.buffers),
+        )
         backend = await self._backend(reconfigure=config_changed)
 
         if generation != self.generation:
@@ -497,6 +512,13 @@ class Session:
             if item.filename not in self.buffers:
                 continue
             active.add(uri)
+            LOG.warning(
+                "Type projection document: uri=%s version=%s previous=%s affected=%s",
+                uri,
+                stamp.generation,
+                self.sent.get(uri),
+                item.filename in affected,
+            )
 
             if uri not in self.sent:
                 backend.client.text_document_did_open(

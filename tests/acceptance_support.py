@@ -77,6 +77,7 @@ def alive(pid: int) -> bool:
 
         try:
             code = ctypes.c_ulong()
+
             if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
                 return False
 

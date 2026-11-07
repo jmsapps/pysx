@@ -297,7 +297,9 @@ def test_client_verify_ruff_ignores_a_conflicting_path_installation(
 ) -> None:
     decoy = ruff_stub(tmp_path / "ruff")
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
-    assert shutil.which("ruff") == str(decoy)
+    found = shutil.which("ruff")
+    assert found is not None
+    assert Path(found) == decoy
     assert resolve_ruff().version == RUFF_REQUIREMENT
 
 

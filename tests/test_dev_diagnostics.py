@@ -57,7 +57,7 @@ def test_inspector_tracing_excludes_other_nested_sdk_frames() -> None:
         assert trace.events
         assert all(event["source"] is not None for event in trace.events)
         assert all(
-            event["source"]["file"] == "tests/test_dev_diagnostics.py"
+            Path(event["source"]["file"]) == Path("tests/test_dev_diagnostics.py")
             for event in trace.events
             if event["source"] is not None
         )

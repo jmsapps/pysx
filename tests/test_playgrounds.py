@@ -135,7 +135,7 @@ def test_cli_writes_every_playground_by_default(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
     for name in NAMES:
-        assert f"wrote playgrounds/{name}.py" in result.stdout
+        assert f"wrote {Path('playgrounds') / f'{name}.py'}" in result.stdout
         assert (tmp_path / "playgrounds" / f"{name}.py").is_file()
 
 

@@ -169,9 +169,7 @@ def _dpapi(raw: bytes, *, protect: bool) -> bytes:
         reason = cast("Callable[[], BaseException]", ctypes.WinError)()  # type: ignore[attr-defined, unused-ignore]
         action = "sealed to" if protect else "unsealed for"
 
-        raise ValueError(
-            f"recovery key ring could not be {action} this user account: {reason}"
-        )
+        raise ValueError(f"recovery key ring could not be {action} this user account: {reason}")
 
     try:
         return ctypes.string_at(result.pbData, result.cbData)
@@ -200,8 +198,7 @@ def _windows_load(directory: Path, *, provision: bool) -> KeyRing:
 
     if not windows_key_storage():
         raise RuntimeError(
-            "recovery keys require DPAPI on this platform; "
-            "host it with HostConfig(recovery=False)"
+            "recovery keys require DPAPI on this platform; host it with HostConfig(recovery=False)"
         )
 
     if not directory.is_absolute():

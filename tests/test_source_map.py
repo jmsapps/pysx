@@ -117,8 +117,7 @@ def test_exact_source_projection_cli_preserves_crlf_file_and_stdin(tmp_path: Pat
         # undiagnosed on Windows.
         result = subprocess.run(
             [sys.executable, "-m", "pysx.tooling.analysis", str(path), *flags],
-            input=source,
-            text=True,
+            input=source.encode("utf-8"),
             capture_output=True,
             check=False,
             timeout=120,
