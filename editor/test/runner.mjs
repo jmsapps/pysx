@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, realpathSync, readdirSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, realpathSync, readdirSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -210,6 +210,18 @@ try {
     else {
       try { process.kill(-child.pid, "SIGKILL"); }
       catch (error) { if (!["ESRCH", "EPERM"].includes(error.code)) throw error; }
+    }
+  }
+  if (failed && process.env.PYSX_DEPLOYMENT_LOGS) {
+    try {
+      const destination = path.join(process.env.PYSX_DEPLOYMENT_LOGS, path.basename(workspace));
+      mkdirSync(destination, { recursive: true });
+      if (existsSync(outputFile)) copyFileSync(outputFile, path.join(destination, "host-output.log"));
+      const logs = path.join(workspace, "profile", "logs");
+      if (existsSync(logs)) cpSync(logs, path.join(destination, "logs"), { recursive: true });
+      console.error(`EDITOR LOGS PRESERVED: ${destination}`);
+    } catch (captureError) {
+      console.error(`editor log capture failed: ${captureError.stack ?? captureError}`);
     }
   }
   if (!failed) rmSync(workspace, { recursive: true, force: true });

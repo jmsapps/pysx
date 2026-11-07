@@ -308,7 +308,11 @@ def test_editor_host_failure_retains_early_output_and_profile_logs(
     executable.chmod(0o755)
     state_file = tmp_path / "state.json"
     result = editor_run(
-        {"PYSX_VSCODE_EXECUTABLE": str(executable), "PYSX_EDITOR_STATE_FILE": str(state_file)},
+        {
+            "PYSX_VSCODE_EXECUTABLE": str(executable),
+            "PYSX_EDITOR_STATE_FILE": str(state_file),
+            "PYSX_DEPLOYMENT_LOGS": str(tmp_path / "artifacts"),
+        },
         "--suite",
         "editor_surface",
     )
@@ -330,6 +334,9 @@ def test_editor_host_failure_retains_early_output_and_profile_logs(
     assert len(output) > 30000
     assert "AssertionError: early host failure" in output
     assert (workspace / "profile/logs/fixture/exthost/exthost.log").is_file()
+    preserved = tmp_path / "artifacts" / workspace.name
+    assert (preserved / "host-output.log").read_text() == output
+    assert failure in (preserved / "logs/fixture/exthost/exthost.log").read_text()
     shutil.rmtree(workspace)
 
 
