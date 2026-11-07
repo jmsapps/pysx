@@ -687,9 +687,15 @@ def test_watch_latency_closed_notification_clients_release_handlers(tmp_path: Pa
                 async with connect(f"ws://127.0.0.1:{port}") as client:
                     assert json.loads(await client.recv())["generation"] == 0
 
-                async with asyncio.timeout(2):
-                    while handlers or asyncio.all_tasks() - baseline:
-                        await asyncio.sleep(0.001)
+                try:
+                    async with asyncio.timeout(2):
+                        while handlers or asyncio.all_tasks() - baseline:
+                            await asyncio.sleep(0.001)
+                except TimeoutError:
+                    pytest.fail(
+                        "closed notification client retained tasks: "
+                        + repr(handlers | (asyncio.all_tasks() - baseline))
+                    )
 
             assert not supervisor.changed.is_set()
             assert supervisor.generation == 0
