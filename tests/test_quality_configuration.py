@@ -59,6 +59,7 @@ def test_ci_configuration() -> None:
     assert "pull_request:" not in workflow
     assert "publish" not in workflow
     assert "contents: read" in workflow
+    assert "path: .pysx-logs/\n          include-hidden-files: true" in workflow
     steps = [match.group(1).strip() for match in RUN_STEP.finditer(workflow)]
     assert steps, "parsed no run: steps; the workflow or this parser changed"
     assert steps == [" ".join(command) for command in (*BOOTSTRAP, ENTRYPOINT)], (
