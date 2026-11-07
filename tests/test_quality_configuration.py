@@ -1,12 +1,19 @@
 """Check the repository's strict quality configuration and its verification manifest."""
 
+from __future__ import annotations
+
 import json
 import re
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from scripts.verify import BOOTSTRAP, ENTRYPOINT, GATES, SELECTORS, TIERS
+from scripts.verify import BOOTSTRAP, ENTRYPOINT, GATES, PROBE_GATES, SELECTORS, TIERS, main
+
+if TYPE_CHECKING:
+    import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN_STEP = re.compile(r"^\s*- run: (.+)$", re.MULTILINE)
@@ -95,6 +102,22 @@ def test_verification_manifest_entrypoint_lists_its_gates() -> None:
     ).stdout.splitlines()
     assert len(listed) == len(GATES)
     assert all(gate.name in "\n".join(listed) for gate in GATES)
+
+
+def test_diagnostic_mode_cannot_replace_the_gates_selector(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("PYSX_CI_PROBE", "1")
+    monkeypatch.setattr(sys, "argv", ["verify", "all", "--list"])
+    assert main() == 0
+    probe = capsys.readouterr().out
+    assert "DIAGNOSTIC PROBE ONLY" in probe
+    assert all(gate.name in probe for gate in PROBE_GATES)
+    monkeypatch.setattr(sys, "argv", ["verify", "gates", "--list"])
+    assert main() == 0
+    required = capsys.readouterr().out
+    assert "DIAGNOSTIC" not in required
+    assert all(gate.name in required for gate in GATES if gate.tier != "setup")
 
 
 def test_maintained_scope() -> None:

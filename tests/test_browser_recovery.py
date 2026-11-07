@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
+from threading import Barrier
 from typing import TYPE_CHECKING, cast
 
 import browser_capture_fixture as capture_fixture
@@ -202,6 +203,40 @@ def test_keys_concurrent_first_start_and_mount(tmp_path: Path) -> None:
     assert "x" * 32 not in repr(rings[0])
 
 
+def test_keys_windows_publication_keeps_the_first_ring(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise the publication race on every host; native DPAPI has separate coverage."""
+    barrier = Barrier(16)
+
+    def seal(raw: bytes, *, protect: bool) -> bytes:
+        if protect:
+            barrier.wait(timeout=10)
+
+            return b"sealed:" + raw
+        assert raw.startswith(b"sealed:")
+
+        return raw[7:]
+
+    def ordinary_path(_path: Path) -> bool:
+        return False
+
+    monkeypatch.setattr(recovery_keys, "windows_key_storage", lambda: True)
+    monkeypatch.setattr(recovery_keys, "_dpapi", seal)
+    monkeypatch.setattr(recovery_keys, "_windows_reparse", ordinary_path)
+    monkeypatch.setattr(sys, "platform", "win32")
+    directory = tmp_path / "keys"
+
+    def start(_index: int) -> KeyRing:
+        return load_keys(directory, provision=True)
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        rings = list(pool.map(start, range(16)))
+    assert all(ring == rings[0] for ring in rings)
+    assert list(directory.iterdir()) == [directory / "recovery.keys"]
+    assert (directory / "recovery.keys").read_bytes() == b"sealed:" + encode_ring(rings[0])
+
+
 @pytest.mark.parametrize(
     "kind", ["symlink", "directory", "public", "oversize", "fifo", "parent_symlink"]
 )
@@ -280,11 +315,16 @@ def test_keys_default_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert recovery_keys.default_directory("other") != recovery_keys.default_directory("app")
 
 
-def test_keys_require_posix_descriptor_support(
+def test_keys_require_platform_storage_support(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(os, "supports_dir_fd", frozenset[object]())
-    with pytest.raises(RuntimeError, match="POSIX"):
+    if sys.platform == "win32":
+        monkeypatch.setattr(recovery_keys, "windows_key_storage", lambda: False)
+        requirement = "DPAPI"
+    else:
+        monkeypatch.setattr(os, "supports_dir_fd", frozenset[object]())
+        requirement = "POSIX"
+    with pytest.raises(RuntimeError, match=requirement):
         load_keys(tmp_path, provision=True)
     assert not list(tmp_path.iterdir())
 
@@ -1411,7 +1451,12 @@ def test_scale_contract_production_history_has_no_retained_ownership(tmp_path: P
     assert result["max_observed_graphs"] == 5
     assert result["historical_ownership_after_expiry"] == 0
     assert result["key_files"] == ["recovery.keys"]
-    assert result["key_bytes"] == 44
+    keys = tmp_path / "keys"
+    key_bytes = result["key_bytes"]
+    assert isinstance(key_bytes, int)
+    assert key_bytes == (keys / "recovery.keys").stat().st_size
+    assert 44 <= key_bytes <= 4096
+    assert len(encode_ring(load_keys(keys))) == 44
     assert cast("int", result["max_recovery_owned_bytes"]) < 256 * 1024
     assert cast("int", result["capture_scratch_peak_bytes"]) < 2 * 1024 * 1024
 

@@ -233,10 +233,10 @@ def _windows_load(directory: Path, *, provision: bool) -> KeyRing:
             stream.write(_dpapi(raw, protect=True))
             stream.flush()
             os.fsync(stream.fileno())
-        # os.replace is atomic on NTFS, so a concurrent host either sees the old
-        # ring or this one, never a partial file.
+        # Publish without replacing an existing ring. Concurrent first starts must
+        # all read the same winner, including when another host already has it open.
         with suppress(FileExistsError):
-            temporary.replace(key)
+            os.link(temporary, key)
     finally:
         temporary.unlink(missing_ok=True)
 
