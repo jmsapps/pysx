@@ -35,6 +35,7 @@ from pysx import (
 
 if TYPE_CHECKING:
     import sqlite3
+    from collections.abc import Callable
 
     from pysx.hosting.request import RequestContext
     from pysx.runtime.persistence import StateSnapshot
@@ -43,6 +44,50 @@ if TYPE_CHECKING:
 
 class ObservedOwnershipStore(SQLiteOwnershipStore):
     """Record failed validation metadata without logging state or identities."""
+
+    def __init__(self, path: Path) -> None:
+        self.observed_errors: set[tuple[str, str, str]] = set()
+        super().__init__(path)
+
+    def record_failure(self, operation: str, error: Exception) -> None:
+        cause: BaseException = error
+
+        while cause.__cause__ is not None:
+            cause = cause.__cause__
+        key = (operation, type(error).__name__, type(cause).__name__)
+
+        if key in self.observed_errors:
+            return
+        self.observed_errors.add(key)
+        sys.stderr.write(
+            "OWNERSHIP STORE FAILURE: "
+            + json.dumps(
+                {
+                    "operation": operation,
+                    "error_type": key[1],
+                    "cause_type": key[2],
+                    "sqlite_errorname": str(getattr(cause, "sqlite_errorname", "none")),
+                }
+            )
+            + "\n"
+        )
+        sys.stderr.flush()
+
+    def _connect(self) -> sqlite3.Connection:
+        try:
+            return super()._connect()
+        except Exception as error:
+            self.record_failure("connect", error)
+
+            raise
+
+    def _transaction[T](self, callback: Callable[[sqlite3.Connection], T]) -> T:
+        try:
+            return super()._transaction(callback)
+        except Exception as error:
+            self.record_failure(str(getattr(callback, "__qualname__", "transaction")), error)
+
+            raise
 
     def _valid(
         self, database: sqlite3.Connection, snapshot: StateSnapshot, worker: str, now: float

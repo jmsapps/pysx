@@ -217,7 +217,13 @@ class SQLiteStateStore:
     def _connect(self) -> sqlite3.Connection:
         try:
             database = sqlite3.connect(self.path, timeout=self.timeout)
-            database.execute("PRAGMA synchronous=FULL")
+
+            try:
+                database.execute("PRAGMA synchronous=FULL")
+            except BaseException:
+                database.close()
+
+                raise
 
             return database
         except sqlite3.Error as error:

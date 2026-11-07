@@ -7,6 +7,7 @@ import subprocess
 import sys
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
+from unittest.mock import patch
 
 import pytest
 from test_connection_pump import FakeConnection
@@ -281,6 +282,15 @@ def test_explicit_state_unencodable_checkpoint_invalidates_graph() -> None:
     snapshot = store.load(IDENTITY)
     assert snapshot is not None
     assert snapshot.payload == b"0"
+
+
+def test_explicit_state_sqlite_configuration_failure_closes_the_connection(tmp_path: Path) -> None:
+    with patch("pysx.runtime.persistence.sqlite3.connect") as connect:
+        connection = connect.return_value
+        connection.execute.side_effect = sqlite3.OperationalError("configuration failed")
+        with pytest.raises(StoreUnavailable, match="state store unavailable"):
+            SQLiteStateStore(tmp_path / "state.db")
+        connection.close.assert_called_once_with()
 
 
 def test_explicit_state_unreachable_store_withholds_output_without_fencing() -> None:
