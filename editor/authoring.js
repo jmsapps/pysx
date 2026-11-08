@@ -5,7 +5,7 @@ const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
 
 const selector = { language: "python", scheme: "file" };
-const canonical = (file) => fs.existsSync(file) ? fs.realpathSync(file) : path.resolve(file);
+const canonical = (file) => fs.existsSync(file) ? fs.realpathSync.native(file) : path.resolve(file);
 const generated = (file) => file.split(path.sep).some((part) => part.startsWith("_pysx_revision_"));
 const managed = (doc) => doc?.languageId === "python" && doc.uri.scheme === "file" && !generated(doc.fileName);
 const digest = (text) => crypto.createHash("sha256").update(text).digest("hex");

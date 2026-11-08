@@ -10,6 +10,7 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
@@ -21,6 +22,37 @@ if TYPE_CHECKING:
 
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR = ROOT / "editor"
+
+
+def test_editor_worker_matches_python_resolved_paths() -> None:
+    # Windows TEMP can use an 8.3 directory name. Preserve that spelling until
+    # both runtimes resolve it, instead of pre-normalizing it with tmp_path.
+    with TemporaryDirectory(prefix="pysx-path-identity-") as temporary:
+        filename = Path(temporary) / "view.py"
+        filename.write_text("value = 1\n", encoding="utf-8")
+        script = """
+const fs = require('node:fs');
+const vm = require('node:vm');
+const result = {};
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8') +
+  '\\nexports.resolved = canonical(process.argv[2]);', {
+  exports: result,
+  process,
+  require: (name) => name === 'vscode' ? {} : require(name),
+});
+console.log(JSON.stringify({worker: result.resolved,
+  legacy: fs.realpathSync(process.argv[2]), native: fs.realpathSync.native(process.argv[2])}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script, str(EDITOR / "authoring.js"), str(filename)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            timeout=10,
+        )
+        identities = json.loads(result.stdout)
+        assert identities["worker"] == str(filename.resolve()), identities
 
 
 class RuffStub:
