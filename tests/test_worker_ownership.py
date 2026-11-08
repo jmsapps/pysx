@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import sqlite3
+import subprocess
 import sys
 import time
 from dataclasses import replace
@@ -87,6 +88,45 @@ async def seed_workload(clients: list[Client]) -> None:
         await asyncio.sleep(max(0, began + 1 - time.monotonic()))
         await asyncio.gather(*(client.event(handler=client.handlers[1]) for client in cohort))
         await asyncio.sleep(max(0, began + 1.5 - time.monotonic()))
+
+
+def test_owner_routing_workload_snapshots_remain_immutable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PYSX_FIXTURE_STORE", str(tmp_path / "state.db"))
+    monkeypatch.setenv("PYSX_FIXTURE_WORKER", "copy-fixture")
+    script = """
+from copy import deepcopy
+from dataclasses import FrozenInstanceError, replace
+from pysx import Signal, StateCodec
+from tests.recovery_workload_fixture import WorkloadState, encode, decode
+codec = StateCodec(encode, decode)
+for value in (WorkloadState(), codec.loads(codec.dumps(WorkloadState()))):
+    signal = Signal(value)
+    snapshot = deepcopy(signal())
+    assert isinstance(snapshot.rows, tuple) and isinstance(snapshot.order, tuple)
+    assert all(type(row) is str for row in snapshot.rows)
+    assert all(type(index) is int for index in snapshot.order)
+    try:
+        setattr(snapshot, 'count', 99)
+    except FrozenInstanceError:
+        pass
+    else:
+        raise AssertionError('a caller mutated the owned frozen snapshot')
+    signal.set(replace(value, count=1, rows=('edited', *value.rows[1:])))
+    assert snapshot.count == 0 and snapshot.rows[0] == 'Row 0'
+    assert signal().count == 1 and signal().rows[0] == 'edited'
+    assert codec.loads(codec.dumps(signal())) == signal()
+print('IMMUTABLE WORKLOAD SNAPSHOTS PASSED')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    assert "IMMUTABLE WORKLOAD SNAPSHOTS PASSED" in result.stdout
 
 
 def test_owner_routing_atomic_claim_expiry_renewal_and_stale_writes(tmp_path: Path) -> None:

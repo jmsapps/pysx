@@ -228,6 +228,13 @@ class WorkloadState:
     theme: str = "light"
     location: str = ""
 
+    def __deepcopy__(self, memo: dict[int, object]) -> WorkloadState:
+        # Every field is transitively immutable, including codec-decoded rows
+        # and order. A snapshot can share this value without sharing mutation.
+        del memo
+
+        return self
+
 
 def encode(state: WorkloadState) -> JSONValue:
     rows: list[JSONValue] = list(state.rows)
