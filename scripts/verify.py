@@ -216,6 +216,12 @@ PROBE_GATES: tuple[Gate, ...] = (
 FOCUSED_GATES: tuple[Gate, ...] = (
     Gate(
         "diagnostic",
+        "storage-benchmark",
+        ("uv", "run", "--project", ".", "python", "tests/storage_benchmark.py"),
+        timeout=300,
+    ),
+    Gate(
+        "diagnostic",
         "browser-inspector",
         ("npm", "--prefix", "tests", "run", "browser", "--", "--suite", "inspector_tracing"),
         timeout=180,
@@ -404,6 +410,7 @@ def main() -> int:
                 parser.error(f"unknown diagnostic gate: {target}")
             requirements: dict[str, set[str]] = {
                 "worker-ownership": set(),
+                "storage-benchmark": set(),
                 "editor-diagnostics": {"npm-editor", "vscode-host"},
                 "browser-watch-restart": {"npm-tests", "playwright-deps", "playwright"},
                 "browser-inspector": {"npm-tests", "playwright-deps", "playwright"},

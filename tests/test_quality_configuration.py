@@ -178,6 +178,11 @@ def test_focused_diagnostic_mode_keeps_its_inputs_and_preserves_required_gates(
     assert "--suite client_verify" in client
     assert "vscode-host" in client
     assert "playwright" not in client
+    monkeypatch.setenv("PYSX_CI_PROBE_GATE", "storage-benchmark")
+    assert main() == 0
+    storage = capsys.readouterr().out
+    assert "tests/storage_benchmark.py" in storage
+    assert "npm-" not in storage
     monkeypatch.setattr(sys, "argv", ["verify", "gates", "--list"])
     assert main() == 0
     required = capsys.readouterr().out
