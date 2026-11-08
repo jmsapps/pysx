@@ -59,6 +59,7 @@ if (process.env.PYSX_VSCODE_EXECUTABLE && !existsSync(executable)) throw new Err
 const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), "pysx-editor-")));
 let child;
 let failed = false;
+let successMessage;
 const outputFile = path.join(workspace, "host-output.log");
 const lifecycleFailures = /Client is stopping but no stop promise|rejected promise not handled|unhandled rejection|Handling connection close failed|Restarting server failed|Stopping server failed|Stopping the server timed out/i;
 const inspect = (directory, failures = lifecycleFailures) => {
@@ -191,7 +192,7 @@ try {
     if (findings.length) throw new Error(`lifecycle failure in host logs:\n${findings.join("\n")}`);
     if (!output.includes(`PYSX EDITOR CASES PASSED: ${cases}`)) throw new Error(`missing host assertions: ${output}`);
     console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR SAVE:") || line.startsWith("PYSX EDITOR PERFORMANCE") || line.startsWith("PYSX EDITOR ROUTING:")).join("\n"));
-    console.log(`EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, ${cases} cases)`);
+    successMessage = `EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, ${cases} cases)`;
   }
 } catch (error) {
   failed = true;
@@ -224,5 +225,6 @@ try {
       console.error(`editor log capture failed: ${captureError.stack ?? captureError}`);
     }
   }
-  if (!failed) rmSync(workspace, { recursive: true, force: true });
+  if (!failed) rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
+if (successMessage) console.log(successMessage);
