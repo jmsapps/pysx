@@ -212,6 +212,21 @@ PROBE_GATES: tuple[Gate, ...] = (
         timeout=180,
     ),
 )
+FOCUSED_GATES: tuple[Gate, ...] = (
+    Gate(
+        "diagnostic",
+        "browser-inspector",
+        ("npm", "--prefix", "tests", "run", "browser", "--", "--suite", "inspector_tracing"),
+        timeout=180,
+    ),
+    Gate(
+        "diagnostic",
+        "editor-client",
+        ("npm", "--prefix", "editor", "test", "--", "--suite", "client_verify"),
+        needs_display=True,
+        timeout=600,
+    ),
+)
 SELECTORS: dict[str, tuple[str, ...]] = {
     "all": TIERS,
     "gates": tuple(tier for tier in TIERS if tier != "setup"),
@@ -382,12 +397,16 @@ def main() -> int:
         target = os.environ.get("PYSX_CI_PROBE_GATE", "all")
 
         if target != "all":
+            selected.extend(FOCUSED_GATES)
+
             if not any(gate.tier == "diagnostic" and gate.name == target for gate in selected):
                 parser.error(f"unknown diagnostic gate: {target}")
             requirements: dict[str, set[str]] = {
                 "worker-ownership": set(),
                 "editor-diagnostics": {"npm-editor", "vscode-host"},
                 "browser-watch-restart": {"npm-tests", "playwright-deps", "playwright"},
+                "browser-inspector": {"npm-tests", "playwright-deps", "playwright"},
+                "editor-client": {"npm-editor", "vscode-host"},
             }
             setup = requirements.get(target)
             selected = [
