@@ -19,6 +19,26 @@ ROOT = Path(__file__).resolve().parents[1]
 RUN_STEP = re.compile(r"^\s*- run: (.+)$", re.MULTILINE)
 
 
+def test_playwright_setup_identifies_dependency_and_download_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.verify import BROWSER_ENGINES, playwright_setup
+
+    prefix = ("npm", "--prefix", "tests", "exec", "--", "playwright")
+    monkeypatch.setattr(sys, "platform", "linux")
+    linux = playwright_setup()
+    assert [(gate.name, gate.command) for gate in linux] == [
+        ("playwright-deps", (*prefix, "install-deps", *BROWSER_ENGINES)),
+        ("playwright", (*prefix, "install", *BROWSER_ENGINES)),
+    ]
+
+    for platform in ("win32", "darwin"):
+        monkeypatch.setattr(sys, "platform", platform)
+        assert [gate.command for gate in playwright_setup()] == [
+            (*prefix, "install", *BROWSER_ENGINES)
+        ]
+
+
 def test_strict_scope() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     tools = config["tool"]

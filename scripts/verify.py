@@ -44,18 +44,27 @@ class Gate:
     timeout: float = 1800
 
 
-def _playwright_install() -> tuple[str, ...]:
-    flags = ("--with-deps",) if sys.platform.startswith("linux") else ()
-
+def playwright_setup() -> tuple[Gate, ...]:
     install = ("npm", "--prefix", "tests", "exec", "--", "playwright", "install")
+    dependencies = (
+        (
+            Gate(
+                "setup",
+                "playwright-deps",
+                (*install[:-1], "install-deps", *BROWSER_ENGINES),
+            ),
+        )
+        if sys.platform.startswith("linux")
+        else ()
+    )
 
-    return (*install, *flags, *BROWSER_ENGINES)
+    return (*dependencies, Gate("setup", "playwright", (*install, *BROWSER_ENGINES)))
 
 
 GATES: tuple[Gate, ...] = (
     Gate("setup", "npm-tests", ("npm", "--prefix", "tests", "ci")),
     Gate("setup", "npm-editor", ("npm", "--prefix", "editor", "ci")),
-    Gate("setup", "playwright", _playwright_install()),
+    *playwright_setup(),
     Gate("setup", "vscode-host", ("npm", "--prefix", "editor", "run", "setup:host")),
     Gate("python", "lockfile", ("uv", "lock", "--check")),
     Gate(

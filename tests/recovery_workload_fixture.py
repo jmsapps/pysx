@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass, field, replace
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -47,6 +48,9 @@ class ObservedOwnershipStore(SQLiteOwnershipStore):
 
     def __init__(self, path: Path) -> None:
         self.observed_errors: set[tuple[str, str, str]] = set()
+        self.transaction_counts: dict[str, int] = {}
+        self.transaction_seconds: dict[str, float] = {}
+        self.slow_reports: dict[str, int] = {}
         super().__init__(path)
 
     def record_failure(self, operation: str, error: Exception) -> None:
@@ -67,6 +71,8 @@ class ObservedOwnershipStore(SQLiteOwnershipStore):
                     "error_type": key[1],
                     "cause_type": key[2],
                     "sqlite_errorname": str(getattr(cause, "sqlite_errorname", "none")),
+                    "transaction_count": self.transaction_counts.get(operation, 0),
+                    "transaction_seconds": self.transaction_seconds.get(operation, 0),
                 }
             )
             + "\n"
@@ -82,12 +88,37 @@ class ObservedOwnershipStore(SQLiteOwnershipStore):
             raise
 
     def _transaction[T](self, callback: Callable[[sqlite3.Connection], T]) -> T:
+        operation = str(getattr(callback, "__qualname__", "transaction"))
+        started = time.monotonic()
+        self.transaction_counts[operation] = self.transaction_counts.get(operation, 0) + 1
+
         try:
             return super()._transaction(callback)
         except Exception as error:
-            self.record_failure(str(getattr(callback, "__qualname__", "transaction")), error)
+            self.record_failure(operation, error)
 
             raise
+        finally:
+            elapsed = time.monotonic() - started
+            self.transaction_seconds[operation] = (
+                self.transaction_seconds.get(operation, 0) + elapsed
+            )
+
+            if elapsed >= 0.25 and self.slow_reports.get(operation, 0) < 3:
+                self.slow_reports[operation] = self.slow_reports.get(operation, 0) + 1
+                sys.stderr.write(
+                    "OWNERSHIP TRANSACTION: "
+                    + json.dumps(
+                        {
+                            "operation": operation,
+                            "elapsed_seconds": elapsed,
+                            "transaction_count": self.transaction_counts[operation],
+                            "transaction_seconds": self.transaction_seconds[operation],
+                        }
+                    )
+                    + "\n"
+                )
+                sys.stderr.flush()
 
     def _valid(
         self, database: sqlite3.Connection, snapshot: StateSnapshot, worker: str, now: float
