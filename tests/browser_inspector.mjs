@@ -20,7 +20,10 @@ try {
   assert.ok(data.sessions[0].dropped > 0);
   assert.ok(data.sessions[0].counts["patch.batch"] >= 40);
   assert.equal(JSON.stringify(data).includes("sensitive-inspector-token"), false);
-  assert.ok(await page.locator("#pysx-inspector-content a[href^='vscode://file/']").count() > 0);
+  assert.ok(data.sessions[0].events.some(event => event.source?.uri?.startsWith("vscode://file/")),
+    "current trace API contains a source link");
+  // Counter patches and inspector polling settle independently.
+  await page.locator("#pysx-inspector-content a[href^='vscode://file/']").first().waitFor();
   console.log("  ok  source-linked inspector shows actual graph/patch events with bounded buffers and redacted values");
 
   const stranger = await browser.newContext();
