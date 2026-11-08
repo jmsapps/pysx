@@ -51,7 +51,9 @@ class ObservedOwnershipStore(SQLiteOwnershipStore):
         self.transaction_counts: dict[str, int] = {}
         self.transaction_seconds: dict[str, float] = {}
         self.slow_reports: dict[str, int] = {}
-        super().__init__(path)
+        # Shared CI disks can hold a competing transaction longer than the
+        # default 100ms. Keep the configured wait finite and below the 3s lease.
+        super().__init__(path, timeout=1)
 
     def record_failure(self, operation: str, error: Exception) -> None:
         cause: BaseException = error
