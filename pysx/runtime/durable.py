@@ -84,6 +84,7 @@ class DurableSession[T](Session):
         self.codec = codec
         self.reconstructed = previous is not None
         self._constructing = True
+        self._checkpoint_changed_only = False
         self.state: Signal[T] = _StateSignal(value, self._check_state)
         super().__init__(
             lambda: app(self.state),
@@ -121,6 +122,9 @@ class DurableSession[T](Session):
         self.store.check(self.snapshot)
 
     def checkpoint(self) -> None:
+        self._checkpoint(changed_only=self._checkpoint_changed_only)
+
+    def _checkpoint(self, *, changed_only: bool) -> None:
         if self.closed or self._constructing:
             return
 
@@ -134,7 +138,11 @@ class DurableSession[T](Session):
                 sequence=self.transport.sequence,
                 revision=self.transport.revision,
             )
-            self.snapshot = self.store.commit(candidate)
+
+            if changed_only and candidate == self.snapshot:
+                self.store.check(self.snapshot)
+            else:
+                self.snapshot = self.store.commit(candidate)
         except StoreUnavailable:
             raise
         except Exception as error:
@@ -146,5 +154,11 @@ class DurableSession[T](Session):
             raise RecoveryUnavailable("durable checkpoint failed") from error
 
     def _finished(self) -> None:
-        self.checkpoint()
+        previous = self._checkpoint_changed_only
+        self._checkpoint_changed_only = True
+
+        try:
+            self.checkpoint()
+        finally:
+            self._checkpoint_changed_only = previous
         super()._finished()

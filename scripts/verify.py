@@ -115,6 +115,7 @@ PROBE_GATES: tuple[Gate, ...] = (
             "pytest",
             "-q",
             "tests/test_worker_ownership.py",
+            "tests/test_state_recovery.py",
             "tests/test_dev_server.py::test_watch_latency_closed_notification_clients_release_handlers",
         ),
         timeout=300,

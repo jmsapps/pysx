@@ -79,6 +79,137 @@ def session(store: StateStore) -> DurableSession[int]:
     return DurableSession(view, initial=lambda: 0, codec=CODEC, store=store, identity=IDENTITY)
 
 
+def test_explicit_state_unchanged_turn_does_not_rewrite_checkpoint(store: StateStore) -> None:
+    async def exercise() -> None:
+        graph = session(store)
+
+        try:
+            before = graph.snapshot
+            async with graph.runtime.turn():
+                pass
+            assert graph.snapshot == before
+            assert store.load(IDENTITY) == before
+            graph.checkpoint()
+            assert graph.snapshot.generation == before.generation + 1
+        finally:
+            graph.dispose()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("field", ["state", "sequence", "revision", "epoch"])
+def test_explicit_state_changed_turn_checkpoints_each_durable_field(
+    store: StateStore, field: str
+) -> None:
+    async def exercise() -> None:
+        graph = session(store)
+
+        try:
+            before = graph.snapshot
+            async with graph.runtime.turn():
+                if field == "state":
+                    graph.state.set(1)
+                elif field == "sequence":
+                    graph.transport.sequence += 1
+                elif field == "revision":
+                    graph.transport.revision += 1
+                else:
+                    graph.transport.epoch = "new-epoch"
+            assert graph.snapshot.generation == before.generation + 1
+            assert store.load(IDENTITY) == graph.snapshot
+            assert graph.snapshot.payload == (b"1" if field == "state" else b"0")
+            assert graph.snapshot.sequence == graph.transport.sequence
+            assert graph.snapshot.revision == graph.transport.revision
+            assert graph.snapshot.event_epoch == graph.transport.epoch
+        finally:
+            graph.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_explicit_state_unchanged_turn_retains_checkpoint_overrides(store: StateStore) -> None:
+    class ObservedSession(DurableSession[int]):
+        checkpoint_calls = 0
+
+        def checkpoint(self) -> None:
+            self.checkpoint_calls += 1
+            super().checkpoint()
+
+    async def exercise() -> None:
+        graph = ObservedSession(
+            view, initial=lambda: 0, codec=CODEC, store=store, identity=IDENTITY
+        )
+
+        try:
+            before, calls = graph.snapshot, graph.checkpoint_calls
+            async with graph.runtime.turn():
+                pass
+            assert graph.checkpoint_calls == calls + 1
+            assert graph.snapshot == before
+            graph.checkpoint()
+            assert graph.snapshot.generation == before.generation + 1
+        finally:
+            graph.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_explicit_state_unchanged_turn_fences_replaced_owner(store: StateStore) -> None:
+    async def exercise() -> None:
+        graph = session(store)
+        replacement: DurableSession[int] | None = None
+
+        try:
+            with pytest.raises(RecoveryUnavailable, match="checkpoint failed"):
+                async with graph.runtime.turn():
+                    replacement = session(store)
+            assert graph.closed
+            assert replacement is not None
+            assert not replacement.closed
+            assert store.load(IDENTITY) == replacement.snapshot
+        finally:
+            graph.dispose()
+
+            if replacement is not None:
+                replacement.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_explicit_state_unchanged_turn_rejects_outage_without_fencing() -> None:
+    class FlakyStore(MemoryStateStore):
+        broken = False
+
+        def check(self, snapshot: StateSnapshot) -> None:
+            if self.broken:
+                raise StoreUnavailable("store unavailable")
+            super().check(snapshot)
+
+        def commit(self, snapshot: StateSnapshot) -> StateSnapshot:
+            if self.broken:
+                raise StoreUnavailable("store unavailable")
+
+            return super().commit(snapshot)
+
+    async def exercise() -> None:
+        store = FlakyStore()
+        graph = session(store)
+
+        try:
+            before = graph.snapshot
+            with pytest.raises(StoreUnavailable):
+                async with graph.runtime.turn():
+                    store.broken = True
+            assert not graph.closed
+            assert not graph.recovery_failed
+            assert store.load(IDENTITY) == before
+        finally:
+            store.broken = False
+            graph.dispose()
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.parametrize("value", [None, True, False, 0, -3, 1.5, "é", [], {}, [1, {"a": None}]])
 def test_explicit_state_json_roundtrip(value: JSONValue) -> None:
     codec = StateCodec[JSONValue](lambda item: item, lambda item: item)

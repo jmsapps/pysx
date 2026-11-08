@@ -106,6 +106,12 @@ Renewals cannot revive expired or superseded epochs. A stale root write, queued
 mutation or async completion cannot commit or publish. Lease release compares the
 worker and epoch so stale shutdown cannot release its successor's ownership.
 
+An internal mutation turn that leaves both declared state and durable transport
+metadata unchanged validates ownership without writing another generation. An
+explicit `session.checkpoint()` still forces a commit and refreshes a leased
+session's lease. Outgoing frames advance their transport revision and still commit
+that metadata before publication.
+
 The default lease is three seconds, renewed in bounded batches every lease/3.
 Hosted mutation turns and graph admission also check for overdue fleet renewal
 before validating their owner, so a burst of synchronous work does not depend on
