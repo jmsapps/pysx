@@ -8,6 +8,11 @@ on:
         type: choice
         options: [all, probe]
         default: all
+      probe_gate:
+        description: Diagnostic gate selection (probe mode only)
+        type: choice
+        options: [all, worker-ownership, editor-diagnostics]
+        default: all
 
 permissions:
   contents: read
@@ -23,6 +28,7 @@ jobs:
     timeout-minutes: 75
     env:
       PYSX_CI_PROBE: ${{ inputs.mode == 'probe' && '1' || '0' }}
+      PYSX_CI_PROBE_GATE: ${{ inputs.probe_gate || 'all' }}
       PYSX_EXTENSIONS_DIR: ${{ github.workspace }}/.vscode-test/extensions
       PYSX_DEPLOYMENT_LOGS: ${{ github.workspace }}/.pysx-logs
       PYSX_EDITOR_SAVE_BUDGET: '3'

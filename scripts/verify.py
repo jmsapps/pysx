@@ -379,6 +379,22 @@ def main() -> int:
     )
 
     if args.selector == "probe":
+        target = os.environ.get("PYSX_CI_PROBE_GATE", "all")
+
+        if target != "all":
+            if not any(gate.tier == "diagnostic" and gate.name == target for gate in selected):
+                parser.error(f"unknown diagnostic gate: {target}")
+            requirements: dict[str, set[str]] = {
+                "worker-ownership": set(),
+                "editor-diagnostics": {"npm-editor", "vscode-host"},
+            }
+            setup = requirements.get(target)
+            selected = [
+                gate
+                for gate in selected
+                if gate.name == target
+                or (gate.tier == "setup" and (setup is None or gate.name in setup))
+            ]
         print(
             "DIAGNOSTIC PROBE ONLY: this does not qualify the full verification manifest",
             flush=True,

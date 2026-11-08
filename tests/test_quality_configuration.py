@@ -140,6 +140,31 @@ def test_diagnostic_mode_cannot_replace_the_gates_selector(
     assert all(gate.name in required for gate in GATES if gate.tier != "setup")
 
 
+def test_focused_diagnostic_mode_keeps_its_inputs_and_preserves_required_gates(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("PYSX_CI_PROBE", "1")
+    monkeypatch.setenv("PYSX_CI_PROBE_GATE", "worker-ownership")
+    monkeypatch.setattr(sys, "argv", ["verify", "all", "--list"])
+    assert main() == 0
+    focused = capsys.readouterr().out
+    assert "worker-ownership" in focused
+    assert all(gate.name not in focused for gate in GATES if gate.tier == "setup")
+    assert "editor-diagnostics" not in focused
+    assert "lsp-projection" not in focused
+    monkeypatch.setenv("PYSX_CI_PROBE_GATE", "editor-diagnostics")
+    assert main() == 0
+    editor = capsys.readouterr().out
+    assert "npm-editor" in editor
+    assert "vscode-host" in editor
+    assert "playwright" not in editor
+    assert "worker-ownership" not in editor
+    monkeypatch.setattr(sys, "argv", ["verify", "gates", "--list"])
+    assert main() == 0
+    required = capsys.readouterr().out
+    assert all(gate.name in required for gate in GATES if gate.tier != "setup")
+
+
 def test_maintained_scope() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]
 
