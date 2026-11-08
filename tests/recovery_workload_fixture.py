@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
 import os
 import sys
@@ -50,10 +51,62 @@ class ObservedOwnershipStore(SQLiteOwnershipStore):
         self.observed_errors: set[tuple[str, str, str]] = set()
         self.transaction_counts: dict[str, int] = {}
         self.transaction_seconds: dict[str, float] = {}
+        self.transaction_max_seconds: dict[str, float] = {}
         self.slow_reports: dict[str, int] = {}
+        self.reconstruction_started: float | None = None
+        self.reconstruction_seconds: dict[str, float] = {}
+        self.reconstruction_claims = 0
         # Shared CI disks can hold a competing transaction longer than the
         # default 100ms. Keep the configured wait finite and below the 3s lease.
         super().__init__(path, timeout=1)
+        atexit.register(self.report_totals)
+
+    def acquire(self, snapshot: StateSnapshot, worker: str, seconds: float) -> StateSnapshot:
+        if snapshot.owner_epoch > 0 and self.reconstruction_started is None:
+            self.reconstruction_started = time.monotonic()
+            self.reconstruction_seconds = self.transaction_seconds.copy()
+        claimed = super().acquire(snapshot, worker, seconds)
+
+        if snapshot.owner_epoch > 0:
+            self.reconstruction_claims += 1
+
+            if self.reconstruction_claims in (1, 10, 25, 50):
+                assert self.reconstruction_started is not None
+                sys.stderr.write(
+                    "OWNERSHIP RECONSTRUCTION: "
+                    + json.dumps(
+                        {
+                            "claims_completed": self.reconstruction_claims,
+                            "seconds_since_first_attempt": time.monotonic()
+                            - self.reconstruction_started,
+                            "transaction_seconds_since_first_attempt": {
+                                operation: elapsed - self.reconstruction_seconds.get(operation, 0)
+                                for operation, elapsed in self.transaction_seconds.items()
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+                sys.stderr.flush()
+
+        return claimed
+
+    def report_totals(self) -> None:
+        sys.stderr.write(
+            "OWNERSHIP TOTALS: "
+            + json.dumps(
+                {
+                    operation: {
+                        "count": count,
+                        "seconds": self.transaction_seconds.get(operation, 0),
+                        "max_seconds": self.transaction_max_seconds.get(operation, 0),
+                    }
+                    for operation, count in self.transaction_counts.items()
+                }
+            )
+            + "\n"
+        )
+        sys.stderr.flush()
 
     def record_failure(self, operation: str, error: Exception) -> None:
         cause: BaseException = error
@@ -104,6 +157,9 @@ class ObservedOwnershipStore(SQLiteOwnershipStore):
             elapsed = time.monotonic() - started
             self.transaction_seconds[operation] = (
                 self.transaction_seconds.get(operation, 0) + elapsed
+            )
+            self.transaction_max_seconds[operation] = max(
+                self.transaction_max_seconds.get(operation, 0), elapsed
             )
 
             if elapsed >= 0.25 and self.slow_reports.get(operation, 0) < 3:

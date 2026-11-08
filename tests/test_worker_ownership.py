@@ -256,9 +256,29 @@ def test_owner_routing_fifty_sessions_per_worker_survive_owner_death(tmp_path: P
                 await seed_workload(clients)
                 failed.stop(kill=True)
                 began = time.monotonic()
-                restored = await asyncio.gather(
-                    *(recover(survivor, client) for client in clients[:50])
-                )
+                recovering = [
+                    asyncio.create_task(recover(survivor, client)) for client in clients[:50]
+                ]
+
+                try:
+                    restored = await asyncio.gather(*recovering)
+                finally:
+                    sys.stdout.write(
+                        "OWNER RECOVERY PROGRESS: "
+                        + json.dumps(
+                            {
+                                "completed": sum(
+                                    task.done()
+                                    and not task.cancelled()
+                                    and task.exception() is None
+                                    for task in recovering
+                                ),
+                                "requested": len(recovering),
+                                "seconds": time.monotonic() - began,
+                            }
+                        )
+                        + "\n"
+                    )
                 recovery_seconds = time.monotonic() - began
                 assert recovery_seconds <= 10
                 await asyncio.gather(*(client.event() for client in restored))
