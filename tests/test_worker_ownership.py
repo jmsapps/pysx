@@ -56,20 +56,21 @@ async def recover(worker: Worker, previous: Client) -> Client:
 
 
 async def attach_many(workers: list[Worker]) -> list[Client]:
+    """Build the resident population before measuring concurrent owner recovery.
+
+    Initial admission is setup, not a throughput assertion. Bursting twenty
+    synchronous durable constructions can exhaust the client's hello deadline
+    on slow local disks before the owner-death scenario has even started.
+    """
     clients: list[Client] = []
 
-    for offset in range(0, len(workers), 20):
-        results = await asyncio.gather(
-            *(Client.attach(worker) for worker in workers[offset : offset + 20]),
-            return_exceptions=True,
-        )
-        clients.extend(result for result in results if isinstance(result, Client))
-        errors = [result for result in results if isinstance(result, BaseException)]
+    try:
+        for worker in workers:
+            clients.append(await Client.attach(worker))
+    except BaseException:
+        await asyncio.gather(*(client.close() for client in clients))
 
-        if errors:
-            await asyncio.gather(*(client.close() for client in clients))
-
-            raise errors[0]
+        raise
 
     return clients
 
