@@ -133,6 +133,7 @@ PROBE_GATES: tuple[Gate, ...] = (
             "tests/test_source_map.py",
             "tests/test_template_import_usage.py",
             "tests/test_editor_config.py",
+            "tests/test_editor_model.py",
             "tests/test_playgrounds.py",
             "tests/test_deployment.py::test_operational_topology_probe_store_failure_drain_and_redaction",
             "tests/test_distribution.py::test_host_config_fresh_actual_wheel_user_app",

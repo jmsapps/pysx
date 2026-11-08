@@ -204,8 +204,8 @@ def workspace_model(request: Request) -> list[Model]:
     roots = (root, root / "src") if (root / "src").is_dir() else (root,)
     interpreter = Path(request["interpreter"]) if "interpreter" in request else None
     ruff = resolve_ruff(interpreter) if request.get("lint", True) else None
-    overlays = request["buffers"]
-    additions = {Path(name).resolve() for name in overlays}
+    overlays = {Path(name).resolve(): buffer for name, buffer in request["buffers"].items()}
+    additions = set(overlays)
 
     if any(not path.is_relative_to(root) or path.suffix != ".py" for path in additions):
         raise ValueError("open buffers must be Python files within the workspace")
@@ -214,7 +214,7 @@ def workspace_model(request: Request) -> list[Model]:
     if not files or len(files) > MAX_FILES:
         raise ValueError("workspace must contain between 1 and 512 Python sources")
     buffers = {
-        str(path): overlays[str(path)]["source"] if str(path) in overlays else read_source(path)
+        str(path): overlays[path]["source"] if path in overlays else read_source(path)
         for path in files
     }
 
@@ -238,17 +238,17 @@ def workspace_model(request: Request) -> list[Model]:
     configuration = _configuration(
         root, files, f"{ruff.path}\n{ruff.version}" if ruff is not None else "unqualified"
     )
-    previous = {model["filename"]: model for model in request.get("previous", [])}
-    selected = set(request.get("selected", buffers))
+    previous = {Path(model["filename"]).resolve(): model for model in request.get("previous", [])}
+    selected = {Path(name).resolve() for name in request.get("selected", buffers)}
 
-    if not selected or not selected.issubset(buffers):
+    if not selected or not selected.issubset(files):
         raise ValueError("selected sources must be a nonempty subset of the workspace")
 
     for path in files:
-        if str(path) not in selected:
+        if path not in selected:
             continue
         source = buffers[str(path)]
-        cached = previous.get(str(path))
+        cached = previous.get(path)
 
         if (
             cached is not None
@@ -260,7 +260,7 @@ def workspace_model(request: Request) -> list[Model]:
             )
         ):
             model = _rebase(cached, revision)
-            model["version"] = overlays[str(path)]["version"] if str(path) in overlays else -1
+            model["version"] = overlays[path]["version"] if path in overlays else -1
             output.append(model)
 
             continue
@@ -324,7 +324,7 @@ def workspace_model(request: Request) -> list[Model]:
                 filename=str(path),
                 relative=relative[path].as_posix(),
                 source=source,
-                version=overlays[str(path)]["version"] if str(path) in overlays else -1,
+                version=overlays[path]["version"] if path in overlays else -1,
                 digest=hashlib.sha256(source.encode()).hexdigest(),
                 text=mapped.text,
                 map=editor_map(source, mapped),
