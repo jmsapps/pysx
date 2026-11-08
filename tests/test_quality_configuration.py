@@ -159,6 +159,13 @@ def test_focused_diagnostic_mode_keeps_its_inputs_and_preserves_required_gates(
     assert "vscode-host" in editor
     assert "playwright" not in editor
     assert "worker-ownership" not in editor
+    monkeypatch.setenv("PYSX_CI_PROBE_GATE", "browser-watch-restart")
+    assert main() == 0
+    browser = capsys.readouterr().out
+    assert "npm-tests" in browser
+    assert "playwright" in browser
+    assert "npm-editor" not in browser
+    assert "vscode-host" not in browser
     monkeypatch.setattr(sys, "argv", ["verify", "gates", "--list"])
     assert main() == 0
     required = capsys.readouterr().out

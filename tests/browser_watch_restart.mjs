@@ -65,7 +65,21 @@ try {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors = [];
-  page.on("pageerror", error => errors.push(error.message));
+  page.on("pageerror", error => {
+    errors.push(error.message);
+    console.error(`WATCH RESTART PAGE ERROR: ${JSON.stringify({
+      name: error.name, message: error.message, stack: error.stack,
+      url: page.url(), supervisorRunning: running?.child.exitCode === null,
+    })}`);
+  });
+  let failedStatusRequests = 0;
+  page.on("requestfailed", request => {
+    if (new URL(request.url()).pathname !== "/__pysx_dev__/status" || failedStatusRequests++ >= 10) return;
+    console.error(`WATCH RESTART STATUS FAILURE: ${JSON.stringify({
+      url: request.url(), failure: request.failure(),
+      supervisorRunning: running?.child.exitCode === null,
+    })}`);
+  });
   const status = async () => (await fetch(base + "/__pysx_dev__/status")).json();
   const connected = target => target.waitForFunction(() =>
     document.getElementById("pysx-root")?.dataset.pysxConnection === "connected");

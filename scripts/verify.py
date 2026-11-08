@@ -387,6 +387,7 @@ def main() -> int:
             requirements: dict[str, set[str]] = {
                 "worker-ownership": set(),
                 "editor-diagnostics": {"npm-editor", "vscode-host"},
+                "browser-watch-restart": {"npm-tests", "playwright-deps", "playwright"},
             }
             setup = requirements.get(target)
             selected = [

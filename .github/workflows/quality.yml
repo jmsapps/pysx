@@ -11,7 +11,7 @@ on:
       probe_gate:
         description: Diagnostic gate selection (probe mode only)
         type: choice
-        options: [all, worker-ownership, editor-diagnostics]
+        options: [all, worker-ownership, editor-diagnostics, browser-watch-restart]
         default: all
 
 permissions:
