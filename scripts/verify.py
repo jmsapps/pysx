@@ -283,6 +283,13 @@ FOCUSED_GATES: tuple[Gate, ...] = (
         needs_display=True,
         timeout=600,
     ),
+    Gate(
+        "diagnostic",
+        "editor-integrated",
+        ("npm", "--prefix", "editor", "test", "--", "--suite", "validate_integrated"),
+        needs_display=True,
+        timeout=600,
+    ),
 )
 SELECTORS: dict[str, tuple[str, ...]] = {
     "all": TIERS,
@@ -464,6 +471,8 @@ def main() -> int:
                 "lsp-lifecycle": set(),
                 "storage-benchmark": set(),
                 "editor-diagnostics": {"npm-editor", "vscode-host"},
+                "editor-integrated": {"npm-editor", "vscode-host"},
+                "browser-recovery": {"npm-tests", "playwright-deps", "playwright"},
                 "browser-watch-restart": {"npm-tests", "playwright-deps", "playwright"},
                 "browser-inspector": {"npm-tests", "playwright-deps", "playwright"},
                 "browser-hot": {"npm-tests", "playwright-deps", "playwright"},

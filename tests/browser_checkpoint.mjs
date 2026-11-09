@@ -9,7 +9,7 @@ try {
     const fail = () => { throw new Error("recovery must not write browser storage"); };
     Storage.prototype.setItem = fail;
     IDBFactory.prototype.open = fail;
-    Object.defineProperty(document, "cookie", {get: () => "", set: fail});
+    Object.defineProperty(document, "cookie", { get: () => "", set: fail });
     const Original = WebSocket;
     window.recoveryFrames = [];
     window.recoveryHellos = [];
@@ -54,11 +54,17 @@ try {
   await page.waitForFunction(() => window.recoveryFrames.some(frame => typeof frame.capsule === "string"));
   const first = await page.evaluate(() => window.recoveryFrames.filter(frame => frame.capsule).at(-1));
   assert.equal(first.version, 4);
+  const mark = await page.evaluate(() => window.recoveryFrames.length);
   await page.click("#increment");
   await page.waitForFunction(() => document.getElementById("recovery-count").textContent === "1");
   const changed = await page.evaluate(() => window.recoveryFrames.filter(frame => frame.capsule).at(-1));
+  const sequence = await page.evaluate(mark => window.recoveryFrames.slice(mark).map((frame, index) => ({
+    index: mark + index, t: frame.t, capsule: typeof frame.capsule === "string",
+    state: frame.state_rev, base: frame.base_rev, reset: frame.reset,
+  })), mark);
   assert.notEqual(changed.capsule, first.capsule);
-  assert.equal(changed.t, "patch");
+  assert.equal(changed.t, "patch",
+    `increment frame type ${changed.t} !== patch; frames since click: ${JSON.stringify(sequence)}`);
   await page.click("#hidden");
   await page.waitForFunction(previous => window.recoveryFrames.filter(frame => frame.capsule).at(-1).capsule !== previous, changed.capsule);
   const hidden = await page.evaluate(() => window.recoveryFrames.filter(frame => frame.capsule).at(-1));
@@ -72,7 +78,7 @@ try {
   const resumed = await page.evaluate(() => window.recoveryHellos.at(-1));
   assert.equal(resumed.capsule, latest.capsule);
   assert.equal(resumed.document, latest.document);
-  await page.evaluate(() => window.retiredRecoverySocket.dispatchEvent(new MessageEvent("message", {data: "invalid retired frame"})));
+  await page.evaluate(() => window.retiredRecoverySocket.dispatchEvent(new MessageEvent("message", { data: "invalid retired frame" })));
   assert.equal(await page.locator("#recovery-count").textContent(), "1");
   const tab = await context.newPage();
   await tab.goto(url);
@@ -100,26 +106,40 @@ try {
   for (let attempt = 0; !sent.length && attempt < 100; attempt++) await mocked.waitForTimeout(20);
   assert.equal(sent[0]?.t, "hello");
   const doc = sent[0].document;
-  const frame = (base, extra) => ({version: 4, epoch: "publication", base_rev: base,
-    state_rev: base + 1, ...extra});
-  route.send(JSON.stringify(frame(0, {t: "init", html: '<pysx-slot id="current">0</pysx-slot>', css: "",
-    document: doc, capsule: "first", reset: ""})));
+  const frame = (base, extra) => ({
+    version: 4, epoch: "publication", base_rev: base,
+    state_rev: base + 1, ...extra
+  });
+  route.send(JSON.stringify(frame(0, {
+    t: "init", html: '<pysx-slot id="current">0</pysx-slot>', css: "",
+    document: doc, capsule: "first", reset: ""
+  })));
   await mocked.waitForSelector("#current");
-  route.send(JSON.stringify(frame(2, {t: "patch", ops: [{op: "text", id: "current", v: "lost predecessor"}],
-    document: doc, capsule: "out_of_order", reset: ""})));
-  route.send(JSON.stringify(frame(2, {t: "patch", ops: [{op: "text", id: "current", v: "duplicate lost predecessor"}],
-    document: doc, capsule: "duplicate_out_of_order", reset: ""})));
+  route.send(JSON.stringify(frame(2, {
+    t: "patch", ops: [{ op: "text", id: "current", v: "lost predecessor" }],
+    document: doc, capsule: "out_of_order", reset: ""
+  })));
+  route.send(JSON.stringify(frame(2, {
+    t: "patch", ops: [{ op: "text", id: "current", v: "duplicate lost predecessor" }],
+    document: doc, capsule: "duplicate_out_of_order", reset: ""
+  })));
   await mocked.waitForTimeout(50);
   assert.equal(await mocked.locator("#current").textContent(), "0");
   assert.equal(sent.filter(message => message.t === "repair").length, 1);
-  route.send(JSON.stringify(frame(3, {t: "repair", html: '<pysx-slot id="current">settled</pysx-slot>', css: "",
-    expected: 1, document: doc, capsule: "repaired", reset: ""})));
+  route.send(JSON.stringify(frame(3, {
+    t: "repair", html: '<pysx-slot id="current">settled</pysx-slot>', css: "",
+    expected: 1, document: doc, capsule: "repaired", reset: ""
+  })));
   await mocked.waitForFunction(() => document.getElementById("current").textContent === "settled");
-  route.send(JSON.stringify(frame(4, {t: "checkpoint", document: doc, capsule: "navigated", reset: "",
-    navigations: [{t: "navigation", url: "/checkpoint-route", rev: 0, mode: "push"}]})));
+  route.send(JSON.stringify(frame(4, {
+    t: "checkpoint", document: doc, capsule: "navigated", reset: "",
+    navigations: [{ t: "navigation", url: "/checkpoint-route", rev: 0, mode: "push" }]
+  })));
   await mocked.waitForURL("**/checkpoint-route");
-  route.send(JSON.stringify(frame(5, {t: "patch", ops: [{op: "text", id: "current", v: "must not apply"}],
-    document: doc, capsule: "bad_token\n", reset: ""})));
+  route.send(JSON.stringify(frame(5, {
+    t: "patch", ops: [{ op: "text", id: "current", v: "must not apply" }],
+    document: doc, capsule: "bad_token\n", reset: ""
+  })));
   for (let attempt = 0; closed === null && attempt < 100; attempt++) await mocked.waitForTimeout(20);
   assert.equal(closed, 4002);
   assert.equal(await mocked.locator("#current").textContent(), "settled");

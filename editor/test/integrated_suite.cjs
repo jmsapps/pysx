@@ -52,7 +52,7 @@ def app() -> Fragment:
   await until(async () => {
     const definitions = await vscode.commands.executeCommand("vscode.executeDefinitionProvider", doc.uri, tag);
     return definitions?.some(item => {
-      const filename = (item.uri ?? item.targetUri).fsPath;
+      const filename = (item.uri ?? item.targetUri).fsPath.replace(/\\/g, "/");
       return filename.includes("site-packages") && filename.endsWith("src/components/pages.py");
     });
   }, "definition into installed course wheel");
