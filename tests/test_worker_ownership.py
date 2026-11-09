@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from contextlib import closing
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
@@ -253,7 +254,8 @@ def test_owner_routing_real_process_loss_and_principal_binding(tmp_path: Path) -
         asyncio.run(exercise())
 
 
-def test_owner_routing_real_two_process_reclaim_race(tmp_path: Path) -> None:
+@pytest.mark.parametrize("contended", [False, True])
+def test_owner_routing_real_two_process_reclaim_race(tmp_path: Path, contended: bool) -> None:
     with Workers(tmp_path) as topology:
         async def exercise() -> None:
             original, survivor = topology.workers
@@ -262,11 +264,37 @@ def test_owner_routing_real_two_process_reclaim_race(tmp_path: Path) -> None:
             original.stop(kill=True)
             replacement = topology.start()
             await asyncio.sleep(1.1)
-            attempts = await asyncio.gather(
-                Client.attach(survivor, previous=client),
-                Client.attach(replacement, previous=client),
-                return_exceptions=True,
-            )
+            retry_seen = asyncio.Event()
+
+            async def contend(worker: Worker) -> Client:
+                # Store-unavailable is retryable, not a definitive ownership result.
+                async with asyncio.timeout(5):
+                    while True:
+                        try:
+                            return await Client.attach(worker, previous=client)
+                        except ConnectionClosed as error:
+                            if error.rcvd is None or error.rcvd.code != 1013:
+                                raise
+                            retry_seen.set()
+                            await asyncio.sleep(0.01)
+
+            with closing(sqlite3.connect(topology.store, timeout=0.1)) as blocker:
+                if contended:
+                    blocker.execute("BEGIN EXCLUSIVE")
+                tasks = [asyncio.create_task(contend(worker)) for worker in (survivor, replacement)]
+
+                try:
+                    if contended:
+                        try:
+                            await asyncio.wait_for(retry_seen.wait(), 2)
+                        finally:
+                            blocker.rollback()
+                    attempts = await asyncio.gather(*tasks, return_exceptions=True)
+                finally:
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
             won = [result for result in attempts if isinstance(result, Client)]
             lost = [result for result in attempts if isinstance(result, ConnectionClosed)]
             assert len(won) == 1, attempts

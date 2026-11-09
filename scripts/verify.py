@@ -218,6 +218,12 @@ PROBE_GATES: tuple[Gate, ...] = (
 FOCUSED_GATES: tuple[Gate, ...] = (
     Gate(
         "diagnostic",
+        "network-fetch",
+        ("node", "tests/network_fetch_probe.mjs"),
+        timeout=300,
+    ),
+    Gate(
+        "diagnostic",
         "editor-save",
         ("npm", "--prefix", "editor", "test", "--", "--suite", "save_latency"),
         needs_display=True,
@@ -461,6 +467,7 @@ def main() -> int:
                 "browser-watch-restart": {"npm-tests", "playwright-deps", "playwright"},
                 "browser-inspector": {"npm-tests", "playwright-deps", "playwright"},
                 "browser-hot": {"npm-tests", "playwright-deps", "playwright"},
+                "network-fetch": {"npm-tests", "playwright-deps", "playwright"},
                 "editor-client": {"npm-editor", "vscode-host"},
                 "editor-routing": {"npm-editor", "vscode-host"},
                 "editor-save": {
