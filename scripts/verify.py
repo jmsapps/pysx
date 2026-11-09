@@ -447,7 +447,7 @@ def main() -> int:
                 parser.error(f"unknown diagnostic gate: {target}")
             requirements: dict[str, set[str]] = {
                 "worker-ownership": set(),
-                "distribution": set(),
+                "distribution": {"npm-editor"},
                 "lsp-lifecycle": set(),
                 "storage-benchmark": set(),
                 "editor-diagnostics": {"npm-editor", "vscode-host"},

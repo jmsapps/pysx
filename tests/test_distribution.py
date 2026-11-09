@@ -228,9 +228,10 @@ def test_client_verify_bundled_client_installs_outside_the_checkout(tmp_path: Pa
         [sys.executable, str(ROOT / "editor" / "build_vsix.py")],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
         cwd=ROOT,
     )
+    assert built.returncode == 0, built.stdout + built.stderr
     staged = tmp_path / "pysx-lang.vsix"
     shutil.copy(built.stdout.strip(), staged)
 
