@@ -65,11 +65,13 @@ try {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors = [];
+  let stage = "initial-startup";
   page.on("pageerror", error => {
     errors.push(error.message);
     console.error(`WATCH RESTART PAGE ERROR: ${JSON.stringify({
       name: error.name, message: error.message, stack: error.stack,
       url: page.url(), supervisorRunning: running?.child.exitCode === null,
+      stage,
     })}`);
   });
   let failedStatusRequests = 0;
@@ -78,6 +80,7 @@ try {
     console.error(`WATCH RESTART STATUS FAILURE: ${JSON.stringify({
       url: request.url(), failure: request.failure(),
       supervisorRunning: running?.child.exitCode === null,
+      stage,
     })}`);
   });
   const status = async () => (await fetch(base + "/__pysx_dev__/status")).json();
@@ -96,6 +99,7 @@ try {
   await page.waitForFunction(() => document.getElementById("durable-echo").textContent === "saved before restart");
 
   for (let cycle = 0; cycle < 2; cycle++) {
+    stage = `restart-${cycle}-stop`;
     const before = await status();
     const setup = await page.locator("#durable-generation").textContent();
     await page.evaluate(() => { window.watchRestartMarker = "original document"; });
@@ -103,6 +107,7 @@ try {
     await stop();
     // Let the closed notification socket enter its ordinary polling fallback.
     await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection !== "connected");
+    stage = `restart-${cycle}-start`;
     await start();
     await page.waitForFunction(setup =>
       document.getElementById("pysx-root").dataset.pysxConnection === "connected"
@@ -127,6 +132,7 @@ try {
   console.log("  ok  actual watch CLI Ctrl+C/restart recovers count and draft without navigating, including startup-zero and advanced old generations");
 
   const other = await context.newPage();
+  stage = "fresh-tab-and-refresh";
   await other.goto(base); await connected(other); await count(other, 0);
   await other.reload(); await connected(other); await count(other, 0);
   await count(page, 2);
@@ -134,6 +140,7 @@ try {
   console.log("  ok  refresh and same-cookie new tabs start independent sessions after recovery");
 
   const beforeFresh = await status();
+  stage = "incompatible-identity-reload";
   content = content.replace('application="durable-example"', 'application="different-example"');
   await writeFile(source, content);
   await count(page, 0); await connected(page);

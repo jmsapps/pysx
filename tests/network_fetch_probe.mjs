@@ -9,9 +9,10 @@ for (const engine of ["chromium", "firefox", "webkit"]) {
   const samples = [];
   try {
     for (let cycle = 0; cycle < 20; cycle++) {
-      const phase = cycle % 2 ? "partial-json" : "before-headers";
+      const phase = ["before-headers", "partial-json", "navigation", "navigation-abort"][cycle % 4];
       let reached;
       const requested = new Promise(resolve => { reached = resolve; });
+      let documents = 0;
       const server = createServer((request, response) => {
         if (request.url === "/status") {
           if (phase === "partial-json") {
@@ -21,7 +22,22 @@ for (const engine of ["chromium", "firefox", "webkit"]) {
           reached();
           return;
         }
-        response.end("<!doctype html><title>fetch interruption</title>");
+        const script = documents++ === 0 ? `<script>
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 5000);
+          if (${phase === "navigation-abort"}) {
+            addEventListener("pagehide", () => controller.abort(), {once: true});
+          }
+          setTimeout(async () => {
+            try {
+              const response = await fetch("/status", {signal: controller.signal});
+              await response.json();
+              window.fetchResult = "unexpected success";
+            } catch (error) { window.fetchResult = "caught:" + error.name; }
+            finally { clearTimeout(timer); }
+          }, 0);
+        </script>` : "";
+        response.end("<!doctype html><title>fetch interruption</title>" + script);
       });
       await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
       const page = await browser.newPage();
@@ -31,20 +47,21 @@ for (const engine of ["chromium", "firefox", "webkit"]) {
       page.on("requestfailed", request => failures.push(request.failure()?.errorText));
       try {
         await page.goto(`http://127.0.0.1:${server.address().port}`);
-        const result = page.evaluate(async () => {
-          try {
-            const response = await fetch("/status", {signal: AbortSignal.timeout(5000)});
-            await response.json();
-            return "unexpected success";
-          } catch (error) { return `caught:${error.name}`; }
-        });
-        await Promise.race([requested, result.then(value => {
-          throw new Error(`fetch ended before server interruption: ${value}`);
+        await Promise.race([requested, page.waitForTimeout(6000).then(() => {
+          throw new Error("page script did not issue its status request");
         })]);
-        server.closeAllConnections();
-        await new Promise(resolve => server.close(resolve));
-        const caught = await result;
-        assert(caught.startsWith("caught:"), caught);
+        let caught;
+        if (phase.startsWith("navigation")) {
+          await page.reload();
+          caught = "context:navigation";
+        } else {
+          server.closeAllConnections();
+          await new Promise(resolve => server.close(resolve));
+          await page.waitForFunction(() => window.fetchResult, null, {timeout: 7000});
+          caught = await page.evaluate(() => window.fetchResult);
+        }
+        assert(caught.startsWith("caught:") ||
+          (phase.startsWith("navigation") && caught.startsWith("context:")), caught);
         await page.waitForTimeout(50);
         samples.push({phase, caught, errors, failures});
       } finally {
