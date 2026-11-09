@@ -3,6 +3,7 @@
 import importlib
 import json
 import os
+import py_compile
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,34 @@ def _run(command: list[str], *, cwd: Path | None = None) -> subprocess.Completed
         )
 
     return result
+
+
+def test_source_alias_dependencies_ignore_stale_timestamp_bytecode(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    transit = tmp_path / "transit"
+    transit.mkdir()
+    dependency = root / "component.py"
+    dependency.write_text('VALUE = "cycle1"\n')
+    stamp = 1_700_000_000_100_000_000
+    os.utime(dependency, ns=(stamp, stamp))
+    py_compile.compile(str(dependency), doraise=True)
+    dependency.write_text('VALUE = "cycle2"\n')
+    os.utime(dependency, ns=(stamp + 100_000_000, stamp + 100_000_000))
+    (root / "user_app.py").write_text("from component import VALUE\n")
+    alias = transit / ".." / root.name
+    _run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, sys.argv[1]); "
+            "from pysx.compiler.loader import SourceLoader, import_app; "
+            "app = import_app('user_app'); "
+            "assert app.VALUE == 'cycle2', app.VALUE; "
+            "assert isinstance(sys.modules['component'].__loader__, SourceLoader)",
+            str(alias),
+        ]
+    )
 
 
 @pytest.fixture

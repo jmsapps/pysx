@@ -99,6 +99,7 @@ class SourceFinder(importlib.abc.MetaPathFinder):
         self.compiler_version = VERSION
 
     def covers(self, name: str, path: Path) -> bool:
+        path = path.resolve()
         scoped_path = next(
             (path.relative_to(root) for root in self.roots if path.is_relative_to(root)), path
         )
