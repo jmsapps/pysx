@@ -129,9 +129,13 @@ print('IMMUTABLE WORKLOAD SNAPSHOTS PASSED')
     assert "IMMUTABLE WORKLOAD SNAPSHOTS PASSED" in result.stdout
 
 
-def test_owner_routing_atomic_claim_expiry_renewal_and_stale_writes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("wal", [False, True])
+def test_owner_routing_atomic_claim_expiry_renewal_and_stale_writes(
+    tmp_path: Path, request: pytest.FixtureRequest, wal: bool
+) -> None:
     now = [100.0]
-    backend = SQLiteOwnershipStore(tmp_path / "state.db", clock=lambda: now[0])
+    backend = SQLiteOwnershipStore(tmp_path / "state.db", clock=lambda: now[0], wal=wal)
+    request.addfinalizer(backend.close)
     first_store = LeasedStateStore(backend, "worker-a", 1)
     first = DurableSession(
         view, initial=lambda: 0, codec=CODEC, store=first_store, identity=IDENTITY

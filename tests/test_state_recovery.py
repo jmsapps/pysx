@@ -37,6 +37,7 @@ from pysx.runtime.session import Session
 from pysx.runtime.wire import JSONValue
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from pysx.hosting.request import RequestContext
@@ -58,11 +59,14 @@ def test_explicit_state_names_volatile_and_durable_modes() -> None:
     assert DurableSession.durability == "durable"
 
 
-@pytest.fixture(params=["memory", "sqlite"])
-def store(request: pytest.FixtureRequest, tmp_path: Path) -> StateStore:
-    return (
-        MemoryStateStore() if request.param == "memory" else SQLiteStateStore(tmp_path / "state.db")
-    )
+@pytest.fixture(params=["memory", "sqlite", "sqlite-wal"])
+def store(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[StateStore]:
+    if request.param == "memory":
+        yield MemoryStateStore()
+
+        return
+    with SQLiteStateStore(tmp_path / "state.db", wal=request.param == "sqlite-wal") as database:
+        yield database
 
 
 def view(state: Signal[int]) -> Fragment:

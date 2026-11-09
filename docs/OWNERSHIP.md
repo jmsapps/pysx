@@ -99,6 +99,22 @@ same-host implementation; `LeasedStateStore` binds it to a worker for lower-leve
 writes. Do not mix a raw state-store writer or direct database writes into a leased
 application namespace.
 
+Both SQLite stores accept `wal=True` for sustained same-host workloads. This keeps
+one connection per store, serializes its use with the configured finite timeout,
+and retains `synchronous=FULL`. WAL requires a SQLite release containing the
+[WAL-reset fix](https://www.sqlite.org/wal.html#walreset): 3.51.3 or later, or the
+fixed 3.50.7/3.44.6 branches. Affected versions cannot enable WAL or open an existing
+WAL database through these stores. The default
+continues to use scoped connections without changing the database's journal mode.
+
+The caller owns the store's lifetime: use `with SQLiteOwnershipStore(path, wal=True)
+as store:` around the host lifetime, or register `store.close` in the host's shutdown
+hooks. Hosts dispose their graphs before those hooks run. `close()` releases the
+retained connection, is idempotent, and rejects later operations; WAL lock waits and
+close waits are bounded by `timeout`. A finalizer provides fallback cleanup, but
+does not replace explicit shutdown. A WAL database's `-wal` and `-shm` files belong
+to SQLite; do not discard them when copying or recovering a live database.
+
 Claiming an expired/unowned identity increments its owner epoch in the same
 transaction as its snapshot. A checkpoint compares epoch/generation, verifies the
 live lease and commits state plus transport high-water/revision before publication.

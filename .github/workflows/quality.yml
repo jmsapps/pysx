@@ -41,13 +41,13 @@ jobs:
           node-version: '24'
       - uses: astral-sh/setup-uv@v6
         with:
-          version: '0.11.8'
+          version: '0.13.7'
       - uses: actions/cache@v4
         with:
           path: .vscode-test
           key: vscode-host-${{ runner.os }}-1.140.0-pylance-2026.4.1
-      - run: uv python install 3.14.4
-      - run: uv sync --locked --python 3.14.4
+      - run: uv python install 3.14.10
+      - run: uv sync --locked --python 3.14.10
       - run: uv run --project . python scripts/verify.py all
       # The failure evidence lives in fixture and container logs that the
       # suites delete on teardown, so it is collected whatever the result.

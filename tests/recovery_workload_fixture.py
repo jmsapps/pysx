@@ -58,7 +58,7 @@ class ObservedOwnershipStore(SQLiteOwnershipStore):
         self.reconstruction_claims = 0
         # Shared CI disks can hold a competing transaction longer than the
         # default 100ms. Keep the configured wait finite and below the 3s lease.
-        super().__init__(path, timeout=1)
+        super().__init__(path, timeout=1, wal=True)
         atexit.register(self.report_totals)
 
     def acquire(self, snapshot: StateSnapshot, worker: str, seconds: float) -> StateSnapshot:
@@ -356,16 +356,22 @@ def app(state: Signal[WorkloadState]) -> Fragment:
     return pysx(t"{router.view()}", themes=themes)
 
 
+ownership_store = ObservedOwnershipStore(Path(os.environ["PYSX_FIXTURE_STORE"]))
+
 host = DurableApplication(
     app,
     initial=WorkloadState,
     codec=StateCodec(encode, decode),
-    store=ObservedOwnershipStore(Path(os.environ["PYSX_FIXTURE_STORE"])),
+    store=ownership_store,
     application="worker-counter",
     worker=os.environ["PYSX_FIXTURE_WORKER"],
     lease_seconds=float(os.environ.get("PYSX_FIXTURE_LEASE", "3")),
     schema=int(os.environ.get("PYSX_FIXTURE_SCHEMA", "1")),
     migrations={1: lambda value: value} if os.environ.get("PYSX_FIXTURE_MIGRATE") else {},
     fresh_on_incompatible=os.environ.get("PYSX_FIXTURE_FRESH") == "1",
-    config=HostConfig(principal=principal, transport=TransportLimits(graphs=100, detached=50)),
+    config=HostConfig(
+        principal=principal,
+        transport=TransportLimits(graphs=100, detached=50),
+        shutdown=(ownership_store.close,),
+    ),
 )

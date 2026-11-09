@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
-PYTHON_VERSION = "3.14.4"
+PYTHON_VERSION = "3.14.10"
 BROWSER_ENGINES = ("chromium", "firefox", "webkit")
 MEASUREMENT_MARKERS = ("PYSX EDITOR WAIT:", "PYSX EDITOR SAVE:")
 PYTEST_TIMEOUT = 3600.0 if sys.platform == "win32" else 1200.0
@@ -116,6 +116,7 @@ PROBE_GATES: tuple[Gate, ...] = (
             "-q",
             "tests/test_worker_ownership.py",
             "tests/test_state_recovery.py",
+            "tests/test_sqlite_wal.py",
             "tests/test_dev_server.py::test_watch_latency_closed_notification_clients_release_handlers",
         ),
         timeout=300,
