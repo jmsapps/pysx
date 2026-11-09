@@ -54,14 +54,22 @@ _CLIENT = b"""
   if (!generation) return;
   let instance = source.searchParams.get('pysx-dev-instance');
   let stopped = false;
-  addEventListener('pagehide', () => { stopped = true; }, {once: true});
+  let retry;
+  const polling = new AbortController();
+  function stop() {
+    stopped = true;
+    clearTimeout(retry);
+    polling.abort();
+  }
+  addEventListener('pagehide', stop, {once: true});
   function apply(status) {
+    if (stopped) return;
     if (status.generation > 0) {
       if (status.instance !== instance) {
         instance = status.instance;
         generation = String(status.generation);
       } else if (status.generation > Number(generation)) {
-        if (status.fresh_generation > Number(generation)) { location.reload(); return; }
+        if (status.fresh_generation > Number(generation)) { stop(); location.reload(); return; }
         generation = String(status.generation);
       }
     }
@@ -77,11 +85,14 @@ _CLIENT = b"""
     window.dispatchEvent(new CustomEvent('pysx:development', {detail: status}));
   }
   async function poll() {
+    if (stopped) return;
     try {
-      const response = await fetch('/__pysx_dev__/status', {cache: 'no-store'});
+      const response = await fetch('/__pysx_dev__/status', {
+        cache: 'no-store', signal: polling.signal,
+      });
       if (response.ok) apply(await response.json());
     } catch (_) { /* A stopped supervisor must not destroy the current UI. */ }
-    finally { if (!stopped) setTimeout(poll, 250); }
+    finally { if (!stopped) retry = setTimeout(poll, 250); }
   }
   function live() {
     const url = new URL('/__pysx_dev__/events', location.href);

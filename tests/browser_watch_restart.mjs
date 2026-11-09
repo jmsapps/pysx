@@ -120,9 +120,16 @@ try {
     assert.ok(after.instance && before.instance && after.instance !== before.instance);
     assert.ok(startup.some(value => value.generation === 0), "startup-zero status was not observed");
     if (cycle === 0) {
+      stage = `restart-${cycle}-edit`;
       content = content.replace('Title: "Durable state"', 'Title: "Edited durable state"');
       await writeFile(source, content);
-      await page.getByRole("heading", {name:"Edited durable state", exact:true}).waitFor();
+      try {
+        await page.getByRole("heading", {name:"Edited durable state", exact:true}).waitFor();
+      } catch (cause) {
+        const supervisor = await fetch(base + "/__pysx_dev__/status", {signal: AbortSignal.timeout(3000)})
+          .then(response => response.json()).catch(error => ({error: error.message}));
+        throw new Error(`watch edit not adopted: ${JSON.stringify({stage, supervisor, output})}`, {cause});
+      }
       await connected(page); await count(page, 1);
       assert.equal((await status()).instance, after.instance);
       assert.ok((await status()).generation > 1);

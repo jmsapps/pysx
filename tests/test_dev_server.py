@@ -1007,3 +1007,85 @@ def test_installed_serve_injected_client_bundle_parses(tmp_path: Path) -> None:
             [node, "--check", str(bundle)], capture_output=True, text=True, timeout=60, check=False
         )
         assert result.returncode == 0, result.stderr
+
+
+def test_development_polling_stops_before_reload_and_on_pagehide() -> None:
+    # Exercise the injected script itself, rather than a copied implementation.
+    from pysx.development.development import _CLIENT  # pyright: ignore[reportPrivateUsage]
+
+    node = shutil.which("node")
+
+    if node is None:
+        pytest.skip("node is unavailable")
+    script = r"""
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const source = readFileSync(0, 'utf8');
+const tick = () => new Promise(resolve => setImmediate(resolve));
+function boot(pending = false) {
+  const state = {requests: 0, reloads: 0, timers: new Map(), events: {}};
+  let next = 0;
+  class Socket {
+    constructor() { state.socket = this; this.events = {}; }
+    addEventListener(name, callback) { this.events[name] = callback; }
+    close() { this.events.close?.(); }
+  }
+  vm.runInNewContext(source, {
+    URL, AbortController, WebSocket: Socket,
+    CustomEvent: class {}, window: {dispatchEvent() {}},
+    document: {currentScript: {src: 'http://localhost/client.js?pysx-dev=1&pysx-dev-instance=same'},
+      getElementById() { return null; }},
+    location: {href: 'http://localhost/', reload() { state.reloads++; }},
+    addEventListener(name, callback) { state.events[name] = callback; },
+    setTimeout(callback) { const id = ++next; state.timers.set(id, callback); return id; },
+    clearTimeout(id) { state.timers.delete(id); },
+    fetch(_url, options) {
+      state.requests++; state.signal = options.signal;
+      if (!pending) return Promise.resolve({ok: false});
+      return new Promise((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    },
+  });
+  return state;
+}
+const reloading = boot();
+const update = generation => reloading.socket.events.message({data: JSON.stringify({
+  generation, fresh_generation: generation, instance: 'same', error: null,
+})});
+update(2);
+reloading.socket.events.close();
+await tick();
+assert.equal(reloading.requests, 0, 'a close during reload must not start an old-document fetch');
+update(3);
+assert.equal(reloading.reloads, 1, 'a stopped document ignores later notifications');
+
+const queued = boot();
+queued.socket.events.close();
+await tick();
+const callback = [...queued.timers.values()][0];
+assert(callback, 'the live poll must schedule its next retry');
+queued.events.pagehide();
+assert.equal(queued.timers.size, 0, 'pagehide clears the retry timer');
+callback(); // A callback already dispatched before cancellation still has to be harmless.
+await tick();
+assert.equal(queued.requests, 1, 'a stopped queued callback must not fetch');
+
+const active = boot(true);
+active.socket.events.close();
+active.events.pagehide();
+assert(active.signal?.aborted, 'pagehide aborts an in-flight request');
+await tick();
+assert.equal(active.timers.size, 0, 'an aborted request must not schedule a retry');
+console.log('DEVELOPMENT POLL LIFECYCLE PASSED: 3 cases');
+"""
+    result = subprocess.run(
+        [node, "--input-type=module", "-e", script],
+        input=_CLIENT.decode(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
