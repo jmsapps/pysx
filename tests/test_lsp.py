@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
-from acceptance_support import alive
+from acceptance_support import alive, windows_parent_pid
 from lsprotocol import types
 
 from pysx.compiler.compiler import analyze
@@ -712,20 +712,7 @@ def test_client_lifecycle_abrupt_server_death_reaps_backend(tmp_path: Path) -> N
             assert sys.platform == "win32"
             # A Windows venv's python.exe redirects to the real interpreter.
             # Verify ownership, then kill the server itself rather than its launcher.
-            parent = subprocess.run(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-Command",
-                    f"(Get-CimInstance Win32_Process -Filter 'ProcessId = {server_pid}')"
-                    ".ParentProcessId",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=10,
-            )
-            assert int(parent.stdout.strip()) == client.process.pid
+            assert windows_parent_pid(server_pid) == client.process.pid
         assert status["interpreter"] == sys.executable
         pid = str(status["workspaces"][0]["pid"])
         os.kill(server_pid, 9)

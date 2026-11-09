@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
+    from typing import Any
 
     from websockets.asyncio.client import ClientConnection
 
@@ -107,6 +108,54 @@ def alive(pid: int) -> bool:
         return True
 
     return True
+
+
+def windows_parent_pid(pid: int) -> int:
+    """Read process ancestry without starting PowerShell or its CIM provider."""
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessEntry(ctypes.Structure):
+        _fields_ = (
+            ("size", wintypes.DWORD),
+            ("usage", wintypes.DWORD),
+            ("pid", wintypes.DWORD),
+            ("heap", ctypes.c_size_t),
+            ("module", wintypes.DWORD),
+            ("threads", wintypes.DWORD),
+            ("parent", wintypes.DWORD),
+            ("priority", wintypes.LONG),
+            ("flags", wintypes.DWORD),
+            ("executable", wintypes.WCHAR * 260),
+        )
+
+    kernel = cast("Any", ctypes.windll.kernel32)  # type: ignore[attr-defined, unused-ignore]
+    kernel.CreateToolhelp32Snapshot.argtypes = (wintypes.DWORD, wintypes.DWORD)
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel.Process32FirstW.argtypes = (wintypes.HANDLE, ctypes.POINTER(ProcessEntry))
+    kernel.Process32FirstW.restype = wintypes.BOOL
+    kernel.Process32NextW.argtypes = (wintypes.HANDLE, ctypes.POINTER(ProcessEntry))
+    kernel.Process32NextW.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel.CloseHandle.restype = wintypes.BOOL
+    snapshot = kernel.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS
+
+    if snapshot == ctypes.c_void_p(-1).value:
+        raise OSError("CreateToolhelp32Snapshot failed")
+
+    try:
+        entry = ProcessEntry()
+        entry.size = ctypes.sizeof(entry)
+        present = kernel.Process32FirstW(snapshot, ctypes.byref(entry))
+
+        while present:
+            if entry.pid == pid:
+                return int(entry.parent)
+            present = kernel.Process32NextW(snapshot, ctypes.byref(entry))
+
+        raise ProcessLookupError(pid)
+    finally:
+        kernel.CloseHandle(snapshot)
 
 
 def interrupt(proc: subprocess.Popen[str] | subprocess.Popen[bytes]) -> None:

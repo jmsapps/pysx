@@ -118,6 +118,7 @@ PROBE_GATES: tuple[Gate, ...] = (
             "tests/test_state_recovery.py",
             "tests/test_sqlite_wal.py",
             "tests/test_dev_server.py::test_watch_latency_closed_notification_clients_release_handlers",
+            "-s",
         ),
         timeout=300,
     ),
@@ -215,6 +216,35 @@ PROBE_GATES: tuple[Gate, ...] = (
     ),
 )
 FOCUSED_GATES: tuple[Gate, ...] = (
+    Gate(
+        "diagnostic",
+        "lsp-lifecycle",
+        (
+            "uv",
+            "run",
+            "--project",
+            ".",
+            "pytest",
+            "-q",
+            "tests/test_lsp.py",
+            "-k",
+            "client_lifecycle",
+        ),
+        timeout=180,
+    ),
+    Gate(
+        "diagnostic",
+        "browser-hot",
+        ("npm", "--prefix", "tests", "run", "browser", "--", "--suite", "state_preserving"),
+        timeout=300,
+    ),
+    Gate(
+        "diagnostic",
+        "editor-routing",
+        ("npm", "--prefix", "editor", "test", "--", "--suite", "interpreter_routing"),
+        needs_display=True,
+        timeout=600,
+    ),
     Gate(
         "diagnostic",
         "storage-benchmark",
@@ -411,11 +441,14 @@ def main() -> int:
                 parser.error(f"unknown diagnostic gate: {target}")
             requirements: dict[str, set[str]] = {
                 "worker-ownership": set(),
+                "lsp-lifecycle": set(),
                 "storage-benchmark": set(),
                 "editor-diagnostics": {"npm-editor", "vscode-host"},
                 "browser-watch-restart": {"npm-tests", "playwright-deps", "playwright"},
                 "browser-inspector": {"npm-tests", "playwright-deps", "playwright"},
+                "browser-hot": {"npm-tests", "playwright-deps", "playwright"},
                 "editor-client": {"npm-editor", "vscode-host"},
+                "editor-routing": {"npm-editor", "vscode-host"},
             }
             setup = requirements.get(target)
             selected = [

@@ -11,6 +11,7 @@ import os
 import secrets
 import signal
 import socket
+import subprocess
 import sys
 import time
 from contextlib import AsyncExitStack, suppress
@@ -245,6 +246,12 @@ class Worker:
             with suppress(ProcessLookupError):
                 if sys.platform != "win32":
                     os.killpg(self.process.pid, signal.SIGTERM)
+                elif self.control_port:
+                    try:
+                        self.process.send_signal(signal.CTRL_BREAK_EVENT)
+                    except OSError as error:
+                        self.output += f"\nworker graceful shutdown failed: {error}\n"
+                        self.process.terminate()
                 else:
                     self.process.terminate()
 
@@ -429,6 +436,7 @@ class Supervisor:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             start_new_session=sys.platform != "win32",
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             env={
                 **os.environ,
                 "PYSX_DEV_CONTROL_PORT": str(control_port),

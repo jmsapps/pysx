@@ -157,10 +157,17 @@ exports.run = async function () {
     .environments;
   await withDeadline(() => environments.updateActiveEnvironmentPath(alternate, secondary.uri),
     "Python extension environment selection");
+  let selectedStatus;
   const api_selected = await until(async () => {
     const found = await statusOf(secondary);
+    selectedStatus = found;
     return found && found.interpreter === alternate ? found : null;
-  }, "the API-selected environment is adopted");
+  }, () => `the API-selected environment is adopted: ${JSON.stringify({
+    expected: alternate,
+    selected: environments.getActiveEnvironmentPath(secondary.uri),
+    status: selectedStatus,
+    workspaces: api.workspaces(),
+  })}`);
   assert.notEqual(api_selected.processId, switched.processId);
 
   // 5. Rapid changes coalesce into the latest choice and one replacement.
