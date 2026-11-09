@@ -30,7 +30,14 @@ try {
   const browserPolicy = policies.find(policy => policy.name === "pysx_browser");
   assert(browserPolicy, "response must set the browser cookie");
   assert(browserPolicy.attributes.some(value => /^samesite=lax$/i.test(value)), "wire SameSite=Lax");
-  assert.equal(cookie.secure, true); assert.equal(cookie.httpOnly, true); assert.equal(cookie.sameSite, "Lax");
+  assert(browserPolicy.attributes.some(value => /^secure$/i.test(value)), "wire Secure");
+  assert(browserPolicy.attributes.some(value => /^httponly$/i.test(value)), "wire HttpOnly");
+  // Native Windows WebKit reports None for explicit Lax; the wire contract stays Lax.
+  // https://github.com/microsoft/playwright/blob/v1.63.0/tests/library/browsercontext-cookies.spec.ts#L122
+  const reportedSameSite = process.platform === "win32" && process.env.PYSX_BROWSER_ENGINE === "webkit"
+    ? "None" : "Lax";
+  assert.equal(cookie.secure, true); assert.equal(cookie.httpOnly, true);
+  assert.equal(cookie.sameSite, reportedSameSite);
   assert.ok(response.headers()["x-request-id"]);
   console.log("  ok  production TLS deep link uses secure cookies and WSS through an explicit proxy");
   await page.locator("#increment").click();
