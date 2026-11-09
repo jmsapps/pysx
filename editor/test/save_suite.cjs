@@ -3,7 +3,6 @@ const SAVE_BUDGET = Number(process.env.PYSX_EDITOR_SAVE_BUDGET ?? 1);
 const VISIBLE_BUDGET = Number(process.env.PYSX_EDITOR_VISIBLE_BUDGET ?? 1.5);
 const fs = require("node:fs");
 const path = require("node:path");
-const {spawn} = require("node:child_process");
 const {createServer} = require("node:net");
 const {once} = require("node:events");
 const {createHash} = require("node:crypto");
@@ -23,6 +22,7 @@ async function until(predicate, label, timeout = 60000) {
 }
 
 exports.run = async function () {
+  const {spawnCli, signalCli} = await import("../../tests/cli_process.mjs");
   const checkout = process.env.PYSX_EDITOR_CHECKOUT;
   const python = process.env.PYSX_EDITOR_PYTHON;
   const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
@@ -63,8 +63,9 @@ exports.run = async function () {
   const port = probe.address().port;
   await new Promise(resolve => probe.close(resolve));
   const launcher = path.join(path.dirname(python), process.platform === "win32" ? "pysx.exe" : "pysx");
-  const child = spawn(launcher, ["--app", "examples.counter:app", "--watch", "--port", String(port)], {
-    cwd: root, env: {...process.env, PYTHONPATH: checkout}, stdio: ["ignore", "pipe", "pipe"],
+  const child = spawnCli(checkout, ["--app", "examples.counter:app", "--watch", "--port", String(port)], {
+    cwd: root, detached: process.platform !== "win32",
+    env: {...process.env, PYTHONPATH: checkout}, stdio: ["ignore", "pipe", "pipe"],
   });
   const exited = once(child, "exit");
   let output = "";
@@ -173,7 +174,7 @@ exports.run = async function () {
   } finally {
     await files.update("autoSave", "off", vscode.ConfigurationTarget.Workspace);
     if (browser) await browser.close();
-    child.kill("SIGINT");
+    signalCli(child, "SIGINT");
     const [code] = await exited;
     assert.equal(code, 0, output);
   }

@@ -218,6 +218,13 @@ PROBE_GATES: tuple[Gate, ...] = (
 FOCUSED_GATES: tuple[Gate, ...] = (
     Gate(
         "diagnostic",
+        "editor-save",
+        ("npm", "--prefix", "editor", "test", "--", "--suite", "save_latency"),
+        needs_display=True,
+        timeout=600,
+    ),
+    Gate(
+        "diagnostic",
         "distribution",
         ("uv", "run", "--project", ".", "pytest", "-q", "tests/test_distribution.py"),
         timeout=600,
@@ -456,6 +463,13 @@ def main() -> int:
                 "browser-hot": {"npm-tests", "playwright-deps", "playwright"},
                 "editor-client": {"npm-editor", "vscode-host"},
                 "editor-routing": {"npm-editor", "vscode-host"},
+                "editor-save": {
+                    "npm-editor",
+                    "vscode-host",
+                    "npm-tests",
+                    "playwright-deps",
+                    "playwright",
+                },
             }
             setup = requirements.get(target)
             selected = [
