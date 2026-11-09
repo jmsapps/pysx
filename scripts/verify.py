@@ -218,6 +218,12 @@ PROBE_GATES: tuple[Gate, ...] = (
 FOCUSED_GATES: tuple[Gate, ...] = (
     Gate(
         "diagnostic",
+        "browser-tutorial",
+        ("npm", "--prefix", "tests", "run", "browser", "--", "--suite", "tutorial_website"),
+        timeout=600,
+    ),
+    Gate(
+        "diagnostic",
         "browser-tls",
         ("npm", "--prefix", "tests", "run", "browser", "--", "--suite", "deployment_security"),
         timeout=300,
@@ -472,6 +478,7 @@ def main() -> int:
             if not any(gate.tier == "diagnostic" and gate.name == target for gate in selected):
                 parser.error(f"unknown diagnostic gate: {target}")
             requirements: dict[str, set[str]] = {
+                "browser-tutorial": {"npm-tests", "playwright-deps", "playwright"},
                 "browser-tls": {"npm-tests", "playwright-deps", "playwright"},
                 "worker-ownership": set(),
                 "distribution": {"npm-editor"},

@@ -289,7 +289,8 @@ try {
     } else if (["async-resources", "server-rendering"].includes(slug)) {
       await text("resource-status", "success"); await text("resource-setups", "1"); await text("resource-mounts", "1");
       await page.locator("#resource-draft").fill("Unblocked draft");
-      await page.locator("#resource-reload").click(); await text("resource-status", "pending");
+      // Observe the transient state before the click's own waiting can outlast it.
+      await Promise.all([text("resource-status", "pending"), page.locator("#resource-reload").click()]);
       await page.locator("#resource-cancel").click(); await text("resource-status", "cancelled");
       await page.waitForTimeout(450); assert.equal(await page.locator("#resource-status").textContent(), "cancelled");
       await page.locator("#resource-fail").click(); await text("resource-status", "error");
