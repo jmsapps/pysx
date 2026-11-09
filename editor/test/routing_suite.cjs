@@ -38,6 +38,11 @@ function alive(pid) {
   }
 }
 
+function sameInterpreter(actual, expected) {
+  return Boolean(actual && expected) &&
+    fs.realpathSync.native(actual) === fs.realpathSync.native(expected);
+}
+
 const SOURCE = [
   "from pysx import Fragment, pysx",
   "",
@@ -111,9 +116,9 @@ exports.run = async function () {
   progress("wait for all three servers and backends");
   const first = { consumer: await ready(consumer), secondary: await ready(secondary),
     nested: await ready(nested) };
-  assert.equal(first.consumer.interpreter, python);
-  assert.equal(first.secondary.interpreter, alternate, "the folder's own executable is used");
-  assert.equal(first.nested.interpreter, python);
+  assert(sameInterpreter(first.consumer.interpreter, python));
+  assert(sameInterpreter(first.secondary.interpreter, alternate), "the folder's own executable is used");
+  assert(sameInterpreter(first.nested.interpreter, python));
   const pids = new Set(Object.values(first).map((item) => item.processId));
   assert.equal(pids.size, 3, "one distinct server process per folder");
   for (const [name, state] of Object.entries(first)) {
@@ -141,7 +146,7 @@ exports.run = async function () {
   await select(secondary, python);
   const switched = await until(async () => {
     const found = await statusOf(secondary);
-    return found && found.interpreter === python ? found : null;
+    return found && sameInterpreter(found.interpreter, python) ? found : null;
   }, "the changed folder adopts its new executable");
   assert.notEqual(switched.processId, first.secondary.processId);
   await until(() => !alive(first.secondary.processId), "the superseded server exits");
@@ -161,7 +166,7 @@ exports.run = async function () {
   const api_selected = await until(async () => {
     const found = await statusOf(secondary);
     selectedStatus = found;
-    return found && found.interpreter === alternate ? found : null;
+    return found && sameInterpreter(found.interpreter, alternate) ? found : null;
   }, () => `the API-selected environment is adopted: ${JSON.stringify({
     expected: alternate,
     selected: environments.getActiveEnvironmentPath(secondary.uri),
@@ -177,7 +182,7 @@ exports.run = async function () {
   await select(secondary, python);
   const coalesced = await until(async () => {
     const found = await statusOf(secondary);
-    return found && found.interpreter === python ? found : null;
+    return found && sameInterpreter(found.interpreter, python) ? found : null;
   }, "the latest of three rapid selections wins");
   assert.equal(api.owner(secondary.uri).error, null,
     "a superseded selection never leaves a failed state behind");
@@ -197,7 +202,7 @@ exports.run = async function () {
     "an unrelated folder stays usable");
   await select(secondary, python);
   const recovered = await ready(secondary);
-  assert.equal(recovered.interpreter, python, "a later selection recovers the folder");
+  assert(sameInterpreter(recovered.interpreter, python), "a later selection recovers the folder");
 
   // 7. The restart command resolves the executable afresh for its folder.
   progress("restart the active folder");
@@ -205,7 +210,7 @@ exports.run = async function () {
   await select(nested, alternate);
   await until(async () => {
     const found = await statusOf(nested);
-    return found && found.interpreter === alternate ? found : null;
+    return found && sameInterpreter(found.interpreter, alternate) ? found : null;
   }, "the nested folder adopts its new executable");
   const beforeRestart = await statusOf(nested);
   await withDeadline(() => vscode.commands.executeCommand("pysx.restartServer"),
@@ -214,7 +219,7 @@ exports.run = async function () {
     const found = await statusOf(nested);
     return found && found.processId !== beforeRestart.processId ? found : null;
   }, "the restart command replaces the active folder's server");
-  assert.equal(restarted.interpreter, alternate, "the restart resolves the selection afresh");
+  assert(sameInterpreter(restarted.interpreter, alternate), "the restart resolves the selection afresh");
   assert.equal((await statusOf(consumer)).processId, first.consumer.processId,
     "the restart leaves other folders alone");
 

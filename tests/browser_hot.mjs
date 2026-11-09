@@ -12,7 +12,22 @@ try {
   const connected = target => target.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "connected");
   const edit = action => page.request.get(base + "/__fixture__/edit?action=" + action);
   const count = (target, value) => target.waitForFunction(value => document.getElementById("count").textContent === String(value), value);
-  const label = (target, value) => target.waitForFunction(value => document.getElementById("label").textContent === value, value);
+  const label = async (target, value) => {
+    try {
+      await target.waitForFunction(value => document.getElementById("label").textContent === value, value);
+    } catch (cause) {
+      const document = await target.evaluate(() => ({
+        url: location.href,
+        label: document.getElementById("label")?.textContent,
+        count: document.getElementById("count")?.textContent,
+        connection: document.getElementById("pysx-root")?.dataset.pysxConnection,
+        error: document.getElementById("pysx-dev-error")?.textContent,
+      })).catch(error => ({ error: error.message }));
+      const supervisor = await page.request.get(base + "/__pysx_dev__/status", { timeout: 3000 })
+        .then(response => response.json()).catch(error => ({ error: error.message }));
+      throw new Error(`expected label ${JSON.stringify(value)}: ${JSON.stringify({ document, supervisor, errors })}`, { cause });
+    }
+  };
   const status = async () => (await page.request.get(base + "/__pysx_dev__/status")).json();
   const metrics = async () => (await page.request.get(base + "/__fixture__/metrics")).json();
   const settledScroll = async (target, expected) => {
