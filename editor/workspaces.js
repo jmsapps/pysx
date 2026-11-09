@@ -210,6 +210,7 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
       await subscribeEnvironments();
       await reconcile();
       for (const document of vscode.workspace.textDocuments) detach(document);
+      await settled();
     },
     owner(uri) { return entries.get(keyFor(uri)) ?? null; },
     primary() {
@@ -266,7 +267,13 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     },
   };
 
-  function settled() {
-    return new Promise((resolve) => setTimeout(() => resolve(enqueue(() => {})), COALESCE + 20));
+  async function settled() {
+    while (!disposed) {
+      await new Promise(resolve => setTimeout(resolve, COALESCE + 20));
+      const pending = tail;
+      await pending;
+      if (timers.size === 0 && pending === tail) return;
+    }
+    await tail;
   }
 };

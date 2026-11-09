@@ -51,11 +51,14 @@ for (const detached of [false, true]) {
         const disposing = deferred();
         const release = deferred();
         const starts = [];
+        let initialNotice = true;
         const router = exports.createRouter({
           output: {appendLine() {}, error() {}},
           resolveInterpreter: async () => selected,
-          probeEnvironment: async (python, args) =>
-            unavailable && python === executables[1] ? null : args[0] === "-c" ? "ok" : "{}",
+          probeEnvironment: async (python, args) => {
+            if (initialNotice) { initialNotice = false; changed(); }
+            return unavailable && python === executables[1] ? null : args[0] === "-c" ? "ok" : "{}";
+          },
           createClient: ({python}) => ({
             start: async () => { starts.push(python); },
             status: () => ({running: true}),
@@ -68,7 +71,15 @@ for (const detached of [false, true]) {
           ? events.configuration({affectsConfiguration: () => true})
           : events.environment({resource: detached ? undefined : folder});
         try {
-          await router.start(); flush(); await tick();
+          let activated = false;
+          let activatedPython;
+          const starting = router.start().then(() => {
+            activated = true; activatedPython = router.owner(document.uri)?.python;
+          });
+          for (let turn = 0; !activated && turn < 10; turn++) { await tick(); flush(); }
+          assert(activated, "initial selections must settle in bounded event-loop turns");
+          await starting;
+          assert.equal(activatedPython, executables[0], "activation must return a ready initial client");
           assert.equal(router.owner(document.uri).python, executables[0]);
           selected = executables[1]; changed(); flush();
           await disposing.promise;
