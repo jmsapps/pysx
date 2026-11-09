@@ -432,7 +432,8 @@ try {
       const count = output.split("\n").filter((line) => line.startsWith("  ok  ")).length;
       if (!count) throw new Error("empty assertions");
       for (const line of output.split("\n")) {
-        if (line.startsWith("QUALIFICATION BROWSER SAMPLES: ")) console.log(line);
+        if (line.startsWith("QUALIFICATION BROWSER SAMPLES: ") ||
+            line.startsWith("TLS COOKIE POLICY: ")) console.log(line);
       }
       total += count;
       selectedAssertions += count;

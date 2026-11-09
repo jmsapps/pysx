@@ -11,7 +11,7 @@ on:
       probe_gate:
         description: Diagnostic gate selection (probe mode only)
         type: choice
-        options: [all, worker-ownership, lsp-lifecycle, distribution, editor-diagnostics, editor-integrated, browser-recovery, browser-watch-restart, browser-inspector, browser-hot, network-fetch, editor-client, editor-routing, editor-save, storage-benchmark]
+        options: [all, worker-ownership, lsp-lifecycle, distribution, editor-diagnostics, editor-integrated, browser-recovery, browser-watch-restart, browser-inspector, browser-hot, browser-tls, network-fetch, editor-client, editor-routing, editor-save, storage-benchmark]
         default: all
 
 permissions:

@@ -20,6 +20,16 @@ try {
   await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "connected");
   assert.ok(await page.evaluate(() => window.testSocket.url.startsWith("wss:") && window.testSocket.url.includes("/secure/ws")));
   const cookie = (await context.cookies()).find(cookie => cookie.name === "pysx_browser");
+  const policies = (await response.headerValues("set-cookie")).map(value => {
+    const [assignment, ...attributes] = value.split(";");
+    return {name: assignment.slice(0, assignment.indexOf("=")), attributes: attributes.map(value => value.trim())};
+  });
+  console.log("TLS COOKIE POLICY: " + JSON.stringify({engine: process.env.PYSX_BROWSER_ENGINE,
+    headers: policies, browser: cookie && {name: cookie.name, secure: cookie.secure,
+      httpOnly: cookie.httpOnly, sameSite: cookie.sameSite}}));
+  const browserPolicy = policies.find(policy => policy.name === "pysx_browser");
+  assert(browserPolicy, "response must set the browser cookie");
+  assert(browserPolicy.attributes.some(value => /^samesite=lax$/i.test(value)), "wire SameSite=Lax");
   assert.equal(cookie.secure, true); assert.equal(cookie.httpOnly, true); assert.equal(cookie.sameSite, "Lax");
   assert.ok(response.headers()["x-request-id"]);
   console.log("  ok  production TLS deep link uses secure cookies and WSS through an explicit proxy");
