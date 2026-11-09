@@ -180,10 +180,15 @@ exports.run = async function () {
   await select(secondary, bare);
   await select(secondary, alternate);
   await select(secondary, python);
+  let coalescedStatus;
   const coalesced = await until(async () => {
     const found = await statusOf(secondary);
+    coalescedStatus = found;
     return found && sameInterpreter(found.interpreter, python) ? found : null;
-  }, "the latest of three rapid selections wins");
+  }, () => `the latest of three rapid selections wins: ${JSON.stringify({
+    configured: vscode.workspace.getConfiguration("pysx", secondary.uri).get("pythonPath"),
+    expected: python, status: coalescedStatus, workspaces: api.workspaces(),
+  })}`);
   assert.equal(api.owner(secondary.uri).error, null,
     "a superseded selection never leaves a failed state behind");
   assert.equal(api.owner(secondary.uri).lifecycle.status().starts, 1,

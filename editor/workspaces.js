@@ -65,6 +65,12 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     return (document) => !disposed && document?.uri?.scheme === "file" &&
       keyFor(document.uri) === key;
   }
+  function scopes() {
+    // Selection changes belong to folders/documents, including while a client stops.
+    const found = new Map(folders().map(({root, folder}) => [root, folder]));
+    if (generations.has(DETACHED)) found.set(DETACHED, undefined);
+    return found;
+  }
   function enqueue(operation) {
     const result = tail.then(operation);
     tail = result.catch((error) => output.error(`pysx workspaces: ${error.message ?? error}`));
@@ -94,6 +100,7 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
 
     if (!python || !fs.existsSync(python)) {
       await remove(key);
+      if (disposed || requested !== generations.get(key)) return;
       entries.set(key, { key, folder, python: null, lifecycle: null, ruff: null,
         error: "pysx: no Python 3.14+ interpreter is selected for " +
           `${folder ? folder.name : "files outside a workspace"}. Select one, then retry.` });
@@ -107,6 +114,7 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
 
     if (probed.server !== "ok") {
       await remove(key);
+      if (disposed || requested !== generations.get(key)) return;
       entries.set(key, { key, folder, python, lifecycle: null, ruff: null,
         error: "pysx: the selected environment does not have the language server extra. " +
           "Install `pysx[lsp]` into it, then select it again. Diagnostics remain available " +
@@ -120,6 +128,7 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     if (resolved?.error) output.appendLine(resolved.error);
     else if (resolved) output.appendLine(`pysx: using Ruff ${resolved.version} at ${resolved.path}`);
     await remove(key);
+    if (disposed || requested !== generations.get(key)) return;
     const lifecycle = createClient({
       python,
       output,
@@ -171,10 +180,10 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
   const subscriptions = [
     vscode.workspace.onDidChangeWorkspaceFolders(() => { void reconcile(); }),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      for (const [key, entry] of entries) {
-        if (event.affectsConfiguration("pysx.pythonPath", entry.folder?.uri) ||
-            event.affectsConfiguration("python.defaultInterpreterPath", entry.folder?.uri)) {
-          schedule(key, entry.folder);
+      for (const [key, folder] of scopes()) {
+        if (event.affectsConfiguration("pysx.pythonPath", folder?.uri) ||
+            event.affectsConfiguration("python.defaultInterpreterPath", folder?.uri)) {
+          schedule(key, folder);
         }
       }
     }),
@@ -190,8 +199,8 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     subscriptions.push(changed(({ resource }) => {
       const root = resource ? canonical(resource.uri.fsPath) : null;
 
-      for (const [key, entry] of entries) {
-        if (!root || key === root) schedule(key, entry.folder);
+      for (const [key, folder] of scopes()) {
+        if (!root || key === root) schedule(key, folder);
       }
     }));
   }

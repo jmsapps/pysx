@@ -27,6 +27,11 @@ if (suite === "client_verify") {
     { cwd: root, stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+if (suite === "interpreter_routing") {
+  const result = spawnSync(process.execPath, ["--test", "editor/test/workspaces.test.cjs"],
+    {cwd: root, stdio: "inherit"});
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
 if (["client_verify", "editor_surface"].includes(suite) && !process.env.PYSX_EDITOR_ACTIVATION_ORDER) {
   for (const order of ["client-first", "pylance-first"]) {
     const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--suite", suite],
