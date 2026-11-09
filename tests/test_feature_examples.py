@@ -1124,13 +1124,14 @@ def test_session_security_cli_startup_interaction_and_ctrl_c_exit() -> None:
         assert shutdown_status(server.wait(timeout=5)) == 0
 
 
-def test_durable_state_reconstruction_and_session_isolation(tmp_path: Path) -> None:
+@pytest.mark.parametrize("wal", [False, True])
+def test_durable_state_reconstruction_and_session_isolation(tmp_path: Path, wal: bool) -> None:
     from typing import cast
 
     from examples.durable_state import CODEC, ExampleState, create_application
 
     async def exercise() -> None:
-        host = create_application(tmp_path / "state.db", worker="example-worker")
+        host = create_application(tmp_path / "state.db", worker="example-worker", wal=wal)
         await host.start()
         request = RequestContext(headers={"cookie": "pysx_browser=example-browser"})
 
@@ -1176,6 +1177,7 @@ def test_durable_state_reconstruction_and_session_isolation(tmp_path: Path) -> N
         assert not host.runtime.graphs
         assert host.renewal is not None
         assert host.renewal.done()
+        (tmp_path / "state.db").unlink()
 
     asyncio.run(exercise())
 
@@ -1238,13 +1240,15 @@ def test_durable_state_checker_clean_and_registered() -> None:
 
 
 @pytest.mark.acceptance
+@pytest.mark.parametrize("wal", [False, True])
 def test_durable_state_cli_startup_and_ctrl_c_exit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wal: bool
 ) -> None:
     from ownership_topology import free_port
 
     port = free_port()
     monkeypatch.setenv("PYSX_STATE_PATH", str(tmp_path / "example.sqlite3"))
+    monkeypatch.setenv("PYSX_STATE_WAL", "1" if wal else "0")
     command = [
         "uv",
         "run",

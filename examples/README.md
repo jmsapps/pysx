@@ -121,6 +121,10 @@ navigating. Refreshing it still starts a new session.
 The default SQLite file is `pysx-durable-example.sqlite3` in the OS temporary directory.
 It survives process restart until removed by local cleanup. For an explicit local
 file, set `PYSX_STATE_PATH` to an existing directory's file path before launching.
+For concurrent workers on a local filesystem, opt into FULL-sync WAL with
+`PYSX_STATE_WAL=1 uv run --project . pysx-example run durable_state`. This requires
+SQLite 3.51.3+ or a [fixed backport](../docs/OWNERSHIP.md); the example closes its
+retained connection during host shutdown. The default keeps scoped connections.
 Only the typed count/draft root is persisted; Python handlers, effects and async
 resources are rebuilt from code. This example uses a local demonstration principal,
 not production authentication.
