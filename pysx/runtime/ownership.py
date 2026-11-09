@@ -225,9 +225,20 @@ class SQLiteOwnershipStore(SQLiteStateStore):
         try:
             with self._database() as database, database:
                 database.execute("BEGIN")
+                now = self.clock()
 
-                if not self._valid(database, snapshot, worker, self.clock()):
-                    raise RecoveryUnavailable("session owner has been fenced")
+                if not self._valid(database, snapshot, worker, now):
+                    lease = self._lease(database, snapshot.identity)
+                    details = {
+                        "lease_present": lease is not None,
+                        "worker_matches": lease is not None and lease.worker == worker,
+                        "epoch_matches": lease is not None and lease.epoch == snapshot.owner_epoch,
+                        "expires_in": None if lease is None else round(lease.expires - now, 3),
+                        "state_matches": snapshot.matches(self._read(database, snapshot.identity)),
+                        "revoked": self._revoked(database, snapshot.identity),
+                    }
+
+                    raise RecoveryUnavailable(f"session owner has been fenced: {details}")
         except sqlite3.Error as error:
             raise StoreUnavailable("ownership store unavailable") from error
 

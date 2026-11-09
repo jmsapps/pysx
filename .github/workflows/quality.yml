@@ -11,7 +11,7 @@ on:
       probe_gate:
         description: Diagnostic gate selection (probe mode only)
         type: choice
-        options: [all, worker-ownership, lsp-lifecycle, editor-diagnostics, browser-watch-restart, browser-inspector, browser-hot, editor-client, editor-routing, storage-benchmark]
+        options: [all, worker-ownership, lsp-lifecycle, distribution, editor-diagnostics, browser-watch-restart, browser-inspector, browser-hot, editor-client, editor-routing, storage-benchmark]
         default: all
 
 permissions:
@@ -41,12 +41,12 @@ jobs:
           node-version: '24'
       - uses: astral-sh/setup-uv@v6
         with:
-          version: '0.13.7'
+          version: '0.11.8'
       - uses: actions/cache@v4
         with:
           path: .vscode-test
           key: vscode-host-${{ runner.os }}-1.140.0-pylance-2026.4.1
-      - run: uv python install 3.14.10
+      - run: uvx --from uv==0.13.7 uv python install 3.14.10
       - run: uv sync --locked --python 3.14.10
       - run: uv run --project . python scripts/verify.py all
       # The failure evidence lives in fixture and container logs that the

@@ -28,7 +28,7 @@ MEASUREMENT_MARKERS = ("PYSX EDITOR WAIT:", "PYSX EDITOR SAVE:")
 PYTEST_TIMEOUT = 3600.0 if sys.platform == "win32" else 1200.0
 
 BOOTSTRAP: tuple[tuple[str, ...], ...] = (
-    ("uv", "python", "install", PYTHON_VERSION),
+    ("uvx", "--from", "uv==0.13.7", "uv", "python", "install", PYTHON_VERSION),
     ("uv", "sync", "--locked", "--python", PYTHON_VERSION),
 )
 
@@ -216,6 +216,12 @@ PROBE_GATES: tuple[Gate, ...] = (
     ),
 )
 FOCUSED_GATES: tuple[Gate, ...] = (
+    Gate(
+        "diagnostic",
+        "distribution",
+        ("uv", "run", "--project", ".", "pytest", "-q", "tests/test_distribution.py"),
+        timeout=600,
+    ),
     Gate(
         "diagnostic",
         "lsp-lifecycle",
@@ -441,6 +447,7 @@ def main() -> int:
                 parser.error(f"unknown diagnostic gate: {target}")
             requirements: dict[str, set[str]] = {
                 "worker-ownership": set(),
+                "distribution": set(),
                 "lsp-lifecycle": set(),
                 "storage-benchmark": set(),
                 "editor-diagnostics": {"npm-editor", "vscode-host"},
