@@ -228,7 +228,11 @@ FOCUSED_GATES: tuple[Gate, ...] = (
             "-q",
             "tests/test_lsp.py",
             "-k",
-            "incremental_bounded_affected_set or diagnostics_match_equivalent_projection_uris",
+            (
+                "incremental_bounded_affected_set"
+                " or incremental_after_interrupted_foreground_snapshot"
+                " or diagnostics_match_equivalent_projection_uris"
+            ),
         ),
         timeout=120,
     ),

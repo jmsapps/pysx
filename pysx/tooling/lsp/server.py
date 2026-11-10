@@ -153,6 +153,7 @@ class Session:
         self.generation = 0
         self.epoch = 0
         self.snapshot: Snapshot | None = None
+        self.synchronized: Snapshot | None = None
         self.backend: TypeBackend | None = None
         self.sent: dict[str, int] = {}
         self.typed: dict[str, list[types.Diagnostic]] = {}
@@ -379,7 +380,7 @@ class Session:
             try:
                 generation = self.generation
                 buffers = dict(self.buffers)
-                baseline = self.snapshot
+                baseline = self.synchronized
                 remaining = await asyncio.to_thread(self.index.files, buffers)
                 all_files = set(remaining)
                 collected: dict[str, SourceFile] = {}
@@ -570,6 +571,19 @@ class Session:
             backend.client.workspace_did_change_watched_files(
                 types.DidChangeWatchedFilesParams(disk_events)
             )
+
+        if complete:
+            self.synchronized = self.snapshot
+        else:
+            # Foreground snapshots omit unrelated files. Retain their provenance
+            # if another edit interrupts the background sweep before completion.
+            materialized = (
+                {item.filename: item for item in self.synchronized.files}
+                if self.synchronized is not None
+                else {}
+            )
+            materialized.update((item.filename, item) for item in self.snapshot.files)
+            self.synchronized = replace(self.snapshot, files=tuple(materialized.values()))
         self.error = None
         self.available.set()
 
@@ -624,6 +638,7 @@ class Session:
         self.buffers.clear()
         self.uris.clear()
         self.snapshot = None
+        self.synchronized = None
         self.typed.clear()
         self.sent.clear()
 

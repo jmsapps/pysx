@@ -534,6 +534,58 @@ def test_resident_protocol_incremental_bounded_affected_set(
     assert state["workspaces"][0]["starts"] == 1
 
 
+def test_resident_incremental_after_interrupted_foreground_snapshot(tmp_path: Path) -> None:
+    producer = tmp_path / "parts.py"
+    producer_source = SOURCE[: SOURCE.index("view =")]
+    producer.write_text(producer_source)
+    path = tmp_path / "view.py"
+    source = "from parts import Panel\nfrom pysx import pysx\nview = pysx(t'Panel(title={42})')\n"
+    path.write_text(source)
+    leaf = tmp_path / "leaf.py"
+    leaf.write_text("value = 1\n")
+    entered, release = tmp_path / "entered", tmp_path / "release"
+    command = [
+        sys.executable,
+        "-c",
+        f"""
+import time
+from pathlib import Path
+from pysx.tooling.lsp.workspace import WorkspaceIndex
+from pysx.tooling.lsp.server import create_server
+original = WorkspaceIndex.build
+def blocked(self, buffers, stamp, **kwargs):
+    if stamp.generation == 2 and {str(leaf)!r} in kwargs.get("selected", set()):
+        Path({str(entered)!r}).touch()
+        while not Path({str(release)!r}).exists():
+            time.sleep(0.01)
+    return original(self, buffers, stamp, **kwargs)
+WorkspaceIndex.build = blocked
+create_server().start_io()
+""",
+    ]
+    instance = Client(tmp_path, command=command)
+
+    try:
+        instance.open(path, source)
+        instance.diagnostic(path, 1, "reportArgumentType")
+        instance.settled(lambda status: len(status["workspaces"][0]["republished"]) == 3)
+        instance.open(producer, producer_source)
+        instance.settled(lambda _status: entered.exists())
+        instance.change(producer, producer_source.replace("title: str", "title: int"), 2)
+        instance.settled(lambda status: status["workspaces"][0]["generation"] == 3)
+        release.touch()
+        instance.diagnostic(path, 1, None)
+        affected = {"parts.py", "view.py"}
+        state = instance.settled(
+            lambda status: affected <= set(status["workspaces"][0]["republished"])
+        )["workspaces"][0]
+        assert set(state["changed"]) == affected, state
+        assert set(state["republished"]) == affected, state
+    finally:
+        release.touch()
+        instance.close()
+
+
 def test_resident_protocol_incremental_equals_fresh_cli(tmp_path: Path, client: Client) -> None:
     path = tmp_path / "view.py"
     path.write_text(SOURCE.replace("{42}", "{'valid'}"))
