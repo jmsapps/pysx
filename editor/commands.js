@@ -196,11 +196,13 @@ exports.register = function (context, { output, router }) {
     return true;
   }
 
+  const traced = (name, action) => (...args) =>
+    trace.observe("command", name, {}, () => action(...args));
   context.subscriptions.push(
-    vscode.commands.registerCommand("pysx.configureTooling", configure),
-    vscode.commands.registerCommand("pysx.restoreTooling", restore),
-    vscode.commands.registerCommand("pysx.rename", rename),
-    vscode.commands.registerCommand("pysx.refresh", refresh),
+    vscode.commands.registerCommand("pysx.configureTooling", traced("configure", configure)),
+    vscode.commands.registerCommand("pysx.restoreTooling", traced("restore", restore)),
+    vscode.commands.registerCommand("pysx.rename", traced("rename", rename)),
+    vscode.commands.registerCommand("pysx.refresh", traced("refresh", refresh)),
     vscode.window.onDidChangeActiveTextEditor((editor) =>
       vscode.commands.executeCommand("setContext", "pysx.managedDocument",
         editor?.document?.languageId === "python" && editor.document.uri.scheme === "file")),

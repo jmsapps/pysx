@@ -31,6 +31,16 @@ test("trace preserves outcomes, privacy and bounded failure history", async () =
     const failed = snapshot.events.find(item => item.operation === "reject" && item.event === "failed");
     assert.equal(begin.operationId, failed.operationId);
     assert.equal(failed.errorCode, -32800);
+    await Promise.all([1, 2].map(n => trace.observe("command", `parent-${n}`, {}, async () => {
+      await Promise.resolve();
+      return trace.observe("settings", `child-${n}`, {}, () => Promise.resolve());
+    })));
+    const nested = trace.snapshot().events;
+    for (const n of [1, 2]) {
+      const parent = nested.find(item => item.operation === `parent-${n}` && item.event === "begin");
+      const child = nested.find(item => item.operation === `child-${n}` && item.event === "begin");
+      assert.equal(child.parentOperationId, parent.operationId);
+    }
     assert(!JSON.stringify(snapshot).includes("sensitive content"));
     for (let n = 0; n < snapshot.limit + 10; n++) trace.record("test", "overflow", {n});
     const bounded = trace.snapshot();
