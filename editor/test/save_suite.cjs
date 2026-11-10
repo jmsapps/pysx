@@ -117,14 +117,29 @@ exports.run = async function () {
         const at = text.indexOf(before);
         assert.ok(at >= 0, before);
         let savedAt = null;
+        let checkpointStarted = performance.now();
+        const checkpoint = (name, details = {}) => {
+          if (mode !== "autosave-focus") return;
+          const event = {mode, edit, elapsed_ms: Math.round(performance.now() - checkpointStarted), name, ...details};
+          console.log(`PYSX EDITOR SAVE CHECKPOINT: ${JSON.stringify(event)}`);
+        };
+        const editorLabel = active => !active ? "none"
+          : active.document.uri.toString() === document.uri.toString() ? "counter"
+            : active.document.uri.fsPath.endsWith("README.md") ? "readme" : "other";
+        const activeEditorChange = vscode.window.onDidChangeActiveTextEditor(active => {
+          checkpoint("active-editor-changed", {active: editorLabel(active)});
+        });
         const changed = vscode.workspace.onDidSaveTextDocument(saved => {
-          if (saved.uri.toString() === document.uri.toString()) savedAt = performance.now();
+          const matches = saved.uri.toString() === document.uri.toString();
+          checkpoint("document-save-event", {matchesCounter: matches});
+          if (matches) savedAt = performance.now();
         });
         try {
           const changes = new vscode.WorkspaceEdit();
           changes.replace(document.uri, new vscode.Range(document.positionAt(at), document.positionAt(at + before.length)), after);
           assert(await vscode.workspace.applyEdit(changes));
           assert(document.isDirty);
+          checkpoint("edit-applied", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
           const requestsBeforeSave = importRequests;
           const started = performance.now();
           if (mode === "manual") await vscode.commands.executeCommand("workbench.action.files.save");
@@ -132,11 +147,25 @@ exports.run = async function () {
             await files.update("autoSaveDelay", 100, vscode.ConfigurationTarget.Workspace);
             await files.update("autoSave", "afterDelay", vscode.ConfigurationTarget.Workspace);
           } else {
+            checkpoint("before-enable-focus-autosave", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
             await files.update("autoSave", "onFocusChange", vscode.ConfigurationTarget.Workspace);
-            await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(path.join(root, "examples", "README.md")));
+            checkpoint("focus-autosave-enabled", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
+            const readme = await vscode.workspace.openTextDocument(path.join(root, "examples", "README.md"));
+            checkpoint("readme-opened", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
+            await vscode.window.showTextDocument(readme);
+            checkpoint("focus-change-command-completed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
           }
-          await until(() => savedAt !== null, `${mode} disk save`, 5000);
+          checkpoint("save-event-wait-started", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
+          try {
+            await until(() => savedAt !== null, `${mode} disk save`, 5000);
+          } catch (error) {
+            checkpoint("save-event-wait-failed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty,
+              saveEventObserved: savedAt !== null, fileContainsEdit: fs.readFileSync(filename, "utf8").includes(after), error: String(error)});
+            throw error;
+          }
+          checkpoint("save-event-observed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
           assert.ok(fs.readFileSync(filename, "utf8").includes(after));
+          checkpoint("disk-content-verified", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
           await page.bringToFront();
           if (edit === "title") await page.waitForFunction(title => document.querySelector("h1")?.textContent === title, `${mode} save`, {polling: "raf"});
           else await value(initializer);
@@ -158,7 +187,11 @@ exports.run = async function () {
           if (mode !== "autosave-delay") assert.ok(sample.import_requests > 0, `${mode} must exercise the resident import action`);
           assert.ok(sample.save_seconds < SAVE_BUDGET, `${mode} save stalled (budget ${SAVE_BUDGET}s): ${JSON.stringify(sample)}`);
           assert.ok(sample.visible_seconds < VISIBLE_BUDGET, `${mode} update stalled (budget ${VISIBLE_BUDGET}s): ${JSON.stringify(sample)}`);
-        } finally { changed.dispose(); }
+        } catch (error) {
+          checkpoint("case-failed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty,
+            saveEventObserved: savedAt !== null, error: String(error)});
+          throw error;
+        } finally { changed.dispose(); activeEditorChange.dispose(); }
         // Let the page's restored signal differ from the next initializer.
         if (edit === "title" && mode === "manual") {
           await page.getByRole("button", {name: "Increment", exact: true}).click();
