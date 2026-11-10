@@ -16,7 +16,7 @@ await runTests({
   extensionDevelopmentPath: [input.extension, input.host.directory, input.pythonExtension, ...(input.ruffExtension ? [input.ruffExtension] : [])],
   extensionTestsPath: fileURLToPath(new URL("suite.cjs", import.meta.url)),
   extensionTestsEnv: { PYSX_EDITOR_WORKSPACE: input.workspace,
-    PYSX_EDITOR_TRACE: ["editor_surface", "template_import_usage"].includes(input.suite)
+    PYSX_EDITOR_TRACE: ["editor_surface", "template_import_usage", "save_latency"].includes(input.suite)
       ? "1" : process.env.PYSX_EDITOR_TRACE ?? "",
     PYSX_EDITOR_SUITE: input.suite, PYSX_EDITOR_PYTHON: input.python ?? "",
     PYSX_EDITOR_PERFORMANCE: process.env.PYSX_EDITOR_PERFORMANCE ?? "",

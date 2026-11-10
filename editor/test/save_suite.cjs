@@ -48,13 +48,30 @@ exports.run = async function () {
     try { return (await api.client.sendRequest("pysx/readiness", {uri: document.uri.toString()})).ready; }
     catch { return false; }
   }, "initial resident analysis");
+  assert(api.tracing.snapshot().events.some(event => event.component === "client"),
+    "request observation must read the active extension owner");
   const resident = api.client;
   const send = resident.sendRequest.bind(resident);
   let importRequests = 0;
+  let currentSaveObserver = null;
   resident.sendRequest = (method, ...args) => {
-    if ((method === "textDocument/codeAction" || method?.method === "textDocument/codeAction")
-      && args[0]?.context?.only?.includes("source.organizeImports.pysx")) importRequests++;
-    return send(method, ...args);
+    const owned = (method === "textDocument/codeAction" || method?.method === "textDocument/codeAction")
+      && args[0]?.context?.only?.includes("source.organizeImports.pysx");
+    const request = owned ? ++importRequests : null;
+    const observe = owned ? currentSaveObserver : null;
+    observe?.("organize-begin", {request});
+    try {
+      const result = send(method, ...args);
+      if (observe) result.then(
+        actions => observe("organize-completed", {request,
+          actions: Array.isArray(actions) ? actions.length : null}),
+        error => observe("organize-failed", {request, errorName: error?.name,
+          code: typeof error?.code === "number" ? error.code : null}));
+      return result;
+    } catch (error) {
+      observe?.("organize-threw", {request, errorName: error?.name});
+      throw error;
+    }
   };
 
   const probe = createServer();
@@ -132,8 +149,11 @@ exports.run = async function () {
         let droppedEvents = 0;
         let focusTriggered = false;
         let prematureFocusSave = false;
+        let observing = true;
         const observeSave = (event, detail = {}) => {
+          if (!observing) return;
           saveEvents.push({event, time: performance.now(), dirty: document.isDirty,
+            version: document.version,
             closed: document.isClosed, focused: vscode.window.state.focused,
             active: vscode.window.activeTextEditor?.document.uri.toString() === document.uri.toString()
               ? "counter" : vscode.window.activeTextEditor ? "other" : "none",
@@ -142,6 +162,7 @@ exports.run = async function () {
             }).get("autoSave"), importRequests, ...detail});
           if (saveEvents.length > 32) { saveEvents.shift(); droppedEvents++; }
         };
+        currentSaveObserver = observeSave;
         const observations = [
           vscode.window.onDidChangeActiveTextEditor(() => observeSave("active-editor")),
           vscode.window.onDidChangeWindowState(() => observeSave("window-focus")),
@@ -206,9 +227,11 @@ exports.run = async function () {
         } catch (error) {
           observeSave("failure");
           console.error("PYSX EDITOR SAVE FAILURE TRACE " + JSON.stringify({mode, edit,
-            dropped: droppedEvents, events: saveEvents}));
+            dropped: droppedEvents, events: saveEvents, client: api.tracing.snapshot()}));
           throw error;
         } finally {
+          observing = false;
+          currentSaveObserver = null;
           changed.dispose();
           for (const observation of observations) observation.dispose();
         }
