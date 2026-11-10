@@ -20,6 +20,7 @@ await runTests({
     PYSX_EDITOR_PERFORMANCE: process.env.PYSX_EDITOR_PERFORMANCE ?? "",
     PYSX_EDITOR_ACTIVATION_ORDER: process.env.PYSX_EDITOR_ACTIVATION_ORDER ?? "client-first",
     PYSX_EDITOR_CHECKOUT: input.checkout,
+    PYSX_EDITOR_TRACE_FILE: process.env.PYSX_EDITOR_TRACE_FILE ?? "",
     PYSX_EDITOR_ALTERNATE_PYTHON: input.alternate ?? "",
     PYSX_EDITOR_BARE_PYTHON: input.bare ?? "" },
   launchArgs: [input.root, "--user-data-dir", path.join(input.workspace, "profile"),

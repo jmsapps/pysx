@@ -262,6 +262,13 @@ async function run() {
 
 exports.run = async function () {
   process.env.PYSX_EDITOR_TRACE = "1";
+  const owner = vscode.extensions.getExtension("pysx-local.pysx-lang");
+  try {
+    require(path.join(owner.extensionPath, "trace.js"))
+      .persist(process.env.PYSX_EDITOR_TRACE_FILE);
+  } catch (installError) {
+    console.error("PYSX EDITOR TRACE PERSIST FAILED", installError.name);
+  }
   try { await run(); }
   catch (error) {
     const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");

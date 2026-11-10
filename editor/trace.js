@@ -46,3 +46,22 @@ exports.resource = resource;
 exports.record = record;
 exports.observe = observe;
 exports.snapshot = () => ({limit: LIMIT, dropped, events: events.slice()});
+
+// A caught failure exports the timeline itself. Host death cancels the run before
+// that catch, so the same evidence is also flushed synchronously when the process
+// leaves, which "exit" reports for both ordinary returns and uncaught exceptions.
+// It cannot observe SIGKILL, so a missing file still means an unobserved death.
+exports.persist = (file) => {
+  if (!enabled() || !file) return false;
+  let flushed = false;
+  process.on("exit", () => {
+    if (flushed) return;
+    flushed = true;
+    try {
+      require("node:fs").appendFileSync(file,
+        "PYSX EDITOR EXIT TRACE " + JSON.stringify(exports.snapshot()) + "\n");
+    } catch { /* evidence capture must never alter the exit it is recording */ }
+  });
+
+  return true;
+};

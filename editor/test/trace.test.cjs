@@ -2,8 +2,10 @@ const assert = require("node:assert/strict");
 const {test} = require("node:test");
 const trace = require("../trace.js");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
+const {spawnSync} = require("node:child_process");
 
 test("trace preserves outcomes, privacy and bounded failure history", async () => {
   const original = process.env.PYSX_EDITOR_TRACE;
@@ -120,5 +122,30 @@ test("surface suite exports retained trace when setup fails and rethrows the fai
     else process.env.PYSX_EDITOR_PYTHON = original;
     if (tracing === undefined) delete process.env.PYSX_EDITOR_TRACE;
     else process.env.PYSX_EDITOR_TRACE = tracing;
+  }
+});
+
+test("a process that dies without reaching the suite catch still leaves its timeline", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pysx-exit-trace-"));
+  const file = path.join(directory, "editor-exit-trace.log");
+  const child = `
+    process.env.PYSX_EDITOR_TRACE = "1";
+    const trace = require(${JSON.stringify(path.resolve(__dirname, "..", "trace.js"))});
+    trace.persist(${JSON.stringify(file)});
+    trace.record("command", "begin", {operation: "configure"});
+    throw new Error("host death before any catch");
+  `;
+  try {
+    const result = spawnSync(process.execPath, ["-e", child], {encoding: "utf8"});
+    assert.equal(result.status, 1, "the original failure still terminates the process");
+    assert.match(result.stderr, /host death before any catch/, "the exception is not swallowed");
+    const written = fs.readFileSync(file, "utf8");
+    assert.match(written, /^PYSX EDITOR EXIT TRACE /, "the timeline is flushed on the way out");
+    const snapshot = JSON.parse(written.slice("PYSX EDITOR EXIT TRACE ".length));
+    assert.equal(snapshot.dropped, 0, "truncation is reported explicitly");
+    assert(snapshot.events.some(event => event.operation === "configure"),
+      "events recorded before the death survive it");
+  } finally {
+    fs.rmSync(directory, {recursive: true, force: true});
   }
 });

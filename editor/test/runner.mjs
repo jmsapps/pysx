@@ -67,6 +67,7 @@ let child;
 let failed = false;
 let successMessage;
 const outputFile = path.join(workspace, "host-output.log");
+const traceFile = path.join(workspace, "editor-exit-trace.log");
 const lifecycleFailures = /Client is stopping but no stop promise|rejected promise not handled|unhandled rejection|Handling connection close failed|Restarting server failed|Stopping server failed|Stopping the server timed out/i;
 const inspect = (directory, failures = lifecycleFailures) => {
   const findings = [];
@@ -167,7 +168,8 @@ try {
     // actual Electron host and extension workers, including failed startups.
     child = spawn(process.execPath, [fileURLToPath(new URL("launch.mjs", import.meta.url))], {
       cwd: root, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PYSX_EDITOR_INPUT: JSON.stringify({ executable, extension, workspace,
+      env: { ...process.env, PYSX_EDITOR_TRACE_FILE: traceFile,
+        PYSX_EDITOR_INPUT: JSON.stringify({ executable, extension, workspace,
         root: multiRoot ?? (fixture ? fixture.consumer : consumer), checkout: root, host, suite,
         python: fixture?.python ?? interpreter, alternate, bare, pythonExtension, ruffExtension: ["authoring", "template_import_usage", "editor_surface"].includes(suite) ? ruffExtension : null }) },
     });
@@ -224,6 +226,9 @@ try {
       const destination = path.join(process.env.PYSX_DEPLOYMENT_LOGS, path.basename(workspace));
       mkdirSync(destination, { recursive: true });
       if (existsSync(outputFile)) copyFileSync(outputFile, path.join(destination, "host-output.log"));
+      // Host death cancels the suite before its own trace export, so this file is
+      // the only timeline for exactly the failures that destroy the other one.
+      if (existsSync(traceFile)) copyFileSync(traceFile, path.join(destination, "editor-exit-trace.log"));
       const logs = path.join(workspace, "profile", "logs");
       if (existsSync(logs)) cpSync(logs, path.join(destination, "logs"), { recursive: true });
       console.error(`EDITOR LOGS PRESERVED: ${destination}`);
