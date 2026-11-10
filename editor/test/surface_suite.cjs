@@ -187,7 +187,7 @@ async function run() {
     };
     assert.equal(owned("editor.codeActionsOnSave").workspaceFolderValue, undefined,
       "setup starts from an unconfigured workspace folder");
-    const firstTrace = require(path.join(extension.extensionPath, "trace.js"));
+    const firstTrace = api.tracing;
     const firstSequence = firstTrace.snapshot().events.at(-1)?.sequence ?? 0;
     const spans = [];
     const queries = [];
@@ -217,11 +217,6 @@ async function run() {
     await producer;
     const initialResults = await Promise.all(queries);
     const initialEvents = firstTrace.snapshot().events.filter(event => event.sequence > firstSequence);
-    console.log("PYSX EDITOR PERFORMANCE TRACE INSTANCE CHECK " + JSON.stringify({
-      suiteEvents: firstTrace.snapshot().events.length,
-      extensionTrace: api.traceProbe(firstTrace),
-      suiteEnabled: process.env.PYSX_EDITOR_TRACE === "1",
-    }));
     const writeStarts = initialEvents.filter(event => event.component === "settings" && event.event === "begin");
     const writeIntervals = writeStarts.map(start => [start.ms,
       initialEvents.find(event => event.operationId === start.operationId && event.event === "completed")?.ms ?? Infinity]);
@@ -252,7 +247,7 @@ async function run() {
 
     // 9. Repeated setup is a no-op that preserves the first baseline.
     console.log("EDITOR SURFACE STEP: repeat setup");
-    const experimentTrace = require(path.join(extension.extensionPath, "trace.js"));
+    const experimentTrace = api.tracing;
     const beforeSequence = experimentTrace.snapshot().events.at(-1)?.sequence ?? 0;
     let configurationEvents = 0;
     const observedConfiguration = vscode.workspace.onDidChangeConfiguration(() => configurationEvents++);
