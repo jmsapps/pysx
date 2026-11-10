@@ -187,6 +187,23 @@ def command(
 EXAMPLES_EXTRA = "typer==0.27.2"
 
 
+def example_constraints(workspace: Path) -> Path:
+    """Use the same exact example dependency set for cache preparation and install."""
+    names = (
+        "typer",
+        "shellingham",
+        "rich",
+        "annotated-doc",
+        "markdown-it-py",
+        "mdurl",
+        "pygments",
+    )
+    constraints = workspace / "constraints.txt"
+    constraints.write_text("\n".join(f"{name}=={distribution(name).version}" for name in names))
+
+    return constraints
+
+
 def required_pins() -> list[str]:
     """The candidate's own declared installs: runtime plus the examples extra."""
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -268,6 +285,7 @@ def warmed(destination: Path) -> Path:
     if uv is None:
         raise ProofError("uv is required")
     pins = required_pins()
+    constraints = example_constraints(destination.parent)
     probe = destination.parent / "cache-probe"
     install = [
         uv,
@@ -279,6 +297,8 @@ def warmed(destination: Path) -> Path:
         sys.executable,
         "--target",
         str(probe),
+        "--constraint",
+        str(constraints),
         *pins,
     ]
 
@@ -415,17 +435,7 @@ def installed(workspace: Path, wheel: Path, cache: Path, *, extra: bool) -> Path
     ]
 
     if extra:
-        constraints = workspace / "constraints.txt"
-        names = (
-            "typer",
-            "shellingham",
-            "rich",
-            "annotated-doc",
-            "markdown-it-py",
-            "mdurl",
-            "pygments",
-        )
-        constraints.write_text("\n".join(f"{name}=={distribution(name).version}" for name in names))
+        constraints = example_constraints(workspace)
         args += ["--constraint", str(constraints)]
     args.append(str(wheel) + ("[examples]" if extra else ""))
     command(args, workspace)
