@@ -109,11 +109,12 @@ class Client:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env={**os.environ, "PYSX_LSP_TRACE_PUBLICATIONS": "1"},
         )
         self.queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.history: list[dict[str, Any]] = []
         self.ident = 0
-        self.errors: deque[str] = deque(maxlen=30)
+        self.errors: deque[str] = deque(maxlen=200)
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._read_errors, daemon=True).start()
         result = self.request(
@@ -527,7 +528,8 @@ def test_resident_protocol_incremental_bounded_affected_set(
     affected = {"parts.py", "view.py"}
     state = client.settled(lambda status: affected <= set(status["workspaces"][0]["republished"]))
     assert set(state["workspaces"][0]["changed"]) == affected
-    assert set(state["workspaces"][0]["republished"]) == affected
+    if set(state["workspaces"][0]["republished"]) != affected:
+        pytest.fail(json.dumps({"state": state, "backend": list(client.errors)}, indent=2))
     assert state["workspaces"][0]["starts"] == 1
 
 

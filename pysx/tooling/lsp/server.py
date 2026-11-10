@@ -287,6 +287,16 @@ class Session:
         # The projection has already been matched by filesystem identity above.
         uri = (self.index.projected / item.relative).as_uri()
 
+        if os.environ.get("PYSX_LSP_TRACE_PUBLICATIONS") == "1":
+            LOG.warning(
+                "Publication trace: generation=%s file=%s received=%s sent=%s changed=%s",
+                self.generation,
+                item.relative,
+                params.version,
+                self.sent.get(uri),
+                self.changed,
+            )
+
         if params.version is None or self.sent.get(uri) != params.version:
             LOG.warning(
                 "Backend diagnostics version ignored: uri=%s received=%s expected=%s",

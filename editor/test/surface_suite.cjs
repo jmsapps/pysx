@@ -10,7 +10,8 @@ async function until(predicate, label, timeout = 90000) {
   let last;
   while (Date.now() < deadline) {
     polls += 1;
-    last = await predicate();
+    try { last = await predicate(); }
+    catch (error) { throw new Error(`failed while waiting for ${label} (poll ${polls})`, {cause: error}); }
     if (last) return last;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
@@ -110,6 +111,7 @@ exports.run = async function () {
   };
 
   // 1. The template-only import is never reported dead.
+  console.log("EDITOR SURFACE STEP: initial import diagnostics");
   const dead = await until(() => {
     const found = pysxOf(consumer.uri).filter((item) => String(item.code) === "F401");
     return found.length ? found : null;
@@ -120,6 +122,7 @@ exports.run = async function () {
     String(item.code) === "reportUnusedImport"), "no mirror unused-import diagnostic");
 
   // 2. An ordinary non-template file in the same project still behaves.
+  console.log("EDITOR SURFACE STEP: plain file diagnostics");
   const plain = await open("plain.py");
   await until(() => pysxOf(plain.uri).some((item) => String(item.code) === "F401"),
     "ordinary file reports its own unused import");
@@ -127,6 +130,7 @@ exports.run = async function () {
     "the ordinary file's dead import is named");
 
   // 3. Removing the last tag use turns a live import into a dead one.
+  console.log("EDITOR SURFACE STEP: unsaved import edit");
   const edit = new vscode.WorkspaceEdit();
   const line = CONSUMER.split("\n").findIndex((text) => text.includes("Card(title="));
   edit.replace(consumer.uri, new vscode.Range(line, 0, line, CONSUMER.split("\n")[line].length),
@@ -144,6 +148,7 @@ exports.run = async function () {
   let cases = 4;
   if (suite === "editor_surface") {
     // 5-7. The advertised surface answers through the real client.
+    console.log("EDITOR SURFACE STEP: symbols");
     const symbols = await until(async () => {
       const found = await vscode.commands.executeCommand(
         "vscode.executeDocumentSymbolProvider", library.uri);
@@ -152,8 +157,10 @@ exports.run = async function () {
     assert(symbols.length, "markup symbols served");
     assert.equal(api.client.initializeResult.capabilities.semanticTokensProvider, undefined,
       "resident markup does not compete with Pylance semantic highlighting");
+    console.log("EDITOR SURFACE STEP: Python semantic tokens");
     await require("./client_suite.cjs").pythonSemantics(library,
       [["Card", "function"], ["title", "parameter", "{title}"]]);
+    console.log("EDITOR SURFACE STEP: hover");
     const hover = await until(async () => {
       const at = CONSUMER.indexOf("Card", CONSUMER.indexOf("pysx(t'"));
       const found = await vscode.commands.executeCommand(
@@ -163,6 +170,7 @@ exports.run = async function () {
     assert(hover.length, "hover served");
 
     // 8. Real setup writes exactly the owned settings at the folder target.
+    console.log("EDITOR SURFACE STEP: configure tooling");
     // Case 3 removed the only tag use; restore it so the replacement action is
     // judged against a live template-only import again.
     const restoreUse = new vscode.WorkspaceEdit();
@@ -193,12 +201,14 @@ exports.run = async function () {
     assert.equal(owned("python.analysis.disableTaggedHints").workspaceFolderValue, true);
 
     // 9. Repeated setup is a no-op that preserves the first baseline.
+    console.log("EDITOR SURFACE STEP: repeat setup");
     assert.equal(await configureTooling(), true,
       "repeated setup succeeds");
     assert.deepEqual(owned("editor.codeActionsOnSave").workspaceFolderValue, actions,
       "repeated setup changes nothing");
 
     // 10. The enabled replacement actually removes only the genuinely dead import.
+    console.log("EDITOR SURFACE STEP: organize imports and refresh");
     const offered = await until(async () => {
       const found = await vscode.commands.executeCommand("vscode.executeCodeActionProvider",
         consumer.uri, new vscode.Range(0, 0, 0, 0), "source.organizeImports.pysx");
@@ -212,6 +222,7 @@ exports.run = async function () {
       "the advertised refresh command is registered and answers");
 
     // 11. Restoration returns ownership and respects a later user edit.
+    console.log("EDITOR SURFACE STEP: restore tooling");
     await vscode.workspace.getConfiguration("python", folder.uri)
       .update("analysis.disableTaggedHints", false, vscode.ConfigurationTarget.WorkspaceFolder);
     assert.equal(await vscode.commands.executeCommand("pysx.restoreTooling"), true,

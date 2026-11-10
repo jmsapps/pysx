@@ -218,6 +218,43 @@ PROBE_GATES: tuple[Gate, ...] = (
 FOCUSED_GATES: tuple[Gate, ...] = (
     Gate(
         "diagnostic",
+        "lsp-incremental",
+        (
+            "uv",
+            "run",
+            "--project",
+            ".",
+            "pytest",
+            "-q",
+            "tests/test_lsp.py",
+            "-k",
+            "incremental_bounded_affected_set or diagnostics_match_equivalent_projection_uris",
+        ),
+        timeout=120,
+    ),
+    Gate(
+        "diagnostic",
+        "navigation-installed",
+        (
+            "uv",
+            "run",
+            "--project",
+            ".",
+            "pytest",
+            "-q",
+            "tests/test_documentation.py::test_corpus_executable_installed_browser_interactions[navigation-browser_navigation_example.mjs]",
+        ),
+        timeout=300,
+    ),
+    Gate(
+        "diagnostic",
+        "editor-surface",
+        ("npm", "--prefix", "editor", "test", "--", "--suite", "editor_surface"),
+        needs_display=True,
+        timeout=600,
+    ),
+    Gate(
+        "diagnostic",
         "browser-tutorial",
         ("npm", "--prefix", "tests", "run", "browser", "--", "--suite", "tutorial_website"),
         timeout=600,
@@ -478,6 +515,9 @@ def main() -> int:
             if not any(gate.tier == "diagnostic" and gate.name == target for gate in selected):
                 parser.error(f"unknown diagnostic gate: {target}")
             requirements: dict[str, set[str]] = {
+                "lsp-incremental": set(),
+                "navigation-installed": {"npm-tests", "playwright-deps", "playwright"},
+                "editor-surface": {"npm-editor", "vscode-host"},
                 "browser-tutorial": {"npm-tests", "playwright-deps", "playwright"},
                 "browser-tls": {"npm-tests", "playwright-deps", "playwright"},
                 "worker-ownership": set(),
