@@ -100,7 +100,9 @@ reconstruct compatible state from the document capsule.
 [Durable hosts](OWNERSHIP.md) can separately reconstruct explicitly declared state.
 
 A normal peer close retains a healthy graph even if it overlaps an outgoing
-update. Stopping a pending send during disconnect cleanup does not cancel the
+update. This includes an empty close frame, represented locally by status 1005
+(that reserved indicator is not sent as a wire close code).
+Stopping a pending send during disconnect cleanup does not cancel the
 application; resume repairs the current snapshot, including committed updates
 the browser did not receive. Other failed sends still expire the graph.
 

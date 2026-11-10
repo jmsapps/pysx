@@ -934,9 +934,23 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                 or type(failure).__name__.startswith("ConnectionClosed")
             )
             and not isinstance(failure, TransportError)
-            and getattr(getattr(failure, "rcvd", None), "code", 1000) in (1000, 1001, 1006)
-            and getattr(connection.raw, "close_code", 1000) in (None, 1000, 1001, 1006)
+            and getattr(getattr(failure, "rcvd", None), "code", 1000) in (1000, 1001, 1005, 1006)
+            and getattr(connection.raw, "close_code", 1000) in (None, 1000, 1001, 1005, 1006)
         )
+
+        if os.environ.get("PYSX_TRACE_RESUME") == "1":
+            logging.getLogger(__name__).warning(
+                "Resume retention trace: retained=%s failure=%s peer=%s raw=%s "
+                "closing=%s failed=%s pressured=%s unrepaired=%s",
+                retain,
+                type(failure).__name__ if failure is not None else "none",
+                getattr(getattr(failure, "rcvd", None), "code", None),
+                getattr(connection.raw, "close_code", None),
+                connection.closing,
+                connection.failed,
+                session.pressured,
+                session.rendered.unrepaired,
+            )
 
         if retain:
             runtime.detach(session)

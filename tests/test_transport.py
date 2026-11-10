@@ -224,7 +224,8 @@ def test_current_state_failed_network_send_expires_graph() -> None:
 
 
 @pytest.mark.parametrize(
-    ("close_code", "retained"), [(1000, True), (1001, True), (1002, False), (1008, False)]
+    ("close_code", "retained"),
+    [(1000, True), (1001, True), (1005, True), (1002, False), (1008, False)],
 )
 @pytest.mark.parametrize("completion", ["closed_send", "cancelled_send"])
 def test_current_state_close_during_push_resume_policy(
@@ -401,7 +402,9 @@ def test_current_state_actual_disconnect_resume_at_capacity_and_shutdown() -> No
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize(("code", "retained"), [(1000, True), (4002, False), (1008, False)])
+@pytest.mark.parametrize(
+    ("code", "retained"), [(1000, True), (1005, True), (4002, False), (1008, False)]
+)
 def test_current_state_peer_close_policy(code: int, *, retained: bool) -> None:
     class PeerClose(DisconnectConnection):
         close_code = code
