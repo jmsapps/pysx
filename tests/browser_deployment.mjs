@@ -17,6 +17,18 @@ try {
   await page.addInitScript(() => {
     const Original = WebSocket;
     window.WebSocket = class extends Original {
+      addEventListener(type, listener, options) {
+        if (type !== "close") return super.addEventListener(type, listener, options);
+        return super.addEventListener(type, event => {
+          if (this.delayedClose) setTimeout(() => listener.call(this, event), 1000);
+          else listener.call(this, event);
+        }, options);
+      }
+      close(...args) {
+        this.delayedClose = window.delayDeploymentClose === true;
+        window.delayDeploymentClose = false;
+        return super.close(...args);
+      }
       constructor(...args) {
         super(...args); window.socket = this;
         this.addEventListener("message", event => {
@@ -53,7 +65,12 @@ try {
   console.log("  ok  Linux nginx TLS serves deep-link SSR, owner adoption, resources and async updates");
 
   const generation = await page.locator("#generation").textContent();
-  await page.evaluate(() => { window.retained = document.getElementById("count"); window.socket.close(); });
+  await page.evaluate(() => {
+    window.retained = document.getElementById("count");
+    window.delayDeploymentClose = true;
+    window.disconnectedSocket = window.socket;
+    window.socket.close();
+  });
   await connected();
   assert.equal(await page.locator("#generation").textContent(), generation);
   assert.equal(await page.evaluate(() => window.retained === document.getElementById("count")), true);
