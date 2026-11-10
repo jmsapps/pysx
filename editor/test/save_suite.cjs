@@ -123,7 +123,11 @@ exports.run = async function () {
             closed: document.isClosed, focused: vscode.window.state.focused,
             active: vscode.window.activeTextEditor?.document.uri.toString() === document.uri.toString() ? "counter"
               : vscode.window.activeTextEditor ? "other" : "none",
-            autoSave: files.get("autoSave")});
+            autoSave: vscode.workspace.getConfiguration("files", {
+              uri: document.uri, languageId: document.languageId,
+            }).get("autoSave"),
+            globalAutoSave: vscode.workspace.getConfiguration("files").get("autoSave"),
+            cachedAutoSave: files.get("autoSave")});
           if (saveEvents.length > 32) { saveEvents.shift(); droppedEvents++; }
         };
         const observations = [
@@ -185,6 +189,8 @@ exports.run = async function () {
           if (mode !== "autosave-delay") assert.ok(sample.import_requests > 0, `${mode} must exercise the resident import action`);
           assert.ok(sample.save_seconds < SAVE_BUDGET, `${mode} save stalled (budget ${SAVE_BUDGET}s): ${JSON.stringify(sample)}`);
           assert.ok(sample.visible_seconds < VISIBLE_BUDGET, `${mode} update stalled (budget ${VISIBLE_BUDGET}s): ${JSON.stringify(sample)}`);
+          if (mode === "autosave-focus") console.log("PYSX EDITOR PERFORMANCE AUTOSAVE OBSERVATION " +
+            JSON.stringify({mode, edit, dropped: droppedEvents, events: saveEvents}));
         } catch (error) {
           observeSave("failure");
           console.error("PYSX EDITOR SAVE FAILURE TRACE " + JSON.stringify({mode, edit,
