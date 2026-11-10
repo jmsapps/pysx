@@ -51,17 +51,27 @@ try {
     await route.fulfill({response, body: (await response.text()).replace('data-pysx-protocol="4"', 'data-pysx-protocol="3"')});
   });
   repairPage.on("pageerror", error => errors.push(error.message));
-  let mock;
+  let resolveHello;
+  const hello = new Promise(resolve => { resolveHello = resolve; });
   let resolveClose;
   const closed = new Promise(resolve => { resolveClose = resolve; });
   const requests = [];
   await repairPage.routeWebSocket("**/ws?*", route => {
-    mock = route;
-    route.onMessage(raw => requests.push(JSON.parse(raw)));
+    route.onMessage(raw => {
+      const message = JSON.parse(raw);
+      requests.push(message);
+      if (message.t === "hello") resolveHello(route);
+    });
     route.onClose(code => resolveClose(code));
   });
   await repairPage.goto(`http://127.0.0.1:${process.argv[2]}/`);
-  await repairPage.waitForFunction(() => document.readyState === "complete");
+  let helloTimeout;
+  const mock = await Promise.race([
+    hello,
+    new Promise((_, reject) => {
+      helloTimeout = setTimeout(() => reject(new Error("mock transport never received client hello")), 30000);
+    }),
+  ]).finally(() => clearTimeout(helloTimeout));
   const html = '<input id="draft" data-pysx-el="stable" value="draft"><pysx-slot id="value">0</pysx-slot>';
   mock.send(JSON.stringify({t: "init", version: 3, epoch: "mock", base_rev: 0, state_rev: 1, html, css: ""}));
   await repairPage.waitForSelector("#draft");
