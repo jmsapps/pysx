@@ -583,7 +583,17 @@ class Session:
                 else {}
             )
             materialized.update((item.filename, item) for item in self.snapshot.files)
-            self.synchronized = replace(self.snapshot, files=tuple(materialized.values()))
+            self.synchronized = replace(
+                self.snapshot,
+                files=tuple(materialized.values()),
+                # A partial sweep cannot certify the new configuration for the
+                # retained files. Keep invalidation pending until a full sweep.
+                configuration=(
+                    self.synchronized.configuration
+                    if self.synchronized is not None
+                    else self.snapshot.configuration
+                ),
+            )
         self.error = None
         self.available.set()
 

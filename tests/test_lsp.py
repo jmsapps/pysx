@@ -534,7 +534,10 @@ def test_resident_protocol_incremental_bounded_affected_set(
     assert state["workspaces"][0]["starts"] == 1
 
 
-def test_resident_incremental_after_interrupted_foreground_snapshot(tmp_path: Path) -> None:
+@pytest.mark.parametrize("configuration_change", [False, True])
+def test_resident_incremental_after_interrupted_foreground_snapshot(
+    tmp_path: Path, configuration_change: bool
+) -> None:
     producer = tmp_path / "parts.py"
     producer_source = SOURCE[: SOURCE.index("view =")]
     producer.write_text(producer_source)
@@ -569,6 +572,9 @@ create_server().start_io()
         instance.open(path, source)
         instance.diagnostic(path, 1, "reportArgumentType")
         instance.settled(lambda status: len(status["workspaces"][0]["republished"]) == 3)
+
+        if configuration_change:
+            (tmp_path / "pyrightconfig.json").write_text('{"reportUnknownVariableType": false}')
         instance.open(producer, producer_source)
         instance.settled(lambda _status: entered.exists())
         instance.change(producer, producer_source.replace("title: str", "title: int"), 2)
@@ -577,10 +583,17 @@ create_server().start_io()
         instance.diagnostic(path, 1, None)
         affected = {"parts.py", "view.py"}
         state = instance.settled(
-            lambda status: affected <= set(status["workspaces"][0]["republished"])
+            lambda status: (
+                status["workspaces"][0]["ready"]
+                and affected <= set(status["workspaces"][0]["republished"])
+            )
         )["workspaces"][0]
-        assert set(state["changed"]) == affected, state
-        assert set(state["republished"]) == affected, state
+        assert set(state["changed"]) == (
+            affected | {"leaf.py"} if configuration_change else affected
+        ), state
+
+        if not configuration_change:
+            assert set(state["republished"]) == affected, state
     finally:
         release.touch()
         instance.close()
