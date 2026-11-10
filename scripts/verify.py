@@ -571,6 +571,22 @@ def main() -> int:
             flush=True,
         )
 
+    repetitions = 1
+
+    if args.selector == "probe":
+        try:
+            repetitions = int(os.environ.get("PYSX_CI_PROBE_REPETITIONS", "1"))
+        except ValueError:
+            parser.error("probe repetitions must be an integer from 1 to 20")
+
+        if not 1 <= repetitions <= 20:
+            parser.error("probe repetitions must be an integer from 1 to 20")
+        selected = [
+            gate
+            for gate in selected
+            for _sample in range(repetitions if gate.tier == "diagnostic" else 1)
+        ]
+
     if args.list:
         for gate in selected:
             print(f"{gate.tier:8} {gate.name:12} {' '.join(resolve(gate))}")
@@ -579,8 +595,16 @@ def main() -> int:
     failures: list[tuple[Gate, str]] = []
     label = "DIAGNOSTIC PROBE" if args.selector == "probe" else "VERIFICATION"
 
+    samples: dict[str, int] = {}
+
     for gate in selected:
-        print(f"-> {gate.tier}/{gate.name}", flush=True)
+        samples[gate.name] = samples.get(gate.name, 0) + 1
+        sample = (
+            f" (sample {samples[gate.name]}/{repetitions})"
+            if args.selector == "probe" and gate.tier == "diagnostic" and repetitions > 1
+            else ""
+        )
+        print(f"-> {gate.tier}/{gate.name}{sample}", flush=True)
         passed, elapsed, output = run(gate, stream=args.verbose)
         _drain_watchdog()
 

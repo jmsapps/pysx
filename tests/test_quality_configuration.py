@@ -8,15 +8,60 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from scripts.verify import BOOTSTRAP, ENTRYPOINT, GATES, PROBE_GATES, SELECTORS, TIERS, main
+import pytest
 
-if TYPE_CHECKING:
-    import pytest
+from scripts.verify import BOOTSTRAP, ENTRYPOINT, GATES, PROBE_GATES, SELECTORS, TIERS, Gate, main
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN_STEP = re.compile(r"^\s*- run: (.+)$", re.MULTILINE)
+
+
+def test_probe_repetition_keeps_setup_once_and_preserves_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: list[str] = []
+
+    def fake_run(gate: Gate, *, stream: bool = False) -> tuple[bool, float, str]:
+        assert not stream
+        seen.append(gate.name)
+        failed = gate.name == "editor-client" and seen.count(gate.name) == 1
+
+        return not failed, 0.0, "first sample failed" if failed else ""
+
+    monkeypatch.setenv("PYSX_CI_PROBE_GATE", "editor-client")
+    monkeypatch.setenv("PYSX_CI_PROBE_REPETITIONS", "3")
+    monkeypatch.setattr(sys, "argv", ["verify", "probe"])
+    monkeypatch.setattr("scripts.verify.run", fake_run)
+    monkeypatch.setattr("scripts.verify._drain_watchdog", lambda: None)
+    assert main() == 1
+    assert seen.count("npm-editor") == seen.count("vscode-host") == 1
+    assert seen.count("editor-client") == 3
+    output = capsys.readouterr().out
+    assert "sample 3/3" in output
+    assert "DIAGNOSTIC PROBE FAILED" in output
+
+
+@pytest.mark.parametrize("value", ["0", "21", "invalid"])
+def test_probe_repetition_rejects_invalid_bounds(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("PYSX_CI_PROBE_GATE", "worker-ownership")
+    monkeypatch.setenv("PYSX_CI_PROBE_REPETITIONS", value)
+    monkeypatch.setattr(sys, "argv", ["verify", "probe", "--list"])
+
+    with pytest.raises(SystemExit) as stopped:
+        main()
+    assert stopped.value.code == 2
+
+
+def test_full_manifest_ignores_probe_repetition(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("PYSX_CI_PROBE_REPETITIONS", "invalid")
+    monkeypatch.setattr(sys, "argv", ["verify", "gates", "--list"])
+    assert main() == 0
+    assert len(capsys.readouterr().out.splitlines()) == sum(gate.tier != "setup" for gate in GATES)
 
 
 def test_playwright_setup_identifies_dependency_and_download_failures(

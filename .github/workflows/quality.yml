@@ -13,6 +13,10 @@ on:
         type: choice
         options: [all, worker-ownership, lsp-lifecycle, lsp-incremental, navigation-installed, editor-surface, deployment-topology, browser-example-reconnect, distribution, editor-diagnostics, editor-integrated, browser-recovery, browser-watch-restart, browser-inspector, browser-hot, browser-tls, browser-tutorial, network-fetch, editor-client, editor-routing, editor-save, storage-benchmark]
         default: all
+      probe_repetitions:
+        description: Repetitions per diagnostic gate (1-20; ignored in full mode)
+        type: number
+        default: 1
 
 permissions:
   contents: read
@@ -29,6 +33,7 @@ jobs:
     env:
       PYSX_CI_PROBE: ${{ inputs.mode == 'probe' && '1' || '0' }}
       PYSX_CI_PROBE_GATE: ${{ inputs.probe_gate || 'all' }}
+      PYSX_CI_PROBE_REPETITIONS: ${{ inputs.probe_repetitions }}
       PYSX_EXTENSIONS_DIR: ${{ github.workspace }}/.vscode-test/extensions
       PYSX_DEPLOYMENT_LOGS: ${{ github.workspace }}/.pysx-logs
       PYSX_EDITOR_SAVE_BUDGET: '3'
