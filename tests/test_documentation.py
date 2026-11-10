@@ -248,6 +248,7 @@ def test_corpus_executable_installed_browser_interactions(
                     timeout=90,
                     check=False,
                 )
+
                 if result.returncode != 0:
                     pytest.fail(
                         f"Installed browser interaction failed: {name}, {engine}\n"

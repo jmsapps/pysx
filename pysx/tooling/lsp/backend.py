@@ -94,11 +94,15 @@ class TypeBackend:
 
         cast("FeatureRegistry", self.client.protocol.fm).feature(types.WINDOW_LOG_MESSAGE)(message)
 
-        def progress(_params: object) -> None:
-            return None
+        def progress(method: str) -> Callable[[object], None]:
+            def report(_params: object) -> None:
+                if os.environ.get("PYSX_LSP_TRACE_PUBLICATIONS") == "1":
+                    LOG.warning("Type backend progress: %s", method)
+
+            return report
 
         for method in ("pyright/beginProgress", "pyright/reportProgress", "pyright/endProgress"):
-            cast("FeatureRegistry", self.client.protocol.fm).feature(method)(progress)
+            cast("FeatureRegistry", self.client.protocol.fm).feature(method)(progress(method))
 
         self.stderr_task: asyncio.Task[None] | None = None
         self.starts = 0

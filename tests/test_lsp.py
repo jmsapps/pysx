@@ -528,6 +528,7 @@ def test_resident_protocol_incremental_bounded_affected_set(
     affected = {"parts.py", "view.py"}
     state = client.settled(lambda status: affected <= set(status["workspaces"][0]["republished"]))
     assert set(state["workspaces"][0]["changed"]) == affected
+
     if set(state["workspaces"][0]["republished"]) != affected:
         pytest.fail(json.dumps({"state": state, "backend": list(client.errors)}, indent=2))
     assert state["workspaces"][0]["starts"] == 1
