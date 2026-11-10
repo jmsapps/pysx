@@ -41,7 +41,25 @@ try {
   await click("parent"); await text("route-title", "User 3");
   console.log("  ok  styled links preserve parameter state and show relative nested routes");
 
+  // A consumer may focus an input immediately after history changes. Route
+  // scrolling must finish with the commit instead of stealing that later focus.
+  await page.evaluate(() => {
+    const replace = history.replaceState;
+    history.replaceState = function (...args) {
+      const result = replace.apply(this, args);
+      history.replaceState = replace;
+      queueMicrotask(() => {
+        document.getElementById("history-focus").focus({preventScroll: true});
+        window.historyFocusProbe = true;
+      });
+      return result;
+    };
+  });
   await click("query"); await text("current-url", "/users/3/?tab=settings");
+  await page.waitForFunction(() => window.historyFocusProbe === true);
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
+  assert.equal(await page.evaluate(() => document.activeElement.id), "history-focus",
+    "a completed navigation cannot steal subsequent consumer focus");
   await page.locator("#history-focus").evaluate(node => node.focus({preventScroll: true}));
   await page.evaluate(() => window.scrollTo(0, 350));
   await click("files"); await text("route-title", "Files");

@@ -132,7 +132,7 @@ function queueRouteScroll(url, restore = null, crossRoute = false) {
   cancelRouteScroll();
   pendingScroll = {url, rev: navigationRevision, restore, crossRoute,
     fallback: false, deadline: performance.now() + 2000};
-  scrollTimer = setTimeout(attemptRouteScroll, 0);
+  attemptRouteScroll();
 }
 
 function commitNavigation(message) {
