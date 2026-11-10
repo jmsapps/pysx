@@ -116,15 +116,39 @@ exports.run = async function () {
         else initializer = 1-initializer;
         const at = text.indexOf(before);
         assert.ok(at >= 0, before);
+        const saveEvents = [];
+        let droppedEvents = 0;
+        const observeSave = event => {
+          saveEvents.push({event, time: performance.now(), dirty: document.isDirty,
+            closed: document.isClosed, focused: vscode.window.state.focused,
+            active: vscode.window.activeTextEditor?.document.uri.toString() === document.uri.toString() ? "counter"
+              : vscode.window.activeTextEditor ? "other" : "none",
+            autoSave: files.get("autoSave")});
+          if (saveEvents.length > 32) { saveEvents.shift(); droppedEvents++; }
+        };
+        const observations = [
+          vscode.window.onDidChangeActiveTextEditor(() => observeSave("active-editor")),
+          vscode.window.onDidChangeWindowState(() => observeSave("window-focus")),
+          vscode.workspace.onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration("files.autoSave")) observeSave("auto-save-policy");
+          }),
+          vscode.workspace.onWillSaveTextDocument(event => {
+            if (event.document.uri.toString() === document.uri.toString()) observeSave("will-save");
+          }),
+        ];
+        observeSave("before-edit");
         let savedAt = null;
         const changed = vscode.workspace.onDidSaveTextDocument(saved => {
-          if (saved.uri.toString() === document.uri.toString()) savedAt = performance.now();
+          if (saved.uri.toString() === document.uri.toString()) {
+            observeSave("did-save"); savedAt = performance.now();
+          }
         });
         try {
           const changes = new vscode.WorkspaceEdit();
           changes.replace(document.uri, new vscode.Range(document.positionAt(at), document.positionAt(at + before.length)), after);
           assert(await vscode.workspace.applyEdit(changes));
           assert(document.isDirty);
+          observeSave("edited");
           const requestsBeforeSave = importRequests;
           const started = performance.now();
           if (mode === "manual") await vscode.commands.executeCommand("workbench.action.files.save");
@@ -132,8 +156,11 @@ exports.run = async function () {
             await files.update("autoSaveDelay", 100, vscode.ConfigurationTarget.Workspace);
             await files.update("autoSave", "afterDelay", vscode.ConfigurationTarget.Workspace);
           } else {
+            observeSave("before-enable-focus-policy");
             await files.update("autoSave", "onFocusChange", vscode.ConfigurationTarget.Workspace);
+            observeSave("focus-policy-update-returned");
             await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(path.join(root, "examples", "README.md")));
+            observeSave("show-other-document-returned");
           }
           await until(() => savedAt !== null, `${mode} disk save`, 5000);
           assert.ok(fs.readFileSync(filename, "utf8").includes(after));
@@ -158,7 +185,15 @@ exports.run = async function () {
           if (mode !== "autosave-delay") assert.ok(sample.import_requests > 0, `${mode} must exercise the resident import action`);
           assert.ok(sample.save_seconds < SAVE_BUDGET, `${mode} save stalled (budget ${SAVE_BUDGET}s): ${JSON.stringify(sample)}`);
           assert.ok(sample.visible_seconds < VISIBLE_BUDGET, `${mode} update stalled (budget ${VISIBLE_BUDGET}s): ${JSON.stringify(sample)}`);
-        } finally { changed.dispose(); }
+        } catch (error) {
+          observeSave("failure");
+          console.error("PYSX EDITOR SAVE FAILURE TRACE " + JSON.stringify({mode, edit,
+            dropped: droppedEvents, events: saveEvents}));
+          throw error;
+        } finally {
+          changed.dispose();
+          for (const observation of observations) observation.dispose();
+        }
         // Let the page's restored signal differ from the next initializer.
         if (edit === "title" && mode === "manual") {
           await page.getByRole("button", {name: "Increment", exact: true}).click();
