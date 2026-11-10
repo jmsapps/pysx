@@ -22,7 +22,8 @@ try {
     window.WebSocket = class extends Original {
       constructor(...args) {
         super(...args); window.testSocket = this;
-        for (const type of ["open", "close"]) this.addEventListener(type, () => record(type));
+        this.addEventListener("open", () => record("open"));
+        this.addEventListener("close", event => record("close", {code: event.code, reason: event.reason}));
         this.addEventListener("message", event => {
           const frame = JSON.parse(event.data);
           record("received", {frame: frame.t, revision: frame.state_rev});
@@ -30,8 +31,14 @@ try {
       }
       send(message) {
         const frame = JSON.parse(message);
-        record("sent", {frame: frame.t, handler: frame.h, sequence: frame.seq});
+        record("sent", {frame: frame.t, handler: frame.h, sequence: frame.seq,
+          edits: frame.edits?.length});
         return super.send(message);
+      }
+      close(...args) {
+        const [code, reason] = args;
+        record("close-request", {code, reason});
+        return super.close(...args);
       }
     };
   });

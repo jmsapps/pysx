@@ -412,7 +412,8 @@ try {
       ["-m", "pysx.hosting.server", "--app", "tests.browser_fixture:app", "--port", String(port)] :
       name === "adoption" ?
       ["-m", "tests.prototypes.standalone_host", "--port", String(port)] :
-      ["run_example.py", "run", name, "--port", String(port)]) : null;
+      ["run_example.py", "run", name, "--port", String(port)],
+      name === "reconnect" ? {PYSX_TRACE_RESUME: "1"} : {}) : null;
     if (server) {
       const deployment = name === "deployment_fixture" || name === "durable_state_fixture";
       if (deployment) server.cleanupTimeout = 45000;
@@ -450,6 +451,10 @@ try {
   if (selections.length > 1) console.log(`BROWSER VERIFICATION PASSED: all selected (${caseTotal} cases, ${total} assertions)`);
 } catch (error) {
   console.error(error);
+  for (const child of children) for (const line of (child.tail ?? "").split("\n")) {
+    if (line.includes("Resume waiting trace:") || line.includes("Resume refusal trace:"))
+      console.error(line);
+  }
   await cleanup();
   process.exitCode = 1;
 }

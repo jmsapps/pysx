@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
 from contextlib import suppress
 from time import monotonic
 from typing import TYPE_CHECKING, Protocol, cast
@@ -225,6 +227,9 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     if resuming or recovering:
         try:
             authorize("resume", resume_target)
+
+            if os.environ.get("PYSX_TRACE_RESUME") == "1":
+                logging.getLogger(__name__).warning("Resume waiting trace: awaiting hello")
             message = parse_message(
                 await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
                 limit=runtime.limits.max_frame_bytes,
@@ -274,7 +279,11 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             await connection.close(1008, "access denied")
 
             return
-        except PayloadError, ValueError, KeyError, TimeoutError:
+        except (PayloadError, ValueError, KeyError, TimeoutError) as error:
+            if os.environ.get("PYSX_TRACE_RESUME") == "1":
+                logging.getLogger(__name__).warning(
+                    "Resume refusal trace: %s", type(error).__name__
+                )
             await connection.close(4004, "resume unavailable")
 
             return
