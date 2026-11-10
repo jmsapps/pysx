@@ -74,7 +74,7 @@ exports.run = async function () {
   const samples = [];
   let browser;
   const record = (error = null) => {
-    const report = {endpoint: "VSCode save command/autosave enable to didSave and foreground Chromium DOM", vscode: vscode.version,
+    const report = {endpoint: "VSCode manual save, delayed-autosave enable or focus change to didSave and foreground Chromium DOM", vscode: vscode.version,
       browser: browser?.version(), platform: process.platform, arch: process.arch,
       launcher, python, samples, error, passed: error === null && samples.length === 6, paint_qualification: false};
     const directory = path.join(checkout, ".artifacts", "dev");
@@ -106,9 +106,21 @@ exports.run = async function () {
     let title = "Counter", initializer = 0;
     for (const mode of ["manual", "autosave-delay", "autosave-focus"]) {
       for (const edit of ["title", "initializer"]) {
-        await files.update("autoSave", "off", vscode.ConfigurationTarget.Workspace);
+        // Set focus policy while clean: enabling it after the edit can start a
+        // separate save before the focus transition this case is meant to test.
+        await files.update("autoSave", mode === "autosave-focus" ? "onFocusChange" : "off",
+          vscode.ConfigurationTarget.Workspace);
         await background.bringToFront();
         await vscode.window.showTextDocument(document);
+        if (mode === "autosave-focus") {
+          // The auto-save tracker learns its current editor from an editor-change
+          // event. Initialize it while clean, before the measured dirty transition.
+          await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(path.join(root, "examples", "README.md")));
+          await vscode.window.showTextDocument(document);
+          assert.equal(vscode.workspace.getConfiguration("files", {
+            uri: document.uri, languageId: document.languageId,
+          }).get("autoSave"), "onFocusChange", "focus policy is ready before editing");
+        }
         const text = document.getText();
         const before = edit === "title" ? `Title: "${title}"` : `count = signal(${initializer})`;
         const after = edit === "title" ? `Title: "${mode} save"` : `count = signal(${1-initializer})`;
@@ -116,15 +128,45 @@ exports.run = async function () {
         else initializer = 1-initializer;
         const at = text.indexOf(before);
         assert.ok(at >= 0, before);
+        const saveEvents = [];
+        let droppedEvents = 0;
+        let focusTriggered = false;
+        let prematureFocusSave = false;
+        const observeSave = (event, detail = {}) => {
+          saveEvents.push({event, time: performance.now(), dirty: document.isDirty,
+            closed: document.isClosed, focused: vscode.window.state.focused,
+            active: vscode.window.activeTextEditor?.document.uri.toString() === document.uri.toString()
+              ? "counter" : vscode.window.activeTextEditor ? "other" : "none",
+            autoSave: vscode.workspace.getConfiguration("files", {
+              uri: document.uri, languageId: document.languageId,
+            }).get("autoSave"), importRequests, ...detail});
+          if (saveEvents.length > 32) { saveEvents.shift(); droppedEvents++; }
+        };
+        const observations = [
+          vscode.window.onDidChangeActiveTextEditor(() => observeSave("active-editor")),
+          vscode.window.onDidChangeWindowState(() => observeSave("window-focus")),
+          vscode.workspace.onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration("files.autoSave")) observeSave("auto-save-policy");
+          }),
+          vscode.workspace.onWillSaveTextDocument(event => {
+            if (event.document.uri.toString() !== document.uri.toString()) return;
+            if (mode === "autosave-focus" && !focusTriggered) prematureFocusSave = true;
+            observeSave("will-save", {reason: event.reason});
+          }),
+        ];
+        observeSave("before-edit");
         let savedAt = null;
         const changed = vscode.workspace.onDidSaveTextDocument(saved => {
-          if (saved.uri.toString() === document.uri.toString()) savedAt = performance.now();
+          if (saved.uri.toString() === document.uri.toString()) {
+            observeSave("did-save"); savedAt = performance.now();
+          }
         });
         try {
           const changes = new vscode.WorkspaceEdit();
           changes.replace(document.uri, new vscode.Range(document.positionAt(at), document.positionAt(at + before.length)), after);
           assert(await vscode.workspace.applyEdit(changes));
           assert(document.isDirty);
+          observeSave("edited");
           const requestsBeforeSave = importRequests;
           const started = performance.now();
           if (mode === "manual") await vscode.commands.executeCommand("workbench.action.files.save");
@@ -132,10 +174,13 @@ exports.run = async function () {
             await files.update("autoSaveDelay", 100, vscode.ConfigurationTarget.Workspace);
             await files.update("autoSave", "afterDelay", vscode.ConfigurationTarget.Workspace);
           } else {
-            await files.update("autoSave", "onFocusChange", vscode.ConfigurationTarget.Workspace);
+            focusTriggered = true;
+            observeSave("focus-trigger");
             await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(path.join(root, "examples", "README.md")));
+            observeSave("focus-document-switch-returned");
           }
           await until(() => savedAt !== null, `${mode} disk save`, 5000);
+          assert.equal(prematureFocusSave, false, "focus mode must save after its focus trigger");
           assert.ok(fs.readFileSync(filename, "utf8").includes(after));
           await page.bringToFront();
           if (edit === "title") await page.waitForFunction(title => document.querySelector("h1")?.textContent === title, `${mode} save`, {polling: "raf"});
@@ -158,7 +203,15 @@ exports.run = async function () {
           if (mode !== "autosave-delay") assert.ok(sample.import_requests > 0, `${mode} must exercise the resident import action`);
           assert.ok(sample.save_seconds < SAVE_BUDGET, `${mode} save stalled (budget ${SAVE_BUDGET}s): ${JSON.stringify(sample)}`);
           assert.ok(sample.visible_seconds < VISIBLE_BUDGET, `${mode} update stalled (budget ${VISIBLE_BUDGET}s): ${JSON.stringify(sample)}`);
-        } finally { changed.dispose(); }
+        } catch (error) {
+          observeSave("failure");
+          console.error("PYSX EDITOR SAVE FAILURE TRACE " + JSON.stringify({mode, edit,
+            dropped: droppedEvents, events: saveEvents}));
+          throw error;
+        } finally {
+          changed.dispose();
+          for (const observation of observations) observation.dispose();
+        }
         // Let the page's restored signal differ from the next initializer.
         if (edit === "title" && mode === "manual") {
           await page.getByRole("button", {name: "Increment", exact: true}).click();
