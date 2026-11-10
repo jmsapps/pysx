@@ -9,10 +9,11 @@ const control = async path => {
 };
 const {base} = await control("/reset");
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
+let page;
+const errors = [];
 try {
   const context = await browser.newContext({ignoreHTTPSErrors: true});
-  const page = await context.newPage();
-  const errors = [];
+  page = await context.newPage();
   page.on("pageerror", error => errors.push(error.message));
   await page.addInitScript(() => {
     const Original = WebSocket;
@@ -38,10 +39,12 @@ try {
       }
     };
   });
-  const connected = async () => {
+  const connected = async (replacement = false) => {
     try {
-      return await page.waitForFunction(() =>
-        document.getElementById("pysx-root").dataset.pysxConnection === "connected", null, {timeout: 20000});
+      return await page.waitForFunction(replacement =>
+        document.getElementById("pysx-root").dataset.pysxConnection === "connected" &&
+        (!replacement || (window.socket !== window.disconnectedSocket &&
+          window.socket.readyState === WebSocket.OPEN)), replacement, {timeout: 20000});
     } catch (error) {
       const state = await page.evaluate(() => {
         const root = document.getElementById("pysx-root");
@@ -71,7 +74,7 @@ try {
     window.disconnectedSocket = window.socket;
     window.socket.close();
   });
-  await connected();
+  await connected(true);
   assert.equal(await page.locator("#generation").textContent(), generation);
   assert.equal(await page.evaluate(() => window.retained === document.getElementById("count")), true);
   await control("/drain?worker=worker-a");
@@ -94,4 +97,15 @@ try {
   console.log("  ok  restart restores readiness and the public proxy hides internal probes and controls");
   console.log("OPERATIONAL TOPOLOGY BROWSER PASSED");
   await context.close();
+} catch (error) {
+  const state = await page?.evaluate(() => ({
+    connection: document.getElementById("pysx-root")?.dataset.pysxConnection,
+    count: document.getElementById("count")?.textContent,
+    generation: document.getElementById("generation")?.textContent,
+    readyState: window.socket?.readyState,
+    sameSocket: window.socket === window.disconnectedSocket,
+    owner: window.owner,
+  })).catch(() => null);
+  console.log(`DEPLOYMENT FAILURE: ${JSON.stringify({state, errors})}`);
+  throw error;
 } finally { await browser.close(); }
