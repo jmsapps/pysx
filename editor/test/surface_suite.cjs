@@ -187,7 +187,52 @@ async function run() {
     };
     assert.equal(owned("editor.codeActionsOnSave").workspaceFolderValue, undefined,
       "setup starts from an unconfigured workspace folder");
-    assert.equal(await configureTooling(), true,
+    const firstTrace = require(path.join(extension.extensionPath, "trace.js"));
+    const firstSequence = firstTrace.snapshot().events.at(-1)?.sequence ?? 0;
+    const spans = [];
+    const queries = [];
+    const launchQueries = () => {
+      const at = CONSUMER.indexOf("Card", CONSUMER.indexOf("pysx(t'"));
+      for (const [command, args] of [
+        ["vscode.executeHoverProvider", [consumer.uri, consumer.positionAt(at)]],
+        ["vscode.executeDocumentSymbolProvider", [library.uri]],
+        ["vscode.executeCompletionItemProvider", [consumer.uri, consumer.positionAt(at)]],
+      ]) {
+        const span = {start: performance.now(), end: Infinity};
+        spans.push(span);
+        queries.push(vscode.commands.executeCommand(command, ...args).then(
+          value => { span.end = performance.now(); return {ok: true}; },
+          error => { span.end = performance.now(); return {ok: false, error}; }));
+      }
+    };
+    const initialChanges = vscode.workspace.onDidChangeConfiguration(launchQueries);
+    const producer = (async () => {
+      for (let round = 0; round < 20; round++) {
+        launchQueries();
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    })();
+    const firstSetupResult = await configureTooling();
+    initialChanges.dispose();
+    await producer;
+    const initialResults = await Promise.all(queries);
+    const initialEvents = firstTrace.snapshot().events.filter(event => event.sequence > firstSequence);
+    const writeStarts = initialEvents.filter(event => event.component === "settings" && event.event === "begin");
+    const writeIntervals = writeStarts.map(start => [start.ms,
+      initialEvents.find(event => event.operationId === start.operationId && event.event === "completed")?.ms ?? Infinity]);
+    const overlappingQueries = spans.filter(span => writeIntervals.some(([start, end]) =>
+      span.start <= end && span.end >= start)).length;
+    console.log("PYSX EDITOR PERFORMANCE N3 FIRST SETUP OVERLAP " + JSON.stringify({
+      providerRequests: queries.length, settingsWrites: writeStarts.length, overlappingQueries,
+      dropped: firstTrace.snapshot().dropped,
+      failures: initialResults.filter(result => !result.ok).map(result => ({
+        name: result.error.name, message: result.error.message, code: result.error.code,
+      })),
+    }));
+    assert(writeStarts.length > 0, "experiment must exercise real first-setup settings writes");
+    assert(overlappingQueries > 0, "experiment must overlap outer provider requests with real writes");
+    if (initialResults.some(result => !result.ok)) throw initialResults.find(result => !result.ok).error;
+    assert.equal(firstSetupResult, true,
       "the advertised setup command is registered and succeeds");
     const actions = owned("editor.codeActionsOnSave").workspaceFolderValue;
     assert.equal(actions["source.organizeImports.pysx"], "explicit",
@@ -202,10 +247,35 @@ async function run() {
 
     // 9. Repeated setup is a no-op that preserves the first baseline.
     console.log("EDITOR SURFACE STEP: repeat setup");
+    const experimentTrace = require(path.join(extension.extensionPath, "trace.js"));
+    const beforeSequence = experimentTrace.snapshot().events.at(-1)?.sequence ?? 0;
+    let configurationEvents = 0;
+    const observedConfiguration = vscode.workspace.onDidChangeConfiguration(() => configurationEvents++);
     assert.equal(await configureTooling(), true,
       "repeated setup succeeds");
     assert.deepEqual(owned("editor.codeActionsOnSave").workspaceFolderValue, actions,
       "repeated setup changes nothing");
+    const repeatedSettingsWrites = experimentTrace.snapshot().events.filter(event =>
+      event.sequence > beforeSequence && event.component === "settings" && event.event === "begin").length;
+    const failures = [];
+    for (let round = 0; round < 10; round++) {
+      const at = CONSUMER.indexOf("Card", CONSUMER.indexOf("pysx(t'"));
+      const results = await Promise.allSettled([
+        configureTooling(),
+        vscode.commands.executeCommand("vscode.executeHoverProvider", consumer.uri, consumer.positionAt(at)),
+        vscode.commands.executeCommand("vscode.executeDocumentSymbolProvider", library.uri),
+        vscode.commands.executeCommand("vscode.executeCompletionItemProvider", consumer.uri, consumer.positionAt(at)),
+      ]);
+      for (const result of results) if (result.status === "rejected") failures.push(result.reason);
+      assert.equal(results[0].status === "fulfilled" ? results[0].value : false, true);
+    }
+    observedConfiguration.dispose();
+    console.log("PYSX EDITOR PERFORMANCE N3 ARTIFICIAL OVERLAP EXPERIMENT " + JSON.stringify({
+      rounds: 10, providerRequests: 30, repeatedSettingsWrites, configurationEvents,
+      failures: failures.map(error => ({name: error.name, message: error.message, code: error.code})),
+    }));
+    assert.equal(repeatedSettingsWrites, 0, "repeated setup must not rewrite already-owned values");
+    if (failures.length) throw failures[0];
 
     // 10. The enabled replacement actually removes only the genuinely dead import.
     console.log("EDITOR SURFACE STEP: organize imports and refresh");
