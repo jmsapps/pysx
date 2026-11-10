@@ -58,6 +58,7 @@ INCLUDE = (
     "extension.js",
     "authoring.js",
     "client.js",
+    "trace.js",
     "highlighting.js",
     "workspaces.js",
     "commands.js",

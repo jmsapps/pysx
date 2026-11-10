@@ -23,7 +23,8 @@ for (let i = 0; i < args.length; i += 2) {
 }
 if (!SUITES.includes(suite)) throw new Error("empty editor selection");
 if (suite === "client_verify") {
-  const result = spawnSync(process.execPath, ["--test", "editor/test/highlighting.test.cjs"],
+  const result = spawnSync(process.execPath, ["--test", "editor/test/highlighting.test.cjs",
+    "editor/test/trace.test.cjs"],
     { cwd: root, stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }

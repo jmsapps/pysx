@@ -4,6 +4,7 @@ const { execFile } = require("node:child_process");
 const { LanguageClient, State, CloseAction, ErrorAction } = require("vscode-languageclient/node");
 
 const MAX_RESTARTS = 4;
+const trace = require("./trace.js");
 // Every document-scoped provider the server can advertise. One client per
 // workspace folder sees every Python file, so ownership is enforced here
 // rather than through overlapping document selectors.
@@ -34,7 +35,7 @@ async function interpreter(resource) {
   return resolved?.executable?.uri?.fsPath ?? resolved?.path ?? selected.path ?? null;
 }
 
-function ownershipMiddleware(owns) {
+function ownershipMiddleware(owns, clientId) {
   const held = (document) => Boolean(document) && owns(document);
   const middleware = {
     didOpen: (document, next) => (held(document) ? next(document) : Promise.resolve()),
@@ -51,7 +52,25 @@ function ownershipMiddleware(owns) {
       const document = target && typeof target.languageId === "string"
         ? target
         : vscode.workspace.textDocuments.find((item) => item.uri.toString() === String(target));
-      return held(document) ? next(...args.slice(0, -1)) : undefined;
+      const token = args.slice(1, -1).find((arg) => typeof arg?.isCancellationRequested === "boolean");
+      const fields = {clientId, requestId: trace.id("request"), provider: name, resource: trace.resource(document?.uri),
+        version: document?.version, canceled: token?.isCancellationRequested};
+      if (!held(document)) {
+        trace.record("provider", "unowned", fields);
+        return undefined;
+      }
+      return trace.observe("provider", name, fields, () => {
+        const subscription = process.env.PYSX_EDITOR_TRACE === "1"
+          ? token?.onCancellationRequested?.(() => trace.record("provider", "cancel-requested", fields))
+          : undefined;
+        try {
+          const result = next(...args.slice(0, -1));
+          if (result && typeof result.then === "function") {
+            result.then(() => subscription?.dispose(), () => subscription?.dispose());
+          } else subscription?.dispose();
+          return result;
+        } catch (error) { subscription?.dispose(); throw error; }
+      });
     };
   }
 
@@ -77,7 +96,11 @@ function probe(python, args) {
 probe.lastFailure = null;
 
 function createClient({ python, output, serverOptions, documentSelector, workspaceFolder, owns,
-  watched }) {
+  watched, traceContext = {} }) {
+  const clientId = trace.id("client");
+  trace.record("client", "created", {clientId, ...traceContext});
+  const traced = (operation, action) => trace.observe("client", operation,
+    {clientId, revision, running, disposed}, action);
   const watcher = vscode.workspace.createFileSystemWatcher(watched
     ? new vscode.RelativePattern(watched, "**/{*.py,pyproject.toml,pyrightconfig.json}")
     : "**/{*.py,pyproject.toml,pyrightconfig.json}");
@@ -107,11 +130,13 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
     output.error(`pysx lifecycle: ${error.message ?? error}`);
   }
   function cancelRecovery() {
+    trace.record("client", "cancel-recovery", {clientId, revision});
     revision += 1;
     clearTimeout(recoveryTimer);
     recoveryTimer = undefined;
   }
   function recover(reason) {
+    trace.record("client", "recover", {clientId, reason, revision, intentional, disposed, running});
     if (disposed || intentional || !running || recoveryTimer) return;
     running = false;
     highlighting?.pause();
@@ -153,7 +178,7 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
         outputChannel: output,
         initializationOptions: { pythonPath: python, markupHighlighting: "decorations" },
         synchronize: { fileEvents: watcher },
-        middleware: owns ? ownershipMiddleware(owns) : undefined,
+        middleware: owns ? ownershipMiddleware(owns, clientId) : undefined,
         errorHandler: {
           error(_error, _message, count) {
             if (count > 3) recover("repeated connection errors");
@@ -185,6 +210,7 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
     });
   }
   async function stopOwned() {
+    trace.record("client", "stop", {clientId, revision, intentional, disposed});
     running = false;
     highlighting?.pause();
     const owned = child ?? client.serverProcess;
@@ -201,6 +227,7 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
     }
   }
   async function startOwned() {
+    trace.record("client", "start", {clientId, revision, disposed});
     if (disposed || client.isRunning()) return;
     if (client.state === State.StartFailed) {
       await stopOwned();
@@ -218,6 +245,7 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
       }
       starts += 1;
       running = true;
+      trace.record("client", "ready", {clientId, revision});
       exhausted = false;
       lastError = null;
       if (!highlighting) {
@@ -235,8 +263,9 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
   return {
     get client() { return client; },
     get highlighting() { return highlighting; },
-    start: () => enqueue(startOwned),
+    start: () => traced("start", () => enqueue(startOwned)),
     restart() {
+      trace.record("client", "restart-requested", {clientId, revision, disposed});
       if (disposed) return Promise.resolve();
       if (restartPromise) return restartPromise;
       cancelRecovery();
@@ -264,6 +293,7 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
       });
     },
     dispose() {
+      trace.record("client", "dispose-requested", {clientId, revision, disposed});
       if (disposePromise) return disposePromise;
       disposed = true;
       cancelRecovery();

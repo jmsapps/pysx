@@ -1,5 +1,6 @@
 const vscode = require("vscode");
 const { execFile } = require("node:child_process");
+const trace = require("./trace.js");
 
 // Exactly the keys pysx claims ownership of. The Python planner derives the
 // values; this list only says where each one is observed and written.
@@ -31,8 +32,10 @@ async function write(resource, key, value) {
   const [section, name] = split(key);
   // The planner records an absent setting as null. Writing null would store an
   // explicit null override, so absence is restored by removing the key.
-  await vscode.workspace.getConfiguration(section, resource)
-    .update(name, value === null ? undefined : value, TARGET);
+  await trace.observe("settings", "write", {
+    resource: trace.resource(resource), key,
+  }, () => vscode.workspace.getConfiguration(section, resource)
+    .update(name, value === null ? undefined : value, TARGET));
 }
 
 function planner(python, command, root, request) {

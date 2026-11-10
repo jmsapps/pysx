@@ -4,6 +4,7 @@ const path = require("node:path");
 
 const DETACHED = "";
 const COALESCE = 150;
+const trace = require("./trace.js");
 
 function canonical(fsPath) {
   try {
@@ -55,7 +56,14 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
   function bump(key) {
     const next = (generations.get(key) ?? 0) + 1;
     generations.set(key, next);
+    trace.record("workspace", "generation", {resource: trace.resource(key), generation: next});
     return next;
+  }
+  function obsolete(key, requested, stage) {
+    const stale = disposed || requested !== generations.get(key);
+    if (stale) trace.record("workspace", "superseded", {resource: trace.resource(key),
+      generation: requested, currentGeneration: generations.get(key), disposed, stage});
+    return stale;
   }
   function keyFor(uri) {
     const owner = ownerOf(uri);
@@ -94,13 +102,14 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     return pending;
   }
   async function install(key, folder, requested) {
+    trace.record("workspace", "install", {resource: trace.resource(key), generation: requested});
     const python = await resolveInterpreter(folder?.uri);
-    if (disposed || requested !== generations.get(key)) return;
+    if (obsolete(key, requested, "interpreter")) return;
     const existing = entries.get(key);
 
     if (!python || !fs.existsSync(python)) {
       await remove(key);
-      if (disposed || requested !== generations.get(key)) return;
+      if (obsolete(key, requested, "missing-interpreter-disposal")) return;
       entries.set(key, { key, folder, python: null, lifecycle: null, ruff: null,
         error: "pysx: no Python 3.14+ interpreter is selected for " +
           `${folder ? folder.name : "files outside a workspace"}. Select one, then retry.` });
@@ -110,11 +119,11 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
 
     if (existing?.python === python && existing.lifecycle) return;
     const probed = await environment(python);
-    if (disposed || requested !== generations.get(key)) return;
+    if (obsolete(key, requested, "environment-probe")) return;
 
     if (probed.server !== "ok") {
       await remove(key);
-      if (disposed || requested !== generations.get(key)) return;
+      if (obsolete(key, requested, "missing-server-disposal")) return;
       entries.set(key, { key, folder, python, lifecycle: null, ruff: null,
         error: "pysx: the selected environment does not have the language server extra. " +
           "Install `pysx[lsp]` into it, then select it again. Diagnostics remain available " +
@@ -128,24 +137,30 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     if (resolved?.error) output.appendLine(resolved.error);
     else if (resolved) output.appendLine(`pysx: using Ruff ${resolved.version} at ${resolved.path}`);
     await remove(key);
-    if (disposed || requested !== generations.get(key)) return;
+    if (obsolete(key, requested, "replacement-disposal")) return;
     const lifecycle = createClient({
       python,
       output,
       workspaceFolder: folder,
       owns: owns(key),
       watched: folder,
+      traceContext: {resource: trace.resource(key), generation: requested},
     });
     entries.set(key, { key, folder, python, lifecycle,
       ruff: resolved?.error ? null : resolved, error: null });
-    await lifecycle.start();
+    await trace.observe("workspace", "client-start", {
+      resource: trace.resource(key), generation: requested,
+    }, () => lifecycle.start());
   }
   async function remove(key, keep = false) {
     const existing = entries.get(key);
     if (!keep) entries.delete(key);
-    if (existing?.lifecycle) await existing.lifecycle.dispose();
+    if (existing?.lifecycle) await trace.observe("workspace", "client-dispose", {
+      resource: trace.resource(key), generation: generations.get(key), keep,
+    }, () => existing.lifecycle.dispose());
   }
-  function schedule(key, folder) {
+  function schedule(key, folder, reason = "refresh") {
+    trace.record("workspace", "selection", {resource: trace.resource(key), reason});
     const requested = bump(key);
     clearTimeout(timers.get(key));
     timers.set(key, setTimeout(() => {
@@ -183,7 +198,7 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
       for (const [key, folder] of scopes()) {
         if (event.affectsConfiguration("pysx.pythonPath", folder?.uri) ||
             event.affectsConfiguration("python.defaultInterpreterPath", folder?.uri)) {
-          schedule(key, folder);
+          schedule(key, folder, "configuration");
         }
       }
     }),
@@ -200,7 +215,7 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
       const root = resource ? canonical(resource.uri.fsPath) : null;
 
       for (const [key, folder] of scopes()) {
-        if (!root || key === root) schedule(key, folder);
+        if (!root || key === root) schedule(key, folder, "environment");
       }
     }));
   }

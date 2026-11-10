@@ -40,7 +40,8 @@ for (const detached of [false, true]) {
         let timerId = 0;
         const exports = {};
         vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../workspaces.js"), "utf8"), {
-          exports, require: name => name === "vscode" ? vscode : require(name),
+          exports, require: name => name === "vscode" ? vscode :
+            name.startsWith(".") ? require(path.join(__dirname, "..", name)) : require(name),
           setTimeout(callback) { const id = ++timerId; timers.set(id, callback); return id; },
           clearTimeout(id) { timers.delete(id); },
         });

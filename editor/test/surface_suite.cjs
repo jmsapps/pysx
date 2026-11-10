@@ -53,7 +53,7 @@ const PLAIN = [
   "",
 ].join("\n");
 
-exports.run = async function () {
+async function run() {
   const suite = process.env.PYSX_EDITOR_SUITE;
   const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
   assert(extension, "fresh extension registered");
@@ -258,4 +258,19 @@ exports.run = async function () {
     (suite === "editor_surface"
       ? ", resident surface, setup, repeated setup, replacement action, restoration)"
       : ", CLI agreement, every advertised command registered, setup)"));
+}
+
+exports.run = async function () {
+  process.env.PYSX_EDITOR_TRACE = "1";
+  try { await run(); }
+  catch (error) {
+    const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
+    try {
+      const trace = require(path.join(extension.extensionPath, "trace.js"));
+      console.error("PYSX EDITOR FAILURE TRACE " + JSON.stringify(trace.snapshot()));
+    } catch (captureError) {
+      console.error("PYSX EDITOR TRACE CAPTURE FAILED", captureError.name);
+    }
+    throw error;
+  }
 };
