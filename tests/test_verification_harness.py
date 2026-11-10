@@ -10,8 +10,50 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from acceptance_support import ready_server
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("action", ["SIGINT", "SIGKILL", None])
+def test_cli_control_fixture_distinguishes_shutdown_from_process_loss(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action: str | None
+) -> None:
+    report = tmp_path / "shutdown.json"
+    monkeypatch.setenv("PYSX_SHUTDOWN_REPORT", str(report))
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    command = [
+        sys.executable,
+        str(ROOT / "tests/cli_control_fixture.py"),
+        "--app",
+        "tests.transport_limits_fixture:host",
+        "--port",
+        str(port),
+    ]
+    with ready_server(command, input_pipe=True) as child:
+        assert child.stdin is not None
+
+        if action is None:
+            child.stdin.close()
+        else:
+            child.stdin.write(action + "\n")
+            child.stdin.flush()
+        code = child.wait(timeout=10)
+
+    if action == "SIGINT":
+        assert code == 0
+        assert json.loads(report.read_text()) == {
+            "graphs": 0,
+            "tasks": 0,
+            "connections": 0,
+            "created": 0,
+            "cleaned": 0,
+        }
+    else:
+        assert code != 0
+        assert not report.exists()
 
 
 def browser_run(environment: dict[str, str], *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -266,7 +308,11 @@ def test_editor_host_failure_retains_early_output_and_profile_logs(
     executable.chmod(0o755)
     state_file = tmp_path / "state.json"
     result = editor_run(
-        {"PYSX_VSCODE_EXECUTABLE": str(executable), "PYSX_EDITOR_STATE_FILE": str(state_file)},
+        {
+            "PYSX_VSCODE_EXECUTABLE": str(executable),
+            "PYSX_EDITOR_STATE_FILE": str(state_file),
+            "PYSX_DEPLOYMENT_LOGS": str(tmp_path / "artifacts"),
+        },
         "--suite",
         "editor_surface",
     )
@@ -288,6 +334,9 @@ def test_editor_host_failure_retains_early_output_and_profile_logs(
     assert len(output) > 30000
     assert "AssertionError: early host failure" in output
     assert (workspace / "profile/logs/fixture/exthost/exthost.log").is_file()
+    preserved = tmp_path / "artifacts" / workspace.name
+    assert (preserved / "host-output.log").read_text() == output
+    assert failure in (preserved / "logs/fixture/exthost/exthost.log").read_text()
     shutil.rmtree(workspace)
 
 

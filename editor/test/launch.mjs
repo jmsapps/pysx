@@ -16,10 +16,13 @@ await runTests({
   extensionDevelopmentPath: [input.extension, input.host.directory, input.pythonExtension, ...(input.ruffExtension ? [input.ruffExtension] : [])],
   extensionTestsPath: fileURLToPath(new URL("suite.cjs", import.meta.url)),
   extensionTestsEnv: { PYSX_EDITOR_WORKSPACE: input.workspace,
+    PYSX_EDITOR_TRACE: ["editor_surface", "template_import_usage"].includes(input.suite)
+      ? "1" : process.env.PYSX_EDITOR_TRACE ?? "",
     PYSX_EDITOR_SUITE: input.suite, PYSX_EDITOR_PYTHON: input.python ?? "",
     PYSX_EDITOR_PERFORMANCE: process.env.PYSX_EDITOR_PERFORMANCE ?? "",
     PYSX_EDITOR_ACTIVATION_ORDER: process.env.PYSX_EDITOR_ACTIVATION_ORDER ?? "client-first",
     PYSX_EDITOR_CHECKOUT: input.checkout,
+    PYSX_EDITOR_TRACE_FILE: process.env.PYSX_EDITOR_TRACE_FILE ?? "",
     PYSX_EDITOR_ALTERNATE_PYTHON: input.alternate ?? "",
     PYSX_EDITOR_BARE_PYTHON: input.bare ?? "" },
   launchArgs: [input.root, "--user-data-dir", path.join(input.workspace, "profile"),

@@ -112,12 +112,15 @@ def test_exact_source_projection_cli_preserves_crlf_file_and_stdin(tmp_path: Pat
     expected = json.loads(json.dumps(projection_for_source(source, str(path))))
 
     for flags in [[], ["--stdin"]]:
+        # Without a deadline a child that never exits hangs the whole suite and
+        # takes every later gate's evidence with it, which is how this went
+        # undiagnosed on Windows.
         result = subprocess.run(
             [sys.executable, "-m", "pysx.tooling.analysis", str(path), *flags],
-            input=source,
-            text=True,
+            input=source.encode("utf-8"),
             capture_output=True,
             check=False,
+            timeout=120,
         )
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout) == expected

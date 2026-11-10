@@ -7,13 +7,13 @@ import json
 import os
 import re
 import shutil
-import signal
 import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from acceptance_support import alive, interrupt
 from test_server_limits import http_method_parser
 
 from pysx.development.development import Supervisor, WatchConfig
@@ -99,7 +100,16 @@ def serving(
     ]
 
     with log.open("w") as stream:
-        process = subprocess.Popen(args, cwd=root, env=env, stdout=stream, stderr=stream)
+        # interrupt() aims CTRL_BREAK_EVENT at this child on Windows, and that event
+        # reaches the whole group: without its own group it kills the test runner.
+        process = subprocess.Popen(
+            args,
+            cwd=root,
+            env=env,
+            stdout=stream,
+            stderr=stream,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
         ready = False
 
         def started() -> bool:
@@ -120,7 +130,7 @@ def serving(
             )
 
             if process.poll() is None:
-                process.send_signal(signal.SIGINT)
+                interrupt(process)
 
             try:
                 result = process.wait(timeout=10)
@@ -133,8 +143,7 @@ def serving(
                     process.wait(timeout=5)
 
             for pid in children:
-                with pytest.raises(ProcessLookupError):
-                    os.kill(pid, 0)
+                assert not alive(pid)
         with socket.socket() as probe:
             assert probe.connect_ex(("127.0.0.1", port)) != 0
 
@@ -326,12 +335,7 @@ def test_installed_serve_rejected_import_reaps_descendants(tmp_path: Path) -> No
         child = int((tmp_path / ".childpid").read_text())
 
         def reaped() -> bool:
-            try:
-                os.kill(child, 0)
-            except ProcessLookupError:
-                return True
-
-            return False
+            return not alive(child)
 
         wait_for(reaped, log)
         (tmp_path / "user_app.py").write_text(SOURCE)
@@ -680,13 +684,29 @@ def test_watch_latency_closed_notification_clients_release_handlers(tmp_path: Pa
             port = server.sockets[0].getsockname()[1]
             baseline = asyncio.all_tasks()
 
+            def kinds(tasks: set[asyncio.Task[object]]) -> Counter[str]:
+                return Counter(
+                    str(getattr(task.get_coro(), "__qualname__", type(task.get_coro()).__name__))
+                    for task in tasks
+                )
+
+            # Proactor replaces its pending accept task after each connection.
+            # Listener turnover is valid; extra coroutine counts expose leaks.
+            baseline_kinds = kinds(baseline)
+
             for _ in range(10):
                 async with connect(f"ws://127.0.0.1:{port}") as client:
                     assert json.loads(await client.recv())["generation"] == 0
 
-                async with asyncio.timeout(2):
-                    while handlers or asyncio.all_tasks() - baseline:
-                        await asyncio.sleep(0.001)
+                try:
+                    async with asyncio.timeout(2):
+                        while handlers or kinds(asyncio.all_tasks()) - baseline_kinds:
+                            await asyncio.sleep(0.001)
+                except TimeoutError:
+                    pytest.fail(
+                        "closed notification client retained tasks: "
+                        + repr(handlers | (asyncio.all_tasks() - baseline))
+                    )
 
             assert not supervisor.changed.is_set()
             assert supervisor.generation == 0
@@ -987,3 +1007,85 @@ def test_installed_serve_injected_client_bundle_parses(tmp_path: Path) -> None:
             [node, "--check", str(bundle)], capture_output=True, text=True, timeout=60, check=False
         )
         assert result.returncode == 0, result.stderr
+
+
+def test_development_polling_stops_before_reload_and_on_pagehide() -> None:
+    # Exercise the injected script itself, rather than a copied implementation.
+    from pysx.development.development import _CLIENT  # pyright: ignore[reportPrivateUsage]
+
+    node = shutil.which("node")
+
+    if node is None:
+        pytest.skip("node is unavailable")
+    script = r"""
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const source = readFileSync(0, 'utf8');
+const tick = () => new Promise(resolve => setImmediate(resolve));
+function boot(pending = false) {
+  const state = {requests: 0, reloads: 0, timers: new Map(), events: {}};
+  let next = 0;
+  class Socket {
+    constructor() { state.socket = this; this.events = {}; }
+    addEventListener(name, callback) { this.events[name] = callback; }
+    close() { this.events.close?.(); }
+  }
+  vm.runInNewContext(source, {
+    URL, AbortController, WebSocket: Socket,
+    CustomEvent: class {}, window: {dispatchEvent() {}},
+    document: {currentScript: {src: 'http://localhost/client.js?pysx-dev=1&pysx-dev-instance=same'},
+      getElementById() { return null; }},
+    location: {href: 'http://localhost/', reload() { state.reloads++; }},
+    addEventListener(name, callback) { state.events[name] = callback; },
+    setTimeout(callback) { const id = ++next; state.timers.set(id, callback); return id; },
+    clearTimeout(id) { state.timers.delete(id); },
+    fetch(_url, options) {
+      state.requests++; state.signal = options.signal;
+      if (!pending) return Promise.resolve({ok: false});
+      return new Promise((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    },
+  });
+  return state;
+}
+const reloading = boot();
+const update = generation => reloading.socket.events.message({data: JSON.stringify({
+  generation, fresh_generation: generation, instance: 'same', error: null,
+})});
+update(2);
+reloading.socket.events.close();
+await tick();
+assert.equal(reloading.requests, 0, 'a close during reload must not start an old-document fetch');
+update(3);
+assert.equal(reloading.reloads, 1, 'a stopped document ignores later notifications');
+
+const queued = boot();
+queued.socket.events.close();
+await tick();
+const callback = [...queued.timers.values()][0];
+assert(callback, 'the live poll must schedule its next retry');
+queued.events.pagehide();
+assert.equal(queued.timers.size, 0, 'pagehide clears the retry timer');
+callback(); // A callback already dispatched before cancellation still has to be harmless.
+await tick();
+assert.equal(queued.requests, 1, 'a stopped queued callback must not fetch');
+
+const active = boot(true);
+active.socket.events.close();
+active.events.pagehide();
+assert(active.signal?.aborted, 'pagehide aborts an in-flight request');
+await tick();
+assert.equal(active.timers.size, 0, 'an aborted request must not schedule a retry');
+console.log('DEVELOPMENT POLL LIFECYCLE PASSED: 3 cases');
+"""
+    result = subprocess.run(
+        [node, "--input-type=module", "-e", script],
+        input=_CLIENT.decode(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

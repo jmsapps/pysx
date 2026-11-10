@@ -153,6 +153,7 @@ class Session:
         self.generation = 0
         self.epoch = 0
         self.snapshot: Snapshot | None = None
+        self.synchronized: Snapshot | None = None
         self.backend: TypeBackend | None = None
         self.sent: dict[str, int] = {}
         self.typed: dict[str, list[types.Diagnostic]] = {}
@@ -248,6 +249,17 @@ class Session:
 
     def accept(self, params: types.PublishDiagnosticsParams) -> None:
         if self.closed or self.snapshot is None or self.snapshot.stamp != self.stamp:
+            # The other silent exit on this path: a diagnostic that arrives against a
+            # superseded snapshot is correctly ignored, but so far indistinguishably
+            # from one that never arrived.
+            LOG.warning(
+                "Backend diagnostics ignored: closed=%s snapshot=%s stamp=%s current=%s",
+                self.closed,
+                self.snapshot is not None,
+                None if self.snapshot is None else self.snapshot.stamp,
+                self.stamp,
+            )
+
             return
 
         projected = path_for_uri(params.uri)
@@ -261,10 +273,39 @@ class Session:
         )
 
         if item is None:
+            # Dropping this silently makes a backend whose diagnostics never match
+            # a known projection indistinguishable from one that published nothing.
+            LOG.warning(
+                "Backend diagnostics for an unknown projection: %s (projected root %s)",
+                projected,
+                self.index.projected,
+            )
+
             return
         self.republished.add(item.relative)
 
-        if params.version is None or self.sent.get(params.uri) != params.version:
+        # Backend URI spelling may differ (notably drive case/escaping on Windows).
+        # The projection has already been matched by filesystem identity above.
+        uri = (self.index.projected / item.relative).as_uri()
+
+        if os.environ.get("PYSX_LSP_TRACE_PUBLICATIONS") == "1":
+            LOG.warning(
+                "Publication trace: generation=%s file=%s received=%s sent=%s changed=%s",
+                self.generation,
+                item.relative,
+                params.version,
+                self.sent.get(uri),
+                self.changed,
+            )
+
+        if params.version is None or self.sent.get(uri) != params.version:
+            LOG.warning(
+                "Backend diagnostics version ignored: uri=%s received=%s expected=%s",
+                params.uri,
+                params.version,
+                self.sent.get(uri),
+            )
+
             return
         mapped: list[types.Diagnostic] = []
 
@@ -339,7 +380,7 @@ class Session:
             try:
                 generation = self.generation
                 buffers = dict(self.buffers)
-                baseline = self.snapshot
+                baseline = self.synchronized
                 remaining = await asyncio.to_thread(self.index.files, buffers)
                 all_files = set(remaining)
                 collected: dict[str, SourceFile] = {}
@@ -446,7 +487,7 @@ class Session:
                     else types.FileChangeType.Created
                 )
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(item.text, encoding="utf-8")
+                target.write_text(item.text, encoding="utf-8", newline="")
                 disk_events.append(types.FileEvent(target.as_uri(), kind))
 
         if complete and baseline is not None:
@@ -459,6 +500,21 @@ class Session:
                         types.FileEvent(target.as_uri(), types.FileChangeType.Deleted)
                     )
         config_changed = self.index.write_config()
+        LOG.warning(
+            "Type projection snapshot: generation=%s complete=%s root=%s files=%s buffers=%s",
+            generation,
+            complete,
+            self.index.projected,
+            [
+                (
+                    item.filename,
+                    item.relative,
+                    (self.index.projected / item.relative).is_file(),
+                )
+                for item in snapshot.files
+            ],
+            list(self.buffers),
+        )
         backend = await self._backend(reconfigure=config_changed)
 
         if generation != self.generation:
@@ -478,6 +534,13 @@ class Session:
             if item.filename not in self.buffers:
                 continue
             active.add(uri)
+            LOG.warning(
+                "Type projection document: uri=%s version=%s previous=%s affected=%s",
+                uri,
+                stamp.generation,
+                self.sent.get(uri),
+                item.filename in affected,
+            )
 
             if uri not in self.sent:
                 backend.client.text_document_did_open(
@@ -507,6 +570,29 @@ class Session:
         if disk_events:
             backend.client.workspace_did_change_watched_files(
                 types.DidChangeWatchedFilesParams(disk_events)
+            )
+
+        if complete:
+            self.synchronized = self.snapshot
+        else:
+            # Foreground snapshots omit unrelated files. Retain their provenance
+            # if another edit interrupts the background sweep before completion.
+            materialized = (
+                {item.filename: item for item in self.synchronized.files}
+                if self.synchronized is not None
+                else {}
+            )
+            materialized.update((item.filename, item) for item in self.snapshot.files)
+            self.synchronized = replace(
+                self.snapshot,
+                files=tuple(materialized.values()),
+                # A partial sweep cannot certify the new configuration for the
+                # retained files. Keep invalidation pending until a full sweep.
+                configuration=(
+                    self.synchronized.configuration
+                    if self.synchronized is not None
+                    else self.snapshot.configuration
+                ),
             )
         self.error = None
         self.available.set()
@@ -562,6 +648,7 @@ class Session:
         self.buffers.clear()
         self.uris.clear()
         self.snapshot = None
+        self.synchronized = None
         self.typed.clear()
         self.sent.clear()
 

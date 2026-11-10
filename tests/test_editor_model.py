@@ -11,6 +11,31 @@ from pysx.tooling.editor.model import workspace_model
 from pysx.tooling.editor.types import diagnostics
 
 
+@pytest.mark.parametrize("selected", [False, True])
+def test_model_equivalent_buffer_paths_preserve_unsaved_source_and_version(
+    tmp_path: Path, selected: bool
+) -> None:
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    filename = tmp_path / "view.py"
+    filename.write_text("from pysx import pysx\nview = pysx(t'div: \"saved\"')\n")
+    alias = str(nested / ".." / filename.name)
+    source = "from pysx import pysx\nview = pysx(t'Pge: \"unsaved\"')\n"
+    request: Request = {
+        "root": str(tmp_path),
+        "revision": "_pysx_revision_buffers",
+        "buffers": {alias: {"source": source, "version": 17}},
+    }
+
+    if selected:
+        request["selected"] = [alias]
+    models = workspace_model(request)
+    assert len(models) == 1
+    assert models[0]["source"] == source
+    assert models[0]["version"] == 17
+    assert any("unknown component 'Pge'" in item["message"] for item in models[0]["diagnostics"])
+
+
 def test_model_cache_invalidates_nested_sdk_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

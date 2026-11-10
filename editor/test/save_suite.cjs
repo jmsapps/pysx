@@ -1,23 +1,28 @@
 const assert = require("node:assert/strict");
+const SAVE_BUDGET = Number(process.env.PYSX_EDITOR_SAVE_BUDGET ?? 1);
+const VISIBLE_BUDGET = Number(process.env.PYSX_EDITOR_VISIBLE_BUDGET ?? 1.5);
 const fs = require("node:fs");
 const path = require("node:path");
-const {spawn} = require("node:child_process");
 const {createServer} = require("node:net");
 const {once} = require("node:events");
 const {createHash} = require("node:crypto");
 const vscode = require("vscode");
 
 async function until(predicate, label, timeout = 60000) {
-  const deadline = Date.now() + timeout;
+  const started = Date.now();
+  const deadline = started + timeout;
+  let polls = 0;
   while (Date.now() < deadline) {
+    polls += 1;
     const value = await predicate();
     if (value) return value;
     await new Promise(resolve => setTimeout(resolve, 20));
   }
-  throw new Error(`timeout waiting for ${label}`);
+  throw new Error(`timeout waiting for ${label} after ${((Date.now() - started) / 1000).toFixed(3)}s (budget ${timeout}ms), ${polls} polls`);
 }
 
 exports.run = async function () {
+  const {spawnCli, signalCli} = await import("../../tests/cli_process.mjs");
   const checkout = process.env.PYSX_EDITOR_CHECKOUT;
   const python = process.env.PYSX_EDITOR_PYTHON;
   const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
@@ -58,8 +63,9 @@ exports.run = async function () {
   const port = probe.address().port;
   await new Promise(resolve => probe.close(resolve));
   const launcher = path.join(path.dirname(python), process.platform === "win32" ? "pysx.exe" : "pysx");
-  const child = spawn(launcher, ["--app", "examples.counter:app", "--watch", "--port", String(port)], {
-    cwd: root, env: {...process.env, PYTHONPATH: checkout}, stdio: ["ignore", "pipe", "pipe"],
+  const child = spawnCli(checkout, ["--app", "examples.counter:app", "--watch", "--port", String(port)], {
+    cwd: root, detached: process.platform !== "win32",
+    env: {...process.env, PYTHONPATH: checkout}, stdio: ["ignore", "pipe", "pipe"],
   });
   const exited = once(child, "exit");
   let output = "";
@@ -150,8 +156,8 @@ exports.run = async function () {
           samples.push(sample);
           console.log(`PYSX EDITOR SAVE: ${JSON.stringify(sample)}`);
           if (mode !== "autosave-delay") assert.ok(sample.import_requests > 0, `${mode} must exercise the resident import action`);
-          assert.ok(sample.save_seconds < 1, `${mode} save stalled: ${JSON.stringify(sample)}`);
-          assert.ok(sample.visible_seconds < 1.5, `${mode} update stalled: ${JSON.stringify(sample)}`);
+          assert.ok(sample.save_seconds < SAVE_BUDGET, `${mode} save stalled (budget ${SAVE_BUDGET}s): ${JSON.stringify(sample)}`);
+          assert.ok(sample.visible_seconds < VISIBLE_BUDGET, `${mode} update stalled (budget ${VISIBLE_BUDGET}s): ${JSON.stringify(sample)}`);
         } finally { changed.dispose(); }
         // Let the page's restored signal differ from the next initializer.
         if (edit === "title" && mode === "manual") {
@@ -168,7 +174,7 @@ exports.run = async function () {
   } finally {
     await files.update("autoSave", "off", vscode.ConfigurationTarget.Workspace);
     if (browser) await browser.close();
-    child.kill("SIGINT");
+    signalCli(child, "SIGINT");
     const [code] = await exited;
     assert.equal(code, 0, output);
   }

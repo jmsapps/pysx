@@ -25,6 +25,10 @@ def routed_source(source: str, *, volatile: bool) -> str:
     source = (
         "from pysx import Route, Router\nfrom pysx.reactive.reactive import untracked\n" + source
     )
+    source = source.replace(
+        'store=SQLiteOwnershipStore(Path(".state.sqlite"))',
+        'store=SQLiteOwnershipStore(Path(".state.sqlite"), wal=True)',
+    )
 
     if volatile:
         return source.replace("def app():", "def page():") + (

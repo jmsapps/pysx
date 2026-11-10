@@ -5,11 +5,11 @@ from __future__ import annotations
 import ast
 import asyncio
 import json
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from acceptance_support import alive
 from dev_measurements import WithoutCaptureHook, WithoutTraceGuards, count_html
 from dev_workload import (
     COMPONENTS,
@@ -57,7 +57,7 @@ def test_inspector_tracing_excludes_other_nested_sdk_frames() -> None:
         assert trace.events
         assert all(event["source"] is not None for event in trace.events)
         assert all(
-            event["source"]["file"] == "tests/test_dev_diagnostics.py"
+            Path(event["source"]["file"]) == Path("tests/test_dev_diagnostics.py")
             for event in trace.events
             if event["source"] is not None
         )
@@ -349,8 +349,7 @@ def test_inspector_tracing_analysis_is_coalesced_and_reaps_children(
         await asyncio.gather(supervisor.analysis_task, return_exceptions=True)
         assert worker.process.returncode is not None
 
-        with pytest.raises(ProcessLookupError):
-            os.kill(worker.process.pid, 0)
+        assert not alive(worker.process.pid)
 
     asyncio.run(run())
 

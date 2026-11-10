@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
 from contextlib import suppress
 from time import monotonic
 from typing import TYPE_CHECKING, Protocol, cast
@@ -225,8 +227,20 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
     if resuming or recovering:
         try:
             authorize("resume", resume_target)
+
+            if os.environ.get("PYSX_TRACE_RESUME") == "1":
+                logging.getLogger(__name__).warning("Resume waiting trace: awaiting hello")
+
+            try:
+                raw = await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout)
+            except TimeoutError:
+                if os.environ.get("PYSX_TRACE_RESUME") == "1":
+                    logging.getLogger(__name__).warning("Resume refusal trace: hello TimeoutError")
+                await connection.close(1013, "resume hello timeout")
+
+                return
             message = parse_message(
-                await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout),
+                raw,
                 limit=runtime.limits.max_frame_bytes,
                 version=version,
             )
@@ -274,7 +288,11 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
             await connection.close(1008, "access denied")
 
             return
-        except PayloadError, ValueError, KeyError, TimeoutError:
+        except (PayloadError, ValueError, KeyError, TimeoutError) as error:
+            if os.environ.get("PYSX_TRACE_RESUME") == "1":
+                logging.getLogger(__name__).warning(
+                    "Resume refusal trace: %s", type(error).__name__
+                )
             await connection.close(4004, "resume unavailable")
 
             return
@@ -916,9 +934,23 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
                 or type(failure).__name__.startswith("ConnectionClosed")
             )
             and not isinstance(failure, TransportError)
-            and getattr(getattr(failure, "rcvd", None), "code", 1000) in (1000, 1001, 1006)
-            and getattr(connection.raw, "close_code", 1000) in (None, 1000, 1001, 1006)
+            and getattr(getattr(failure, "rcvd", None), "code", 1000) in (1000, 1001, 1005, 1006)
+            and getattr(connection.raw, "close_code", 1000) in (None, 1000, 1001, 1005, 1006)
         )
+
+        if os.environ.get("PYSX_TRACE_RESUME") == "1":
+            logging.getLogger(__name__).warning(
+                "Resume retention trace: retained=%s failure=%s peer=%s raw=%s "
+                "closing=%s failed=%s pressured=%s unrepaired=%s",
+                retain,
+                type(failure).__name__ if failure is not None else "none",
+                getattr(getattr(failure, "rcvd", None), "code", None),
+                getattr(connection.raw, "close_code", None),
+                connection.closing,
+                connection.failed,
+                session.pressured,
+                session.rendered.unrepaired,
+            )
 
         if retain:
             runtime.detach(session)

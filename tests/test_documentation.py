@@ -248,13 +248,13 @@ def test_corpus_executable_installed_browser_interactions(
                     timeout=90,
                     check=False,
                 )
-                assert result.returncode == 0, (
-                    name,
-                    engine,
-                    result.stdout,
-                    result.stderr,
-                    log.read_text(),
-                )
+
+                if result.returncode != 0:
+                    pytest.fail(
+                        f"Installed browser interaction failed: {name}, {engine}\n"
+                        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}\n"
+                        f"server:\n{log.read_text()}"
+                    )
                 assert "PASSED" in result.stdout
                 assert "  ok  " in result.stdout
         finally:

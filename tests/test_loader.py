@@ -3,6 +3,7 @@
 import importlib
 import json
 import os
+import py_compile
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,46 @@ from pysx.tooling.build import build_tree
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+
+
+def _run(command: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=False)
+
+    if result.returncode != 0:
+        raise AssertionError(
+            f"{' '.join(command)} exited {result.returncode}\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+
+    return result
+
+
+def test_source_alias_dependencies_ignore_stale_timestamp_bytecode(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    transit = tmp_path / "transit"
+    transit.mkdir()
+    dependency = root / "component.py"
+    dependency.write_text('VALUE = "cycle1"\n')
+    stamp = 1_700_000_000_100_000_000
+    os.utime(dependency, ns=(stamp, stamp))
+    py_compile.compile(str(dependency), doraise=True)
+    dependency.write_text('VALUE = "cycle2"\n')
+    os.utime(dependency, ns=(stamp + 100_000_000, stamp + 100_000_000))
+    (root / "user_app.py").write_text("from component import VALUE\n")
+    alias = transit / ".." / root.name
+    _run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, sys.argv[1]); "
+            "from pysx.compiler.loader import SourceLoader, import_app; "
+            "app = import_app('user_app'); "
+            "assert app.VALUE == 'cycle2', app.VALUE; "
+            "assert isinstance(sys.modules['component'].__loader__, SourceLoader)",
+            str(alias),
+        ]
+    )
 
 
 @pytest.fixture
@@ -151,8 +192,8 @@ def test_late_install_is_reported(app_root: Path) -> None:
         install_loader(packages=("author_app",))
 
 
-def test_explicit_installed_app_root_keeps_nested_exclusions() -> None:
-    root = Path("/consumer/.venv/lib/python3.14/site-packages/installed_course")
+def test_explicit_installed_app_root_keeps_nested_exclusions(tmp_path: Path) -> None:
+    root = (tmp_path / ".venv/lib/python3.14/site-packages/installed_course").resolve()
     finder = install_loader(packages=("installed_course",), roots=(root,))
     assert finder.covers("installed_course.pages", root / "pages.py")
     assert not finder.covers("installed_course.vendor.pages", root / "vendor/pages.py")
@@ -304,30 +345,25 @@ def app():
     shutil.rmtree(app_root)
     project = Path(__file__).resolve().parents[1]
     artifacts = tmp_path / "wheels"
-    subprocess.run(
+    _run(
         ["uv", "build", "--offline", "--wheel", "--out-dir", str(artifacts)],
         cwd=project,
-        check=True,
-        capture_output=True,
-        text=True,
     )
     wheel = next(artifacts.glob("*.whl"))
     installed = tmp_path / "installed"
-    subprocess.run(
+    _run(
         [
             "uv",
             "pip",
             "install",
             "--offline",
+            "--no-deps",
             "--python",
             sys.executable,
             "--target",
             str(installed),
             str(wheel),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
+        ]
     )
     script = """from pathlib import Path
 import sys

@@ -8,10 +8,8 @@ import gc
 import hashlib
 import http.client
 import json
-import os
 import platform
 import re
-import secrets
 import subprocess
 import sys
 import tempfile
@@ -33,8 +31,8 @@ from pysx import Application, HostConfig
 from pysx.components.checkpoints import MAX_NODES, MAX_SLOTS, Captured, Checkpoints, Slot, sites
 from pysx.hosting.browser_recovery import BrowserCheckpoint
 from pysx.hosting.hosting import request_from_headers
-from pysx.hosting.recovery_keys import encode_ring
-from pysx.runtime.capsule import MAX_CAPSULE, MAX_PLAINTEXT, CapsuleError, KeyRing, RootKey
+from pysx.hosting.recovery_keys import load_keys
+from pysx.runtime.capsule import MAX_CAPSULE, MAX_PLAINTEXT, CapsuleError
 
 if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
@@ -45,10 +43,14 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def private_keys(directory: Path) -> None:
-    directory.mkdir(mode=0o700)
-    descriptor = os.open(directory / "recovery.keys", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "wb") as stream:
-        stream.write(encode_ring(KeyRing(RootKey(secrets.token_bytes(8), secrets.token_bytes(32)))))
+    """Provision through the real storage path.
+
+    Hand-writing the ring duplicated the POSIX on-disk format, which Windows does
+    not share: there the ring is sealed with DPAPI, so a plaintext file fails to
+    unseal at host startup.
+    """
+
+    load_keys(directory, provision=True)
 
 
 def recovery_bytes(session: Session) -> int:

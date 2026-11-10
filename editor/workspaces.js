@@ -4,6 +4,7 @@ const path = require("node:path");
 
 const DETACHED = "";
 const COALESCE = 150;
+const trace = require("./trace.js");
 
 function canonical(fsPath) {
   try {
@@ -55,7 +56,14 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
   function bump(key) {
     const next = (generations.get(key) ?? 0) + 1;
     generations.set(key, next);
+    trace.record("workspace", "generation", {resource: trace.resource(key), generation: next});
     return next;
+  }
+  function obsolete(key, requested, stage) {
+    const stale = disposed || requested !== generations.get(key);
+    if (stale) trace.record("workspace", "superseded", {resource: trace.resource(key),
+      generation: requested, currentGeneration: generations.get(key), disposed, stage});
+    return stale;
   }
   function keyFor(uri) {
     const owner = ownerOf(uri);
@@ -64,6 +72,12 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
   function owns(key) {
     return (document) => !disposed && document?.uri?.scheme === "file" &&
       keyFor(document.uri) === key;
+  }
+  function scopes() {
+    // Selection changes belong to folders/documents, including while a client stops.
+    const found = new Map(folders().map(({root, folder}) => [root, folder]));
+    if (generations.has(DETACHED)) found.set(DETACHED, undefined);
+    return found;
   }
   function enqueue(operation) {
     const result = tail.then(operation);
@@ -74,22 +88,28 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     let pending = probes.get(python);
 
     if (!pending) {
-      pending = (async () => ({
-        server: await probeEnvironment(python, ["-c", "import pysx.tooling.lsp.server; print('ok')"]),
-        tooling: await probeEnvironment(python, ["-m", "pysx.tooling.tools"]),
-      }))();
+      pending = (async () => {
+        const server = await probeEnvironment(
+          python, ["-c", "import pysx.tooling.lsp.server; print('ok')"]);
+        // Captured here because the next probe overwrites it.
+        const failure = probeEnvironment.lastFailure ?? null;
+
+        return { server, failure, tooling: await probeEnvironment(python, ["-m", "pysx.tooling.tools"]) };
+      })();
       probes.set(python, pending);
     }
 
     return pending;
   }
   async function install(key, folder, requested) {
+    trace.record("workspace", "install", {resource: trace.resource(key), generation: requested});
     const python = await resolveInterpreter(folder?.uri);
-    if (disposed || requested !== generations.get(key)) return;
+    if (obsolete(key, requested, "interpreter")) return;
     const existing = entries.get(key);
 
     if (!python || !fs.existsSync(python)) {
       await remove(key);
+      if (obsolete(key, requested, "missing-interpreter-disposal")) return;
       entries.set(key, { key, folder, python: null, lifecycle: null, ruff: null,
         error: "pysx: no Python 3.14+ interpreter is selected for " +
           `${folder ? folder.name : "files outside a workspace"}. Select one, then retry.` });
@@ -99,14 +119,16 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
 
     if (existing?.python === python && existing.lifecycle) return;
     const probed = await environment(python);
-    if (disposed || requested !== generations.get(key)) return;
+    if (obsolete(key, requested, "environment-probe")) return;
 
     if (probed.server !== "ok") {
       await remove(key);
+      if (obsolete(key, requested, "missing-server-disposal")) return;
       entries.set(key, { key, folder, python, lifecycle: null, ruff: null,
         error: "pysx: the selected environment does not have the language server extra. " +
           "Install `pysx[lsp]` into it, then select it again. Diagnostics remain available " +
-          "through `python -m pysx.tooling.check`." });
+          "through `python -m pysx.tooling.check`." +
+          (probed.failure ? `\npysx: the probe reported: ${probed.failure}` : "") });
       output.appendLine(entries.get(key).error);
       return;
     }
@@ -115,23 +137,30 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     if (resolved?.error) output.appendLine(resolved.error);
     else if (resolved) output.appendLine(`pysx: using Ruff ${resolved.version} at ${resolved.path}`);
     await remove(key);
+    if (obsolete(key, requested, "replacement-disposal")) return;
     const lifecycle = createClient({
       python,
       output,
       workspaceFolder: folder,
       owns: owns(key),
       watched: folder,
+      traceContext: {resource: trace.resource(key), generation: requested},
     });
     entries.set(key, { key, folder, python, lifecycle,
       ruff: resolved?.error ? null : resolved, error: null });
-    await lifecycle.start();
+    await trace.observe("workspace", "client-start", {
+      resource: trace.resource(key), generation: requested,
+    }, () => lifecycle.start());
   }
   async function remove(key, keep = false) {
     const existing = entries.get(key);
     if (!keep) entries.delete(key);
-    if (existing?.lifecycle) await existing.lifecycle.dispose();
+    if (existing?.lifecycle) await trace.observe("workspace", "client-dispose", {
+      resource: trace.resource(key), generation: generations.get(key), keep,
+    }, () => existing.lifecycle.dispose());
   }
-  function schedule(key, folder) {
+  function schedule(key, folder, reason = "refresh") {
+    trace.record("workspace", "selection", {resource: trace.resource(key), reason});
     const requested = bump(key);
     clearTimeout(timers.get(key));
     timers.set(key, setTimeout(() => {
@@ -166,10 +195,10 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
   const subscriptions = [
     vscode.workspace.onDidChangeWorkspaceFolders(() => { void reconcile(); }),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      for (const [key, entry] of entries) {
-        if (event.affectsConfiguration("pysx.pythonPath", entry.folder?.uri) ||
-            event.affectsConfiguration("python.defaultInterpreterPath", entry.folder?.uri)) {
-          schedule(key, entry.folder);
+      for (const [key, folder] of scopes()) {
+        if (event.affectsConfiguration("pysx.pythonPath", folder?.uri) ||
+            event.affectsConfiguration("python.defaultInterpreterPath", folder?.uri)) {
+          schedule(key, folder, "configuration");
         }
       }
     }),
@@ -185,8 +214,8 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     subscriptions.push(changed(({ resource }) => {
       const root = resource ? canonical(resource.uri.fsPath) : null;
 
-      for (const [key, entry] of entries) {
-        if (!root || key === root) schedule(key, entry.folder);
+      for (const [key, folder] of scopes()) {
+        if (!root || key === root) schedule(key, folder, "environment");
       }
     }));
   }
@@ -196,6 +225,7 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
       await subscribeEnvironments();
       await reconcile();
       for (const document of vscode.workspace.textDocuments) detach(document);
+      await settled();
     },
     owner(uri) { return entries.get(keyFor(uri)) ?? null; },
     primary() {
@@ -252,7 +282,13 @@ exports.createRouter = function ({ output, createClient, resolveInterpreter, pro
     },
   };
 
-  function settled() {
-    return new Promise((resolve) => setTimeout(() => resolve(enqueue(() => {})), COALESCE + 20));
+  async function settled() {
+    while (!disposed) {
+      await new Promise(resolve => setTimeout(resolve, COALESCE + 20));
+      const pending = tail;
+      await pending;
+      if (timers.size === 0 && pending === tail) return;
+    }
+    await tail;
   }
 };

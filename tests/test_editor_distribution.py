@@ -10,28 +10,102 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
-from typing import Any, cast
+from tempfile import TemporaryDirectory
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
 from pysx.tooling.tools import RUFF_REQUIREMENT, ToolingError, resolve_ruff
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR = ROOT / "editor"
 
 
+def test_editor_worker_matches_python_resolved_paths() -> None:
+    # Windows TEMP can use an 8.3 directory name. Preserve that spelling until
+    # both runtimes resolve it, instead of pre-normalizing it with tmp_path.
+    with TemporaryDirectory(prefix="pysx-path-identity-") as temporary:
+        filename = Path(temporary) / "view.py"
+        filename.write_text("value = 1\n", encoding="utf-8")
+        script = """
+const fs = require('node:fs');
+const vm = require('node:vm');
+const result = {};
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8') +
+  '\\nexports.resolved = canonical(process.argv[2]);', {
+  exports: result,
+  process,
+  require: (name) => name === 'vscode' ? {} : require(name),
+});
+console.log(JSON.stringify({worker: result.resolved,
+  legacy: fs.realpathSync(process.argv[2]), native: fs.realpathSync.native(process.argv[2])}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script, str(EDITOR / "authoring.js"), str(filename)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            timeout=10,
+        )
+        identities = json.loads(result.stdout)
+        assert identities["worker"] == str(filename.resolve()), identities
+
+
+class RuffStub:
+    """Keep discovery/stat real; simulate execution only for registered fixtures."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.tools: dict[Path, tuple[str, int, Path | None]] = {}
+        self.real_run = cast("Callable[..., subprocess.CompletedProcess[str]]", subprocess.run)
+        monkeypatch.setattr(subprocess, "run", self.run)
+
+    def __call__(
+        self, path: Path, version: str = "0.1.0", *, code: int = 0, probes: Path | None = None
+    ) -> Path:
+        target = path.with_suffix(".exe") if sys.platform == "win32" else path
+        target.write_text(version, encoding="utf-8")
+        target.chmod(target.stat().st_mode | stat.S_IEXEC)
+        self.tools[target] = (version, code, probes)
+
+        return target
+
+    def run(self, args: Sequence[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        fixture = self.tools.get(Path(args[0]))
+
+        if fixture is None:
+            return self.real_run(args, **kwargs)
+        version, code, probes = fixture
+
+        if probes is not None:
+            with probes.open("a", encoding="utf-8") as stream:
+                stream.write("probe\n")
+        result = subprocess.CompletedProcess(args, code, f"ruff {version}\n", "")
+
+        if kwargs.get("check"):
+            result.check_returncode()
+
+        return result
+
+
+@pytest.fixture
+def ruff_stub(monkeypatch: pytest.MonkeyPatch) -> RuffStub:
+    return RuffStub(monkeypatch)
+
+
 @pytest.mark.parametrize("consumer", ["cli", "worker"])
 def test_lint_qualification_rejects_selected_environment_decoy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, consumer: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, consumer: str, ruff_stub: RuffStub
 ) -> None:
     from pysx.tooling.editor.model import workspace_model
     from pysx.tooling.quality import main
 
     environment = tmp_path / "bin"
     environment.mkdir()
-    fake = environment / "ruff"
-    fake.write_text("#!/bin/sh\necho 'ruff 0.1.0'\n")
-    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    ruff_stub(environment / "ruff")
     root = tmp_path / "project"
     root.mkdir()
     (root / "view.py").write_text("value = undefined_name\n")
@@ -56,13 +130,12 @@ def test_lint_qualification_ignores_path_decoy_and_preserves_diagnostics(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     consumer: str,
+    ruff_stub: RuffStub,
 ) -> None:
     from pysx.tooling.editor.model import workspace_model
     from pysx.tooling.quality import main
 
-    decoy = tmp_path / "ruff"
-    decoy.write_text("#!/bin/sh\nexit 99\n")
-    decoy.chmod(decoy.stat().st_mode | stat.S_IEXEC)
+    ruff_stub(tmp_path / "ruff", code=99)
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
     root = tmp_path / "project"
     root.mkdir()
@@ -80,7 +153,9 @@ def test_lint_qualification_ignores_path_decoy_and_preserves_diagnostics(
         assert "undefined_name" in str(models)
 
 
-def test_lint_qualification_follows_the_requested_interpreter(tmp_path: Path) -> None:
+def test_lint_qualification_follows_the_requested_interpreter(
+    tmp_path: Path, ruff_stub: RuffStub
+) -> None:
     """Readiness and the type backend use the client's interpreter; lint must agree."""
     from pysx.tooling.editor.model import workspace_model
     from pysx.tooling.lsp.backend import Stamp
@@ -90,9 +165,7 @@ def test_lint_qualification_follows_the_requested_interpreter(tmp_path: Path) ->
     environment.mkdir()
     decoy = environment / "python"
     decoy.touch()
-    fake = environment / "ruff"
-    fake.write_text("#!/bin/sh\necho 'ruff 0.1.0'\n")
-    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    ruff_stub(environment / "ruff")
     root = tmp_path / "project"
     root.mkdir()
     (root / "view.py").write_text("value = undefined_name\n")
@@ -115,7 +188,9 @@ def test_lint_qualification_follows_the_requested_interpreter(tmp_path: Path) ->
     assert snapshot.file(str(root / "view.py")) is not None
 
 
-def test_lint_qualification_probes_a_binary_once_until_it_changes(tmp_path: Path) -> None:
+def test_lint_qualification_probes_a_binary_once_until_it_changes(
+    tmp_path: Path, ruff_stub: RuffStub
+) -> None:
     """Linting resolves the tool per source, so a probe per call would dominate the gate."""
     probes = tmp_path / "probes"
     environment = tmp_path / "bin"
@@ -125,8 +200,7 @@ def test_lint_qualification_probes_a_binary_once_until_it_changes(tmp_path: Path
     ruff = environment / "ruff"
 
     def install(version: str) -> None:
-        ruff.write_text(f"#!/bin/sh\necho probe >> {probes}\necho 'ruff {version}'\n")
-        ruff.chmod(ruff.stat().st_mode | stat.S_IEXEC)
+        ruff_stub(ruff, version, probes=probes)
 
     install(RUFF_REQUIREMENT)
     assert resolve_ruff(interpreter).version == RUFF_REQUIREMENT
@@ -139,7 +213,9 @@ def test_lint_qualification_probes_a_binary_once_until_it_changes(tmp_path: Path
     assert probes.read_text().count("probe") == 2
 
 
-def test_lint_qualification_remembers_no_unusable_environment(tmp_path: Path) -> None:
+def test_lint_qualification_remembers_no_unusable_environment(
+    tmp_path: Path, ruff_stub: RuffStub
+) -> None:
     """A later install must take effect without restarting the resident server."""
     environment = tmp_path / "bin"
     environment.mkdir()
@@ -148,9 +224,7 @@ def test_lint_qualification_remembers_no_unusable_environment(tmp_path: Path) ->
 
     with pytest.raises(ToolingError, match="pysx\\[dev\\]"):
         resolve_ruff(interpreter)
-    ruff = environment / "ruff"
-    ruff.write_text(f"#!/bin/sh\necho 'ruff {RUFF_REQUIREMENT}'\n")
-    ruff.chmod(ruff.stat().st_mode | stat.S_IEXEC)
+    ruff_stub(environment / "ruff", RUFF_REQUIREMENT)
     assert resolve_ruff(interpreter).version == RUFF_REQUIREMENT
 
 
@@ -251,13 +325,13 @@ def test_client_verify_ruff_resolves_from_the_selected_environment() -> None:
 
 
 def test_client_verify_ruff_ignores_a_conflicting_path_installation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ruff_stub: RuffStub
 ) -> None:
-    decoy = tmp_path / "ruff"
-    decoy.write_text("#!/bin/sh\necho 'ruff 0.1.0'\n")
-    decoy.chmod(decoy.stat().st_mode | stat.S_IEXEC)
+    decoy = ruff_stub(tmp_path / "ruff")
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
-    assert shutil.which("ruff") == str(decoy)
+    found = shutil.which("ruff")
+    assert found is not None
+    assert Path(found) == decoy
     assert resolve_ruff().version == RUFF_REQUIREMENT
 
 
@@ -272,10 +346,10 @@ def test_client_verify_ruff_reports_a_missing_installation(tmp_path: Path) -> No
     assert "PATH" in str(error.value)
 
 
-def test_client_verify_ruff_rejects_an_unsupported_version(tmp_path: Path) -> None:
-    fake = tmp_path / "ruff"
-    fake.write_text("#!/bin/sh\necho 'ruff 0.1.0'\n")
-    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+def test_client_verify_ruff_rejects_an_unsupported_version(
+    tmp_path: Path, ruff_stub: RuffStub
+) -> None:
+    ruff_stub(tmp_path / "ruff")
     (tmp_path / "python").touch()
 
     with pytest.raises(ToolingError) as error:

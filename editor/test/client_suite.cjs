@@ -4,14 +4,17 @@ const path = require("node:path");
 const vscode = require("vscode");
 
 async function until(predicate, label, timeout = 60000) {
-  const deadline = Date.now() + timeout;
+  const started = Date.now();
+  const deadline = started + timeout;
+  let polls = 0;
   let last;
   while (Date.now() < deadline) {
+    polls += 1;
     last = await predicate();
     if (last) return last;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`timeout waiting for ${label}`);
+  throw new Error(`timeout waiting for ${label} after ${((Date.now() - started) / 1000).toFixed(3)}s (budget ${timeout}ms), ${polls} polls, last: ${JSON.stringify(last) ?? "undefined"}`);
 }
 
 async function pythonSemantics(document, expected) {
@@ -327,7 +330,13 @@ exports.run = async function () {
     startupOutput.dispose();
   }
 
-  await require(path.join(extension.extensionPath, "extension.js")).deactivate();
+  // Windows module cache keys can retain drive case or 8.3 spellings. Requiring
+  // an alias can instantiate a second dispatcher whose active client is null.
+  const dispatcherPath = fs.realpathSync.native(path.join(extension.extensionPath, "extension.js"));
+  const dispatchers = Object.values(require.cache).filter(module => module?.filename &&
+    fs.existsSync(module.filename) && fs.realpathSync.native(module.filename) === dispatcherPath);
+  assert.equal(dispatchers.length, 1, "one activated dispatcher has this physical path");
+  await dispatchers[0].exports.deactivate();
   assert.equal(api.lifecycle.status().disposed, true, "real exported deactivation is awaited");
   assert.equal(api.lifecycle.status().running, false);
   await until(() => [...ownedPids].every((pid) => !alive(pid)), "deactivation leaves no owned process");

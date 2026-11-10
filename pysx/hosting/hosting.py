@@ -9,6 +9,8 @@ import math
 import mimetypes
 import re
 import secrets
+import signal
+import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from http import HTTPStatus
@@ -139,6 +141,21 @@ class HostConfig:
             self, "base_path", quote(location.path.rstrip("/"), safe="/%:@-._~!$&'()*+,;=")
         )
         object.__setattr__(self, "assets", MappingProxyType(dict(self.assets)))
+
+
+def shutdown_signals() -> tuple[signal.Signals, ...]:
+    """Windows delivers a console Ctrl+C to a child process group as SIGBREAK.
+
+    `Popen.send_signal` there accepts only SIGTERM, CTRL_C_EVENT and CTRL_BREAK_EVENT,
+    so a supervisor asking a pysx host to stop gracefully sends CTRL_BREAK_EVENT and
+    the host receives SIGBREAK. Registering SIGINT alone leaves that on the default
+    handler, which terminates the process instead of draining it.
+    """
+
+    if sys.platform == "win32":
+        return (signal.SIGINT, signal.SIGTERM, signal.SIGBREAK)
+
+    return (signal.SIGINT, signal.SIGTERM)
 
 
 def request_from_headers(

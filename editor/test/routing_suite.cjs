@@ -17,14 +17,17 @@ async function withDeadline(operation, label, timeout = 90000) {
 }
 
 async function until(predicate, label, timeout = 90000) {
-  const deadline = Date.now() + timeout;
+  const started = Date.now();
+  const deadline = started + timeout;
+  let polls = 0;
   let last;
   while (Date.now() < deadline) {
+    polls += 1;
     last = await withDeadline(predicate, label, deadline - Date.now());
     if (last) return last;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  throw new Error(`timeout waiting for ${typeof label === "function" ? label() : label}`);
+  throw new Error(`timeout waiting for ${typeof label === "function" ? label() : label} after ${((Date.now() - started) / 1000).toFixed(3)}s (budget ${timeout}ms), ${polls} polls, last: ${JSON.stringify(last) ?? "undefined"}`);
 }
 
 function alive(pid) {
@@ -33,6 +36,11 @@ function alive(pid) {
     if (error.code === "ESRCH") return false;
     throw error;
   }
+}
+
+function sameInterpreter(actual, expected) {
+  return Boolean(actual && expected) &&
+    fs.realpathSync.native(actual) === fs.realpathSync.native(expected);
 }
 
 const SOURCE = [
@@ -108,9 +116,9 @@ exports.run = async function () {
   progress("wait for all three servers and backends");
   const first = { consumer: await ready(consumer), secondary: await ready(secondary),
     nested: await ready(nested) };
-  assert.equal(first.consumer.interpreter, python);
-  assert.equal(first.secondary.interpreter, alternate, "the folder's own executable is used");
-  assert.equal(first.nested.interpreter, python);
+  assert(sameInterpreter(first.consumer.interpreter, python));
+  assert(sameInterpreter(first.secondary.interpreter, alternate), "the folder's own executable is used");
+  assert(sameInterpreter(first.nested.interpreter, python));
   const pids = new Set(Object.values(first).map((item) => item.processId));
   assert.equal(pids.size, 3, "one distinct server process per folder");
   for (const [name, state] of Object.entries(first)) {
@@ -138,7 +146,7 @@ exports.run = async function () {
   await select(secondary, python);
   const switched = await until(async () => {
     const found = await statusOf(secondary);
-    return found && found.interpreter === python ? found : null;
+    return found && sameInterpreter(found.interpreter, python) ? found : null;
   }, "the changed folder adopts its new executable");
   assert.notEqual(switched.processId, first.secondary.processId);
   await until(() => !alive(first.secondary.processId), "the superseded server exits");
@@ -154,10 +162,17 @@ exports.run = async function () {
     .environments;
   await withDeadline(() => environments.updateActiveEnvironmentPath(alternate, secondary.uri),
     "Python extension environment selection");
+  let selectedStatus;
   const api_selected = await until(async () => {
     const found = await statusOf(secondary);
-    return found && found.interpreter === alternate ? found : null;
-  }, "the API-selected environment is adopted");
+    selectedStatus = found;
+    return found && sameInterpreter(found.interpreter, alternate) ? found : null;
+  }, () => `the API-selected environment is adopted: ${JSON.stringify({
+    expected: alternate,
+    selected: environments.getActiveEnvironmentPath(secondary.uri),
+    status: selectedStatus,
+    workspaces: api.workspaces(),
+  })}`);
   assert.notEqual(api_selected.processId, switched.processId);
 
   // 5. Rapid changes coalesce into the latest choice and one replacement.
@@ -165,10 +180,15 @@ exports.run = async function () {
   await select(secondary, bare);
   await select(secondary, alternate);
   await select(secondary, python);
+  let coalescedStatus;
   const coalesced = await until(async () => {
     const found = await statusOf(secondary);
-    return found && found.interpreter === python ? found : null;
-  }, "the latest of three rapid selections wins");
+    coalescedStatus = found;
+    return found && sameInterpreter(found.interpreter, python) ? found : null;
+  }, () => `the latest of three rapid selections wins: ${JSON.stringify({
+    configured: vscode.workspace.getConfiguration("pysx", secondary.uri).get("pythonPath"),
+    expected: python, status: coalescedStatus, workspaces: api.workspaces(),
+  })}`);
   assert.equal(api.owner(secondary.uri).error, null,
     "a superseded selection never leaves a failed state behind");
   assert.equal(api.owner(secondary.uri).lifecycle.status().starts, 1,
@@ -187,7 +207,7 @@ exports.run = async function () {
     "an unrelated folder stays usable");
   await select(secondary, python);
   const recovered = await ready(secondary);
-  assert.equal(recovered.interpreter, python, "a later selection recovers the folder");
+  assert(sameInterpreter(recovered.interpreter, python), "a later selection recovers the folder");
 
   // 7. The restart command resolves the executable afresh for its folder.
   progress("restart the active folder");
@@ -195,7 +215,7 @@ exports.run = async function () {
   await select(nested, alternate);
   await until(async () => {
     const found = await statusOf(nested);
-    return found && found.interpreter === alternate ? found : null;
+    return found && sameInterpreter(found.interpreter, alternate) ? found : null;
   }, "the nested folder adopts its new executable");
   const beforeRestart = await statusOf(nested);
   await withDeadline(() => vscode.commands.executeCommand("pysx.restartServer"),
@@ -204,7 +224,7 @@ exports.run = async function () {
     const found = await statusOf(nested);
     return found && found.processId !== beforeRestart.processId ? found : null;
   }, "the restart command replaces the active folder's server");
-  assert.equal(restarted.interpreter, alternate, "the restart resolves the selection afresh");
+  assert(sameInterpreter(restarted.interpreter, alternate), "the restart resolves the selection afresh");
   assert.equal((await statusOf(consumer)).processId, first.consumer.processId,
     "the restart leaves other folders alone");
 

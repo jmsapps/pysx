@@ -3,8 +3,11 @@
 import asyncio
 import hashlib
 import json
+import sqlite3
+import subprocess
 import sys
 import time
+from contextlib import closing
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
@@ -55,20 +58,21 @@ async def recover(worker: Worker, previous: Client) -> Client:
 
 
 async def attach_many(workers: list[Worker]) -> list[Client]:
+    """Build the resident population before measuring concurrent owner recovery.
+
+    Initial admission is setup, not a throughput assertion. Bursting twenty
+    synchronous durable constructions can exhaust the client's hello deadline
+    on slow local disks before the owner-death scenario has even started.
+    """
     clients: list[Client] = []
 
-    for offset in range(0, len(workers), 20):
-        results = await asyncio.gather(
-            *(Client.attach(worker) for worker in workers[offset : offset + 20]),
-            return_exceptions=True,
-        )
-        clients.extend(result for result in results if isinstance(result, Client))
-        errors = [result for result in results if isinstance(result, BaseException)]
+    try:
+        for worker in workers:
+            clients.append(await Client.attach(worker))
+    except BaseException:
+        await asyncio.gather(*(client.close() for client in clients))
 
-        if errors:
-            await asyncio.gather(*(client.close() for client in clients))
-
-            raise errors[0]
+        raise
 
     return clients
 
@@ -87,9 +91,52 @@ async def seed_workload(clients: list[Client]) -> None:
         await asyncio.sleep(max(0, began + 1.5 - time.monotonic()))
 
 
-def test_owner_routing_atomic_claim_expiry_renewal_and_stale_writes(tmp_path: Path) -> None:
+def test_owner_routing_workload_snapshots_remain_immutable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PYSX_FIXTURE_STORE", str(tmp_path / "state.db"))
+    monkeypatch.setenv("PYSX_FIXTURE_WORKER", "copy-fixture")
+    script = """
+from copy import deepcopy
+from dataclasses import FrozenInstanceError, replace
+from pysx import Signal, StateCodec
+from tests.recovery_workload_fixture import WorkloadState, encode, decode
+codec = StateCodec(encode, decode)
+for value in (WorkloadState(), codec.loads(codec.dumps(WorkloadState()))):
+    signal = Signal(value)
+    snapshot = deepcopy(signal())
+    assert isinstance(snapshot.rows, tuple) and isinstance(snapshot.order, tuple)
+    assert all(type(row) is str for row in snapshot.rows)
+    assert all(type(index) is int for index in snapshot.order)
+    try:
+        setattr(snapshot, 'count', 99)
+    except FrozenInstanceError:
+        pass
+    else:
+        raise AssertionError('a caller mutated the owned frozen snapshot')
+    signal.set(replace(value, count=1, rows=('edited', *value.rows[1:])))
+    assert snapshot.count == 0 and snapshot.rows[0] == 'Row 0'
+    assert signal().count == 1 and signal().rows[0] == 'edited'
+    assert codec.loads(codec.dumps(signal())) == signal()
+print('IMMUTABLE WORKLOAD SNAPSHOTS PASSED')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    assert "IMMUTABLE WORKLOAD SNAPSHOTS PASSED" in result.stdout
+
+
+@pytest.mark.parametrize("wal", [False, True])
+def test_owner_routing_atomic_claim_expiry_renewal_and_stale_writes(
+    tmp_path: Path, request: pytest.FixtureRequest, wal: bool
+) -> None:
     now = [100.0]
-    backend = SQLiteOwnershipStore(tmp_path / "state.db", clock=lambda: now[0])
+    backend = SQLiteOwnershipStore(tmp_path / "state.db", clock=lambda: now[0], wal=wal)
+    request.addfinalizer(backend.close)
     first_store = LeasedStateStore(backend, "worker-a", 1)
     first = DurableSession(
         view, initial=lambda: 0, codec=CODEC, store=first_store, identity=IDENTITY
@@ -207,7 +254,8 @@ def test_owner_routing_real_process_loss_and_principal_binding(tmp_path: Path) -
         asyncio.run(exercise())
 
 
-def test_owner_routing_real_two_process_reclaim_race(tmp_path: Path) -> None:
+@pytest.mark.parametrize("contended", [False, True])
+def test_owner_routing_real_two_process_reclaim_race(tmp_path: Path, contended: bool) -> None:
     with Workers(tmp_path) as topology:
         async def exercise() -> None:
             original, survivor = topology.workers
@@ -216,11 +264,37 @@ def test_owner_routing_real_two_process_reclaim_race(tmp_path: Path) -> None:
             original.stop(kill=True)
             replacement = topology.start()
             await asyncio.sleep(1.1)
-            attempts = await asyncio.gather(
-                Client.attach(survivor, previous=client),
-                Client.attach(replacement, previous=client),
-                return_exceptions=True,
-            )
+            retry_seen = asyncio.Event()
+
+            async def contend(worker: Worker) -> Client:
+                # Store-unavailable is retryable, not a definitive ownership result.
+                async with asyncio.timeout(5):
+                    while True:
+                        try:
+                            return await Client.attach(worker, previous=client)
+                        except ConnectionClosed as error:
+                            if error.rcvd is None or error.rcvd.code != 1013:
+                                raise
+                            retry_seen.set()
+                            await asyncio.sleep(0.01)
+
+            with closing(sqlite3.connect(topology.store, timeout=0.1)) as blocker:
+                if contended:
+                    blocker.execute("BEGIN EXCLUSIVE")
+                tasks = [asyncio.create_task(contend(worker)) for worker in (survivor, replacement)]
+
+                try:
+                    if contended:
+                        try:
+                            await asyncio.wait_for(retry_seen.wait(), 2)
+                        finally:
+                            blocker.rollback()
+                    attempts = await asyncio.gather(*tasks, return_exceptions=True)
+                finally:
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
             won = [result for result in attempts if isinstance(result, Client)]
             lost = [result for result in attempts if isinstance(result, ConnectionClosed)]
             assert len(won) == 1, attempts
@@ -254,9 +328,29 @@ def test_owner_routing_fifty_sessions_per_worker_survive_owner_death(tmp_path: P
                 await seed_workload(clients)
                 failed.stop(kill=True)
                 began = time.monotonic()
-                restored = await asyncio.gather(
-                    *(recover(survivor, client) for client in clients[:50])
-                )
+                recovering = [
+                    asyncio.create_task(recover(survivor, client)) for client in clients[:50]
+                ]
+
+                try:
+                    restored = await asyncio.gather(*recovering)
+                finally:
+                    sys.stdout.write(
+                        "OWNER RECOVERY PROGRESS: "
+                        + json.dumps(
+                            {
+                                "completed": sum(
+                                    task.done()
+                                    and not task.cancelled()
+                                    and task.exception() is None
+                                    for task in recovering
+                                ),
+                                "requested": len(recovering),
+                                "seconds": time.monotonic() - began,
+                            }
+                        )
+                        + "\n"
+                    )
                 recovery_seconds = time.monotonic() - began
                 assert recovery_seconds <= 10
                 await asyncio.gather(*(client.event() for client in restored))
@@ -359,10 +453,12 @@ def test_owner_routing_lost_store_fails_closed_and_restores_last_commit(tmp_path
             original, survivor = topology.workers
             client = await Client.attach(original)
             await client.event()
-            saved = topology.store.with_suffix(".saved")
-            topology.store.rename(saved)
+            # A real exclusive database lock denies reads and writes on every OS.
+            # Renaming an in-use SQLite file relies on POSIX filesystem semantics.
+            blocked = sqlite3.connect(topology.store, timeout=1)
 
             try:
+                blocked.execute("BEGIN EXCLUSIVE")
                 await asyncio.wait_for(client.socket.wait_closed(), 4)
                 assert client.socket.close_code == 1013
                 with pytest.raises(ConnectionClosed) as unavailable:
@@ -370,8 +466,8 @@ def test_owner_routing_lost_store_fails_closed_and_restores_last_commit(tmp_path
                 assert unavailable.value.rcvd is not None
                 assert unavailable.value.rcvd.code == 1013
             finally:
-                topology.store.unlink(missing_ok=True)
-                saved.rename(topology.store)
+                blocked.rollback()
+                blocked.close()
             restored = await recover(original, client)
 
             try:

@@ -206,6 +206,7 @@ const registry = [
   ] },
   { suite: "example_reconnect", cases: [
     [0, "reconnect", "browser_example_reconnect.mjs", "EXAMPLE RECONNECT BROWSER PASSED"],
+    [0, "reconnect_timeout_fixture", "browser_example_reconnect.mjs", "EXAMPLE RECONNECT BROWSER PASSED"],
   ] },
   { suite: "examples", cases: [
     [0, "counter", "browser.mjs", "BROWSER ACCEPTANCE PASSED"],
@@ -330,7 +331,9 @@ try {
       continue;
     }
     const port = name ? await freePort(process.env.PYSX_BROWSER_PORT ? Number(process.env.PYSX_BROWSER_PORT) + index : 0) : 0;
-    const server = name ? start(interpreter, name === "integrated_tutorial_fixture" ?
+    const server = name ? start(interpreter, name === "reconnect_timeout_fixture" ?
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_reconnect_timeout_fixture:app", "--port", String(port)] :
+      name === "integrated_tutorial_fixture" ?
       ["tests/browser_tutorial_fixture.py", "--port", String(port), "--packaged"] :
       name === "tutorial_fixture" ?
       ["tests/browser_tutorial_fixture.py", "--port", String(port)] :
@@ -412,7 +415,8 @@ try {
       ["-m", "pysx.hosting.server", "--app", "tests.browser_fixture:app", "--port", String(port)] :
       name === "adoption" ?
       ["-m", "tests.prototypes.standalone_host", "--port", String(port)] :
-      ["run_example.py", "run", name, "--port", String(port)]) : null;
+      ["run_example.py", "run", name, "--port", String(port)],
+      ["reconnect", "reconnect_timeout_fixture"].includes(name) ? {PYSX_TRACE_RESUME: "1"} : {}) : null;
     if (server) {
       const deployment = name === "deployment_fixture" || name === "durable_state_fixture";
       if (deployment) server.cleanupTimeout = 45000;
@@ -432,7 +436,8 @@ try {
       const count = output.split("\n").filter((line) => line.startsWith("  ok  ")).length;
       if (!count) throw new Error("empty assertions");
       for (const line of output.split("\n")) {
-        if (line.startsWith("QUALIFICATION BROWSER SAMPLES: ")) console.log(line);
+        if (line.startsWith("QUALIFICATION BROWSER SAMPLES: ") ||
+            line.startsWith("TLS COOKIE POLICY: ")) console.log(line);
       }
       total += count;
       selectedAssertions += count;
@@ -449,6 +454,10 @@ try {
   if (selections.length > 1) console.log(`BROWSER VERIFICATION PASSED: all selected (${caseTotal} cases, ${total} assertions)`);
 } catch (error) {
   console.error(error);
+  for (const child of children) for (const line of (child.tail ?? "").split("\n")) {
+    if (line.includes("Resume waiting trace:") || line.includes("Resume refusal trace:"))
+      console.error(line);
+  }
   await cleanup();
   process.exitCode = 1;
 }

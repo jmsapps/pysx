@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import queue
@@ -14,11 +15,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+from acceptance_support import alive, windows_parent_pid
 from lsprotocol import types
 
 from pysx.compiler.compiler import analyze
 from pysx.tooling.editor.types import diagnostics
-from pysx.tooling.lsp.backend import Stamp
+from pysx.tooling.lsp.backend import Stamp, TypeBackend
+from pysx.tooling.lsp.server import ResidentServer, Session
 from pysx.tooling.lsp.workspace import WorkspaceIndex, position
 
 if TYPE_CHECKING:
@@ -26,6 +29,7 @@ if TYPE_CHECKING:
 
     from pysx.compiler.compiler import Compilation
     from pysx.tooling.editor.model import Buffer
+    from pysx.tooling.lsp.backend import ClientProcess
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (
@@ -34,6 +38,61 @@ SOURCE = (
     "    return pysx(t'p: {title}')\n"
     "view = pysx(t'Panel(title={42})')\n"
 )
+
+
+@pytest.mark.parametrize("version", [1, 0, None])
+def test_resident_diagnostics_match_equivalent_projection_uris(
+    tmp_path: Path, version: int | None
+) -> None:
+    async def exercise() -> None:
+        path = tmp_path / "view.py"
+        path.write_bytes(SOURCE.encode("utf-8"))
+        session = Session(ResidentServer("test", "0"), tmp_path)
+
+        try:
+            session.snapshot = session.index.build(
+                {str(path): {"source": SOURCE, "version": 1}}, session.stamp
+            )
+            item = session.snapshot.files[0]
+            uri = (session.index.projected / item.relative).as_uri()
+            session.sent[uri] = 1
+            equivalent = uri.replace("/view.py", "/%76iew.py")
+            assert equivalent != uri
+            session.accept(types.PublishDiagnosticsParams(equivalent, [], version))
+            assert (item.filename in session.typed) == (version == 1)
+        finally:
+            await session.close()
+
+    asyncio.run(exercise())
+
+
+def test_resident_backend_cleanup_after_a_truncated_protocol_frame(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        marker = tmp_path / "ready"
+        backend = TypeBackend(lambda _params: None, lambda: None)
+        program = (
+            "import sys,time; from pathlib import Path; "
+            "sys.stdout.buffer.write(b'Content-Length: 100\\r\\n\\r\\n{'); "
+            "sys.stdout.buffer.flush(); Path(sys.argv[1]).touch(); time.sleep(60)"
+        )
+        await cast("ClientProcess", backend.client).start_io(
+            sys.executable, "-u", "-c", program, str(marker), cwd=tmp_path
+        )
+        process = backend.client.process
+        assert process is not None
+
+        try:
+            async with asyncio.timeout(5):
+                while not marker.exists():
+                    await asyncio.sleep(0.01)
+            process.kill()
+            await process.wait()
+        finally:
+            if process.returncode is None:
+                process.kill()
+            await backend.close()
+
+    asyncio.run(exercise())
 
 
 class Client:
@@ -50,11 +109,12 @@ class Client:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env={**os.environ, "PYSX_LSP_TRACE_PUBLICATIONS": "1"},
         )
         self.queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.history: list[dict[str, Any]] = []
         self.ident = 0
-        self.errors: deque[str] = deque(maxlen=30)
+        self.errors: deque[str] = deque(maxlen=200)
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._read_errors, daemon=True).start()
         result = self.request(
@@ -468,8 +528,75 @@ def test_resident_protocol_incremental_bounded_affected_set(
     affected = {"parts.py", "view.py"}
     state = client.settled(lambda status: affected <= set(status["workspaces"][0]["republished"]))
     assert set(state["workspaces"][0]["changed"]) == affected
-    assert set(state["workspaces"][0]["republished"]) == affected
+
+    if set(state["workspaces"][0]["republished"]) != affected:
+        pytest.fail(json.dumps({"state": state, "backend": list(client.errors)}, indent=2))
     assert state["workspaces"][0]["starts"] == 1
+
+
+@pytest.mark.parametrize("configuration_change", [False, True])
+def test_resident_incremental_after_interrupted_foreground_snapshot(
+    tmp_path: Path, configuration_change: bool
+) -> None:
+    producer = tmp_path / "parts.py"
+    producer_source = SOURCE[: SOURCE.index("view =")]
+    producer.write_text(producer_source)
+    path = tmp_path / "view.py"
+    source = "from parts import Panel\nfrom pysx import pysx\nview = pysx(t'Panel(title={42})')\n"
+    path.write_text(source)
+    leaf = tmp_path / "leaf.py"
+    leaf.write_text("value = 1\n")
+    entered, release = tmp_path / "entered", tmp_path / "release"
+    command = [
+        sys.executable,
+        "-c",
+        f"""
+import time
+from pathlib import Path
+from pysx.tooling.lsp.workspace import WorkspaceIndex
+from pysx.tooling.lsp.server import create_server
+original = WorkspaceIndex.build
+def blocked(self, buffers, stamp, **kwargs):
+    if stamp.generation == 2 and {str(leaf)!r} in kwargs.get("selected", set()):
+        Path({str(entered)!r}).touch()
+        while not Path({str(release)!r}).exists():
+            time.sleep(0.01)
+    return original(self, buffers, stamp, **kwargs)
+WorkspaceIndex.build = blocked
+create_server().start_io()
+""",
+    ]
+    instance = Client(tmp_path, command=command)
+
+    try:
+        instance.open(path, source)
+        instance.diagnostic(path, 1, "reportArgumentType")
+        instance.settled(lambda status: len(status["workspaces"][0]["republished"]) == 3)
+
+        if configuration_change:
+            (tmp_path / "pyrightconfig.json").write_text('{"reportUnknownVariableType": false}')
+        instance.open(producer, producer_source)
+        instance.settled(lambda _status: entered.exists())
+        instance.change(producer, producer_source.replace("title: str", "title: int"), 2)
+        instance.settled(lambda status: status["workspaces"][0]["generation"] == 3)
+        release.touch()
+        instance.diagnostic(path, 1, None)
+        affected = {"parts.py", "view.py"}
+        state = instance.settled(
+            lambda status: (
+                status["workspaces"][0]["ready"]
+                and affected <= set(status["workspaces"][0]["republished"])
+            )
+        )["workspaces"][0]
+        assert set(state["changed"]) == (
+            affected | {"leaf.py"} if configuration_change else affected
+        ), state
+
+        if not configuration_change:
+            assert set(state["republished"]) == affected, state
+    finally:
+        release.touch()
+        instance.close()
 
 
 def test_resident_protocol_incremental_equals_fresh_cli(tmp_path: Path, client: Client) -> None:
@@ -647,10 +774,16 @@ def test_client_lifecycle_abrupt_server_death_reaps_backend(tmp_path: Path) -> N
         client.open(tmp_path / "view.py")
         client.diagnostic(tmp_path / "view.py", 1, "reportArgumentType")
         status = client.status()
-        assert status["processId"] == client.process.pid
+        server_pid = int(status["processId"])
+
+        if server_pid != client.process.pid:
+            assert sys.platform == "win32"
+            # A Windows venv's python.exe redirects to the real interpreter.
+            # Verify ownership, then kill the server itself rather than its launcher.
+            assert windows_parent_pid(server_pid) == client.process.pid
         assert status["interpreter"] == sys.executable
         pid = str(status["workspaces"][0]["pid"])
-        client.process.kill()
+        os.kill(server_pid, 9)
         client.process.wait(timeout=10)
         deadline = time.monotonic() + 10
 
@@ -798,9 +931,7 @@ def test_editor_surface_closing_every_document_releases_the_backend(
     deadline = time.monotonic() + 15
 
     while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except OSError:
+        if not alive(pid):
             return
         time.sleep(0.05)
     pytest.fail("the analysis backend outlived its last open document")

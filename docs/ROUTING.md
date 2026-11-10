@@ -130,7 +130,9 @@ New nonfragment navigation scrolls to the top and focuses the main region (or th
 app root). A missing target on a different pathname uses that same fallback; a
 missing target on the same pathname preserves position. Query-only navigation is
 a new navigation and uses the top policy. Replace navigation applies the same policy
-while replacing the current entry.
+while replacing the current entry. Available scroll and focus targets are applied
+within the navigation commit, before subsequent consumer interaction; a deferred
+callback must not reclaim focus after that interaction.
 
 Same-URL resume synchronization preserves the viewport, focus and current history
 entry, including across compatible hot reload. Reconciliation restores viewport

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import {spawn} from "node:child_process";
 import {once} from "node:events";
 import {cp, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {createServer} from "node:net";
@@ -7,6 +6,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import playwright from "playwright";
+import {spawnCli, signalCli} from "./cli_process.mjs";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), "pysx-watch-restart-"));
@@ -22,7 +22,7 @@ let running = null;
 let output = "";
 
 async function start() {
-  const child = spawn("uv", ["run", "--project", repository, "pysx", "--app",
+  const child = spawnCli(repository, ["--app",
     "examples.durable_state:app", "--watch", "--port", String(port)], {
     cwd: directory, detached: process.platform !== "win32",
     env: {...process.env, PYSX_STATE_PATH:join(directory, "state.sqlite3")},
@@ -42,13 +42,14 @@ async function start() {
 async function stop() {
   if (!running) return;
   const owned = running; running = null;
-  if (owned.child.exitCode === null) process.kill(-owned.child.pid, "SIGINT");
+  if (owned.child.exitCode === null) signalCli(owned.child, "SIGINT");
   const timer = setTimeout(() => {
-    try { process.kill(-owned.child.pid, "SIGKILL"); } catch {}
+    try { signalCli(owned.child, "SIGKILL"); } catch {}
   }, 10000);
   try {
-    const [code] = await owned.ended;
-    assert.equal(code, 0, output);
+    const [code, signal] = await owned.ended;
+    assert.equal(code, 0,
+      `watch CLI exited code=${code} signal=${signal} platform=${process.platform}\n${output}`);
   } finally { clearTimeout(timer); }
 }
 
@@ -64,7 +65,24 @@ try {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors = [];
-  page.on("pageerror", error => errors.push(error.message));
+  let stage = "initial-startup";
+  page.on("pageerror", error => {
+    errors.push(error.message);
+    console.error(`WATCH RESTART PAGE ERROR: ${JSON.stringify({
+      name: error.name, message: error.message, stack: error.stack,
+      url: page.url(), supervisorRunning: running?.child.exitCode === null,
+      stage,
+    })}`);
+  });
+  let failedStatusRequests = 0;
+  page.on("requestfailed", request => {
+    if (new URL(request.url()).pathname !== "/__pysx_dev__/status" || failedStatusRequests++ >= 10) return;
+    console.error(`WATCH RESTART STATUS FAILURE: ${JSON.stringify({
+      url: request.url(), failure: request.failure(),
+      supervisorRunning: running?.child.exitCode === null,
+      stage,
+    })}`);
+  });
   const status = async () => (await fetch(base + "/__pysx_dev__/status")).json();
   const connected = target => target.waitForFunction(() =>
     document.getElementById("pysx-root")?.dataset.pysxConnection === "connected");
@@ -81,6 +99,7 @@ try {
   await page.waitForFunction(() => document.getElementById("durable-echo").textContent === "saved before restart");
 
   for (let cycle = 0; cycle < 2; cycle++) {
+    stage = `restart-${cycle}-stop`;
     const before = await status();
     const setup = await page.locator("#durable-generation").textContent();
     await page.evaluate(() => { window.watchRestartMarker = "original document"; });
@@ -88,6 +107,7 @@ try {
     await stop();
     // Let the closed notification socket enter its ordinary polling fallback.
     await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection !== "connected");
+    stage = `restart-${cycle}-start`;
     await start();
     await page.waitForFunction(setup =>
       document.getElementById("pysx-root").dataset.pysxConnection === "connected"
@@ -100,9 +120,16 @@ try {
     assert.ok(after.instance && before.instance && after.instance !== before.instance);
     assert.ok(startup.some(value => value.generation === 0), "startup-zero status was not observed");
     if (cycle === 0) {
+      stage = `restart-${cycle}-edit`;
       content = content.replace('Title: "Durable state"', 'Title: "Edited durable state"');
       await writeFile(source, content);
-      await page.getByRole("heading", {name:"Edited durable state", exact:true}).waitFor();
+      try {
+        await page.getByRole("heading", {name:"Edited durable state", exact:true}).waitFor();
+      } catch (cause) {
+        const supervisor = await fetch(base + "/__pysx_dev__/status", {signal: AbortSignal.timeout(3000)})
+          .then(response => response.json()).catch(error => ({error: error.message}));
+        throw new Error(`watch edit not adopted: ${JSON.stringify({stage, supervisor, output})}`, {cause});
+      }
       await connected(page); await count(page, 1);
       assert.equal((await status()).instance, after.instance);
       assert.ok((await status()).generation > 1);
@@ -112,6 +139,7 @@ try {
   console.log("  ok  actual watch CLI Ctrl+C/restart recovers count and draft without navigating, including startup-zero and advanced old generations");
 
   const other = await context.newPage();
+  stage = "fresh-tab-and-refresh";
   await other.goto(base); await connected(other); await count(other, 0);
   await other.reload(); await connected(other); await count(other, 0);
   await count(page, 2);
@@ -119,6 +147,7 @@ try {
   console.log("  ok  refresh and same-cookie new tabs start independent sessions after recovery");
 
   const beforeFresh = await status();
+  stage = "incompatible-identity-reload";
   content = content.replace('application="durable-example"', 'application="different-example"');
   await writeFile(source, content);
   await count(page, 0); await connected(page);

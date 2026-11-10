@@ -423,12 +423,15 @@ def test_completion_hover_repeated_styled_navigation_and_references(
     assert {1, 3, 4, 5} <= rows
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_completion_hover_import_alias_unsaved_definition_updates(
-    tmp_path: Path, client: Client
+    tmp_path: Path, client: Client, newline: str
 ) -> None:
     producer = tmp_path / "parts.py"
-    declaration = "from pysx import styled\nDescription = styled.p(t'color: red;')\n"
-    producer.write_text(declaration)
+    declaration = "from pysx import styled\nDescription = styled.p(t'color: red;')\n".replace(
+        "\n", newline
+    )
+    producer.write_bytes(declaration.encode("utf-8"))
     path = tmp_path / "view.py"
     source = (
         "from pysx import pysx\nfrom parts import Description as Note\n"

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, realpathSync, readdirSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, realpathSync, readdirSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,8 +23,14 @@ for (let i = 0; i < args.length; i += 2) {
 }
 if (!SUITES.includes(suite)) throw new Error("empty editor selection");
 if (suite === "client_verify") {
-  const result = spawnSync(process.execPath, ["--test", "editor/test/highlighting.test.cjs"],
+  const result = spawnSync(process.execPath, ["--test", "editor/test/highlighting.test.cjs",
+    "editor/test/trace.test.cjs"],
     { cwd: root, stdio: "inherit" });
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
+if (suite === "interpreter_routing") {
+  const result = spawnSync(process.execPath, ["--test", "editor/test/workspaces.test.cjs"],
+    {cwd: root, stdio: "inherit"});
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 if (["client_verify", "editor_surface"].includes(suite) && !process.env.PYSX_EDITOR_ACTIVATION_ORDER) {
@@ -59,7 +65,9 @@ if (process.env.PYSX_VSCODE_EXECUTABLE && !existsSync(executable)) throw new Err
 const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), "pysx-editor-")));
 let child;
 let failed = false;
+let successMessage;
 const outputFile = path.join(workspace, "host-output.log");
+const traceFile = path.join(workspace, "editor-exit-trace.log");
 const lifecycleFailures = /Client is stopping but no stop promise|rejected promise not handled|unhandled rejection|Handling connection close failed|Restarting server failed|Stopping server failed|Stopping the server timed out/i;
 const inspect = (directory, failures = lifecycleFailures) => {
   const findings = [];
@@ -122,11 +130,34 @@ try {
     // environment discovery and the missing-extra checks intact.
     const delay = startupDelay ?
       `if [ "$1" = "-m" ] && [ "$2" = "pysx.tooling.lsp.lsp" ]; then sleep ${startupDelay / 1000}; fi\n` : "";
-    writeFileSync(alternate, `#!/bin/sh\n${delay}exec ${JSON.stringify(interpreter)} "$@"\n`, { mode: 0o755 });
+    if (process.platform === "win32") {
+      // Use a real executable identity: execFile cannot launch a shell script
+      // as a selected Python interpreter on Windows.
+      const environment = path.join(workspace, "alternate");
+      const created = spawnSync("uv", ["venv", "--python", interpreter, environment],
+        { cwd: root, encoding: "utf8", timeout: 120000 });
+      if (created.status !== 0) throw new Error(`alternate environment creation failed: ${created.stderr}`);
+      alternate = path.join(environment, "Scripts", "python.exe");
+      const described = spawnSync(interpreter,
+        ["-c", "import json, site; print(json.dumps(site.getsitepackages()))"],
+        { cwd: root, encoding: "utf8", timeout: 30000 });
+      if (described.status !== 0) throw new Error(`selected environment discovery failed: ${described.stderr}`);
+      const sites = JSON.parse(described.stdout);
+      const library = path.join(environment, "Lib", "site-packages");
+      // Process the selected environment's .pth files as well as its packages,
+      // so editable installs remain available to this isolated executable.
+      writeFileSync(path.join(library, "selected-environment.pth"),
+        `import site; [site.addsitedir(p) for p in ${JSON.stringify(sites)}]\n`);
+      writeFileSync(path.join(library, "sitecustomize.py"),
+        "import sys, time\n" +
+        `if sys.orig_argv[-2:] == ['-m', 'pysx.tooling.lsp.lsp']: time.sleep(${startupDelay / 1000})\n`);
+    } else {
+      writeFileSync(alternate, `#!/bin/sh\n${delay}exec ${JSON.stringify(interpreter)} "$@"\n`, { mode: 0o755 });
+    }
     bare = path.join(workspace, "bare");
     const created = spawnSync("uv", ["venv", "--python", interpreter, bare], { cwd: root, encoding: "utf8", timeout: 120000 });
     if (created.status !== 0) throw new Error(`bare environment creation failed: ${created.stderr}`);
-    bare = path.join(bare, "bin", "python");
+    bare = path.join(bare, process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
     if (!existsSync(bare)) throw new Error("bare environment has no interpreter");
   }
   const manifest = JSON.parse(readFileSync(path.join(extension, "package.json"), "utf8"));
@@ -137,7 +168,8 @@ try {
     // actual Electron host and extension workers, including failed startups.
     child = spawn(process.execPath, [fileURLToPath(new URL("launch.mjs", import.meta.url))], {
       cwd: root, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PYSX_EDITOR_INPUT: JSON.stringify({ executable, extension, workspace,
+      env: { ...process.env, PYSX_EDITOR_TRACE_FILE: traceFile,
+        PYSX_EDITOR_INPUT: JSON.stringify({ executable, extension, workspace,
         root: multiRoot ?? (fixture ? fixture.consumer : consumer), checkout: root, host, suite,
         python: fixture?.python ?? interpreter, alternate, bare, pythonExtension, ruffExtension: ["authoring", "template_import_usage", "editor_surface"].includes(suite) ? ruffExtension : null }) },
     });
@@ -168,7 +200,7 @@ try {
     if (findings.length) throw new Error(`lifecycle failure in host logs:\n${findings.join("\n")}`);
     if (!output.includes(`PYSX EDITOR CASES PASSED: ${cases}`)) throw new Error(`missing host assertions: ${output}`);
     console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR SAVE:") || line.startsWith("PYSX EDITOR PERFORMANCE") || line.startsWith("PYSX EDITOR ROUTING:")).join("\n"));
-    console.log(`EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, ${cases} cases)`);
+    successMessage = `EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, ${cases} cases)`;
   }
 } catch (error) {
   failed = true;
@@ -189,5 +221,21 @@ try {
       catch (error) { if (!["ESRCH", "EPERM"].includes(error.code)) throw error; }
     }
   }
-  if (!failed) rmSync(workspace, { recursive: true, force: true });
+  if (failed && process.env.PYSX_DEPLOYMENT_LOGS) {
+    try {
+      const destination = path.join(process.env.PYSX_DEPLOYMENT_LOGS, path.basename(workspace));
+      mkdirSync(destination, { recursive: true });
+      if (existsSync(outputFile)) copyFileSync(outputFile, path.join(destination, "host-output.log"));
+      // Host death cancels the suite before its own trace export, so this file is
+      // the only timeline for exactly the failures that destroy the other one.
+      if (existsSync(traceFile)) copyFileSync(traceFile, path.join(destination, "editor-exit-trace.log"));
+      const logs = path.join(workspace, "profile", "logs");
+      if (existsSync(logs)) cpSync(logs, path.join(destination, "logs"), { recursive: true });
+      console.error(`EDITOR LOGS PRESERVED: ${destination}`);
+    } catch (captureError) {
+      console.error(`editor log capture failed: ${captureError.stack ?? captureError}`);
+    }
+  }
+  if (!failed) rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
+if (successMessage) console.log(successMessage);

@@ -4,13 +4,27 @@ const path = require("node:path");
 const vscode = require("vscode");
 
 async function until(fn, label) {
-  const deadline = Date.now() + 45000;
+  const started = Date.now();
+  const deadline = started + 45000;
+  let polls = 0;
+  let last = "none";
   while (Date.now() < deadline) {
-    const result = await fn();
-    if (result) return result;
+    let result;
+    try {
+      result = await fn();
+    } catch (error) {
+      last = `threw ${error && error.message}`;
+      result = false;
+    }
+    polls += 1;
+    if (result) {
+      console.log(`PYSX EDITOR WAIT: ${label} resolved in ${((Date.now() - started) / 1000).toFixed(3)}s after ${polls} polls`);
+      return result;
+    }
+    if (last === "none") last = "falsy";
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  throw new Error(`timeout waiting for ${label}`);
+  throw new Error(`timeout waiting for ${label} after ${((Date.now() - started) / 1000).toFixed(3)}s, ${polls} polls, last observation: ${last}`);
 }
 exports.run = async function () {
   await vscode.extensions.getExtension("ms-python.python").activate();
@@ -38,7 +52,7 @@ def app() -> Fragment:
   await until(async () => {
     const definitions = await vscode.commands.executeCommand("vscode.executeDefinitionProvider", doc.uri, tag);
     return definitions?.some(item => {
-      const filename = (item.uri ?? item.targetUri).fsPath;
+      const filename = (item.uri ?? item.targetUri).fsPath.replace(/\\/g, "/");
       return filename.includes("site-packages") && filename.endsWith("src/components/pages.py");
     });
   }, "definition into installed course wheel");

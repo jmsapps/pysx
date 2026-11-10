@@ -90,16 +90,19 @@ class TypeBackend:
         )(diagnostics)
 
         def message(params: types.LogMessageParams) -> None:
-            if params.type == types.MessageType.Error:
-                LOG.error("Type backend: %s", params.message[:2000])
+            LOG.warning("Type backend message (%s): %s", params.type, params.message[:2000])
 
         cast("FeatureRegistry", self.client.protocol.fm).feature(types.WINDOW_LOG_MESSAGE)(message)
 
-        def progress(_params: object) -> None:
-            return None
+        def progress(method: str) -> Callable[[object], None]:
+            def report(_params: object) -> None:
+                if os.environ.get("PYSX_LSP_TRACE_PUBLICATIONS") == "1":
+                    LOG.warning("Type backend progress: %s", method)
+
+            return report
 
         for method in ("pyright/beginProgress", "pyright/reportProgress", "pyright/endProgress"):
-            cast("FeatureRegistry", self.client.protocol.fm).feature(method)(progress)
+            cast("FeatureRegistry", self.client.protocol.fm).feature(method)(progress(method))
 
         self.stderr_task: asyncio.Task[None] | None = None
         self.starts = 0
@@ -138,8 +141,13 @@ class TypeBackend:
 
         if not entry.is_file():
             raise RuntimeError("Pyright language server is missing; reinstall pysx[lsp]")
+        # The backend's whole lifecycle was silent, so a Pyright that never starts and
+        # one that starts and never answers looked the same from the client: pysx's own
+        # diagnostics publish either way and nothing else ever arrives.
+        LOG.warning("Type backend: launching %s %s in %s", node, entry, root)
         await cast("ClientProcess", self.client).start_io(node, str(entry), "--stdio", cwd=root)
         self.starts += 1
+        LOG.warning("Type backend: started pid %s", self.pid)
         self.stderr_task = asyncio.create_task(self._drain_stderr())
         await asyncio.wait_for(
             self.client.initialize_async(
@@ -152,6 +160,7 @@ class TypeBackend:
             ),
             15,
         )
+        LOG.warning("Type backend: initialize completed")
         self.client.initialized(types.InitializedParams())
         self.client.workspace_did_change_configuration(
             types.DidChangeConfigurationParams(
@@ -302,8 +311,15 @@ class TypeBackend:
         def finished(done: asyncio.Task[object]) -> None:
             self.requests.discard(done)
 
-            if not done.cancelled():
-                done.exception()
+            if done.cancelled():
+                return
+            # Retrieving the exception keeps asyncio quiet, but discarding it left a
+            # failing backend indistinguishable from a slow one: the server stays up,
+            # answers nothing, and logs nothing for the client to report.
+            failure = done.exception()
+
+            if failure is not None:
+                LOG.error("Type backend request failed", exc_info=failure)
 
         erased.add_done_callback(finished)
 
@@ -332,7 +348,13 @@ class TypeBackend:
 
             if process is not None:
                 await process.wait()
-            await cast("ClientProcess", self.client).stop()
+
+            try:
+                await cast("ClientProcess", self.client).stop()
+            except asyncio.IncompleteReadError:
+                # A killed backend may leave its final frame incomplete. It has
+                # already been reaped; an EOF here must not prevent its restart.
+                LOG.warning("Type backend exited with an incomplete protocol frame")
             await asyncio.gather(*self.requests, return_exceptions=True)
         finally:
             if self.stderr_task is not None:
