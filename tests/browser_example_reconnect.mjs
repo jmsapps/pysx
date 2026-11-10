@@ -7,7 +7,8 @@ try {
   const context = await browser.newContext();
   page = await context.newPage();
   page.on("pageerror", error => errors.push(error.message));
-  await page.addInitScript(() => {
+  await page.addInitScript(dropFirstResume => {
+    window.dropResumeHello = dropFirstResume;
     window.reconnectTrace = [];
     const record = (type, fields = {}) => {
       window.reconnectTrace.push({type, time: performance.now(),
@@ -31,6 +32,11 @@ try {
       }
       send(message) {
         const frame = JSON.parse(message);
+        if (window.dropResumeHello && frame.t === "hello" && frame.resume) {
+          window.dropResumeHello = false;
+          record("suppressed-hello", {frame: frame.t});
+          return;
+        }
         record("sent", {frame: frame.t, handler: frame.h, sequence: frame.seq,
           edits: frame.edits?.length});
         return super.send(message);
@@ -41,7 +47,7 @@ try {
         return super.close(...args);
       }
     };
-  });
+  }, process.env.PYSX_BROWSER_CASE === "reconnect_timeout_fixture");
   const url = `http://127.0.0.1:${process.argv[2]}/`;
   await page.goto(url);
   await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "connected");

@@ -164,6 +164,46 @@ def test_current_state_malformed_claim_does_not_allocate_or_consume(hello: str) 
     asyncio.run(exercise())
 
 
+def test_resume_hello_timeout_preserves_session_for_retry() -> None:
+    async def exercise() -> None:
+        setups: list[int] = []
+
+        def app() -> Fragment:
+            setups.append(1)
+
+            return native.P("retained")
+
+        runtime = HTTPRuntime(app, limits=TransportLimits(hello_timeout=0.02))
+        stalled = FakeConnection("/ws?protocol=3&resume=1", [])
+        session = runtime.create_reserved(stalled.request)
+        token = runtime.attach(session, stalled.request)
+        epoch = session.transport.epoch
+        runtime.detach(session)
+        pump: asyncio.Task[None] | None = None
+
+        try:
+            await serve_connection(runtime, stalled)
+            assert stalled.closed == (1013, "resume hello timeout")
+            assert runtime.detached[token].session is session
+            hello = json.dumps(
+                {"t": "hello", "version": 3, "resume": token, "epoch": epoch, "state_rev": 0}
+            )
+            retry = FakeConnection("/ws?protocol=3&resume=1", [hello])
+            pump = asyncio.create_task(serve_connection(runtime, retry))
+            await wait_for(lambda: bool(retry.frames("repair")))
+            assert retry.frames("repair")[0]["epoch"] == epoch
+            assert "retained" in str(retry.frames("repair")[0]["html"])
+            assert setups == [1]
+            assert not runtime.detached
+        finally:
+            if pump is not None:
+                pump.cancel()
+                await asyncio.gather(pump, return_exceptions=True)
+            runtime.close()
+
+    asyncio.run(exercise())
+
+
 def test_current_state_failed_network_send_expires_graph() -> None:
     class FailedSend(FakeConnection):
         async def send(self, message: str) -> None:

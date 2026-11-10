@@ -79,6 +79,9 @@ send `{"t":"hello","version":3,"resume":"credential","epoch":"epoch","state_rev"
 The query is an admission hint; credentials travel only in the hello body.
 Claims check browser cookie, authenticated principal, epoch and last revision.
 Attached, expired, mismatched and already-used credentials close with 4004.
+An attachment that times out waiting for a resume or recovery hello closes with
+1013. This transport timeout does not invalidate a retained session or credential;
+the browser may retry within the existing retry and retention bounds.
 No invalid claim allocates or steals a graph. A successful claim rotates the
 credential and sends an unconditional `repair` with complete current HTML/CSS,
 next event sequence, routing state and the new credential. Retained native nodes,
