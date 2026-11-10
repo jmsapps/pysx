@@ -335,6 +335,8 @@ exports.activate = async function (context) {
 
   return {
     get client() { return current()?.lifecycle?.client ?? null; },
+    traceProbe: (candidate) => ({sameInstance: candidate === trace,
+      enabled: process.env.PYSX_EDITOR_TRACE === "1", snapshot: trace.snapshot()}),
     get highlighting() { return current()?.lifecycle?.highlighting ?? null; },
     get lifecycle() { return current()?.lifecycle ?? null; },
     get interpreter() { return current()?.python ?? null; },
