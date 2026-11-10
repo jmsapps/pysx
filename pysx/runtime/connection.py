@@ -230,6 +230,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
             if os.environ.get("PYSX_TRACE_RESUME") == "1":
                 logging.getLogger(__name__).warning("Resume waiting trace: awaiting hello")
+
             try:
                 raw = await asyncio.wait_for(connection.recv(), runtime.limits.hello_timeout)
             except TimeoutError:
