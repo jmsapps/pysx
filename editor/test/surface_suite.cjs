@@ -71,6 +71,8 @@ async function run() {
   const api = await extension.activate();
   assert(extension.isActive, "actual extension activation");
   assert(api && api.client, "resident client activated");
+  assert(api.tracing.snapshot().events.some(event => event.component === "client"),
+    "the extension-owned timeline must capture actual client activation");
 
   const ruff = vscode.extensions.getExtension("charliermarsh.ruff");
   assert(ruff, "actual Ruff extension registered");
@@ -332,19 +334,13 @@ async function run() {
 
 exports.run = async function () {
   process.env.PYSX_EDITOR_TRACE = "1";
-  const owner = vscode.extensions.getExtension("pysx-local.pysx-lang");
-  try {
-    require(path.join(owner.extensionPath, "trace.js"))
-      .persist(process.env.PYSX_EDITOR_TRACE_FILE);
-  } catch (installError) {
-    console.error("PYSX EDITOR TRACE PERSIST FAILED", installError.name);
-  }
   try { await run(); }
   catch (error) {
     const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
     try {
-      const trace = require(path.join(extension.extensionPath, "trace.js"));
-      console.error("PYSX EDITOR FAILURE TRACE " + JSON.stringify(trace.snapshot()));
+      const tracing = extension.exports?.tracing;
+      if (!tracing) throw new Error("extension-owned trace unavailable; inspect exit trace");
+      console.error("PYSX EDITOR FAILURE TRACE " + JSON.stringify(tracing.snapshot()));
     } catch (captureError) {
       console.error("PYSX EDITOR TRACE CAPTURE FAILED", captureError.name);
     }

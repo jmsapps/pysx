@@ -314,6 +314,8 @@ function createClient({ python, output, serverOptions, documentSelector, workspa
 exports.createClient = createClient;
 
 exports.activate = async function (context) {
+  // Persist the owner's buffer, not a separately loaded test-side module instance.
+  trace.persist(process.env.PYSX_EDITOR_TRACE_FILE);
   const output = vscode.window.createOutputChannel("PYSX language server", { log: true });
   context.subscriptions.push(output);
 
@@ -335,6 +337,7 @@ exports.activate = async function (context) {
 
   return {
     get client() { return current()?.lifecycle?.client ?? null; },
+    tracing: Object.freeze({snapshot: trace.snapshot}),
     get highlighting() { return current()?.lifecycle?.highlighting ?? null; },
     get lifecycle() { return current()?.lifecycle ?? null; },
     get interpreter() { return current()?.python ?? null; },

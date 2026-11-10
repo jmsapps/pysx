@@ -100,7 +100,7 @@ test("provider cancellation retains request identity and disposes its observer",
   }
 });
 
-test("surface suite exports retained trace when setup fails and rethrows the failure", async () => {
+test("surface failure exports the extension owner even when another module instance exists", async () => {
   const original = process.env.PYSX_EDITOR_PYTHON;
   const tracing = process.env.PYSX_EDITOR_TRACE;
   delete process.env.PYSX_EDITOR_PYTHON;
@@ -111,12 +111,16 @@ test("surface suite exports retained trace when setup fails and rethrows the fai
       exports, process, console: {error: value => output.push(value)},
       require: name => name === "vscode" ? {extensions: {getExtension: () => ({
         extensionPath: path.resolve(__dirname, ".."),
+        exports: {tracing: {snapshot: () => ({limit: 512, dropped: 0,
+          events: [{component: "client", event: "owner-marker"}]})}},
       })}} : require(name),
     });
     await assert.rejects(exports.run(), /selected interpreter supplied/);
     const line = output.find(value => value.startsWith("PYSX EDITOR FAILURE TRACE "));
     assert(line, "setup failure must export the same trace used by the installed extension");
-    assert(Array.isArray(JSON.parse(line.slice("PYSX EDITOR FAILURE TRACE ".length)).events));
+    const captured = JSON.parse(line.slice("PYSX EDITOR FAILURE TRACE ".length));
+    assert.equal(captured.events[0].event, "owner-marker",
+      "a separately loaded module must not replace the real owner's evidence");
   } finally {
     if (original === undefined) delete process.env.PYSX_EDITOR_PYTHON;
     else process.env.PYSX_EDITOR_PYTHON = original;
