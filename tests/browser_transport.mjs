@@ -53,6 +53,8 @@ try {
   repairPage.on("pageerror", error => errors.push(error.message));
   let resolveHello;
   const hello = new Promise(resolve => { resolveHello = resolve; });
+  let resolveRepair;
+  const repairRequested = new Promise(resolve => { resolveRepair = resolve; });
   let resolveClose;
   const closed = new Promise(resolve => { resolveClose = resolve; });
   const requests = [];
@@ -61,6 +63,7 @@ try {
       const message = JSON.parse(raw);
       requests.push(message);
       if (message.t === "hello") resolveHello(route);
+      if (message.t === "repair") resolveRepair();
     });
     route.onClose(code => resolveClose(code));
   });
@@ -77,11 +80,17 @@ try {
   await repairPage.waitForSelector("#draft");
   await repairPage.locator("#draft").evaluate(el => { window.saved = el; el.focus(); el.setSelectionRange(2, 2); });
   mock.send(JSON.stringify({t: "patch", version: 3, epoch: "mock", base_rev: 5, state_rev: 6, ops: [{op: "text", id: "value", v: "discontinuous"}]}));
-  await repairPage.waitForTimeout(30);
+  let repairTimeout;
+  await Promise.race([
+    repairRequested,
+    new Promise((_, reject) => {
+      repairTimeout = setTimeout(() => reject(new Error("mock transport never received repair request")), 30000);
+    }),
+  ]).finally(() => clearTimeout(repairTimeout));
   assert.equal(await repairPage.locator("#value").textContent(), "0");
-  assert.equal(requests.filter(message => message.t === "repair").length, 1);
   mock.send(JSON.stringify({t: "repair", version: 3, epoch: "mock", base_rev: 6, state_rev: 7, expected: 1, html: html.replace(">0<", ">current<"), css: ""}));
   await repairPage.waitForFunction(() => document.getElementById("value").textContent === "current");
+  assert.equal(requests.filter(message => message.t === "repair").length, 1);
   assert.equal(await repairPage.evaluate(() => window.saved === document.getElementById("draft") && document.activeElement === window.saved && window.saved.selectionStart === 2), true);
   console.log("  ok  client revision gaps repair through retained identities without losing focus");
   await repairPage.evaluate(() => {
