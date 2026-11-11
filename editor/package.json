@@ -5,6 +5,8 @@
   "publisher": "pysx-local",
   "icon": "icon.png",
   "version": "0.1.0",
+  "license": "MIT",
+  "author": "JMS Apps <jmsapps@outlook.com>",
   "scripts": {
     "test": "node test/runner.mjs",
     "setup:host": "node test/setup_host.mjs"

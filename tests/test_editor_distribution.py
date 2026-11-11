@@ -259,6 +259,14 @@ def test_client_verify_every_declared_dependency_is_exactly_pinned() -> None:
             assert spec[0].isdigit(), f"{name} is declared as a range: {spec}"
 
 
+def test_stable_api_editor_license(vsix: zipfile.ZipFile) -> None:
+    package = manifest()
+    assert package["license"] == "MIT"
+    assert package["author"] == "JMS Apps <jmsapps@outlook.com>"
+    assert lockfile()[""]["version"] == package["version"]
+    assert vsix.read("extension/LICENSE") == (ROOT / "LICENSE").read_bytes()
+
+
 def test_client_verify_vsix_ships_the_runtime_closure_only(vsix: zipfile.ZipFile) -> None:
     shipped = {
         name.split("/")[2] for name in vsix.namelist() if name.startswith("extension/node_modules/")

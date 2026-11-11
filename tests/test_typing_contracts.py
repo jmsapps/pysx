@@ -24,6 +24,30 @@ def reports(output: str, fragment: str) -> bool:
 
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
+def test_stable_api_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = ROOT / "tests/typing" / f"stable_api_{'valid' if valid else 'invalid'}.txt"
+    fixture = tmp_path / "stable_api.py"
+    fixture.write_text(source.read_text())
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args.append("--strict")
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert reports(output, f"{fixture}:3:"), output
+        assert "set" in output, output
+        assert "int" in output, output
+        assert ("str" if checker == "mypy" else "Literal['wrong']") in output, output
+        assert ("[arg-type]" if checker == "mypy" else "reportArgumentType") in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
 def test_resident_protocol_generation_types(tmp_path: Path, checker: str, valid: bool) -> None:
     source = (
         "from typing import assert_type\nfrom pysx.tooling.lsp.backend import Stamp\n"

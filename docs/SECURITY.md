@@ -1,5 +1,15 @@
 # Application security
 
+## Reporting
+
+Report suspected vulnerabilities privately to **jmsapps@outlook.com**. Include
+the affected version, a minimal reproduction and the impact; do not send secrets,
+credentials or real user data. Avoid public disclosure of exploitable details
+until a fix can be coordinated. See the [maintenance policy](COMPATIBILITY.md#maintenance-window)
+for supported release windows.
+
+## Application boundaries
+
 Authentication belongs to the host application. Use trusted middleware or the
 principal callback and an explicit [host security policy](HOSTING.md). Origin
 checks protect browser mutation, while authorization hooks govern business access.

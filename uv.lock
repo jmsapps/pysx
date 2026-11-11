@@ -511,6 +511,9 @@ asgi = [
 dev = [
     { name = "ruff" },
 ]
+examples = [
+    { name = "typer" },
+]
 lsp = [
     { name = "lsprotocol" },
     { name = "pygls" },
@@ -537,10 +540,11 @@ requires-dist = [
     { name = "pyright", marker = "extra == 'lsp'", specifier = "==1.1.414" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.16.10" },
     { name = "ruff", marker = "extra == 'lsp'", specifier = "==0.16.10" },
+    { name = "typer", marker = "extra == 'examples'", specifier = "==0.27.2" },
     { name = "uvicorn", marker = "extra == 'asgi'", specifier = "==0.54.0" },
     { name = "websockets", specifier = "==17.1" },
 ]
-provides-extras = ["asgi", "dev", "lsp"]
+provides-extras = ["examples", "asgi", "dev", "lsp"]
 
 [package.metadata.requires-dev]
 dev = [

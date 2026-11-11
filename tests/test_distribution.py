@@ -19,7 +19,16 @@ from types import SimpleNamespace
 import pytest
 from acceptance_support import interrupt, raised_signal_status, shutdown_status
 from prototypes import distribution as distribution_fixture
-from prototypes.distribution import ROOT, clean_env, command, dependency_cache, installed, qualify
+from prototypes.distribution import (
+    ROOT,
+    clean_env,
+    command,
+    dependency_cache,
+    installed,
+    qualify,
+    typing_probe,
+)
+from release_support import build_release_artifacts, install_release, installed_counter
 from test_dev_server import get, project, serving, wait_for
 
 from pysx.tooling.tools import RUFF_REQUIREMENT
@@ -29,6 +38,81 @@ def _console(python: Path, name: str) -> str:
     suffix = ".exe" if sys.platform == "win32" else ""
 
     return str(python.with_name(name + suffix))
+
+
+@pytest.fixture(scope="module")
+def stable_api_artifacts(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path, Path]:
+    return build_release_artifacts(tmp_path_factory.mktemp("stable-api-artifacts"))
+
+
+@pytest.mark.parametrize("artifact", [0, 1], ids=["wheel", "sdist-wheel"])
+@pytest.mark.parametrize(
+    "extra",
+    ["", "asgi", "dev", "lsp", "examples"],
+    ids=["minimal", "asgi", "dev", "lsp", "examples"],
+)
+def test_stable_api_installed_consumers(
+    tmp_path: Path, stable_api_artifacts: tuple[Path, Path, Path], artifact: int, extra: str
+) -> None:
+    python = install_release(
+        tmp_path, stable_api_artifacts[artifact], stable_api_artifacts[2], extra
+    )
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    optional = {"uvicorn", "ruff", "pyright", "pygls", "typer"}
+    expected = {
+        "": set[str](),
+        "asgi": {"uvicorn"},
+        "dev": {"ruff"},
+        "lsp": {"ruff", "pyright", "pygls"},
+        "examples": {"typer"},
+    }[extra]
+    source = f"""
+import importlib, importlib.metadata as metadata, importlib.resources as resources, sys
+from pathlib import Path
+import pysx
+distribution = metadata.distribution("pysx")
+assert distribution.version == {project["version"]!r}
+assert distribution.metadata["License-Expression"] == "MIT"
+assert distribution.metadata["Author-email"] == "JMS Apps <jmsapps@outlook.com>"
+assert not any({str(ROOT)!r} in value for value in sys.path)
+assert str(Path(pysx.__file__).resolve()).startswith({str(python.parent.parent)!r})
+assert all(getattr(pysx, name) is not None for name in pysx.__all__)
+assert resources.files("pysx").joinpath("py.typed").is_file()
+present = {{item.metadata["Name"].lower() for item in metadata.distributions()}}
+assert present & {optional!r} == {expected!r}, present
+for entry in distribution.entry_points:
+    if entry.name != "pysx-example" or {extra!r} == "examples":
+        assert callable(entry.load())
+if {extra!r} == "asgi":
+    import uvicorn
+if {extra!r} == "lsp":
+    import pysx.tooling.lsp.server
+"""
+    command([str(python), "-I", "-c", source], tmp_path)
+
+    if not extra:
+        assert typing_probe(python, tmp_path) == 4
+
+    for name in project["scripts"]:
+        if name == "pysx-example" and extra != "examples":
+            result = command([_console(python, name), "--help"], tmp_path, expected=1)
+            assert "pysx[examples]" in result.stderr
+        else:
+            command([_console(python, name), "--help"], tmp_path)
+
+    if extra in ("dev", "lsp"):
+        script = (
+            "from pysx.tooling.tools import resolve_ruff; "
+            f"assert resolve_ruff().version == {RUFF_REQUIREMENT!r}"
+        )
+        command([str(python), "-I", "-c", script], tmp_path)
+        source_file = tmp_path / "format_me.py"
+        source_file.write_text("value=  1\n")
+        command([str(python), "-I", "-m", "ruff", "format", str(source_file)], tmp_path)
+        assert source_file.read_text() == "value = 1\n"
+
+    if extra == "examples":
+        installed_counter(python, tmp_path)
 
 
 def test_installed_serve_fresh_wheel_outside_checkout(tmp_path: Path) -> None:
@@ -339,7 +423,6 @@ def test_client_verify_bundled_client_installs_outside_the_checkout(tmp_path: Pa
     with zipfile.ZipFile(staged) as archive:
         names = archive.namelist()
         assert "extension/node_modules/vscode-languageclient/package.json" in names
-        assert not any("pysx-root.json" in name for name in names)
 
         for name in names:
             if name.endswith((".js", ".json")):

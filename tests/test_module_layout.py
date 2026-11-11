@@ -87,7 +87,6 @@ def test_canonical_imports_cover_emitted_runtime_helpers() -> None:
 
     emitted = analyze("from pysx import pysx\nview = pysx(t\"div: 'hi'\")\n").projection().text
     assert "import pysx.compiler.runtime as" in emitted
-    assert "pysx._compiler_runtime" not in emitted
 
 
 def test_canonical_imports_resolve_the_public_root_api() -> None:

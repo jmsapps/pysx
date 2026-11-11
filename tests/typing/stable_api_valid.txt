@@ -1,0 +1,12 @@
+from typing import assert_type
+from pysx import Application, Fragment, HostConfig, Signal, native, signal
+
+count = signal(0)
+assert_type(count, Signal[int])
+assert_type(count(), int)
+
+def app() -> Fragment:
+    return native.Div(count)
+
+host = Application(app, config=HostConfig())
+assert_type(host, Application)

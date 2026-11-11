@@ -102,6 +102,7 @@ def main() -> None:
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("extension.vsixmanifest", MANIFEST)
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
+        z.write(HERE.parent / "LICENSE", "extension/LICENSE")
 
         for name in INCLUDE:
             path = HERE / name

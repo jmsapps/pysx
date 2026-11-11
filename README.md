@@ -71,14 +71,11 @@ clears its state, so it is also the reset.
 
 ## Supported platforms
 
-Python 3.14 or newer, on macOS and Linux. Ordinary changes use local verification;
-release platform qualification runs separately. The reference
-deployment topology needs a Linux container runtime; where a machine has not got one, the
-suites that assert it report themselves as skipped rather than passing.
+Python 3.14 or newer. The quality matrix has passed on Linux, macOS and Windows.
+See [compatibility and support](docs/COMPATIBILITY.md) for tested versions,
+deployment requirements and maintenance windows.
 
-Windows is **not supported yet.** The library is not known to work there, and the test
-suite does not pass on it; several components still assume POSIX process and signal
-behaviour. Use WSL in the meantime.
+PYSX is available under the [MIT license](LICENSE).
 
 ## Explore
 

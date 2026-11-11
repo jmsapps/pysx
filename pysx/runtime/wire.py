@@ -1,5 +1,3 @@
-"""Wire contracts and bounded runtime validation for v3 and compatible v2 peers."""
-
 import json
 import math
 import re

@@ -243,9 +243,6 @@ Dynamic rules and active themes belong to one session; removal releases owned ru
 while identical surviving rules remain deduplicated. CSS variables use ordinary `style`
 attribute patches with empty variables removed from the serialized declarations.
 
-Supersedes the counter-era `{"slots": {...}}` format, which could only replace
-text by index.
-
 ## Messages
 
 ### HTTP rendering and attachment

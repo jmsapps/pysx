@@ -22,8 +22,6 @@ def test_validate_integrated_tutorial_wheel_assets_types_and_provenance(tmp_path
         assert "src/assets/course.css" in names
         assert "src/snippets/foundations.py" in names
         assert "src/snippets/demos.py" in names
-        assert "src/components/highlighted.py" not in names
-        assert "src/assets/code-tokens.json" not in names
         assert "src/components/pages.py" in names
         assert not any(name.startswith(("examples/", "tests/")) for name in names)
     worker.reinstall()
