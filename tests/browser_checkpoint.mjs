@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import {mkdirSync, writeFileSync} from "node:fs";
+import path from "node:path";
 import playwright from "playwright";
 
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
@@ -13,20 +15,40 @@ try {
     const Original = WebSocket;
     window.recoveryFrames = [];
     window.recoveryHellos = [];
+    const capsules = new Map();
+    window.recoveryTimeline = [];
+    window.traceRecovery = (event, message = {}, socket = null) => {
+      const capsule = message.capsule;
+      if (capsule && !capsules.has(capsule)) capsules.set(capsule, capsules.size + 1);
+      window.recoveryTimeline.push({time: performance.now(), event, socket,
+        t: message.t, capsule: capsule ? capsules.get(capsule) : null,
+        state: message.state_rev, base: message.base_rev,
+        attached: document.getElementById("pysx-root")?.dataset.pysxAttached});
+      if (window.recoveryTimeline.length > 200) window.recoveryTimeline.shift();
+    };
+    let socketId = 0;
     window.WebSocket = class extends Original {
       constructor(...args) {
         super(...args);
+        this.traceId = ++socketId;
+        window.traceRecovery("socket-created", {}, this.traceId);
+        this.addEventListener("close", event => window.traceRecovery("socket-closed", {t: String(event.code)}, this.traceId));
         window.recoverySocket = this;
         this.addEventListener("open", () => {
           const input = document.getElementById("recovery-draft");
           if (input && !window.recoveryHellos.length) input.value = "typed before attachment";
         });
         this.addEventListener("message", event => {
-          try { window.recoveryFrames.push(JSON.parse(event.data)); } catch { /* Synthetic retired frames are ignored. */ }
+          try {
+            const frame = JSON.parse(event.data);
+            window.recoveryFrames.push(frame);
+            window.traceRecovery("received", frame, this.traceId);
+          } catch { /* Synthetic retired frames are ignored. */ }
         });
       }
       send(raw) {
         const message = JSON.parse(raw);
+        window.traceRecovery("sent", message, this.traceId);
         if (message.t === "hello") window.recoveryHellos.push(message);
         return super.send(raw);
       }
@@ -73,10 +95,27 @@ try {
   await page.waitForFunction(previous => window.recoveryFrames.filter(frame => frame.capsule).at(-1).capsule !== previous, hidden.capsule);
   await page.waitForFunction(() => window.recoveryFrames.some(frame => frame.t === "checkpoint" && frame.capsule));
   const latest = await page.evaluate(() => window.recoveryFrames.filter(frame => frame.capsule).at(-1));
-  await page.evaluate(() => { window.retiredRecoverySocket = window.recoverySocket; window.recoverySocket.close(); });
+  await page.evaluate(latest => {
+    window.traceRecovery("test-captured-latest", latest);
+    window.traceRecovery("test-before-close", window.recoveryFrames.filter(frame => frame.capsule).at(-1));
+    window.retiredRecoverySocket = window.recoverySocket;
+    window.recoverySocket.close();
+  }, latest);
   await page.waitForFunction(() => window.recoveryHellos.length >= 2 && document.getElementById("pysx-root").dataset.pysxAttached === "true");
   const resumed = await page.evaluate(() => window.recoveryHellos.at(-1));
-  assert.equal(resumed.capsule, latest.capsule);
+  if (resumed.capsule !== latest.capsule) {
+    const timeline = await page.evaluate(() => window.recoveryTimeline);
+    const diagnostic = JSON.stringify({engine: process.env.PYSX_BROWSER_ENGINE, timeline});
+    console.error(`PYSX CHECKPOINT RESUME FAILURE: ${diagnostic}`);
+    if (process.env.PYSX_DEPLOYMENT_LOGS) {
+      try {
+        mkdirSync(process.env.PYSX_DEPLOYMENT_LOGS, {recursive: true});
+        writeFileSync(path.join(process.env.PYSX_DEPLOYMENT_LOGS,
+          `checkpoint-resume-${process.env.PYSX_BROWSER_ENGINE}-${process.pid}.json`), diagnostic);
+      } catch (error) { console.error(`Could not preserve checkpoint diagnostics: ${error.message}`); }
+    }
+    assert.fail("resume capsule differs from test-captured latest; see PYSX CHECKPOINT RESUME FAILURE timeline");
+  }
   assert.equal(resumed.document, latest.document);
   await page.evaluate(() => window.retiredRecoverySocket.dispatchEvent(new MessageEvent("message", { data: "invalid retired frame" })));
   assert.equal(await page.locator("#recovery-count").textContent(), "1");
