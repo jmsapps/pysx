@@ -97,7 +97,7 @@ try {
   const artifact = fixture ? fixture.vsix : build.stdout.trim();
   if (suite === "validate_integrated") {
     const prepared = spawnSync("uv", ["run", "--project", root, "python", "-c",
-      "import json,sys; from pathlib import Path; sys.path.insert(0, 'tests'); from test_field_application import prepare_editor; print(json.dumps(prepare_editor(Path(sys.argv[1]))))", workspace],
+      "import json,sys; from pathlib import Path; sys.path.insert(0, 'tests'); from test_installed_application import prepare_editor; print(json.dumps(prepare_editor(Path(sys.argv[1]))))", workspace],
       {cwd: root, encoding: "utf8", timeout: 120000});
     if (prepared.status !== 0) throw new Error(`installed course preparation failed: ${prepared.stderr}`);
     fixture = JSON.parse(prepared.stdout);
