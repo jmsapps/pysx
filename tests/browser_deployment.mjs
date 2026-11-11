@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import {mkdirSync, writeFileSync} from "node:fs";
+import path from "node:path";
 import playwright from "playwright";
 
 const controls = `http://127.0.0.1:${process.argv[2]}`;
@@ -11,11 +13,41 @@ const {base} = await control("/reset");
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
 let page;
 const errors = [];
+const trace = [];
+const record = (event, detail) => {
+  trace.push({time: Date.now(), event, ...detail});
+  if (trace.length > 200) trace.shift();
+};
 try {
   const context = await browser.newContext({ignoreHTTPSErrors: true});
   page = await context.newPage();
   page.on("pageerror", error => errors.push(error.message));
+  let socketId = 0;
+  page.on("websocket", socket => {
+    const id = ++socketId;
+    record("socket-created", {id});
+    for (const direction of ["framesent", "framereceived"]) socket.on(direction, frame => {
+      try {
+        const message = JSON.parse(String(frame.payload));
+        // Allowlist metadata: never retain credentials, capsules or HTML.
+        record(direction, {id, t: message.t, version: message.version,
+          epoch: message.epoch, state: message.state_rev, base: message.base_rev,
+          owner: message.owner, status: message.status});
+      } catch { record(direction, {id, malformed: true}); }
+    });
+    socket.on("socketerror", error => record("socket-error", {id, error: String(error)}));
+    socket.on("close", () => record("socket-closed", {id}));
+  });
   await page.addInitScript(() => {
+    window.deploymentTrace = [];
+    const record = (event, detail) => {
+      window.deploymentTrace.push({time: Date.now(), event, ...detail});
+      if (window.deploymentTrace.length > 200) window.deploymentTrace.shift();
+    };
+    window.addEventListener("pysx:connection", event => record("connection", {
+      state: event.detail.state, attempt: event.detail.attempt,
+    }));
+    let socketId = 0;
     const Original = WebSocket;
     window.WebSocket = class extends Original {
       addEventListener(type, listener, options) {
@@ -32,6 +64,14 @@ try {
       }
       constructor(...args) {
         super(...args); window.socket = this;
+        const id = ++socketId;
+        record("socket-created", {id});
+        // Observe native close immediately, independent of the delayed listener fixture.
+        super.addEventListener("open", () => record("socket-open", {id}));
+        super.addEventListener("error", () => record("socket-error", {id}));
+        super.addEventListener("close", event => record("socket-close", {
+          id, code: event.code, reason: event.reason, clean: event.wasClean,
+        }));
         this.addEventListener("message", event => {
           const frame = JSON.parse(event.data);
           if (frame.owner) window.owner = frame.owner;
@@ -105,7 +145,17 @@ try {
     readyState: window.socket?.readyState,
     sameSocket: window.socket === window.disconnectedSocket,
     owner: window.owner,
+    timeline: window.deploymentTrace,
   })).catch(() => null);
-  console.log(`DEPLOYMENT FAILURE: ${JSON.stringify({state, errors})}`);
+  const diagnostic = JSON.stringify({engine: process.env.PYSX_BROWSER_ENGINE,
+    error: error.message, state, errors, trace});
+  console.error(`DEPLOYMENT FAILURE: ${diagnostic}`);
+  if (process.env.PYSX_DEPLOYMENT_LOGS) {
+    try {
+      mkdirSync(process.env.PYSX_DEPLOYMENT_LOGS, {recursive: true});
+      writeFileSync(path.join(process.env.PYSX_DEPLOYMENT_LOGS,
+        `deployment-browser-${process.env.PYSX_BROWSER_ENGINE}-${process.pid}-${Date.now()}.json`), diagnostic);
+    } catch (failure) { console.error(`Could not preserve deployment diagnostics: ${failure.message}`); }
+  }
   throw error;
 } finally { await browser.close(); }
