@@ -377,6 +377,8 @@ try {
       ["-m", "pysx.hosting.server", "--app", "tests.browser_http_fixture:app", "--port", String(port)] :
       name === "async_fixture" ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_async_fixture:app", "--port", String(port)] :
+      name === "resources" ?
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_resources_fixture:app", "--port", String(port)] :
       name === "qualification_fixture" ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_qualification_fixture:app", "--port", String(port)] :
       name === "keyed_fixture" ?

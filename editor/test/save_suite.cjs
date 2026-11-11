@@ -51,10 +51,32 @@ exports.run = async function () {
   const resident = api.client;
   const send = resident.sendRequest.bind(resident);
   let importRequests = 0;
+  let saveCheckpoint = () => {};
+  const pendingImports = new Set();
   resident.sendRequest = (method, ...args) => {
-    if ((method === "textDocument/codeAction" || method?.method === "textDocument/codeAction")
-      && args[0]?.context?.only?.includes("source.organizeImports.pysx")) importRequests++;
-    return send(method, ...args);
+    const imports = (method === "textDocument/codeAction" || method?.method === "textDocument/codeAction")
+      && args[0]?.context?.only?.includes("source.organizeImports.pysx");
+    if (!imports) return send(method, ...args);
+    const id = ++importRequests;
+    pendingImports.add(id);
+    const started = performance.now();
+    saveCheckpoint("imports-request-started", {id, version: document.version,
+      matchesCounter: args[0]?.textDocument?.uri === document.uri.toString()});
+    const token = args.find(arg => typeof arg?.onCancellationRequested === "function");
+    const cancellation = token?.onCancellationRequested(() => saveCheckpoint("imports-request-cancelled", {id}));
+    const finish = details => {
+      cancellation?.dispose();
+      pendingImports.delete(id);
+      saveCheckpoint("imports-request-finished", {id, elapsed_ms: Math.round(performance.now() - started), ...details});
+    };
+    try {
+      const result = send(method, ...args);
+      Promise.resolve(result).then(
+        actions => finish({status: "success", actions: Array.isArray(actions) ? actions.length : null}),
+        error => finish({status: "error", code: error?.code, message: String(error?.message ?? error)}),
+      );
+      return result;
+    } catch (error) { finish({status: "threw", message: String(error)}); throw error; }
   };
 
   const probe = createServer();
@@ -120,9 +142,26 @@ exports.run = async function () {
         let checkpointStarted = performance.now();
         const checkpoint = (name, details = {}) => {
           if (mode !== "autosave-focus") return;
-          const event = {mode, edit, elapsed_ms: Math.round(performance.now() - checkpointStarted), name, ...details};
+          const scopedFiles = vscode.workspace.getConfiguration("files", document);
+          const scopedEditor = vscode.workspace.getConfiguration("editor", document);
+          const event = {mode, edit, elapsed_ms: Math.round(performance.now() - checkpointStarted), name,
+            version: document.version, language: document.languageId, windowFocused: vscode.window.state.focused,
+            autoSave: scopedFiles.get("autoSave"), autoSaveDelay: scopedFiles.get("autoSaveDelay"),
+            autoSaveWhenNoErrors: scopedFiles.get("autoSaveWhenNoErrors"),
+            autoSaveWorkspaceFilesOnly: scopedFiles.get("autoSaveWorkspaceFilesOnly"),
+            codeActionsOnSave: scopedEditor.get("codeActionsOnSave"),
+            formatOnSave: scopedEditor.get("formatOnSave"), pendingImports: [...pendingImports], ...details};
           console.log(`PYSX EDITOR SAVE CHECKPOINT: ${JSON.stringify(event)}`);
         };
+        saveCheckpoint = checkpoint;
+        const willSave = vscode.workspace.onWillSaveTextDocument(event => {
+          checkpoint("document-will-save", {matchesCounter: event.document.uri.toString() === document.uri.toString(),
+            reason: event.reason, dirty: event.document.isDirty});
+        });
+        const configurationChange = vscode.workspace.onDidChangeConfiguration(event => {
+          if (event.affectsConfiguration("files", document) || event.affectsConfiguration("editor.codeActionsOnSave", document))
+            checkpoint("save-configuration-changed");
+        });
         const editorLabel = active => !active ? "none"
           : active.document.uri.toString() === document.uri.toString() ? "counter"
             : active.document.uri.fsPath.endsWith("README.md") ? "readme" : "other";
@@ -191,7 +230,10 @@ exports.run = async function () {
           checkpoint("case-failed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty,
             saveEventObserved: savedAt !== null, error: String(error)});
           throw error;
-        } finally { changed.dispose(); activeEditorChange.dispose(); }
+        } finally {
+          changed.dispose(); activeEditorChange.dispose(); willSave.dispose(); configurationChange.dispose();
+          saveCheckpoint = () => {};
+        }
         // Let the page's restored signal differ from the next initializer.
         if (edit === "title" && mode === "manual") {
           await page.getByRole("button", {name: "Increment", exact: true}).click();

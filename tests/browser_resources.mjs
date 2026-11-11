@@ -41,11 +41,15 @@ try {
   assert.equal(await other.locator("#resource-draft").inputValue(), "Keep this draft");
   console.log("  ok  reload and delivered push update one tab independently");
   await page.locator("#reload-resource").click();
+  await page.waitForFunction(() => document.getElementById("load-gate-stage").textContent === "held");
   await page.waitForFunction(() => document.getElementById("resource-status").textContent === "pending");
   await page.locator("#cancel-resource").click();
   await page.waitForFunction(() => document.getElementById("resource-status").textContent === "cancelled");
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => document.getElementById("load-gate-stage").textContent === "cancel-observed");
+  await page.locator("#release-load").click();
+  await page.waitForFunction(() => document.getElementById("load-gate-stage").textContent === "finished");
   assert.equal(await page.locator("#resource-status").textContent(), "cancelled");
+  assert.notEqual(await page.locator("#resource-value").textContent(), "Late cancelled result");
   assert.equal(await page.locator("#resource-delivered").textContent(), "2");
   assert.deepEqual(errors, []);
   console.log("  ok  cancellation prevents late publication or delivered mutation");
