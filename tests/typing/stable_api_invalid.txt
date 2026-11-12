@@ -1,0 +1,3 @@
+from pysx import signal
+count = signal(0)
+count.set("wrong")

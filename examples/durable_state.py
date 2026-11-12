@@ -123,15 +123,19 @@ def create_application(
     *,
     worker: str | None = None,
     origin: str | None = None,
+    wal: bool = False,
 ) -> DurableApplication[ExampleState]:
+    backend = SQLiteOwnershipStore(path, wal=wal)
+
     return DurableApplication(
         view,
         initial=ExampleState,
         codec=CODEC,
-        store=SQLiteOwnershipStore(path),
+        store=backend,
         application="durable-example",
         worker=worker,
         config=HostConfig(
+            shutdown=(backend.close,),
             principal=lambda _request: "local-demo",
             secure_cookies=origin is not None,
             security=SecurityPolicy(
@@ -150,6 +154,7 @@ app = create_application(
     ),
     worker=os.environ.get("PYSX_WORKER"),
     origin=os.environ.get("PYSX_ORIGIN"),
+    wal=os.environ.get("PYSX_STATE_WAL") == "1",
 )
 
 

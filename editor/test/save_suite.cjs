@@ -1,23 +1,28 @@
 const assert = require("node:assert/strict");
+const SAVE_BUDGET = Number(process.env.PYSX_EDITOR_SAVE_BUDGET ?? 1);
+const VISIBLE_BUDGET = Number(process.env.PYSX_EDITOR_VISIBLE_BUDGET ?? 1.5);
 const fs = require("node:fs");
 const path = require("node:path");
-const {spawn} = require("node:child_process");
 const {createServer} = require("node:net");
 const {once} = require("node:events");
 const {createHash} = require("node:crypto");
 const vscode = require("vscode");
 
 async function until(predicate, label, timeout = 60000) {
-  const deadline = Date.now() + timeout;
+  const started = Date.now();
+  const deadline = started + timeout;
+  let polls = 0;
   while (Date.now() < deadline) {
+    polls += 1;
     const value = await predicate();
     if (value) return value;
     await new Promise(resolve => setTimeout(resolve, 20));
   }
-  throw new Error(`timeout waiting for ${label}`);
+  throw new Error(`timeout waiting for ${label} after ${((Date.now() - started) / 1000).toFixed(3)}s (budget ${timeout}ms), ${polls} polls`);
 }
 
 exports.run = async function () {
+  const {spawnCli, signalCli} = await import("../../tests/cli_process.mjs");
   const checkout = process.env.PYSX_EDITOR_CHECKOUT;
   const python = process.env.PYSX_EDITOR_PYTHON;
   const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
@@ -46,10 +51,32 @@ exports.run = async function () {
   const resident = api.client;
   const send = resident.sendRequest.bind(resident);
   let importRequests = 0;
+  let saveCheckpoint = () => {};
+  const pendingImports = new Set();
   resident.sendRequest = (method, ...args) => {
-    if ((method === "textDocument/codeAction" || method?.method === "textDocument/codeAction")
-      && args[0]?.context?.only?.includes("source.organizeImports.pysx")) importRequests++;
-    return send(method, ...args);
+    const imports = (method === "textDocument/codeAction" || method?.method === "textDocument/codeAction")
+      && args[0]?.context?.only?.includes("source.organizeImports.pysx");
+    if (!imports) return send(method, ...args);
+    const id = ++importRequests;
+    pendingImports.add(id);
+    const started = performance.now();
+    saveCheckpoint("imports-request-started", {id, version: document.version,
+      matchesCounter: args[0]?.textDocument?.uri === document.uri.toString()});
+    const token = args.find(arg => typeof arg?.onCancellationRequested === "function");
+    const cancellation = token?.onCancellationRequested(() => saveCheckpoint("imports-request-cancelled", {id}));
+    const finish = details => {
+      cancellation?.dispose();
+      pendingImports.delete(id);
+      saveCheckpoint("imports-request-finished", {id, elapsed_ms: Math.round(performance.now() - started), ...details});
+    };
+    try {
+      const result = send(method, ...args);
+      Promise.resolve(result).then(
+        actions => finish({status: "success", actions: Array.isArray(actions) ? actions.length : null}),
+        error => finish({status: "error", code: error?.code, message: String(error?.message ?? error)}),
+      );
+      return result;
+    } catch (error) { finish({status: "threw", message: String(error)}); throw error; }
   };
 
   const probe = createServer();
@@ -58,8 +85,9 @@ exports.run = async function () {
   const port = probe.address().port;
   await new Promise(resolve => probe.close(resolve));
   const launcher = path.join(path.dirname(python), process.platform === "win32" ? "pysx.exe" : "pysx");
-  const child = spawn(launcher, ["--app", "examples.counter:app", "--watch", "--port", String(port)], {
-    cwd: root, env: {...process.env, PYTHONPATH: checkout}, stdio: ["ignore", "pipe", "pipe"],
+  const child = spawnCli(checkout, ["--app", "examples.counter:app", "--watch", "--port", String(port)], {
+    cwd: root, detached: process.platform !== "win32",
+    env: {...process.env, PYTHONPATH: checkout}, stdio: ["ignore", "pipe", "pipe"],
   });
   const exited = once(child, "exit");
   let output = "";
@@ -111,14 +139,46 @@ exports.run = async function () {
         const at = text.indexOf(before);
         assert.ok(at >= 0, before);
         let savedAt = null;
+        let checkpointStarted = performance.now();
+        const checkpoint = (name, details = {}) => {
+          if (mode !== "autosave-focus") return;
+          const scopedFiles = vscode.workspace.getConfiguration("files", document);
+          const scopedEditor = vscode.workspace.getConfiguration("editor", document);
+          const event = {mode, edit, elapsed_ms: Math.round(performance.now() - checkpointStarted), name,
+            version: document.version, language: document.languageId, windowFocused: vscode.window.state.focused,
+            autoSave: scopedFiles.get("autoSave"), autoSaveDelay: scopedFiles.get("autoSaveDelay"),
+            autoSaveWhenNoErrors: scopedFiles.get("autoSaveWhenNoErrors"),
+            autoSaveWorkspaceFilesOnly: scopedFiles.get("autoSaveWorkspaceFilesOnly"),
+            codeActionsOnSave: scopedEditor.get("codeActionsOnSave"),
+            formatOnSave: scopedEditor.get("formatOnSave"), pendingImports: [...pendingImports], ...details};
+          console.log(`PYSX EDITOR SAVE CHECKPOINT: ${JSON.stringify(event)}`);
+        };
+        saveCheckpoint = checkpoint;
+        const willSave = vscode.workspace.onWillSaveTextDocument(event => {
+          checkpoint("document-will-save", {matchesCounter: event.document.uri.toString() === document.uri.toString(),
+            reason: event.reason, dirty: event.document.isDirty});
+        });
+        const configurationChange = vscode.workspace.onDidChangeConfiguration(event => {
+          if (event.affectsConfiguration("files", document) || event.affectsConfiguration("editor.codeActionsOnSave", document))
+            checkpoint("save-configuration-changed");
+        });
+        const editorLabel = active => !active ? "none"
+          : active.document.uri.toString() === document.uri.toString() ? "counter"
+            : active.document.uri.fsPath.endsWith("README.md") ? "readme" : "other";
+        const activeEditorChange = vscode.window.onDidChangeActiveTextEditor(active => {
+          checkpoint("active-editor-changed", {active: editorLabel(active)});
+        });
         const changed = vscode.workspace.onDidSaveTextDocument(saved => {
-          if (saved.uri.toString() === document.uri.toString()) savedAt = performance.now();
+          const matches = saved.uri.toString() === document.uri.toString();
+          checkpoint("document-save-event", {matchesCounter: matches});
+          if (matches) savedAt = performance.now();
         });
         try {
           const changes = new vscode.WorkspaceEdit();
           changes.replace(document.uri, new vscode.Range(document.positionAt(at), document.positionAt(at + before.length)), after);
           assert(await vscode.workspace.applyEdit(changes));
           assert(document.isDirty);
+          checkpoint("edit-applied", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
           const requestsBeforeSave = importRequests;
           const started = performance.now();
           if (mode === "manual") await vscode.commands.executeCommand("workbench.action.files.save");
@@ -126,11 +186,25 @@ exports.run = async function () {
             await files.update("autoSaveDelay", 100, vscode.ConfigurationTarget.Workspace);
             await files.update("autoSave", "afterDelay", vscode.ConfigurationTarget.Workspace);
           } else {
+            checkpoint("before-enable-focus-autosave", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
             await files.update("autoSave", "onFocusChange", vscode.ConfigurationTarget.Workspace);
-            await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(path.join(root, "examples", "README.md")));
+            checkpoint("focus-autosave-enabled", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
+            const readme = await vscode.workspace.openTextDocument(path.join(root, "examples", "README.md"));
+            checkpoint("readme-opened", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
+            await vscode.window.showTextDocument(readme);
+            checkpoint("focus-change-command-completed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
           }
-          await until(() => savedAt !== null, `${mode} disk save`, 5000);
+          checkpoint("save-event-wait-started", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
+          try {
+            await until(() => savedAt !== null, `${mode} disk save`, 5000);
+          } catch (error) {
+            checkpoint("save-event-wait-failed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty,
+              saveEventObserved: savedAt !== null, fileContainsEdit: fs.readFileSync(filename, "utf8").includes(after), error: String(error)});
+            throw error;
+          }
+          checkpoint("save-event-observed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
           assert.ok(fs.readFileSync(filename, "utf8").includes(after));
+          checkpoint("disk-content-verified", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
           await page.bringToFront();
           if (edit === "title") await page.waitForFunction(title => document.querySelector("h1")?.textContent === title, `${mode} save`, {polling: "raf"});
           else await value(initializer);
@@ -150,9 +224,16 @@ exports.run = async function () {
           samples.push(sample);
           console.log(`PYSX EDITOR SAVE: ${JSON.stringify(sample)}`);
           if (mode !== "autosave-delay") assert.ok(sample.import_requests > 0, `${mode} must exercise the resident import action`);
-          assert.ok(sample.save_seconds < 1, `${mode} save stalled: ${JSON.stringify(sample)}`);
-          assert.ok(sample.visible_seconds < 1.5, `${mode} update stalled: ${JSON.stringify(sample)}`);
-        } finally { changed.dispose(); }
+          assert.ok(sample.save_seconds < SAVE_BUDGET, `${mode} save stalled (budget ${SAVE_BUDGET}s): ${JSON.stringify(sample)}`);
+          assert.ok(sample.visible_seconds < VISIBLE_BUDGET, `${mode} update stalled (budget ${VISIBLE_BUDGET}s): ${JSON.stringify(sample)}`);
+        } catch (error) {
+          checkpoint("case-failed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty,
+            saveEventObserved: savedAt !== null, error: String(error)});
+          throw error;
+        } finally {
+          changed.dispose(); activeEditorChange.dispose(); willSave.dispose(); configurationChange.dispose();
+          saveCheckpoint = () => {};
+        }
         // Let the page's restored signal differ from the next initializer.
         if (edit === "title" && mode === "manual") {
           await page.getByRole("button", {name: "Increment", exact: true}).click();
@@ -168,7 +249,7 @@ exports.run = async function () {
   } finally {
     await files.update("autoSave", "off", vscode.ConfigurationTarget.Workspace);
     if (browser) await browser.close();
-    child.kill("SIGINT");
+    signalCli(child, "SIGINT");
     const [code] = await exited;
     assert.equal(code, 0, output);
   }

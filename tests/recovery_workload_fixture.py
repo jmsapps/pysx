@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass, field, replace
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -35,6 +37,7 @@ from pysx import (
 
 if TYPE_CHECKING:
     import sqlite3
+    from collections.abc import Callable
 
     from pysx.hosting.request import RequestContext
     from pysx.runtime.persistence import StateSnapshot
@@ -43,6 +46,137 @@ if TYPE_CHECKING:
 
 class ObservedOwnershipStore(SQLiteOwnershipStore):
     """Record failed validation metadata without logging state or identities."""
+
+    def __init__(self, path: Path) -> None:
+        self.observed_errors: set[tuple[str, str, str]] = set()
+        self.transaction_counts: dict[str, int] = {}
+        self.transaction_seconds: dict[str, float] = {}
+        self.transaction_max_seconds: dict[str, float] = {}
+        self.slow_reports: dict[str, int] = {}
+        self.reconstruction_started: float | None = None
+        self.reconstruction_seconds: dict[str, float] = {}
+        self.reconstruction_claims = 0
+        # Shared CI disks can hold a competing transaction longer than the
+        # default 100ms. Keep the configured wait finite and below the 3s lease.
+        super().__init__(path, timeout=1, wal=True)
+        atexit.register(self.report_totals)
+
+    def acquire(self, snapshot: StateSnapshot, worker: str, seconds: float) -> StateSnapshot:
+        if snapshot.owner_epoch > 0 and self.reconstruction_started is None:
+            self.reconstruction_started = time.monotonic()
+            self.reconstruction_seconds = self.transaction_seconds.copy()
+        claimed = super().acquire(snapshot, worker, seconds)
+
+        if snapshot.owner_epoch > 0:
+            self.reconstruction_claims += 1
+
+            if self.reconstruction_claims in (1, 10, 25, 50):
+                assert self.reconstruction_started is not None
+                sys.stderr.write(
+                    "OWNERSHIP RECONSTRUCTION: "
+                    + json.dumps(
+                        {
+                            "claims_completed": self.reconstruction_claims,
+                            "seconds_since_first_attempt": time.monotonic()
+                            - self.reconstruction_started,
+                            "transaction_seconds_since_first_attempt": {
+                                operation: elapsed - self.reconstruction_seconds.get(operation, 0)
+                                for operation, elapsed in self.transaction_seconds.items()
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+                sys.stderr.flush()
+
+        return claimed
+
+    def report_totals(self) -> None:
+        sys.stderr.write(
+            "OWNERSHIP TOTALS: "
+            + json.dumps(
+                {
+                    operation: {
+                        "count": count,
+                        "seconds": self.transaction_seconds.get(operation, 0),
+                        "max_seconds": self.transaction_max_seconds.get(operation, 0),
+                    }
+                    for operation, count in self.transaction_counts.items()
+                }
+            )
+            + "\n"
+        )
+        sys.stderr.flush()
+
+    def record_failure(self, operation: str, error: Exception) -> None:
+        cause: BaseException = error
+
+        while cause.__cause__ is not None:
+            cause = cause.__cause__
+        key = (operation, type(error).__name__, type(cause).__name__)
+
+        if key in self.observed_errors:
+            return
+        self.observed_errors.add(key)
+        sys.stderr.write(
+            "OWNERSHIP STORE FAILURE: "
+            + json.dumps(
+                {
+                    "operation": operation,
+                    "error_type": key[1],
+                    "cause_type": key[2],
+                    "sqlite_errorname": str(getattr(cause, "sqlite_errorname", "none")),
+                    "transaction_count": self.transaction_counts.get(operation, 0),
+                    "transaction_seconds": self.transaction_seconds.get(operation, 0),
+                }
+            )
+            + "\n"
+        )
+        sys.stderr.flush()
+
+    def _connect(self) -> sqlite3.Connection:
+        try:
+            return super()._connect()
+        except Exception as error:
+            self.record_failure("connect", error)
+
+            raise
+
+    def _transaction[T](self, callback: Callable[[sqlite3.Connection], T]) -> T:
+        operation = str(getattr(callback, "__qualname__", "transaction"))
+        started = time.monotonic()
+        self.transaction_counts[operation] = self.transaction_counts.get(operation, 0) + 1
+
+        try:
+            return super()._transaction(callback)
+        except Exception as error:
+            self.record_failure(operation, error)
+
+            raise
+        finally:
+            elapsed = time.monotonic() - started
+            self.transaction_seconds[operation] = (
+                self.transaction_seconds.get(operation, 0) + elapsed
+            )
+            self.transaction_max_seconds[operation] = max(
+                self.transaction_max_seconds.get(operation, 0), elapsed
+            )
+
+            if elapsed >= 0.25 and self.slow_reports.get(operation, 0) < 3:
+                self.slow_reports[operation] = self.slow_reports.get(operation, 0) + 1
+                sys.stderr.write(
+                    "OWNERSHIP TRANSACTION: "
+                    + json.dumps(
+                        {
+                            "operation": operation,
+                            "elapsed_seconds": elapsed,
+                            "transaction_count": self.transaction_counts[operation],
+                            "transaction_seconds": self.transaction_seconds[operation],
+                        }
+                    )
+                    + "\n"
+                )
+                sys.stderr.flush()
 
     def _valid(
         self, database: sqlite3.Connection, snapshot: StateSnapshot, worker: str, now: float
@@ -93,6 +227,13 @@ class WorkloadState:
     order: tuple[int, ...] = field(default_factory=lambda: tuple(range(100)))
     theme: str = "light"
     location: str = ""
+
+    def __deepcopy__(self, memo: dict[int, object]) -> WorkloadState:
+        # Every field is transitively immutable, including codec-decoded rows
+        # and order. A snapshot can share this value without sharing mutation.
+        del memo
+
+        return self
 
 
 def encode(state: WorkloadState) -> JSONValue:
@@ -215,16 +356,22 @@ def app(state: Signal[WorkloadState]) -> Fragment:
     return pysx(t"{router.view()}", themes=themes)
 
 
+ownership_store = ObservedOwnershipStore(Path(os.environ["PYSX_FIXTURE_STORE"]))
+
 host = DurableApplication(
     app,
     initial=WorkloadState,
     codec=StateCodec(encode, decode),
-    store=ObservedOwnershipStore(Path(os.environ["PYSX_FIXTURE_STORE"])),
+    store=ownership_store,
     application="worker-counter",
     worker=os.environ["PYSX_FIXTURE_WORKER"],
     lease_seconds=float(os.environ.get("PYSX_FIXTURE_LEASE", "3")),
     schema=int(os.environ.get("PYSX_FIXTURE_SCHEMA", "1")),
     migrations={1: lambda value: value} if os.environ.get("PYSX_FIXTURE_MIGRATE") else {},
     fresh_on_incompatible=os.environ.get("PYSX_FIXTURE_FRESH") == "1",
-    config=HostConfig(principal=principal, transport=TransportLimits(graphs=100, detached=50)),
+    config=HostConfig(
+        principal=principal,
+        transport=TransportLimits(graphs=100, detached=50),
+        shutdown=(ownership_store.close,),
+    ),
 )

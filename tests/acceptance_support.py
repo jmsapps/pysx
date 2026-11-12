@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
+    from typing import Any
 
     from websockets.asyncio.client import ClientConnection
 
@@ -33,6 +34,178 @@ async def receive(ws: ClientConnection, seconds: float = 5) -> ServerMessage:
 
     # Detailed payload assertions remain in each acceptance case.
     return cast("ServerMessage", message)
+
+
+STATUS_CONTROL_C_EXIT = 0xC000013A
+
+
+def shutdown_status(code: int | None) -> int | None:
+    """Normalise the exit status of a process asked to stop with Ctrl+C.
+
+    Console control events reach an entire process group, and these commands run
+    behind a `uv run` wrapper that installs no handler for them, so on Windows the
+    wrapper reports STATUS_CONTROL_C_EXIT no matter how cleanly the pysx host
+    underneath it drained. The host's own behaviour is asserted from its output;
+    the wrapper's status carries no information on that platform.
+    """
+
+    if sys.platform == "win32" and code in (STATUS_CONTROL_C_EXIT, -STATUS_CONTROL_C_EXIT):
+        return 0
+
+    return code
+
+
+def raised_signal_status(name: signal.Signals) -> int:
+    """Observe the interpreter's default status when an adapter re-raises a signal."""
+    result = subprocess.run(
+        [sys.executable, "-c", f"import signal; signal.raise_signal({int(name)})"],
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    assert result.returncode != 0, "the default signal action did not terminate the child"
+
+    return result.returncode
+
+
+def alive(pid: int) -> bool:
+    """Report whether a pid is still running, without signalling it.
+
+    `os.kill(pid, 0)` is the POSIX idiom and means something else entirely on
+    Windows: anything other than a console control event is routed to
+    `TerminateProcess`, so signal 0 asks to *kill* the process with exit code 0 and
+    raises `OSError(87)` from `OpenProcess` when the pid is already gone. Probing
+    liveness there needs a handle, not a signal.
+    """
+
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined, unused-ignore]
+        # PROCESS_QUERY_LIMITED_INFORMATION: enough to read an exit code, and it
+        # does not require rights to affect the process.
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+
+        if not handle:
+            return False
+
+        try:
+            code = ctypes.c_ulong()
+
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+
+            # STILL_ACTIVE
+            return code.value == 259
+        finally:
+            kernel32.CloseHandle(handle)
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+    return True
+
+
+def windows_parent_pid(pid: int) -> int:
+    """Read process ancestry without starting PowerShell or its CIM provider."""
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessEntry(ctypes.Structure):
+        _fields_ = (
+            ("size", wintypes.DWORD),
+            ("usage", wintypes.DWORD),
+            ("pid", wintypes.DWORD),
+            ("heap", ctypes.c_size_t),
+            ("module", wintypes.DWORD),
+            ("threads", wintypes.DWORD),
+            ("parent", wintypes.DWORD),
+            ("priority", wintypes.LONG),
+            ("flags", wintypes.DWORD),
+            ("executable", wintypes.WCHAR * 260),
+        )
+
+    kernel = cast("Any", ctypes.windll.kernel32)  # type: ignore[attr-defined, unused-ignore]
+    kernel.CreateToolhelp32Snapshot.argtypes = (wintypes.DWORD, wintypes.DWORD)
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel.Process32FirstW.argtypes = (wintypes.HANDLE, ctypes.POINTER(ProcessEntry))
+    kernel.Process32FirstW.restype = wintypes.BOOL
+    kernel.Process32NextW.argtypes = (wintypes.HANDLE, ctypes.POINTER(ProcessEntry))
+    kernel.Process32NextW.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel.CloseHandle.restype = wintypes.BOOL
+    snapshot = kernel.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS
+
+    if snapshot == ctypes.c_void_p(-1).value:
+        raise OSError("CreateToolhelp32Snapshot failed")
+
+    try:
+        entry = ProcessEntry()
+        entry.size = ctypes.sizeof(entry)
+        present = kernel.Process32FirstW(snapshot, ctypes.byref(entry))
+
+        while present:
+            if entry.pid == pid:
+                return int(entry.parent)
+            present = kernel.Process32NextW(snapshot, ctypes.byref(entry))
+
+        raise ProcessLookupError(pid)
+    finally:
+        kernel.CloseHandle(snapshot)
+
+
+def interrupt(proc: subprocess.Popen[str] | subprocess.Popen[bytes]) -> None:
+    """Ask a child to shut down the way a console Ctrl+C would.
+
+    Windows `Popen.send_signal` accepts only SIGTERM, CTRL_C_EVENT and
+    CTRL_BREAK_EVENT, so sending SIGINT there raises `ValueError: Unsupported
+    signal: 2` rather than stopping anything.
+
+    **The child must have been spawned with CREATE_NEW_PROCESS_GROUP.**
+    CTRL_BREAK_EVENT is delivered to an entire process group, so a child sharing
+    the runner's group takes pytest down with it — silently, leaving a gate that
+    simply stops producing output.
+    """
+
+    if sys.platform == "win32":
+        try:
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+        except OSError as error:
+            raise OSError(f"{error}\n{_console_state(proc)}") from error
+
+        return
+    proc.send_signal(signal.SIGINT)
+
+
+def _console_state(proc: subprocess.Popen[str] | subprocess.Popen[bytes]) -> str:
+    """Report what the failing CTRL_BREAK_EVENT actually had to work with.
+
+    `WinError 87` from `GenerateConsoleCtrlEvent` is ambiguous on its own: an already
+    dead child, a child that does not lead its own process group, and a caller with no
+    console all surface the same code. Guessing between them produced one wrong
+    conclusion already, so the call site records the distinguishing facts instead.
+    """
+
+    if sys.platform != "win32":
+        return ""
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined, unused-ignore]
+    window = kernel32.GetConsoleWindow()
+    buffer = (ctypes.c_uint32 * 256)()
+    attached = kernel32.GetConsoleProcessList(buffer, 256)
+    sharing = sorted(buffer[index] for index in range(min(attached, 256)))
+
+    return (
+        f"caller console window: {window!r}; "
+        f"caller console holds {attached} process(es): {sharing}; "
+        f"child pid {proc.pid} exit status {proc.poll()!r}; "
+        f"child shares the caller's console: {proc.pid in sharing}"
+    )
 
 
 def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> None:
@@ -67,17 +240,25 @@ def stop_process(proc: subprocess.Popen[str], *, process_group: bool = True) -> 
 
 @contextmanager
 def ready_server(
-    command: Sequence[str], timeout: float = 10, *, ready_banner: str = "pysx ready"
+    command: Sequence[str],
+    timeout: float = 10,
+    *,
+    ready_banner: str = "pysx ready",
+    input_pipe: bool = False,
 ) -> Generator[subprocess.Popen[str]]:
     """Wait for the ready banner with a bounded reader and guaranteed cleanup."""
     owns_group = sys.platform != "win32" and os.environ.get("PYSX_ACCEPTANCE_GROUP") != "shared"
     proc = subprocess.Popen(
         command,
         cwd=ROOT,
+        stdin=subprocess.PIPE if input_pipe else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         start_new_session=owns_group,
+        # `interrupt` aims CTRL_BREAK_EVENT at this child, and Windows only delivers
+        # that to a process that owns its group.
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
     )
     lines: Queue[str | None] = Queue()
     assert proc.stdout is not None
@@ -106,6 +287,9 @@ def ready_server(
         raise RuntimeError("server did not start within deadline: " + "".join(output))
     finally:
         timer.cancel()
+
+        if proc.stdin is not None:
+            proc.stdin.close()
         stop_process(proc, process_group=owns_group)
         reader.join(timeout=5)
 

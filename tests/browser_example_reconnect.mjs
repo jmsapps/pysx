@@ -1,17 +1,53 @@
 import assert from "node:assert/strict";
 import playwright from "playwright";
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
+let page;
+const errors = [];
 try {
   const context = await browser.newContext();
-  const page = await context.newPage();
-  const errors = [];
+  page = await context.newPage();
   page.on("pageerror", error => errors.push(error.message));
-  await page.addInitScript(() => {
+  await page.addInitScript(dropFirstResume => {
+    window.dropResumeHello = dropFirstResume;
+    window.reconnectTrace = [];
+    const record = (type, fields = {}) => {
+      window.reconnectTrace.push({type, time: performance.now(),
+        readyState: window.testSocket?.readyState,
+        connection: document.getElementById("pysx-root")?.dataset.pysxConnection,
+        clicks: document.getElementById("reconnect-clicks")?.textContent, ...fields});
+      if (window.reconnectTrace.length > 64) window.reconnectTrace.shift();
+    };
+    for (const type of ["pysx:disconnected", "pysx:connection", "pysx:rejected"])
+      window.addEventListener(type, () => record(type));
     const Original = WebSocket;
     window.WebSocket = class extends Original {
-      constructor(...args) { super(...args); window.testSocket = this; }
+      constructor(...args) {
+        super(...args); window.testSocket = this;
+        this.addEventListener("open", () => record("open"));
+        this.addEventListener("close", event => record("close", {code: event.code, reason: event.reason}));
+        this.addEventListener("message", event => {
+          const frame = JSON.parse(event.data);
+          record("received", {frame: frame.t, revision: frame.state_rev});
+        });
+      }
+      send(message) {
+        const frame = JSON.parse(message);
+        if (window.dropResumeHello && frame.t === "hello" && frame.resume) {
+          window.dropResumeHello = false;
+          record("suppressed-hello", {frame: frame.t});
+          return;
+        }
+        record("sent", {frame: frame.t, handler: frame.h, sequence: frame.seq,
+          edits: frame.edits?.length});
+        return super.send(message);
+      }
+      close(...args) {
+        const [code, reason] = args;
+        record("close-request", {code, reason});
+        return super.close(...args);
+      }
     };
-  });
+  }, process.env.PYSX_BROWSER_CASE === "reconnect_timeout_fixture");
   const url = `http://127.0.0.1:${process.argv[2]}/`;
   await page.goto(url);
   await page.waitForFunction(() => document.getElementById("pysx-root").dataset.pysxConnection === "connected");
@@ -27,6 +63,8 @@ try {
     const lost = new Promise(resolve => window.addEventListener("pysx:disconnected", resolve, {once: true}));
     window.testSocket.close(); await lost;
     const status = document.querySelector("#pysx-connection-status");
+    window.offlineAttempt = {readyState: window.testSocket.readyState,
+      connection: document.getElementById("pysx-root").dataset.pysxConnection};
     document.querySelector("#reconnect-increment").click();
     await new Promise(resolve => setTimeout(resolve, 1000));
     return {status, ticks: Number(document.querySelector("#reconnect-ticks").textContent)};
@@ -45,4 +83,12 @@ try {
   assert.deepEqual(errors, []);
   console.log("  ok  the example adopts the current server clock and stays interactive");
   console.log("EXAMPLE RECONNECT BROWSER PASSED");
+} catch (error) {
+  const state = await page?.evaluate(() => ({trace: window.reconnectTrace,
+    offlineAttempt: window.offlineAttempt,
+    clicks: document.getElementById("reconnect-clicks")?.textContent,
+    connection: document.getElementById("pysx-root")?.dataset.pysxConnection,
+    readyState: window.testSocket?.readyState})).catch(() => null);
+  console.log(`EXAMPLE RECONNECT FAILURE: ${JSON.stringify({state, errors})}`);
+  throw error;
 } finally { await browser.close(); }

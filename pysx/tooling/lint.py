@@ -73,15 +73,15 @@ def _ruff(source: str, filename: str, interpreter: Path | None) -> list[RuffMess
             filename,
             "-",
         ],
-        input=source,
+        input=source.encode("utf-8"),
         capture_output=True,
-        text=True,
-        encoding="utf-8",
         check=False,
     )
 
     if result.returncode not in {0, 1}:
-        raise RuntimeError(result.stderr.strip() or "Ruff analysis failed")
+        raise RuntimeError(
+            result.stderr.decode("utf-8", errors="replace").strip() or "Ruff analysis failed"
+        )
     payload: object = json.loads(result.stdout)
 
     if not isinstance(payload, list):

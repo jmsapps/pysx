@@ -6,7 +6,6 @@ import math
 import re
 import sqlite3
 import time
-from contextlib import closing
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -66,25 +65,39 @@ class SQLiteOwnershipStore(SQLiteStateStore):
     """Lease and snapshot changes share a local SQLite write transaction."""
 
     def __init__(
-        self, path: Path, *, timeout: float = 0.1, clock: Callable[[], float] = time.time
+        self,
+        path: Path,
+        *,
+        timeout: float = 0.1,
+        clock: Callable[[], float] = time.time,
+        wal: bool = False,
     ) -> None:
-        super().__init__(path, timeout=timeout)
+        super().__init__(path, timeout=timeout, wal=wal)
         self.clock = clock
-        self._transaction(
-            lambda database: database.execute(
-                "CREATE TABLE IF NOT EXISTS leases ("
-                "application TEXT NOT NULL, session TEXT NOT NULL, principal TEXT NOT NULL, "
-                "browser TEXT NOT NULL, worker TEXT NOT NULL, owner_epoch INTEGER NOT NULL, "
-                "expires REAL NOT NULL, PRIMARY KEY(application, session, principal, browser))"
+
+        try:
+            self._transaction(
+                lambda database: database.execute(
+                    "CREATE TABLE IF NOT EXISTS leases ("
+                    "application TEXT NOT NULL, session TEXT NOT NULL, principal TEXT NOT NULL, "
+                    "browser TEXT NOT NULL, worker TEXT NOT NULL, owner_epoch INTEGER NOT NULL, "
+                    "expires REAL NOT NULL, PRIMARY KEY(application, session, principal, browser))"
+                )
             )
-        )
-        self._transaction(
-            lambda database: database.execute(
-                "CREATE TABLE IF NOT EXISTS revoked_state (application TEXT NOT NULL, "
-                "session TEXT NOT NULL, principal TEXT NOT NULL, browser TEXT NOT NULL, "
-                "PRIMARY KEY(application, session, principal, browser))"
+            self._transaction(
+                lambda database: database.execute(
+                    "CREATE TABLE IF NOT EXISTS revoked_state (application TEXT NOT NULL, "
+                    "session TEXT NOT NULL, principal TEXT NOT NULL, browser TEXT NOT NULL, "
+                    "PRIMARY KEY(application, session, principal, browser))"
+                )
             )
-        )
+        except BaseException as error:
+            try:
+                self.close()
+            except Exception as cleanup_error:
+                error.add_note(f"store cleanup also failed: {cleanup_error}")
+
+            raise
 
     @staticmethod
     def _unbound(snapshot: StateSnapshot) -> Never:
@@ -114,7 +127,7 @@ class SQLiteOwnershipStore(SQLiteStateStore):
 
     def load(self, identity: StateIdentity) -> StateSnapshot | None:
         try:
-            with closing(self._connect()) as database, database:
+            with self._database() as database, database:
                 database.execute("BEGIN")
 
                 return None if self._revoked(database, identity) else self._read(database, identity)
@@ -123,7 +136,7 @@ class SQLiteOwnershipStore(SQLiteStateStore):
 
     def _transaction[T](self, callback: Callable[[sqlite3.Connection], T]) -> T:
         try:
-            with closing(self._connect()) as database, database:
+            with self._database() as database, database:
                 database.execute("BEGIN IMMEDIATE")
 
                 return callback(database)
@@ -210,11 +223,22 @@ class SQLiteOwnershipStore(SQLiteStateStore):
 
     def check_owner(self, snapshot: StateSnapshot, worker: str) -> None:
         try:
-            with closing(self._connect()) as database, database:
+            with self._database() as database, database:
                 database.execute("BEGIN")
+                now = self.clock()
 
-                if not self._valid(database, snapshot, worker, self.clock()):
-                    raise RecoveryUnavailable("session owner has been fenced")
+                if not self._valid(database, snapshot, worker, now):
+                    lease = self._lease(database, snapshot.identity)
+                    details = {
+                        "lease_present": lease is not None,
+                        "worker_matches": lease is not None and lease.worker == worker,
+                        "epoch_matches": lease is not None and lease.epoch == snapshot.owner_epoch,
+                        "expires_in": None if lease is None else round(lease.expires - now, 3),
+                        "state_matches": snapshot.matches(self._read(database, snapshot.identity)),
+                        "revoked": self._revoked(database, snapshot.identity),
+                    }
+
+                    raise RecoveryUnavailable(f"session owner has been fenced: {details}")
         except sqlite3.Error as error:
             raise StoreUnavailable("ownership store unavailable") from error
 
@@ -274,7 +298,7 @@ class SQLiteOwnershipStore(SQLiteStateStore):
 
     def route(self, identity: StateIdentity) -> OwnerLease | None:
         try:
-            with closing(self._connect()) as database:
+            with self._database() as database:
                 lease = self._lease(database, identity)
 
                 return lease if lease is not None and lease.expires > self.clock() else None

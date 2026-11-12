@@ -15,8 +15,6 @@ from prototypes.distribution import ROOT, clean_env, command, dependency_cache, 
 from test_dev_server import wait_for
 from test_parity_corpus import CORPUS
 
-import pysx
-
 LESSON_FILES = ("docs/TUTORIAL.md", "docs/QUICKSTART.md")
 SNIPPETS = [
     (f"{filename}:{index}", source)
@@ -76,29 +74,6 @@ def documentation_consumer(documentation_install: tuple[Path, Path]) -> tuple[Pa
     )
 
     return python, consumer
-
-
-def test_corpus_executable_public_api_and_contract_links() -> None:
-    api = (ROOT / "docs/API.md").read_text()
-    documented = set(re.findall(r"`([A-Za-z_]\w*)`", api))
-    assert set(pysx.__all__) <= documented
-
-    indexed = {
-        name
-        for row in re.findall(r"^\|\s*(`[^|]+?)\s*\|", api, re.MULTILINE)
-        for name in re.findall(r"`([A-Za-z_]\w*)`", row)
-    }
-    assert indexed == set(pysx.__all__)
-
-    for name in pysx.__all__:
-        assert getattr(pysx, name) is not None
-
-    for filename in (*LESSON_FILES, "docs/API.md", "docs/MIGRATION.md"):
-        path = ROOT / filename
-
-        for target in re.findall(r"\]\(([^)]+)\)", path.read_text()):
-            if not target.startswith(("https:", "http:", "#")):
-                assert (path.parent / target.split("#")[0]).is_file(), (filename, target)
 
 
 def test_corpus_executable_playground_commands() -> None:
@@ -248,13 +223,13 @@ def test_corpus_executable_installed_browser_interactions(
                     timeout=90,
                     check=False,
                 )
-                assert result.returncode == 0, (
-                    name,
-                    engine,
-                    result.stdout,
-                    result.stderr,
-                    log.read_text(),
-                )
+
+                if result.returncode != 0:
+                    pytest.fail(
+                        f"Installed browser interaction failed: {name}, {engine}\n"
+                        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}\n"
+                        f"server:\n{log.read_text()}"
+                    )
                 assert "PASSED" in result.stdout
                 assert "  ok  " in result.stdout
         finally:

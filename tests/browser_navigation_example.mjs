@@ -2,9 +2,26 @@ import assert from "node:assert/strict";
 import playwright from "playwright";
 
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
+let page;
+const errors = [];
 try {
-  const page = await browser.newPage();
-  const errors = [];
+  page = await browser.newPage();
+  await page.addInitScript(() => {
+    window.navigationTrace = [];
+    const record = (type) => {
+      window.navigationTrace.push({type, time: performance.now(), url: location.href,
+        scroll: scrollY, focus: document.activeElement?.id, entry: history.state?.pysxEntry,
+        current: document.getElementById("current-url")?.textContent,
+        connection: document.getElementById("pysx-root")?.dataset.pysxConnection});
+      if (window.navigationTrace.length > 64) window.navigationTrace.shift();
+    };
+    for (const event of ["popstate", "scroll", "focusin", "click", "pysx:connection"])
+      window.addEventListener(event, () => record(event), true);
+    for (const name of ["pushState", "replaceState"]) {
+      const original = history[name].bind(history);
+      history[name] = (...args) => { const result = original(...args); record(name); return result; };
+    }
+  });
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${process.argv[2]}`);
   const text = (id, value) => page.waitForFunction(([id, value]) =>
@@ -24,7 +41,25 @@ try {
   await click("parent"); await text("route-title", "User 3");
   console.log("  ok  styled links preserve parameter state and show relative nested routes");
 
+  // A consumer may focus an input immediately after history changes. Route
+  // scrolling must finish with the commit instead of stealing that later focus.
+  await page.evaluate(() => {
+    const replace = history.replaceState;
+    history.replaceState = function (...args) {
+      const result = replace.apply(this, args);
+      history.replaceState = replace;
+      queueMicrotask(() => {
+        document.getElementById("history-focus").focus({preventScroll: true});
+        window.historyFocusProbe = true;
+      });
+      return result;
+    };
+  });
   await click("query"); await text("current-url", "/users/3/?tab=settings");
+  await page.waitForFunction(() => window.historyFocusProbe === true);
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
+  assert.equal(await page.evaluate(() => document.activeElement.id), "history-focus",
+    "a completed navigation cannot steal subsequent consumer focus");
   await page.locator("#history-focus").evaluate(node => node.focus({preventScroll: true}));
   await page.evaluate(() => window.scrollTo(0, 350));
   await click("files"); await text("route-title", "Files");
@@ -102,4 +137,11 @@ try {
   assert.deepEqual(errors, []);
   console.log("  ok  public download, target, external and modified links preserve native defaults");
   console.log("NAVIGATION EXAMPLE BROWSER PASSED");
+} catch (error) {
+  const state = await page?.evaluate(() => ({trace: window.navigationTrace,
+    scroll: scrollY, focus: document.activeElement?.id, url: location.href,
+    current: document.getElementById("current-url")?.textContent,
+    connection: document.getElementById("pysx-root")?.dataset.pysxConnection})).catch(() => null);
+  console.log(`NAVIGATION FAILURE: ${JSON.stringify({state, errors})}`);
+  throw error;
 } finally { await browser.close(); }

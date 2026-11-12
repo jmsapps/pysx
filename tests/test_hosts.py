@@ -132,7 +132,7 @@ def test_host_config_shutdown_waits_for_startup_and_disposes_racing_get() -> Non
             app, config=HostConfig(startup=(startup,), shutdown=(lambda: order.append("stop"),))
         )
         request = asyncio.create_task(application.http(request_from_headers("/", [])))
-        await entering.wait()
+        await asyncio.wait_for(entering.wait(), 5)
         closing = asyncio.create_task(application.close())
         await asyncio.sleep(0)
         assert order == []

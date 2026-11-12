@@ -2,6 +2,10 @@
 name = "pysx"
 version = "0.1.0"
 description = "Server-side reactive renderer for Python, templated with PEP 750 t-strings"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "JMS Apps", email = "jmsapps@outlook.com"}]
 requires-python = ">=3.14"
 dependencies = [
     "cryptography==50.0.2",
@@ -9,6 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+examples = ["typer==0.27.2"]
 asgi = ["uvicorn==0.54.0"]
 dev = ["ruff==0.16.10"]
 lsp = [
@@ -21,7 +26,7 @@ lsp = [
 [project.scripts]
 pysx = "pysx.hosting.server:main"
 pysx-playground = "pysx.tooling.playground:main"
-pysx-example = "run_example:app"
+pysx-example = "pysx.tooling.examples:app"
 pysx-build = "pysx.tooling.build:main"
 
 [build-system]
@@ -41,11 +46,14 @@ dev = [
 
 [tool.uv.build-backend]
 module-root = ""
+module-name = ["pysx", "examples"]
+source-include = ["run_example.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = ["acceptance: real HTTP and WebSocket headless acceptance"]
+faulthandler_timeout = 120
 
 [tool.mypy]
 mypy_path = ["tutorial"]

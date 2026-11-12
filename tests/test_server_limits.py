@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from urllib.request import urlopen
 
 import pytest
-from acceptance_support import ready_server
+from acceptance_support import interrupt, raised_signal_status, ready_server, shutdown_status
 from test_connection_pump import FakeConnection
 from test_transport import wait_for
 from uvicorn import Config
@@ -285,7 +285,7 @@ def test_bound_sends_shutdown_cancels_stalled_startup() -> None:
             lambda: native.P("unused"), config=HostConfig(startup=(startup,), shutdown_timeout=0.05)
         )
         request = asyncio.create_task(application.http(request_from_headers("/", [])))
-        await started.wait()
+        await asyncio.wait_for(started.wait(), 5)
         with pytest.raises(TimeoutError, match="shutdown deadline"):
             await application.close()
         await asyncio.gather(request, return_exceptions=True)
@@ -409,8 +409,14 @@ def test_bound_sends_asgi_close_aborts_when_protocol_receive_queue_is_full() -> 
     asyncio.run(exercise())
 
 
+if sys.platform == "win32":
+    SHUTDOWN_SIGNALS = (signals.SIGBREAK,)
+else:
+    SHUTDOWN_SIGNALS = (signals.SIGINT, signals.SIGTERM)
+
+
 @pytest.mark.parametrize("asgi", [False, True], ids=["standalone", "asgi"])
-@pytest.mark.parametrize("name", [signals.SIGINT, signals.SIGTERM])
+@pytest.mark.parametrize("name", SHUTDOWN_SIGNALS)
 def test_bound_sends_real_signal_shutdown(
     asgi: bool, name: signals.Signals, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -437,12 +443,21 @@ def test_bound_sends_real_signal_shutdown(
             async with connect(f"ws://127.0.0.1:{port}/ws") as connection:
                 assert json.loads(await connection.recv())["t"] == "init"
                 started = time.monotonic()
-                os.kill(process.pid, name)
+
+                if sys.platform == "win32":
+                    interrupt(process)
+                else:
+                    os.kill(process.pid, name)
                 await asyncio.to_thread(process.wait, 5)
                 assert time.monotonic() - started < 5
 
         asyncio.run(exercise())
-        assert process.returncode == (-int(name) if asgi and name == signals.SIGTERM else 0)
+        expected = (
+            raised_signal_status(name)
+            if asgi and (sys.platform == "win32" or name == signals.SIGTERM)
+            else 0
+        )
+        assert shutdown_status(process.returncode) == expected
     data: dict[str, JSONValue] = json.loads(report.read_text())
     assert data == {"graphs": 0, "tasks": 0, "connections": 0, "created": 2, "cleaned": 2}
 

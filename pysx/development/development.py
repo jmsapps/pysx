@@ -11,6 +11,7 @@ import os
 import secrets
 import signal
 import socket
+import subprocess
 import sys
 import time
 from contextlib import AsyncExitStack, suppress
@@ -29,7 +30,7 @@ from websockets.http11 import Response
 from websockets.typing import Origin
 
 from pysx.hosting._http_connection import HTTPMethodConnection as _HTTPConnection
-from pysx.hosting.hosting import request_from_headers
+from pysx.hosting.hosting import request_from_headers, shutdown_signals
 from pysx.hosting.security import AccessDenied, SecurityPolicy
 from pysx.runtime.wire import JSONValue
 
@@ -53,14 +54,22 @@ _CLIENT = b"""
   if (!generation) return;
   let instance = source.searchParams.get('pysx-dev-instance');
   let stopped = false;
-  addEventListener('pagehide', () => { stopped = true; }, {once: true});
+  let retry;
+  const polling = new AbortController();
+  function stop() {
+    stopped = true;
+    clearTimeout(retry);
+    polling.abort();
+  }
+  addEventListener('pagehide', stop, {once: true});
   function apply(status) {
+    if (stopped) return;
     if (status.generation > 0) {
       if (status.instance !== instance) {
         instance = status.instance;
         generation = String(status.generation);
       } else if (status.generation > Number(generation)) {
-        if (status.fresh_generation > Number(generation)) { location.reload(); return; }
+        if (status.fresh_generation > Number(generation)) { stop(); location.reload(); return; }
         generation = String(status.generation);
       }
     }
@@ -76,11 +85,14 @@ _CLIENT = b"""
     window.dispatchEvent(new CustomEvent('pysx:development', {detail: status}));
   }
   async function poll() {
+    if (stopped) return;
     try {
-      const response = await fetch('/__pysx_dev__/status', {cache: 'no-store'});
+      const response = await fetch('/__pysx_dev__/status', {
+        cache: 'no-store', signal: polling.signal,
+      });
       if (response.ok) apply(await response.json());
     } catch (_) { /* A stopped supervisor must not destroy the current UI. */ }
-    finally { if (!stopped) setTimeout(poll, 250); }
+    finally { if (!stopped) retry = setTimeout(poll, 250); }
   }
   function live() {
     const url = new URL('/__pysx_dev__/events', location.href);
@@ -243,8 +255,14 @@ class Worker:
     async def close(self) -> None:
         if self.process.returncode is None:
             with suppress(ProcessLookupError):
-                if os.name == "posix":
+                if sys.platform != "win32":
                     os.killpg(self.process.pid, signal.SIGTERM)
+                elif self.control_port:
+                    try:
+                        self.process.send_signal(signal.CTRL_BREAK_EVENT)
+                    except OSError as error:
+                        self.output += f"\nworker graceful shutdown failed: {error}\n"
+                        self.process.terminate()
                 else:
                     self.process.terminate()
 
@@ -253,13 +271,13 @@ class Worker:
                     await self.process.wait()
             except TimeoutError:
                 with suppress(ProcessLookupError):
-                    if os.name == "posix":
+                    if sys.platform != "win32":
                         os.killpg(self.process.pid, signal.SIGKILL)
                     else:
                         self.process.kill()
                 await self.process.wait()
 
-        if os.name == "posix":
+        if sys.platform != "win32":
             # An import can start descendants before it raises. The leader may
             # already have exited while those descendants still own its pipes.
             with suppress(ProcessLookupError):
@@ -376,7 +394,7 @@ class Supervisor:
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
-                    start_new_session=os.name == "posix",
+                    start_new_session=sys.platform != "win32",
                     env={
                         **os.environ,
                         "PYSX_DEV_ROOTS": json.dumps([str(root) for root in self.config.roots]),
@@ -428,7 +446,8 @@ class Supervisor:
             "--dev",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            start_new_session=os.name == "posix",
+            start_new_session=sys.platform != "win32",
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             env={
                 **os.environ,
                 "PYSX_DEV_CONTROL_PORT": str(control_port),
@@ -887,7 +906,7 @@ class Supervisor:
             tuple[signal.Signals, int | Callable[[int, FrameType | None], object] | None]
         ] = []
 
-        for name in (signal.SIGINT, signal.SIGTERM):
+        for name in shutdown_signals():
             installed.append((name, signal.getsignal(name)))
 
             try:

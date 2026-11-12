@@ -5,16 +5,19 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, replace
 from threading import RLock
 from typing import TYPE_CHECKING, Protocol, cast
+from weakref import finalize
 
 from .wire import JSONValue
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Generator, Mapping
     from pathlib import Path
+    from types import TracebackType
+    from typing import Self
 
 
 class RecoveryUnavailable(OSError):  # noqa: N818 - public recovery outcome
@@ -199,25 +202,133 @@ class MemoryStateStore:
 class SQLiteStateStore:
     """Same-host, multi-process reference store. Use a local filesystem, never NFS."""
 
-    def __init__(self, path: Path, *, timeout: float = 0.1) -> None:
+    def __init__(self, path: Path, *, timeout: float = 0.1, wal: bool = False) -> None:
         if not math.isfinite(timeout) or not 0 < timeout <= 2:
             raise ValueError("store timeout must be between zero and two seconds")
+
+        if type(wal) is not bool:
+            raise ValueError("wal must be a boolean")
+        version = sqlite3.sqlite_version_info
+        fixed = (
+            version >= (3, 51, 3)
+            or (3, 50, 7) <= version < (3, 51, 0)
+            or (3, 44, 6) <= version < (3, 45, 0)
+        )
+
+        if wal and not fixed:
+            raise ValueError(
+                "WAL requires SQLite with the WAL-reset fix (3.51.3+ or a fixed backport)"
+            )
         self.path = path.resolve()
         self.timeout = timeout
-        with closing(self._connect()) as database, database:
-            database.execute(
-                "CREATE TABLE IF NOT EXISTS state ("
-                "application TEXT NOT NULL, session TEXT NOT NULL, principal TEXT NOT NULL, "
-                "browser TEXT NOT NULL, schema INTEGER NOT NULL, payload BLOB NOT NULL, "
-                "owner_epoch INTEGER NOT NULL, generation INTEGER NOT NULL, "
-                "event_epoch TEXT NOT NULL, sequence INTEGER NOT NULL, revision INTEGER NOT NULL, "
-                "PRIMARY KEY(application, session, principal, browser))"
-            )
+        self.wal = wal
+        self._wal_fixed = fixed
+        self._closed = False
+        self._connection_lock = RLock()
+        self._connection: sqlite3.Connection | None = None
+        self._finalizer: Callable[[], object] | None = None
+
+        try:
+            with self._database() as database, database:
+                database.execute(
+                    "CREATE TABLE IF NOT EXISTS state ("
+                    "application TEXT NOT NULL, session TEXT NOT NULL, principal TEXT NOT NULL, "
+                    "browser TEXT NOT NULL, schema INTEGER NOT NULL, payload BLOB NOT NULL, "
+                    "owner_epoch INTEGER NOT NULL, generation INTEGER NOT NULL, "
+                    "event_epoch TEXT NOT NULL, sequence INTEGER NOT NULL, "
+                    "revision INTEGER NOT NULL, "
+                    "PRIMARY KEY(application, session, "
+                    "principal, browser))"
+                )
+        except BaseException as error:
+            try:
+                self.close()
+            except Exception as cleanup_error:
+                error.add_note(f"store cleanup also failed: {cleanup_error}")
+
+            raise
+
+    def __enter__(self) -> Self:
+        if self._closed:
+            raise StoreUnavailable("state store is closed")
+
+        return self
+
+    def __exit__(
+        self,
+        _kind: type[BaseException] | None,
+        _error: BaseException | None,
+        _trace: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if not self._connection_lock.acquire(timeout=self.timeout):
+            raise StoreUnavailable("state store busy during close")
+
+        try:
+            self._closed = True
+
+            if self._finalizer is not None:
+                self._finalizer()
+                self._finalizer = None
+                self._connection = None
+        finally:
+            self._connection_lock.release()
+
+    @contextmanager
+    def _database(self) -> Generator[sqlite3.Connection]:
+        if not self.wal:
+            if self._closed:
+                raise StoreUnavailable("state store is closed")
+            with closing(self._connect()) as scoped:
+                yield scoped
+
+            return
+
+        if not self._connection_lock.acquire(timeout=self.timeout):
+            raise StoreUnavailable("state store busy")
+
+        try:
+            if self._closed:
+                raise StoreUnavailable("state store is closed")
+            database = self._connection
+
+            if database is None:
+                database = self._connect()
+
+                try:
+                    cleanup = finalize(self, database.close)
+                except BaseException:
+                    database.close()
+
+                    raise
+                self._connection = database
+                self._finalizer = cleanup
+            yield database
+        finally:
+            self._connection_lock.release()
 
     def _connect(self) -> sqlite3.Connection:
         try:
-            database = sqlite3.connect(self.path, timeout=self.timeout)
-            database.execute("PRAGMA synchronous=FULL")
+            database = sqlite3.connect(
+                self.path, timeout=self.timeout, check_same_thread=not self.wal
+            )
+
+            try:
+                database.execute("PRAGMA synchronous=FULL")
+
+                if not self._wal_fixed and database.execute("PRAGMA journal_mode").fetchone() == (
+                    "wal",
+                ):
+                    raise StoreUnavailable("WAL database requires SQLite with the WAL-reset fix")
+
+                if self.wal and database.execute("PRAGMA journal_mode=WAL").fetchone() != ("wal",):
+                    raise StoreUnavailable("WAL journal mode unavailable")
+            except BaseException:
+                database.close()
+
+                raise
 
             return database
         except sqlite3.Error as error:
@@ -243,7 +354,7 @@ class SQLiteStateStore:
 
     def load(self, identity: StateIdentity) -> StateSnapshot | None:
         try:
-            with closing(self._connect()) as database:
+            with self._database() as database:
                 return self._read(database, identity)
         except sqlite3.Error as error:
             raise StoreUnavailable("state store read failed") from error
@@ -266,7 +377,7 @@ class SQLiteStateStore:
 
     def _write(self, snapshot: StateSnapshot, *, claim: bool) -> StateSnapshot:
         try:
-            with closing(self._connect()) as database, database:
+            with self._database() as database, database:
                 database.execute("BEGIN IMMEDIATE")
                 current = self._read(database, snapshot.identity)
 

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sqlite3
+import sys
+import traceback
+from contextlib import contextmanager
 from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,10 +25,28 @@ from pysx import (
     push,
 )
 from pysx.hosting.http import HTTPResult
+from pysx.runtime.persistence import StoreUnavailable
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from pysx.hosting.request import RequestContext
     from pysx.runtime.wire import JSONValue
+
+
+class ObservedOwnershipStore(SQLiteOwnershipStore):
+    """Keep the cause behind retryable admission failures in worker artifacts."""
+
+    @contextmanager
+    def _database(self) -> Generator[sqlite3.Connection]:
+        try:
+            with super()._database() as database:
+                yield database
+        except sqlite3.Error, StoreUnavailable:
+            traceback.print_exc()
+            sys.stderr.flush()
+
+            raise
 
 
 def decode(value: JSONValue) -> int:
@@ -85,7 +107,7 @@ host = FixtureHost(
     app,
     initial=lambda: 0,
     codec=StateCodec[int](lambda value: value, decode),
-    store=SQLiteOwnershipStore(Path(os.environ["PYSX_FIXTURE_STORE"])),
+    store=ObservedOwnershipStore(Path(os.environ["PYSX_FIXTURE_STORE"])),
     application="worker-counter",
     worker=os.environ["PYSX_FIXTURE_WORKER"],
     lease_seconds=float(os.environ.get("PYSX_FIXTURE_LEASE", "1")),

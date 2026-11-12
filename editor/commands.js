@@ -1,5 +1,6 @@
 const vscode = require("vscode");
 const { execFile } = require("node:child_process");
+const trace = require("./trace.js");
 
 // Exactly the keys pysx claims ownership of. The Python planner derives the
 // values; this list only says where each one is observed and written.
@@ -31,8 +32,10 @@ async function write(resource, key, value) {
   const [section, name] = split(key);
   // The planner records an absent setting as null. Writing null would store an
   // explicit null override, so absence is restored by removing the key.
-  await vscode.workspace.getConfiguration(section, resource)
-    .update(name, value === null ? undefined : value, TARGET);
+  await trace.observe("settings", "write", {
+    resource: trace.resource(resource), key,
+  }, () => vscode.workspace.getConfiguration(section, resource)
+    .update(name, value === null ? undefined : value, TARGET));
 }
 
 function planner(python, command, root, request) {
@@ -193,11 +196,13 @@ exports.register = function (context, { output, router }) {
     return true;
   }
 
+  const traced = (name, action) => (...args) =>
+    trace.observe("command", name, {}, () => action(...args));
   context.subscriptions.push(
-    vscode.commands.registerCommand("pysx.configureTooling", configure),
-    vscode.commands.registerCommand("pysx.restoreTooling", restore),
-    vscode.commands.registerCommand("pysx.rename", rename),
-    vscode.commands.registerCommand("pysx.refresh", refresh),
+    vscode.commands.registerCommand("pysx.configureTooling", traced("configure", configure)),
+    vscode.commands.registerCommand("pysx.restoreTooling", traced("restore", restore)),
+    vscode.commands.registerCommand("pysx.rename", traced("rename", rename)),
+    vscode.commands.registerCommand("pysx.refresh", traced("refresh", refresh)),
     vscode.window.onDidChangeActiveTextEditor((editor) =>
       vscode.commands.executeCommand("setContext", "pysx.managedDocument",
         editor?.document?.languageId === "python" && editor.document.uri.scheme === "file")),

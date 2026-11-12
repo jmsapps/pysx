@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import {mkdirSync, writeFileSync} from "node:fs";
+import path from "node:path";
 import playwright from "playwright";
 
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
@@ -9,24 +11,44 @@ try {
     const fail = () => { throw new Error("recovery must not write browser storage"); };
     Storage.prototype.setItem = fail;
     IDBFactory.prototype.open = fail;
-    Object.defineProperty(document, "cookie", {get: () => "", set: fail});
+    Object.defineProperty(document, "cookie", { get: () => "", set: fail });
     const Original = WebSocket;
     window.recoveryFrames = [];
     window.recoveryHellos = [];
+    const capsules = new Map();
+    window.recoveryTimeline = [];
+    window.traceRecovery = (event, message = {}, socket = null) => {
+      const capsule = message.capsule;
+      if (capsule && !capsules.has(capsule)) capsules.set(capsule, capsules.size + 1);
+      window.recoveryTimeline.push({time: performance.now(), event, socket,
+        t: message.t, capsule: capsule ? capsules.get(capsule) : null,
+        state: message.state_rev, base: message.base_rev,
+        attached: document.getElementById("pysx-root")?.dataset.pysxAttached});
+      if (window.recoveryTimeline.length > 200) window.recoveryTimeline.shift();
+    };
+    let socketId = 0;
     window.WebSocket = class extends Original {
       constructor(...args) {
         super(...args);
+        this.traceId = ++socketId;
+        window.traceRecovery("socket-created", {}, this.traceId);
+        this.addEventListener("close", event => window.traceRecovery("socket-closed", {t: String(event.code)}, this.traceId));
         window.recoverySocket = this;
         this.addEventListener("open", () => {
           const input = document.getElementById("recovery-draft");
           if (input && !window.recoveryHellos.length) input.value = "typed before attachment";
         });
         this.addEventListener("message", event => {
-          try { window.recoveryFrames.push(JSON.parse(event.data)); } catch { /* Synthetic retired frames are ignored. */ }
+          try {
+            const frame = JSON.parse(event.data);
+            window.recoveryFrames.push(frame);
+            window.traceRecovery("received", frame, this.traceId);
+          } catch { /* Synthetic retired frames are ignored. */ }
         });
       }
       send(raw) {
         const message = JSON.parse(raw);
+        window.traceRecovery("sent", message, this.traceId);
         if (message.t === "hello") window.recoveryHellos.push(message);
         return super.send(raw);
       }
@@ -54,11 +76,17 @@ try {
   await page.waitForFunction(() => window.recoveryFrames.some(frame => typeof frame.capsule === "string"));
   const first = await page.evaluate(() => window.recoveryFrames.filter(frame => frame.capsule).at(-1));
   assert.equal(first.version, 4);
+  const mark = await page.evaluate(() => window.recoveryFrames.length);
   await page.click("#increment");
   await page.waitForFunction(() => document.getElementById("recovery-count").textContent === "1");
   const changed = await page.evaluate(() => window.recoveryFrames.filter(frame => frame.capsule).at(-1));
+  const sequence = await page.evaluate(mark => window.recoveryFrames.slice(mark).map((frame, index) => ({
+    index: mark + index, t: frame.t, capsule: typeof frame.capsule === "string",
+    state: frame.state_rev, base: frame.base_rev, reset: frame.reset,
+  })), mark);
   assert.notEqual(changed.capsule, first.capsule);
-  assert.equal(changed.t, "patch");
+  assert.equal(changed.t, "patch",
+    `increment frame type ${changed.t} !== patch; frames since click: ${JSON.stringify(sequence)}`);
   await page.click("#hidden");
   await page.waitForFunction(previous => window.recoveryFrames.filter(frame => frame.capsule).at(-1).capsule !== previous, changed.capsule);
   const hidden = await page.evaluate(() => window.recoveryFrames.filter(frame => frame.capsule).at(-1));
@@ -67,12 +95,29 @@ try {
   await page.waitForFunction(previous => window.recoveryFrames.filter(frame => frame.capsule).at(-1).capsule !== previous, hidden.capsule);
   await page.waitForFunction(() => window.recoveryFrames.some(frame => frame.t === "checkpoint" && frame.capsule));
   const latest = await page.evaluate(() => window.recoveryFrames.filter(frame => frame.capsule).at(-1));
-  await page.evaluate(() => { window.retiredRecoverySocket = window.recoverySocket; window.recoverySocket.close(); });
+  await page.evaluate(latest => {
+    window.traceRecovery("test-captured-latest", latest);
+    window.traceRecovery("test-before-close", window.recoveryFrames.filter(frame => frame.capsule).at(-1));
+    window.retiredRecoverySocket = window.recoverySocket;
+    window.recoverySocket.close();
+  }, latest);
   await page.waitForFunction(() => window.recoveryHellos.length >= 2 && document.getElementById("pysx-root").dataset.pysxAttached === "true");
   const resumed = await page.evaluate(() => window.recoveryHellos.at(-1));
-  assert.equal(resumed.capsule, latest.capsule);
+  if (resumed.capsule !== latest.capsule) {
+    const timeline = await page.evaluate(() => window.recoveryTimeline);
+    const diagnostic = JSON.stringify({engine: process.env.PYSX_BROWSER_ENGINE, timeline});
+    console.error(`PYSX CHECKPOINT RESUME FAILURE: ${diagnostic}`);
+    if (process.env.PYSX_DEPLOYMENT_LOGS) {
+      try {
+        mkdirSync(process.env.PYSX_DEPLOYMENT_LOGS, {recursive: true});
+        writeFileSync(path.join(process.env.PYSX_DEPLOYMENT_LOGS,
+          `checkpoint-resume-${process.env.PYSX_BROWSER_ENGINE}-${process.pid}.json`), diagnostic);
+      } catch (error) { console.error(`Could not preserve checkpoint diagnostics: ${error.message}`); }
+    }
+    assert.fail("resume capsule differs from test-captured latest; see PYSX CHECKPOINT RESUME FAILURE timeline");
+  }
   assert.equal(resumed.document, latest.document);
-  await page.evaluate(() => window.retiredRecoverySocket.dispatchEvent(new MessageEvent("message", {data: "invalid retired frame"})));
+  await page.evaluate(() => window.retiredRecoverySocket.dispatchEvent(new MessageEvent("message", { data: "invalid retired frame" })));
   assert.equal(await page.locator("#recovery-count").textContent(), "1");
   const tab = await context.newPage();
   await tab.goto(url);
@@ -100,26 +145,40 @@ try {
   for (let attempt = 0; !sent.length && attempt < 100; attempt++) await mocked.waitForTimeout(20);
   assert.equal(sent[0]?.t, "hello");
   const doc = sent[0].document;
-  const frame = (base, extra) => ({version: 4, epoch: "publication", base_rev: base,
-    state_rev: base + 1, ...extra});
-  route.send(JSON.stringify(frame(0, {t: "init", html: '<pysx-slot id="current">0</pysx-slot>', css: "",
-    document: doc, capsule: "first", reset: ""})));
+  const frame = (base, extra) => ({
+    version: 4, epoch: "publication", base_rev: base,
+    state_rev: base + 1, ...extra
+  });
+  route.send(JSON.stringify(frame(0, {
+    t: "init", html: '<pysx-slot id="current">0</pysx-slot>', css: "",
+    document: doc, capsule: "first", reset: ""
+  })));
   await mocked.waitForSelector("#current");
-  route.send(JSON.stringify(frame(2, {t: "patch", ops: [{op: "text", id: "current", v: "lost predecessor"}],
-    document: doc, capsule: "out_of_order", reset: ""})));
-  route.send(JSON.stringify(frame(2, {t: "patch", ops: [{op: "text", id: "current", v: "duplicate lost predecessor"}],
-    document: doc, capsule: "duplicate_out_of_order", reset: ""})));
+  route.send(JSON.stringify(frame(2, {
+    t: "patch", ops: [{ op: "text", id: "current", v: "lost predecessor" }],
+    document: doc, capsule: "out_of_order", reset: ""
+  })));
+  route.send(JSON.stringify(frame(2, {
+    t: "patch", ops: [{ op: "text", id: "current", v: "duplicate lost predecessor" }],
+    document: doc, capsule: "duplicate_out_of_order", reset: ""
+  })));
   await mocked.waitForTimeout(50);
   assert.equal(await mocked.locator("#current").textContent(), "0");
   assert.equal(sent.filter(message => message.t === "repair").length, 1);
-  route.send(JSON.stringify(frame(3, {t: "repair", html: '<pysx-slot id="current">settled</pysx-slot>', css: "",
-    expected: 1, document: doc, capsule: "repaired", reset: ""})));
+  route.send(JSON.stringify(frame(3, {
+    t: "repair", html: '<pysx-slot id="current">settled</pysx-slot>', css: "",
+    expected: 1, document: doc, capsule: "repaired", reset: ""
+  })));
   await mocked.waitForFunction(() => document.getElementById("current").textContent === "settled");
-  route.send(JSON.stringify(frame(4, {t: "checkpoint", document: doc, capsule: "navigated", reset: "",
-    navigations: [{t: "navigation", url: "/checkpoint-route", rev: 0, mode: "push"}]})));
+  route.send(JSON.stringify(frame(4, {
+    t: "checkpoint", document: doc, capsule: "navigated", reset: "",
+    navigations: [{ t: "navigation", url: "/checkpoint-route", rev: 0, mode: "push" }]
+  })));
   await mocked.waitForURL("**/checkpoint-route");
-  route.send(JSON.stringify(frame(5, {t: "patch", ops: [{op: "text", id: "current", v: "must not apply"}],
-    document: doc, capsule: "bad_token\n", reset: ""})));
+  route.send(JSON.stringify(frame(5, {
+    t: "patch", ops: [{ op: "text", id: "current", v: "must not apply" }],
+    document: doc, capsule: "bad_token\n", reset: ""
+  })));
   for (let attempt = 0; closed === null && attempt < 100; attempt++) await mocked.waitForTimeout(20);
   assert.equal(closed, 4002);
   assert.equal(await mocked.locator("#current").textContent(), "settled");

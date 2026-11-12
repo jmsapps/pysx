@@ -46,6 +46,10 @@ Prefix the run command with `uv run --project .` when working inside that projec
 
 For ASGI and editor tooling, install with the extras `pysx[asgi,lsp]==0.1.0`.
 
+For Python formatting alone, install `pysx[dev]==0.1.0` in the same environment
+and run `python -m ruff format my_app.py`. This uses the pinned Ruff shipped by
+the extra; editor formatting uses the selected interpreter's tools too.
+
 ### Installing a candidate build
 
 A candidate that has not been published is installed from a local artifact
@@ -55,10 +59,25 @@ directory instead:
 uv add /path/to/artifacts/pysx-0.1.0-py3-none-any.whl
 ```
 
-Build those artifacts from a checkout with `uv build`. Examples are checkout
-material and are not included in the wheel. Do not assume that an unpublished
-candidate is on the package index; install an exact version when using a
-published one.
+Build those artifacts from a checkout with `uv build`. Do not assume that an
+unpublished candidate is on the package index; install an exact version when using
+a published one.
+
+### Run a bundled example outside the checkout
+
+Create a fresh environment in an empty directory, then install an exact artifact:
+
+```sh
+uv venv --python 3.14
+uv pip install '/path/to/artifacts/pysx-0.1.0-py3-none-any.whl[examples]'
+uv run --no-project pysx-example run counter
+```
+
+Open http://127.0.0.1:8750 and click Increment: the count changes from 0 to 1.
+Ctrl+C stops the server. The wheel includes the examples' shared components and
+assets. The same command works after building a wheel from the source archive.
+The checkout launcher `uv run --project . python run_example.py run counter`
+remains available. See [compatibility](COMPATIBILITY.md) for optional tool extras.
 
 ## Next
 

@@ -86,8 +86,7 @@ Only a standalone block-capable element may own an indented continuation:
 | `h2: "x"; br`, `br; "tail"`, `"prefix"; Card()` | No; put the intended parent on its own row with `:`. |
 
 Blank and separator-only rows cannot hide a forbidden indented continuation, including
-by popping its enclosing parent on a dedented separator row. Legacy separator-row stack,
-branch and ancestor-span behavior is preserved. A content-free colon header is invalid
+by popping its enclosing parent on a dedented separator row. A content-free colon header is invalid
 in any mixed/sibling row: `br; Card:`, `Card:; br`, and `p:;; br`. Use `Card` or `Card()`.
 An empty quoted string or content hole counts as supplied content: `Card: ""; br` is valid.
 

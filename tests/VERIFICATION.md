@@ -1,10 +1,10 @@
 # Browser, grammar and editor verification
 
-Run from the repository root with Node 24, npm, uv and the locked Python 3.14.4
+Run from the repository root with Node 24, npm, uv and the locked Python 3.14.10
 environment. All dependencies are repository-local and exact versions are locked.
 
 ```sh
-uv sync --locked --python 3.14.4
+uv sync --locked --python 3.14.10
 npm --prefix tests ci
 npm --prefix editor ci
 npm --prefix tests exec -- playwright install chromium firefox webkit
@@ -14,7 +14,7 @@ On Linux, install browser system libraries with
 `npm --prefix tests exec -- playwright install --with-deps chromium firefox webkit`.
 VSCode needs a display (use `xvfb-run -a` in headless Linux), GTK/NSS/audio libraries
 and the standard Electron runtime dependencies. macOS needs a native desktop session.
-Windows is currently unsupported. Setup is platform-specific; retain actual run
+The quality matrix also runs on Windows. Setup is platform-specific; retain actual run
 provenance and do not infer platform passes from configuration.
 
 The grammar harness resolves Pylance through the installed VSCode extension registry.
@@ -41,7 +41,7 @@ scripts/verify.py gates` executes every check below on a provisioned machine, an
 uv run --project . pytest -q tests/test_tutorial_website.py -k tutorial_website
 npm --prefix tests run browser -- --suite tutorial_website
 npm --prefix tests run grammar -- --suite tutorial_website
-uv run --project . pytest -q tests/test_field_application.py tests/test_distribution.py -k validate_integrated
+uv run --project . pytest -q tests/test_installed_application.py tests/test_distribution.py -k validate_integrated
 npm --prefix tests run browser -- --suite validate_integrated
 npm --prefix editor test -- --suite validate_integrated
 uv run --project . pytest -q tests/test_parity_corpus.py tests/test_documentation.py -k corpus_executable

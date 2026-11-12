@@ -9,6 +9,43 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def reports(output: str, fragment: str) -> bool:
+    """Match a path a checker printed back.
+
+    Windows checkers report a lowercased drive letter, so an exact substring test
+    against the fixture path fails there for a report that is otherwise correct.
+    """
+
+    if sys.platform == "win32":
+        return fragment.casefold() in output.casefold()
+
+    return fragment in output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_stable_api_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = ROOT / "tests/typing" / f"stable_api_{'valid' if valid else 'invalid'}.txt"
+    fixture = tmp_path / "stable_api.py"
+    fixture.write_text(source.read_text())
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args.append("--strict")
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert reports(output, f"{fixture}:3:"), output
+        assert "set" in output, output
+        assert "int" in output, output
+        assert ("str" if checker == "mypy" else "Literal['wrong']") in output, output
+        assert ("[arg-type]" if checker == "mypy" else "reportArgumentType") in output
+
+
 @pytest.mark.parametrize("checker", ["mypy", "pyright"])
 @pytest.mark.parametrize("valid", [True, False])
 def test_resident_protocol_generation_types(tmp_path: Path, checker: str, valid: bool) -> None:
@@ -636,9 +673,9 @@ def test_public_api_contracts(
     else:
         assert result.returncode == 1, output
         assert error in output, output
-        assert str(fixture) in output, output
+        assert reports(output, str(fixture)), output
         line = 3 if error in ("set", "upper") else 2
-        assert f"{fixture}:{line}:" in output, output
+        assert reports(output, f"{fixture}:{line}:"), output
         expected_count = 3 if checker == "pyright" and error == "upper" else 1
         diagnostic = " - error:" if checker == "pyright" else ": error:"
         assert output.count(diagnostic) == expected_count, output
@@ -726,7 +763,7 @@ def test_unified_authoring_types(tmp_path: Path, checker: str, source: str, vali
     assert result.returncode == (0 if valid else 1), output
 
     if not valid:
-        assert str(fixture) in output, output
+        assert reports(output, str(fixture)), output
         assert "reportMissingImports" not in output, output
         assert "[import-not-found]" not in output, output
 
@@ -882,7 +919,7 @@ def test_python_operator_operators_reactive_typing_contracts(
     else:
         assert result.returncode == 1, output
         assert expected_code in output, output
-        assert str(fixture) in output, output
+        assert reports(output, str(fixture)), output
         assert " - error:" in output if checker == "pyright" else ": error:" in output
         # Pyright may emit both overload and argument diagnostics for one bad call.
         # Every negative must be rejected for its own contract, never an import failure.

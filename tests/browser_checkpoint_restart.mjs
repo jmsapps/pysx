@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
-import {spawn} from "node:child_process";
-import {randomBytes} from "node:crypto";
+import {execFile} from "node:child_process";
 import {once} from "node:events";
 import {mkdtemp, mkdir, readFile, writeFile, rm, realpath} from "node:fs/promises";
 import {createServer} from "node:net";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
+import {promisify} from "node:util";
 import playwright from "playwright";
+import {spawnCli, signalCli} from "./cli_process.mjs";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
 const directory = await realpath(await mkdtemp(join(tmpdir(), "pysx-browser-checkpoint-")));
@@ -23,8 +24,7 @@ let running = null;
 let output = "";
 
 async function start(root) {
-  const child = spawn("uv", ["run", "--project", repository, "pysx", "--app",
-    "checkpoint_app:host", "--port", String(port)], {
+  const child = spawnCli(repository, ["--app", "checkpoint_app:host", "--port", String(port)], {
     cwd: root, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
     env: {...process.env, PYSX_TEST_KEY_DIRECTORY: join(directory, "keys")},
   });
@@ -43,15 +43,13 @@ async function stop(signal = "SIGINT") {
   if (!running) return;
   const owned = running; running = null;
   if (owned.child.exitCode !== null) { await owned.ended; return; }
-  const kill = value => {
-    if (process.platform === "win32") owned.child.kill(value);
-    else process.kill(-owned.child.pid, value);
-  };
+  const kill = value => signalCli(owned.child, value);
   if (owned.child.exitCode === null) kill(signal);
   const timer = setTimeout(() => { try { kill("SIGKILL"); } catch {} }, 5000);
   try {
     const [code, endedSignal] = await owned.ended;
     if (signal === "SIGINT") assert.equal(code, 0, output);
+    else if (process.platform === "win32") assert.notEqual(code, 0, output);
     else assert.equal(endedSignal, "SIGKILL", output);
   } finally { clearTimeout(timer); }
 }
@@ -60,8 +58,10 @@ try {
   const firstRoot = join(directory, "first");
   const secondRoot = join(directory, "second");
   await Promise.all([firstRoot, secondRoot, join(directory, "keys")].map(path => mkdir(path, {mode: 0o700})));
-  await writeFile(join(directory, "keys", "recovery.keys"),
-    Buffer.concat([Buffer.from("PSK1"), randomBytes(8), randomBytes(32)]), {mode: 0o600});
+  await promisify(execFile)("uv", ["run", "--project", repository, "python", "-c",
+    "import sys; from pathlib import Path; from pysx.hosting.recovery_keys import load_keys; " +
+    "load_keys(Path(sys.argv[1]), provision=True)", join(directory, "keys")],
+    {cwd: repository, timeout: 30000});
   const fixture = await readFile(join(repository, "tests", "browser_checkpoint_fixture.py"), "utf8");
   const host = '\nfrom pathlib import Path\nimport os\nfrom pysx import Application, HostConfig\n' +
     'host = Application(app, config=HostConfig(recovery_namespace="checkpoint-browser", ' +

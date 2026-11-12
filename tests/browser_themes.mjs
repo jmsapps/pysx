@@ -1,10 +1,48 @@
 import assert from "node:assert/strict";
+import {mkdirSync, writeFileSync} from "node:fs";
+import path from "node:path";
 import playwright from "playwright";
 
 const browser = await playwright[process.env.PYSX_BROWSER_ENGINE].launch();
+const pages = [];
+const trace = [];
+const record = (tab, event, detail) => {
+  trace.push({time: Date.now(), tab, event, detail});
+  if (trace.length > 200) trace.shift();
+};
 try {
   const page = await browser.newPage();
   const other = await browser.newPage();
+  pages.push(page, other);
+  for (const [tab, target] of pages.entries()) {
+    target.on("pageerror", error => record(tab, "pageerror", error.message));
+    target.on("websocket", socket => {
+      record(tab, "socket-open", null);
+      for (const direction of ["framesent", "framereceived"]) socket.on(direction, frame => {
+        try {
+          const message = JSON.parse(String(frame.payload));
+          // Do not retain hello credentials, recovery capsules or document HTML.
+          record(tab, direction, {t: message.t, h: message.h, seq: message.seq,
+            status: message.status, operations: message.ops?.map(op => op.op)});
+        } catch { record(tab, direction, "non-JSON frame"); }
+      });
+      socket.on("close", () => record(tab, "socket-close", null));
+      socket.on("socketerror", error => record(tab, "socket-error", String(error)));
+    });
+    await target.addInitScript(() => {
+      window.__themeTrace = [];
+      const record = (event, detail) => {
+        window.__themeTrace.push({time: Date.now(), event, detail});
+        if (window.__themeTrace.length > 100) window.__themeTrace.shift();
+      };
+      document.addEventListener("click", event => record("click", {
+        id: event.target.closest?.("[id]")?.id, trusted: event.isTrusted,
+      }), true);
+      window.addEventListener("pysx:connection", event => record("connection", {
+        state: event.detail.state, attempt: event.detail.attempt,
+      }));
+    });
+  }
   const address = `http://127.0.0.1:${process.argv[2]}`;
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -48,4 +86,25 @@ try {
   assert.equal(errors.length, 0);
   console.log("  ok  narrow layout and keyboard controls work without browser errors");
   console.log("THEMES BROWSER PASSED");
+} catch (error) {
+  const snapshots = await Promise.all(pages.map(page => page.evaluate(() => {
+    const preview = document.querySelector("#preview");
+    return {events: window.__themeTrace, visibility: document.visibilityState,
+      focused: document.hasFocus(), active: document.activeElement?.id,
+      connection: document.getElementById("pysx-root")?.dataset.pysxConnection,
+      theme: document.querySelector("#theme-name")?.textContent,
+      preview: preview && {padding: getComputedStyle(preview).paddingLeft,
+        style: preview.getAttribute("style"), classes: preview.className}};
+  }).catch(error => ({unavailable: error.message}))));
+  const diagnostic = JSON.stringify({engine: process.env.PYSX_BROWSER_ENGINE,
+    error: error.message, trace, snapshots});
+  console.error(`PYSX THEMES FAILURE: ${diagnostic}`);
+  if (process.env.PYSX_DEPLOYMENT_LOGS) {
+    try {
+      mkdirSync(process.env.PYSX_DEPLOYMENT_LOGS, {recursive: true});
+      writeFileSync(path.join(process.env.PYSX_DEPLOYMENT_LOGS,
+        `themes-${process.env.PYSX_BROWSER_ENGINE}-${process.pid}-${Date.now()}.json`), diagnostic);
+    } catch (failure) { console.error(`Could not preserve themes diagnostics: ${failure.message}`); }
+  }
+  throw error;
 } finally { await browser.close(); }

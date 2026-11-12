@@ -79,6 +79,9 @@ send `{"t":"hello","version":3,"resume":"credential","epoch":"epoch","state_rev"
 The query is an admission hint; credentials travel only in the hello body.
 Claims check browser cookie, authenticated principal, epoch and last revision.
 Attached, expired, mismatched and already-used credentials close with 4004.
+An attachment that times out waiting for a resume or recovery hello closes with
+1013. This transport timeout does not invalidate a retained session or credential;
+the browser may retry within the existing retry and retention bounds.
 No invalid claim allocates or steals a graph. A successful claim rotates the
 credential and sends an unconditional `repair` with complete current HTML/CSS,
 next event sequence, routing state and the new credential. Retained native nodes,
@@ -97,7 +100,9 @@ reconstruct compatible state from the document capsule.
 [Durable hosts](OWNERSHIP.md) can separately reconstruct explicitly declared state.
 
 A normal peer close retains a healthy graph even if it overlaps an outgoing
-update. Stopping a pending send during disconnect cleanup does not cancel the
+update. This includes an empty close frame, represented locally by status 1005
+(that reserved indicator is not sent as a wire close code).
+Stopping a pending send during disconnect cleanup does not cancel the
 application; resume repairs the current snapshot, including committed updates
 the browser did not receive. Other failed sends still expire the graph.
 
@@ -237,9 +242,6 @@ element via `textContent`. They precede the DOM operations that require those ru
 Dynamic rules and active themes belong to one session; removal releases owned rules,
 while identical surviving rules remain deduplicated. CSS variables use ordinary `style`
 attribute patches with empty variables removed from the serialized declarations.
-
-Supersedes the counter-era `{"slots": {...}}` format, which could only replace
-text by index.
 
 ## Messages
 

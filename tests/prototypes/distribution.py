@@ -187,6 +187,23 @@ def command(
 EXAMPLES_EXTRA = "typer==0.27.2"
 
 
+def example_constraints(workspace: Path) -> Path:
+    """Use the same exact example dependency set for cache preparation and install."""
+    names = (
+        "typer",
+        "shellingham",
+        "rich",
+        "annotated-doc",
+        "markdown-it-py",
+        "mdurl",
+        "pygments",
+    )
+    constraints = workspace / "constraints.txt"
+    constraints.write_text("\n".join(f"{name}=={distribution(name).version}" for name in names))
+
+    return constraints
+
+
 def required_pins() -> list[str]:
     """The candidate's own declared installs: runtime plus the examples extra."""
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -268,6 +285,7 @@ def warmed(destination: Path) -> Path:
     if uv is None:
         raise ProofError("uv is required")
     pins = required_pins()
+    constraints = example_constraints(destination.parent)
     probe = destination.parent / "cache-probe"
     install = [
         uv,
@@ -279,6 +297,8 @@ def warmed(destination: Path) -> Path:
         sys.executable,
         "--target",
         str(probe),
+        "--constraint",
+        str(constraints),
         *pins,
     ]
 
@@ -309,14 +329,10 @@ def candidate(destination: Path) -> None:
         )
     (destination / "pysx" / "py.typed").write_text("")
     shutil.copy2(ROOT / "run_example.py", destination / "run_example.py")
-    runner = (ROOT / "run_example.py").read_text()
-    runner = runner.replace(
-        '"run_example.py needs Typer, which ships in the dev dependency group.\\n"',
-        '"example needs the optional pysx[examples] extra.\\n"',
-    ).replace(
-        '"run it through uv:  uv run --project . python run_example.py run <name>"',
-        '"Install pysx[examples], or use uv run --project . pysx-example from a checkout."',
-    )
+
+    for document in ("README.md", "LICENSE"):
+        shutil.copy2(ROOT / document, destination / document)
+    runner = (ROOT / "pysx/tooling/examples.py").read_text()
     (destination / "pysx" / "_example_runner.py").write_text(runner)
 
     for name, source in (
@@ -327,23 +343,11 @@ def candidate(destination: Path) -> None:
         (destination / "pysx" / name).write_text(source)
     metadata = (ROOT / "pyproject.toml").read_text()
     metadata = metadata.replace(
-        'example = "run_example:app"',
-        '''example = "pysx._example_runner:app"
+        'pysx-example = "pysx.tooling.examples:app"',
+        '''pysx-example = "pysx._example_runner:app"
 pysx-lsp = "pysx._lsp_proof:main"''',
     )
     metadata = metadata.replace('pysx = "pysx.hosting.server:main"', 'pysx = "pysx.cli:main"')
-    metadata = metadata.replace(
-        "[project.optional-dependencies]",
-        f"""[project.optional-dependencies]
-examples = ["{EXAMPLES_EXTRA}"]
-""",
-    )
-    metadata = metadata.replace(
-        'module-root = ""',
-        """module-root = ""
-module-name = ["pysx", "examples"]
-source-include = ["run_example.py"]""",
-    )
     (destination / "pyproject.toml").write_text(metadata)
 
 
@@ -415,17 +419,7 @@ def installed(workspace: Path, wheel: Path, cache: Path, *, extra: bool) -> Path
     ]
 
     if extra:
-        constraints = workspace / "constraints.txt"
-        names = (
-            "typer",
-            "shellingham",
-            "rich",
-            "annotated-doc",
-            "markdown-it-py",
-            "mdurl",
-            "pygments",
-        )
-        constraints.write_text("\n".join(f"{name}=={distribution(name).version}" for name in names))
+        constraints = example_constraints(workspace)
         args += ["--constraint", str(constraints)]
     args.append(str(wheel) + ("[examples]" if extra else ""))
     command(args, workspace)

@@ -280,6 +280,7 @@ def test_styling_diagnostics_fresh_vsix_contents(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     destination = tmp_path / "editor"
     destination.mkdir()
+    shutil.copyfile(root / "LICENSE", tmp_path / "LICENSE")
 
     for name in ("build_vsix.py", "package.json", "extension.js", "authoring.js", "client.js"):
         shutil.copyfile(root / "editor" / name, destination / name)

@@ -5,7 +5,7 @@ const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
 
 const selector = { language: "python", scheme: "file" };
-const canonical = (file) => fs.existsSync(file) ? fs.realpathSync(file) : path.resolve(file);
+const canonical = (file) => fs.existsSync(file) ? fs.realpathSync.native(file) : path.resolve(file);
 const generated = (file) => file.split(path.sep).some((part) => part.startsWith("_pysx_revision_"));
 const managed = (doc) => doc?.languageId === "python" && doc.uri.scheme === "file" && !generated(doc.fileName);
 const digest = (text) => crypto.createHash("sha256").update(text).digest("hex");
@@ -101,8 +101,13 @@ exports.activate = function (context) {
     const sources = new Map(vscode.workspace.textDocuments.filter(managed).map((doc) => [canonical(doc.fileName), doc]));
     return state.models.every((model) => {
       const source = sources.get(model.filename);
-      return source ? source.getText() === model.source && (model.version < 0 || source.version === model.version)
+      const current = source ? source.getText() === model.source && (model.version < 0 || source.version === model.version)
         : fs.existsSync(model.filename) && digest(fs.readFileSync(model.filename, "utf8")) === model.digest;
+      if (!current && !state.reportedInvalid) {
+        state.reportedInvalid = true;
+        output.appendLine(`Snapshot rejected: ${JSON.stringify({ token: state.token, file: path.basename(model.filename), openSource: Boolean(source), canonicalOpenSource: sources.has(canonical(model.filename)), modelVersion: model.version, documentVersion: source?.version, sourceMatches: source ? source.getText() === model.source : undefined })}`);
+      }
+      return current;
     });
   }
 
@@ -211,6 +216,7 @@ exports.activate = function (context) {
       return null;
     }
     state.ready = true;
+    output.appendLine(`Snapshot ready: ${JSON.stringify({ token, models: models.length, openSources: models.filter((model) => vscode.workspace.textDocuments.some((doc) => managed(doc) && canonical(doc.fileName) === model.filename)).length, canonicalOpenSources: models.filter((model) => vscode.workspace.textDocuments.some((doc) => managed(doc) && canonical(doc.fileName) === canonical(model.filename))).length, diagnostics: models.reduce((count, model) => count + model.diagnostics.length, 0) })}`);
     await release(existing);
     if (!valid(state)) return null;
     for (const model of models) {
