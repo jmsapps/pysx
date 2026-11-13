@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, readdirSync, mkdirSync, copyFileSync } fro
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export function qualify(tag, pythonVersion, extension) {
   if (!/^v\d+\.\d+\.\d+$/.test(tag) || tag.slice(1) !== pythonVersion || extension.version !== pythonVersion) {
@@ -85,4 +86,4 @@ export async function main(args) {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) await main(process.argv.slice(2));
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main(process.argv.slice(2));
