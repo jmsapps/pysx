@@ -5,7 +5,7 @@ extension `jmsapps.pysx`. Local VSIX builds use the same extension identity.
 
 ## Account setup
 
-On the PyPI project `pysx-framework`, add a GitHub Trusted Publisher with
+Add a PyPI pending publisher for project name `pysx-framework` with
 repository owner `jmsapps`, repository `pysx`, and workflow filename `release.yml`.
 The workflow does not use a GitHub environment; leave that field empty.
 
