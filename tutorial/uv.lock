@@ -223,15 +223,15 @@ wheels = [
 ]
 
 [[package]]
-name = "pysx"
+name = "pysx-framework"
 version = "0.1.0"
-source = { path = ".artifacts/pysx-0.1.0-py3-none-any.whl" }
+source = { path = ".artifacts/pysx_framework-0.1.0-py3-none-any.whl" }
 dependencies = [
     { name = "cryptography" },
     { name = "websockets" },
 ]
 wheels = [
-    { filename = "pysx-0.1.0-py3-none-any.whl", hash = "sha256:aaf5be59876730257561595df3cff6a64345edf86ab6bea9817328c4c0dcb021" },
+    { filename = "pysx_framework-0.1.0-py3-none-any.whl", hash = "sha256:d06bb5dadb2149aeb8c19c630e99389faeae82ffdbcdf40c6dfe4af8ff0a5932" },
 ]
 
 [package.optional-dependencies]
@@ -253,32 +253,33 @@ requires-dist = [
     { name = "pyright", marker = "extra == 'lsp'", specifier = "==1.1.414" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.16.10" },
     { name = "ruff", marker = "extra == 'lsp'", specifier = "==0.16.10" },
+    { name = "typer", marker = "extra == 'examples'", specifier = "==0.27.2" },
     { name = "uvicorn", marker = "extra == 'asgi'", specifier = "==0.54.0" },
     { name = "websockets", specifier = "==17.1" },
 ]
-provides-extras = ["asgi", "dev", "lsp"]
+provides-extras = ["asgi", "dev", "examples", "lsp"]
 
 [[package]]
 name = "pysx-tutorial"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "pysx" },
+    { name = "pysx-framework" },
 ]
 
 [package.optional-dependencies]
 asgi = [
-    { name = "pysx", extra = ["asgi"] },
+    { name = "pysx-framework", extra = ["asgi"] },
 ]
 editor = [
-    { name = "pysx", extra = ["lsp"] },
+    { name = "pysx-framework", extra = ["lsp"] },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "pysx", path = ".artifacts/pysx-0.1.0-py3-none-any.whl" },
-    { name = "pysx", extras = ["asgi"], marker = "extra == 'asgi'", path = ".artifacts/pysx-0.1.0-py3-none-any.whl" },
-    { name = "pysx", extras = ["lsp"], marker = "extra == 'editor'", path = ".artifacts/pysx-0.1.0-py3-none-any.whl" },
+    { name = "pysx-framework", path = ".artifacts/pysx_framework-0.1.0-py3-none-any.whl" },
+    { name = "pysx-framework", extras = ["asgi"], marker = "extra == 'asgi'", path = ".artifacts/pysx_framework-0.1.0-py3-none-any.whl" },
+    { name = "pysx-framework", extras = ["lsp"], marker = "extra == 'editor'", path = ".artifacts/pysx_framework-0.1.0-py3-none-any.whl" },
 ]
 provides-extras = ["editor", "asgi"]
 

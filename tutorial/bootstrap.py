@@ -25,7 +25,7 @@ def main() -> None:
     if args.wheel is not None:
         wheel = args.wheel.resolve()
 
-        if wheel.name != "pysx-0.1.0-py3-none-any.whl" or not wheel.is_file():
+        if wheel.name != "pysx_framework-0.1.0-py3-none-any.whl" or not wheel.is_file():
             raise SystemExit("Expected the actual pysx 0.1.0 candidate wheel")
         target = artifacts / wheel.name
 

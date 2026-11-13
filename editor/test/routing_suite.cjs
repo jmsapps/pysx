@@ -202,7 +202,7 @@ exports.run = async function () {
     const owner = api.owner(secondary.uri);
     return owner && !owner.lifecycle && owner.error ? owner : null;
   }, "the environment without the extra is reported");
-  assert(unusable.error.includes("pysx[lsp]"), "the actionable extra is named");
+  assert(unusable.error.includes("pysx-framework[lsp]"), "the actionable extra is named");
   assert.equal((await statusOf(consumer)).processId, first.consumer.processId,
     "an unrelated folder stays usable");
   await select(secondary, python);

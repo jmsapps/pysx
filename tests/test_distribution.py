@@ -70,7 +70,7 @@ def test_stable_api_installed_consumers(
 import importlib, importlib.metadata as metadata, importlib.resources as resources, sys
 from pathlib import Path
 import pysx
-distribution = metadata.distribution("pysx")
+distribution = metadata.distribution("pysx-framework")
 assert distribution.version == {project["version"]!r}
 assert distribution.metadata["License-Expression"] == "MIT"
 assert distribution.metadata["Author-email"] == "JMS Apps <jmsapps@outlook.com>"
@@ -96,7 +96,7 @@ if {extra!r} == "lsp":
     for name in project["scripts"]:
         if name == "pysx-example" and extra != "examples":
             result = command([_console(python, name), "--help"], tmp_path, expected=1)
-            assert "pysx[examples]" in result.stderr
+            assert "pysx-framework[examples]" in result.stderr
         else:
             command([_console(python, name), "--help"], tmp_path)
 
@@ -314,7 +314,7 @@ def test_host_config_fresh_actual_wheel_user_app(tmp_path: Path, *, asgi: bool) 
         consumer,
         expected=1,
     )
-    assert "pysx[asgi]" in missing.stderr
+    assert "pysx-framework[asgi]" in missing.stderr
 
     if asgi:
         # Only this environment receives the optional extra, from the actual wheel.

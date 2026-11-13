@@ -191,7 +191,7 @@ LESSONS = (
         "UI continuity reconstructs a new authorized graph; it does not persist business "
         "transactions.",
         ("browser_recovery",),
-        "pip install pysx\npysx-playground recovery\npysx --app playgrounds.recovery\n",
+        "pip install pysx-framework\npysx-playground recovery\npysx --app playgrounds.recovery\n",
     ),
     Lesson(
         23,
@@ -227,6 +227,6 @@ LESSONS = (
         "in this playground; delivered edits update the declared root.",
         "Declare data and schema explicitly; rebuild behavior from trusted code.",
         ("durable_state",),
-        "pip install pysx\npysx-playground durable\npysx --app playgrounds.durable\n",
+        "pip install pysx-framework\npysx-playground durable\npysx --app playgrounds.durable\n",
     ),
 )

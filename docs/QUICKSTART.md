@@ -39,14 +39,14 @@ Python 3.14 or newer is required for PEP 750 t-strings.
 
 ```sh
 uv init --python 3.14
-uv add 'pysx==0.1.0'
+uv add 'pysx-framework==0.1.0'
 ```
 
 Prefix the run command with `uv run --project .` when working inside that project.
 
-For ASGI and editor tooling, install with the extras `pysx[asgi,lsp]==0.1.0`.
+For ASGI and editor tooling, install with the extras `pysx-framework[asgi,lsp]==0.1.0`.
 
-For Python formatting alone, install `pysx[dev]==0.1.0` in the same environment
+For Python formatting alone, install `pysx-framework[dev]==0.1.0` in the same environment
 and run `python -m ruff format my_app.py`. This uses the pinned Ruff shipped by
 the extra; editor formatting uses the selected interpreter's tools too.
 
@@ -56,7 +56,7 @@ A candidate that has not been published is installed from a local artifact
 directory instead:
 
 ```sh
-uv add /path/to/artifacts/pysx-0.1.0-py3-none-any.whl
+uv add /path/to/artifacts/pysx_framework-0.1.0-py3-none-any.whl
 ```
 
 Build those artifacts from a checkout with `uv build`. Do not assume that an
@@ -69,7 +69,7 @@ Create a fresh environment in an empty directory, then install an exact artifact
 
 ```sh
 uv venv --python 3.14
-uv pip install '/path/to/artifacts/pysx-0.1.0-py3-none-any.whl[examples]'
+uv pip install '/path/to/artifacts/pysx_framework-0.1.0-py3-none-any.whl[examples]'
 uv run --no-project pysx-example run counter
 ```
 

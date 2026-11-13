@@ -697,7 +697,7 @@ assert importlib.resources.files("pysx").joinpath("py.typed").is_file()
 assert importlib.resources.files("pysx").joinpath("static/client.js").is_file()
 assert "counter" in examples.examples
 print(json.dumps({"package": str(Path(pysx_package.__file__).resolve()),
-                  "paths": sys.path, "version": importlib.metadata.version("pysx")}))
+                  "paths": sys.path, "version": importlib.metadata.version("pysx-framework")}))
 """
 
     for python in (core, extra):
@@ -715,7 +715,7 @@ print(json.dumps({"package": str(Path(pysx_package.__file__).resolve()),
     example = "pysx-example.exe" if os.name == "nt" else "pysx-example"
     missing = command([str(core.parent / example), "--help"], consumer, expected=1)
 
-    if "pysx[examples]" not in missing.stderr:
+    if "pysx-framework[examples]" not in missing.stderr:
         raise ProofError("missing optional dependency is not actionable")
     command([str(extra.parent / example), "--help"], consumer)
     listing = command([str(extra.parent / example), "run"], consumer, expected=2)

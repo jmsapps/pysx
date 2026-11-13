@@ -223,7 +223,7 @@ def test_lint_qualification_remembers_no_unusable_environment(
     interpreter = environment / "python"
     interpreter.touch()
 
-    with pytest.raises(ToolingError, match="pysx\\[dev\\]"):
+    with pytest.raises(ToolingError, match="pysx-framework\\[dev\\]"):
         resolve_ruff(interpreter)
     ruff_stub(environment / "ruff", RUFF_REQUIREMENT)
     assert resolve_ruff(interpreter).version == RUFF_REQUIREMENT
@@ -403,7 +403,7 @@ def test_client_verify_ruff_reports_a_missing_installation(tmp_path: Path) -> No
 
     with pytest.raises(ToolingError) as error:
         resolve_ruff(empty)
-    assert "pysx[dev]" in str(error.value)
+    assert "pysx-framework[dev]" in str(error.value)
     assert "PATH" in str(error.value)
 
 
@@ -442,7 +442,7 @@ def test_client_verify_cli_reports_a_failure_as_an_error(tmp_path: Path) -> None
         cwd=ROOT,
     )
     assert result.returncode == 1
-    assert "pysx[dev]" in json.loads(result.stdout)["error"]
+    assert "pysx-framework[dev]" in json.loads(result.stdout)["error"]
 
 
 def test_client_verify_dev_extra_pins_the_required_ruff() -> None:

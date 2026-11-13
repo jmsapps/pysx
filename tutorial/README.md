@@ -37,7 +37,7 @@ Copy this entire directory to a writable application directory. Supply the exact
 framework candidate wheel to the bootstrap; no parent checkout is required:
 
 ```sh
-uv run --no-project --python 3.14 python bootstrap.py --wheel /path/to/pysx-0.1.0-py3-none-any.whl
+uv run --no-project --python 3.14 python bootstrap.py --wheel /path/to/pysx_framework-0.1.0-py3-none-any.whl
 uv run --project . pysx-tutorial
 ```
 

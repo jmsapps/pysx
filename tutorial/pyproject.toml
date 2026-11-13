@@ -3,11 +3,11 @@ name = "pysx-tutorial"
 version = "0.1.0"
 description = "An interactive course in server-side Python interfaces"
 requires-python = ">=3.14"
-dependencies = ["pysx==0.1.0"]
+dependencies = ["pysx-framework==0.1.0"]
 
 [project.optional-dependencies]
-editor = ["pysx[lsp]==0.1.0"]
-asgi = ["pysx[asgi]==0.1.0"]
+editor = ["pysx-framework[lsp]==0.1.0"]
+asgi = ["pysx-framework[asgi]==0.1.0"]
 
 [project.scripts]
 pysx-tutorial = "src:main"
@@ -21,4 +21,4 @@ module-root = ""
 module-name = "src"
 
 [tool.uv.sources]
-pysx = { path = ".artifacts/pysx-0.1.0-py3-none-any.whl" }
+pysx-framework = { path = ".artifacts/pysx_framework-0.1.0-py3-none-any.whl" }

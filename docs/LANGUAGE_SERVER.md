@@ -1,6 +1,6 @@
 # Resident language server
 
-Install `pysx[lsp]` in the selected Python 3.14+ environment, then launch that
+Install `pysx-framework[lsp]` in the selected Python 3.14+ environment, then launch that
 environment's Python with `-m pysx.tooling.lsp.lsp`. The optional extra includes the pinned
 language framework, Pyright and Ruff. Node.js must be available to the server.
 The base renderer and `python -m pysx.tooling.check` do not require the extra.
@@ -170,7 +170,7 @@ against the active document's owning client; a command implemented only by the
 other integration says so rather than failing as unknown.
 
 Developer tooling is resolved from the selected environment only. Install
-`pysx[dev]` there for the pinned Ruff; `python -m pysx.tooling.tools` reports the
+`pysx-framework[dev]` there for the pinned Ruff; `python -m pysx.tooling.tools` reports the
 resolved path and version, and both the editor and the CLI use that same
 executable. A Ruff found elsewhere on `PATH` is never substituted, and a version
 other than the pinned one is rejected with an explanation rather than used.
@@ -178,7 +178,7 @@ other than the pinned one is rejected with an explanation rather than used.
 
 ## Setup
 
-1. Install `pysx[lsp]` and `pysx[dev]` into the Python 3.14+ environment you select in
+1. Install `pysx-framework[lsp]` and `pysx-framework[dev]` into the Python 3.14+ environment you select in
    the editor. The first supplies the language server and its type backend, the second
    the pinned Ruff. Node.js must be available to that environment.
 2. Install the extension, then set `pysx.useLanguageServer` to `true` and reload the

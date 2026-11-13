@@ -91,7 +91,7 @@
           "type": "boolean",
           "default": false,
           "scope": "window",
-          "description": "Use the resident PYSX language server instead of the worker integration. Requires the pysx[lsp] extra in the selected environment."
+          "description": "Use the resident PYSX language server instead of the worker integration. Requires the pysx-framework[lsp] extra in the selected environment."
         }
       }
     },

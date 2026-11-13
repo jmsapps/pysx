@@ -1,11 +1,11 @@
 # Releasing
 
-The production identities are the Python distribution `pysx` and VS Code extension
-`jmsapps.pysx`. Local VSIX builds use the same extension identity.
+The production identities are the Python distribution `pysx-framework` and VS Code
+extension `jmsapps.pysx`. Local VSIX builds use the same extension identity.
 
 ## Account setup
 
-After obtaining ownership of the PyPI project, add a GitHub Trusted Publisher with
+On the PyPI project `pysx-framework`, add a GitHub Trusted Publisher with
 repository owner `jmsapps`, repository `pysx`, and workflow filename `release.yml`.
 The workflow does not use a GitHub environment; leave that field empty.
 
@@ -60,7 +60,7 @@ must change.
 ## Installation
 
 After publication, install the Python package in a Python 3.14+ environment with
-`uv pip install 'pysx[lsp]==0.1.0'`, then install `jmsapps.pysx` from Marketplace.
+`uv pip install 'pysx-framework[lsp]==0.1.0'`, then install `jmsapps.pysx` from Marketplace.
 Select that Python environment in VS Code. For local installation, run
 `scripts/install-extension.sh`; it builds the production VSIX and removes the former
 `pysx-local.pysx-lang` extension. `scripts/uninstall-extension.sh` removes both ids.

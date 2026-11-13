@@ -1,6 +1,6 @@
 """Typer command centre for the bundled examples.
 
-Install pysx[examples], then run pysx-example run <name>.
+Install pysx-framework[examples], then run pysx-example run <name>.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ try:
     import typer
 except ModuleNotFoundError:  # pragma: no cover - depends on install mode
     sys.exit(
-        "pysx-example needs the optional pysx[examples] extra.\n"
-        "Install pysx[examples], or use uv run --project . pysx-example from a checkout."
+        "pysx-example needs the optional pysx-framework[examples] extra.\n"
+        "Install pysx-framework[examples], or use uv run --project . pysx-example from a checkout."
     )
 
 
