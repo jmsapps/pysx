@@ -22,19 +22,8 @@ back to the page.
 
 Templates use Python 3.14+ t-strings to keep markup and live values together:
 
-```python
-from pysx import pysx, signal
+<img src="assets/pysx-counter.svg" alt="Python counter example with PYSX template syntax highlighting" width="1048">
 
-
-def app():
-    count = signal(0)
-
-    return pysx(t"""
-        div:
-            p: "Count: " {count}
-            button(onClick={(lambda event: count.set(count() + 1))}): "Increment"
-    """)
-```
 
 Changing `count` updates the displayed value. The browser applies targeted patches,
 and keyed lists preserve unchanged rows so focus, selection, and scroll survive
