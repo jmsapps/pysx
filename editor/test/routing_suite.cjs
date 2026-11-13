@@ -57,7 +57,7 @@ exports.run = async function () {
   const progress = (label) => console.log(
     `PYSX EDITOR ROUTING: ${label} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
   progress("configure workspace interpreters");
-  const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
+  const extension = vscode.extensions.getExtension("jmsapps.pysx");
   assert(extension, "fresh extension registered");
   const python = process.env.PYSX_EDITOR_PYTHON;
   const alternate = process.env.PYSX_EDITOR_ALTERNATE_PYTHON;

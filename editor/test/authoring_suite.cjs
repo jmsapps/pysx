@@ -83,7 +83,7 @@ def tree() -> Fragment:
   const doc = await vscode.workspace.openTextDocument(path.join(root, "consumer.py"));
   await vscode.window.showTextDocument(doc);
   await eventually(async () => (await vscode.commands.executeCommand("vscode.executeHoverProvider", doc.uri, position(doc, "rows =")))?.length, "ordinary Python backend readiness");
-  const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
+  const extension = vscode.extensions.getExtension("jmsapps.pysx");
   await extension.activate();
   const unmanaged = await vscode.workspace.openTextDocument({ language: "plaintext", content: "configuration guard" });
   await vscode.window.showTextDocument(unmanaged);

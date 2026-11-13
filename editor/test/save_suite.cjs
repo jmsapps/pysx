@@ -40,7 +40,7 @@ exports.run = async function () {
   await editor.update("formatOnSave", false, vscode.ConfigurationTarget.Workspace);
   const files = vscode.workspace.getConfiguration("files");
   await files.update("autoSave", "off", vscode.ConfigurationTarget.Workspace);
-  const api = await vscode.extensions.getExtension("pysx-local.pysx-lang").activate();
+  const api = await vscode.extensions.getExtension("jmsapps.pysx").activate();
   const document = await vscode.workspace.openTextDocument(filename);
   await vscode.window.showTextDocument(document);
   await until(async () => {

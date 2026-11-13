@@ -9,9 +9,10 @@ import stat
 import subprocess
 import sys
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, cast
+from xml.etree import ElementTree
 
 import pytest
 
@@ -264,7 +265,59 @@ def test_stable_api_editor_license(vsix: zipfile.ZipFile) -> None:
     assert package["license"] == "MIT"
     assert package["author"] == "JMS Apps <jmsapps@outlook.com>"
     assert lockfile()[""]["version"] == package["version"]
-    assert vsix.read("extension/LICENSE") == (ROOT / "LICENSE").read_bytes()
+    assert vsix.read("extension/LICENSE.txt") == (ROOT / "LICENSE").read_bytes()
+
+
+def test_stable_api_vsix_manifest_satisfies_the_gallery(vsix: zipfile.ZipFile) -> None:
+    """`code --install-extension` ignores the manifest; the Marketplace does not."""
+    package = manifest()
+    namespace = {"v": "http://schemas.microsoft.com/developer/vsx-schema/2011"}
+    root = ElementTree.fromstring(vsix.read("extension.vsixmanifest").decode())
+    identity = root.find("./v:Metadata/v:Identity", namespace)
+    assert identity is not None
+    assert identity.get("Id") == package["name"] == "pysx"
+    assert identity.get("Publisher") == package["publisher"] == "jmsapps"
+    assert identity.get("Version") == package["version"]
+    properties = {
+        node.get("Id"): node.get("Value")
+        for node in root.findall("./v:Metadata/v:Properties/v:Property", namespace)
+    }
+    assert properties["Microsoft.VisualStudio.Code.Engine"] == package["engines"]["vscode"]
+    assets = {
+        node.get("Type"): node.get("Path") for node in root.findall("./v:Assets/v:Asset", namespace)
+    }
+    names = set(vsix.namelist())
+
+    for kind in (
+        "Microsoft.VisualStudio.Code.Manifest",
+        "Microsoft.VisualStudio.Services.Content.Details",
+        "Microsoft.VisualStudio.Services.Content.License",
+        "Microsoft.VisualStudio.Services.Icons.Default",
+    ):
+        assert assets.get(kind) in names, f"{kind} points outside the archive: {assets.get(kind)}"
+    typed = {
+        node.get("Extension")
+        for node in ElementTree.fromstring(vsix.read("[Content_Types].xml").decode()).findall(
+            "./{http://schemas.openxmlformats.org/package/2006/content-types}Default"
+        )
+    }
+
+    for name in names:
+        suffix = PurePosixPath(name).suffix
+
+        # The type map is the one part OPC does not type through itself.
+        if suffix and name != "[Content_Types].xml":
+            assert suffix in typed, f"{name} has no content type declared"
+
+
+def test_stable_api_vsix_excludes_development_only_inputs(vsix: zipfile.ZipFile) -> None:
+    """The sideload tree carries the harness and the builder; the package must not."""
+    basenames = {PurePosixPath(name).name for name in vsix.namelist()}
+
+    for unwanted in ("build_vsix.py", "pysx-root.json", "package-lock.json"):
+        assert unwanted not in basenames, f"{unwanted} is shipped"
+    assert not any(name.endswith(".vsix") for name in basenames)
+    assert not any(name.startswith("extension/test/") for name in vsix.namelist())
 
 
 def test_client_verify_vsix_ships_the_runtime_closure_only(vsix: zipfile.ZipFile) -> None:
