@@ -9,6 +9,8 @@
 !pysx/**
 !examples/
 !examples/**
+!shared/
+!shared/**
 !tests/
 !tests/**
 !run_example.py

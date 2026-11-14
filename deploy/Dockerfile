@@ -6,6 +6,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --extra asgi --no-install-project
 COPY pysx ./pysx
 COPY examples ./examples
+COPY shared ./shared
 COPY tests ./tests
 COPY run_example.py README.md LICENSE ./
 RUN uv sync --frozen --no-dev --extra asgi
