@@ -4,6 +4,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -15,6 +16,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     root = Path(__file__).resolve().parent
+    # Bootstrap also runs outside the checkout, before the framework is installed.
+    release_version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
     artifacts = root / ".artifacts"
     artifacts.mkdir(exist_ok=True)
     uv = shutil.which("uv")
@@ -25,8 +28,11 @@ def main() -> None:
     if args.wheel is not None:
         wheel = args.wheel.resolve()
 
-        if wheel.name != "pysx_framework-0.1.0-py3-none-any.whl" or not wheel.is_file():
-            raise SystemExit("Expected the actual pysx 0.1.0 candidate wheel")
+        if (
+            wheel.name != f"pysx_framework-{release_version}-py3-none-any.whl"
+            or not wheel.is_file()
+        ):
+            raise SystemExit(f"Expected the actual pysx {release_version} candidate wheel")
         target = artifacts / wheel.name
 
         if wheel != target:
@@ -45,7 +51,9 @@ def main() -> None:
             ],
             check=True,
         )
-    subprocess.run([uv, "lock", "--project", str(root), "--upgrade-package", "pysx"], check=True)
+    subprocess.run(
+        [uv, "lock", "--project", str(root), "--upgrade-package", "pysx-framework"], check=True
+    )
     command = [uv, "sync", "--project", str(root), "--python", sys.executable]
 
     if args.editor:

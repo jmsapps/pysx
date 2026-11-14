@@ -2,14 +2,25 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { qualify, disposition, sha256, retryPlan, galleryDisposition } from '../scripts/release.mjs';
+import { qualify, disposition, sha256, retryPlan, galleryDisposition, pypiRelease } from '../scripts/release.mjs';
+
+const version = readFileSync('shared/constants.py', 'utf8').match(/^RELEASE_VERSION = "([^"]+)"/m)[1];
+
+test('pypi retry reads the framework release and preserves published digests', async (t) => {
+  const published = {urls:[{filename:`pysx_framework-${version}-py3-none-any.whl`,digests:{sha256:'wheel-hash'}}]};
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    assert.equal(url, `https://pypi.org/pypi/pysx-framework/${version}/json`);
+    return {ok:true, status:200, json:async () => published};
+  });
+  assert.deepEqual(await pypiRelease(version), published);
+});
 
 test('release requires matching stable versions and production identity', () => {
-  const extension = {name:'pysx',publisher:'jmsapps',version:'0.1.0'};
-  assert.equal(qualify('v0.1.0','0.1.0',extension),'0.1.0');
-  for (const tag of ['0.1.0','v0.2.0','v0.1.0-rc1']) assert.throws(() => qualify(tag,'0.1.0',extension));
-  assert.throws(() => qualify('v0.1.0','0.1.0',{...extension,version:'0.2.0'}));
-  assert.throws(() => qualify('v0.1.0','0.1.0',{...extension,publisher:'pysx-local'}));
+  const extension = {name:'pysx',publisher:'jmsapps',version};
+  assert.equal(qualify(`v${version}`,version,extension),version);
+  for (const tag of [version,'v999.999.999',`v${version}-rc1`]) assert.throws(() => qualify(tag,version,extension));
+  assert.throws(() => qualify(`v${version}`,version,{...extension,version:'999.999.999'}));
+  assert.throws(() => qualify(`v${version}`,version,{...extension,publisher:'pysx-local'}));
 });
 test('retry plans cover both partial outcomes, complete success and conflicts', () => {
   const artifacts = {wheel:'a',sdist:'b'};

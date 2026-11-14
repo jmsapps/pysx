@@ -17,6 +17,7 @@ from pygls.exceptions import JsonRpcContentModified
 from pygls.lsp.client import LanguageClient
 
 from pysx.components.schema import NATIVE_TAGS
+from shared import RELEASE_VERSION
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Sequence
@@ -59,7 +60,7 @@ class Stamp:
 
 class BackendClient(LanguageClient):
     def __init__(self, died: Callable[[], None]) -> None:
-        super().__init__("pysx-type-client", "0.1.0")
+        super().__init__("pysx-type-client", RELEASE_VERSION)
         self.died = died
         self.closing = False
 

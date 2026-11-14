@@ -17,6 +17,8 @@ from acceptance_support import stop_process
 from prototypes.distribution import ROOT, clean_env
 from test_dev_server import wait_for
 
+from shared import RELEASE_VERSION
+
 
 def _console(python: Path, name: str) -> str:
     suffix = ".exe" if sys.platform == "win32" else ""
@@ -79,7 +81,7 @@ class TutorialWorker:
                 sys.executable,
                 str(self.site / "bootstrap.py"),
                 "--wheel",
-                str(artifacts / "pysx_framework-0.1.0-py3-none-any.whl"),
+                str(artifacts / f"pysx_framework-{RELEASE_VERSION}-py3-none-any.whl"),
             ],
             cwd=workspace,
             env=clean_env(),
@@ -93,7 +95,7 @@ class TutorialWorker:
 
         if packaged:
             _checked([uv, "build", str(self.site), "--wheel", "--out-dir", str(artifacts)])
-            self.wheel = artifacts / "pysx_tutorial-0.1.0-py3-none-any.whl"
+            self.wheel = artifacts / f"pysx_tutorial-{RELEASE_VERSION}-py3-none-any.whl"
             self.reinstall()
 
         if editor:
@@ -104,7 +106,7 @@ class TutorialWorker:
                     "install",
                     "--python",
                     str(self.python),
-                    str(artifacts / "pysx_framework-0.1.0-py3-none-any.whl") + "[lsp]",
+                    str(artifacts / f"pysx_framework-{RELEASE_VERSION}-py3-none-any.whl") + "[lsp]",
                 ]
             )
         probe = subprocess.run(

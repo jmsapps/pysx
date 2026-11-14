@@ -27,6 +27,7 @@ from pysx.components.schema import NATIVE_TAGS, tag_info
 from pysx.tooling.editor.model import MAX_BYTES, MAX_FILES, Buffer
 from pysx.tooling.sources import read_source
 from pysx.tooling.tools import ToolingError, resolve_ruff
+from shared import RELEASE_VERSION
 
 from .backend import CompletionResult, Stamp, TypeBackend
 from .edits import (
@@ -678,7 +679,7 @@ class ResidentServer(LanguageServer):
 
 
 def create_server() -> ResidentServer:
-    server = ResidentServer("pysx", "0.1.0", protocol_cls=VersionedProtocol)
+    server = ResidentServer("pysx", RELEASE_VERSION, protocol_cls=VersionedProtocol)
     server.sessions = {}
     server.interpreter = sys.executable
 

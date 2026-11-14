@@ -70,8 +70,10 @@ def test_stable_api_installed_consumers(
 import importlib, importlib.metadata as metadata, importlib.resources as resources, sys
 from pathlib import Path
 import pysx
+from shared import RELEASE_VERSION
 distribution = metadata.distribution("pysx-framework")
 assert distribution.version == {project["version"]!r}
+assert RELEASE_VERSION == distribution.version
 assert distribution.metadata["License-Expression"] == "MIT"
 assert distribution.metadata["Author-email"] == "JMS Apps <jmsapps@outlook.com>"
 assert not any({str(ROOT)!r} in value for value in sys.path)

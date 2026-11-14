@@ -224,14 +224,14 @@ wheels = [
 
 [[package]]
 name = "pysx-framework"
-version = "0.1.0"
-source = { path = ".artifacts/pysx_framework-0.1.0-py3-none-any.whl" }
+version = "0.7.0"
+source = { path = ".artifacts/pysx_framework-0.7.0-py3-none-any.whl" }
 dependencies = [
     { name = "cryptography" },
     { name = "websockets" },
 ]
 wheels = [
-    { filename = "pysx_framework-0.1.0-py3-none-any.whl", hash = "sha256:d06bb5dadb2149aeb8c19c630e99389faeae82ffdbcdf40c6dfe4af8ff0a5932" },
+    { filename = "pysx_framework-0.7.0-py3-none-any.whl", hash = "sha256:29d6708564e0be6d63a1fa536e784440ff0545feb2775d840d44824b986e6a3e" },
 ]
 
 [package.optional-dependencies]
@@ -261,7 +261,7 @@ provides-extras = ["asgi", "dev", "examples", "lsp"]
 
 [[package]]
 name = "pysx-tutorial"
-version = "0.1.0"
+version = "0.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "pysx-framework" },
@@ -277,9 +277,9 @@ editor = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pysx-framework", path = ".artifacts/pysx_framework-0.1.0-py3-none-any.whl" },
-    { name = "pysx-framework", extras = ["asgi"], marker = "extra == 'asgi'", path = ".artifacts/pysx_framework-0.1.0-py3-none-any.whl" },
-    { name = "pysx-framework", extras = ["lsp"], marker = "extra == 'editor'", path = ".artifacts/pysx_framework-0.1.0-py3-none-any.whl" },
+    { name = "pysx-framework", path = ".artifacts/pysx_framework-0.7.0-py3-none-any.whl" },
+    { name = "pysx-framework", extras = ["asgi"], marker = "extra == 'asgi'", path = ".artifacts/pysx_framework-0.7.0-py3-none-any.whl" },
+    { name = "pysx-framework", extras = ["lsp"], marker = "extra == 'editor'", path = ".artifacts/pysx_framework-0.7.0-py3-none-any.whl" },
 ]
 provides-extras = ["editor", "asgi"]
 

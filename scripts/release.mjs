@@ -40,6 +40,10 @@ async function json(url) {
   return response.json();
 }
 
+export async function pypiRelease(version) {
+  return json(`https://pypi.org/pypi/pysx-framework/${version}/json`);
+}
+
 export async function main(args) {
   const [mode, tag, directory = 'dist'] = args;
   const project = readFileSync('pyproject.toml', 'utf8');
@@ -64,7 +68,7 @@ export async function main(args) {
   if (mode === 'check') return;
   if (mode !== 'pypi' && mode !== 'marketplace') throw new Error('Unknown release operation');
   if (mode === 'pypi') {
-    const published = await json(`https://pypi.org/pypi/pysx/${version}/json`);
+    const published = await pypiRelease(version);
     const artifacts = Object.fromEntries(Object.entries(manifest.artifacts).filter(([name]) => !name.endsWith('.vsix')));
     const remote = Object.fromEntries((published?.urls ?? []).map(file => [file.filename,file.digests.sha256]));
     const plan = retryPlan(artifacts, remote);

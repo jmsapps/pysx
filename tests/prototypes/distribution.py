@@ -321,7 +321,7 @@ def warmed(destination: Path) -> Path:
 def candidate(destination: Path) -> None:
     destination.mkdir(parents=True)
 
-    for module in ("pysx", "examples"):
+    for module in ("pysx", "examples", "shared"):
         shutil.copytree(
             ROOT / module,
             destination / module,
@@ -726,12 +726,12 @@ print(json.dumps({"package": str(Path(pysx_package.__file__).resolve()),
     command([str(extra), str(workspace / "candidate" / "run_example.py"), "--help"], consumer)
     metadata = tomllib.loads((workspace / "candidate" / "pyproject.toml").read_text())
 
-    if metadata["tool"]["uv"]["build-backend"]["module-name"] != ["pysx", "examples"]:
+    if metadata["tool"]["uv"]["build-backend"]["module-name"] != ["pysx", "examples", "shared"]:
         raise ProofError("root-layout supported backend configuration lost")
     extension, vsix = portable_extension(workspace)
     qualification = {
         "backend": "uv_build==0.11.8",
-        "layout": ["pysx", "examples"],
+        "layout": ["pysx", "examples", "shared"],
         "python": sys.version.split()[0],
         "artifacts": {
             path.name: hashlib.sha256(path.read_bytes()).hexdigest()

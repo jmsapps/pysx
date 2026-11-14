@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 Release
+
+Correct the PyPI publication retry check to use `pysx-framework`. Expand the
+framework and VS Code extension installation instructions and library description.
+Align the framework, extension and tutorial versions at 0.7.0.
+
 ## 0.1.0 Release
 
 Initial release. pysx renders reactive user interfaces from Python on the server.

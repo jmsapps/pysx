@@ -497,7 +497,7 @@ wheels = [
 
 [[package]]
 name = "pysx-framework"
-version = "0.1.0"
+version = "0.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },

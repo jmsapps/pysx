@@ -11,6 +11,19 @@ update as that state changes.
 Python runs on the server. A small JavaScript client connects the browser to your
 application, sends user events, and applies the updates it receives.
 
+## Install
+
+Use Python 3.14 or newer and install
+[pysx-framework from PyPI](https://pypi.org/project/pysx-framework/):
+
+```sh
+python -m pip install 'pysx-framework==0.7.0'
+```
+
+Or add it to a uv project with `uv add 'pysx-framework==0.7.0'`.
+The Python import remains `pysx`. Follow the [quickstart](docs/QUICKSTART.md)
+to run your first application.
+
 ## How it works
 
 The initial HTTP response contains the rendered page. The browser attaches to that

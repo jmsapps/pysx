@@ -1,10 +1,10 @@
 {
   "name": "pysx",
   "displayName": "PYSX",
-  "description": "PYSX markup highlighting, diagnostics and an optional resident language server for templates inside t-strings",
+  "description": "Editor support for PYSX, the server-side reactive UI framework for Python: t-string markup highlighting, diagnostics and language tools",
   "publisher": "jmsapps",
   "icon": "icon.png",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "license": "MIT",
   "author": "JMS Apps <jmsapps@outlook.com>",
   "repository": {

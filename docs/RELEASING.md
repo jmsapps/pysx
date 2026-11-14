@@ -17,8 +17,17 @@ See [PyPI setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/) a
 
 ## Release procedure
 
-Set matching versions in `pyproject.toml` and `editor/package.json`, refresh lockfiles,
-and update the changelog. Run the complete verification manifest before tagging.
+Set `RELEASE_VERSION` in `shared/constants.py`, then run:
+
+```sh
+uv run --project . python scripts/sync_version.py
+```
+
+This synchronizes package, extension and tutorial metadata, installation docs and
+lockfiles, rebuilding the tutorial's framework wheel to record its actual hash.
+Use `--check` to check metadata without writing or building. Update the changelog
+separately so previous release entries remain intact.
+Run the complete verification manifest before tagging.
 Create a `vMAJOR.MINOR.PATCH` tag at the intended commit. Only the repository owner
 publishes its GitHub release. Publishing that release triggers `.github/workflows/release.yml`.
 Draft releases and tag creation alone do not upload packages.
@@ -60,7 +69,7 @@ must change.
 ## Installation
 
 After publication, install the Python package in a Python 3.14+ environment with
-`uv pip install 'pysx-framework[lsp]==0.1.0'`, then install `jmsapps.pysx` from Marketplace.
+`uv pip install 'pysx-framework[lsp]==0.7.0'`, then install `jmsapps.pysx` from Marketplace.
 Select that Python environment in VS Code. For local installation, run
 `scripts/install-extension.sh`; it builds the production VSIX and removes the former
 `pysx-local.pysx-lang` extension. `scripts/uninstall-extension.sh` removes both ids.
