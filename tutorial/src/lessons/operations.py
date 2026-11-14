@@ -80,7 +80,7 @@ LESSONS = (
         "until you save a valid correction.",
         "Combine static feedback, a real watch journey and runtime verification.",
         ("development", "diagnostics", "editor_features"),
-        "pip install 'pysx[lsp]'\npysx-playground development\n"
+        "pip install 'pysx-framework[lsp]'\npysx-playground development\n"
         "pysx --app playgrounds.development --watch\n",
     ),
     Lesson(
@@ -192,6 +192,6 @@ LESSONS = (
         "New tasks and validation still work in the rebuilt graph.",
         "Resilience is an observed workflow across boundaries, not one successful initial render.",
         ("browser_recovery", "durable_state", "resources", "session_security"),
-        "pip install pysx\npysx-playground capstone\npysx --app playgrounds.capstone\n",
+        "pip install pysx-framework\npysx-playground capstone\npysx --app playgrounds.capstone\n",
     ),
 )

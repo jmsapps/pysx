@@ -707,7 +707,7 @@ def test_resident_protocol_missing_extra_is_actionable() -> None:
     )
     assert result.returncode == 2
     assert result.stdout == ""
-    assert "pysx[lsp]" in result.stderr
+    assert "pysx-framework[lsp]" in result.stderr
 
 
 def test_resident_protocol_python_regions_remain_owned_by_python(

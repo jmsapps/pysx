@@ -44,7 +44,7 @@ LESSONS = (
         "with its own counter at zero.",
         "The server owns application Python. The browser displays HTML and delivers events.",
         ("hello", "counter"),
-        "pip install pysx\npysx-playground counter\npysx --app playgrounds.counter\n",
+        "pip install pysx-framework\npysx-playground counter\npysx --app playgrounds.counter\n",
     ),
     Lesson(
         2,

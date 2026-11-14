@@ -34,7 +34,7 @@ def getting_started() -> Fragment:
         " platform.python_version()\n    pysx_version "
         span(data-syntax="keyword"): "="
         " version("
-        span(data-syntax="string"): "\"pysx\""
+        span(data-syntax="string"): "\"pysx-framework\""
         ")\n    environment "
         span(data-syntax="keyword"): "="
         " "

@@ -555,7 +555,7 @@ def main() -> None:
             "machine": platform.machine(),
             "cpu_count": os.cpu_count(),
             "python": platform.python_version(),
-            "pysx": importlib.metadata.version("pysx"),
+            "pysx": importlib.metadata.version("pysx-framework"),
             "websockets": importlib.metadata.version("websockets"),
         },
     }

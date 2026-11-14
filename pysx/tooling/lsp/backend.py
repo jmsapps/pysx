@@ -136,11 +136,13 @@ class TypeBackend:
         distribution = importlib.metadata.distribution("pyright")
 
         if distribution.version != "1.1.414":
-            raise RuntimeError("Install pysx[lsp] to restore the supported Pyright version")
+            raise RuntimeError(
+                "Install pysx-framework[lsp] to restore the supported Pyright version"
+            )
         entry = Path(str(distribution.locate_file("pyright/dist/langserver.index.js")))
 
         if not entry.is_file():
-            raise RuntimeError("Pyright language server is missing; reinstall pysx[lsp]")
+            raise RuntimeError("Pyright language server is missing; reinstall pysx-framework[lsp]")
         # The backend's whole lifecycle was silent, so a Pyright that never starts and
         # one that starts and never answers looked the same from the client: pysx's own
         # diagnostics publish either way and nothing else ever arrives.

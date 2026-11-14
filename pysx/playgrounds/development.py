@@ -39,5 +39,5 @@ def app() -> Fragment:
                     "Misspell title as tittle on the doubled span, "
                     "inspect the warning, then fix it."
                 li: "Save a Python syntax error. The working page remains until you fix the file."
-            p: "Use the pysx editor extension with the environment containing pysx[lsp]."
+            p: "Use the pysx editor extension with the environment containing pysx-framework[lsp]."
     """)

@@ -13,7 +13,9 @@ def main() -> None:
     ]
 
     if missing:
-        sys.stderr.write("Language server requires pysx[lsp] in the selected Python environment.\n")
+        sys.stderr.write(
+            "Language server requires pysx-framework[lsp] in the selected Python environment.\n"
+        )
 
         raise SystemExit(2)
     from .server import create_server

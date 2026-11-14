@@ -55,7 +55,7 @@ const PLAIN = [
 
 async function run() {
   const suite = process.env.PYSX_EDITOR_SUITE;
-  const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
+  const extension = vscode.extensions.getExtension("jmsapps.pysx");
   assert(extension, "fresh extension registered");
   const python = process.env.PYSX_EDITOR_PYTHON;
   assert(python, "selected interpreter supplied to the host");
@@ -266,7 +266,7 @@ exports.run = async function () {
   process.env.PYSX_EDITOR_TRACE = "1";
   try { await run(); }
   catch (error) {
-    const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
+    const extension = vscode.extensions.getExtension("jmsapps.pysx");
     try {
       const tracing = extension.exports?.tracing;
       if (!tracing) throw new Error("extension-owned trace unavailable; inspect exit trace");

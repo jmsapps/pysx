@@ -89,7 +89,7 @@ exports.run = async function () {
   const unhandled = [];
   const onUnhandled = (error) => unhandled.push(String(error?.stack ?? error));
   process.on("unhandledRejection", onUnhandled);
-  const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
+  const extension = vscode.extensions.getExtension("jmsapps.pysx");
   assert(extension, "fresh extension registered");
   const python = process.env.PYSX_EDITOR_PYTHON;
   assert(python, "selected interpreter supplied to the host");

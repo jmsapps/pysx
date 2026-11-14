@@ -518,8 +518,8 @@ def portable_extension(workspace: Path) -> tuple[Path, Path]:
     extension = workspace / "portable-extension"
     extension.mkdir()
     manifest = {
-        "name": "pysx-lang",
-        "publisher": "pysx-local",
+        "name": "pysx",
+        "publisher": "jmsapps",
         "version": "0.0.1",
         "engines": {"vscode": "^1.91.0"},
         "main": "./extension.js",
@@ -540,7 +540,7 @@ def portable_extension(workspace: Path) -> tuple[Path, Path]:
             "extension.vsixmanifest",
             """<?xml version="1.0"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
-<Metadata><Identity Language="en-US" Id="pysx-lang" Version="0.0.1" Publisher="pysx-local"/>
+<Metadata><Identity Language="en-US" Id="pysx" Version="0.0.1" Publisher="jmsapps"/>
 <DisplayName>pysx proof</DisplayName>
 <Description xml:space="preserve">Isolated launch proof</Description>
 </Metadata><Installation><InstallationTarget Id="Microsoft.VisualStudio.Code"/></Installation>
@@ -697,7 +697,7 @@ assert importlib.resources.files("pysx").joinpath("py.typed").is_file()
 assert importlib.resources.files("pysx").joinpath("static/client.js").is_file()
 assert "counter" in examples.examples
 print(json.dumps({"package": str(Path(pysx_package.__file__).resolve()),
-                  "paths": sys.path, "version": importlib.metadata.version("pysx")}))
+                  "paths": sys.path, "version": importlib.metadata.version("pysx-framework")}))
 """
 
     for python in (core, extra):
@@ -715,7 +715,7 @@ print(json.dumps({"package": str(Path(pysx_package.__file__).resolve()),
     example = "pysx-example.exe" if os.name == "nt" else "pysx-example"
     missing = command([str(core.parent / example), "--help"], consumer, expected=1)
 
-    if "pysx[examples]" not in missing.stderr:
+    if "pysx-framework[examples]" not in missing.stderr:
         raise ProofError("missing optional dependency is not actionable")
     command([str(extra.parent / example), "--help"], consumer)
     listing = command([str(extra.parent / example), "run"], consumer, expected=2)

@@ -1,0 +1,127 @@
+name: Release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      PYSX_EXTENSIONS_DIR: ${{ github.workspace }}/.vscode-test/extensions
+      PYSX_DEPLOYMENT_LOGS: ${{ github.workspace }}/.pysx-logs
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.8'
+      - uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-host-${{ runner.os }}-1.140.0-pylance-2026.4.1
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/release.mjs version "$RELEASE_TAG"
+      - run: uvx --from uv==0.13.7 uv python install 3.14.10
+      - run: uv sync --locked --python 3.14.10
+      - run: uv run --project . python scripts/verify.py all
+      - run: node --test tests/release.test.mjs
+      - run: uv build --wheel --sdist --out-dir dist
+      # One vsce-built artifact is sideloaded, tested and published; the hash
+      # recorded here is the one both publishing jobs carry forward.
+      - run: uv run --project . python editor/build_vsix.py --out dist
+      - name: Record candidate hashes
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/release.mjs manifest "$RELEASE_TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate
+          path: dist/
+          if-no-files-found: error
+      # The failure evidence lives in fixture logs the suites delete on
+      # teardown, so it is collected whatever the qualification result.
+      - name: Collect fixture logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-qualification-logs
+          path: .pysx-logs/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+  pypi:
+    needs: qualify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.8'
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: dist
+      - name: Check retry content
+        id: retry
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/release.mjs pypi "$RELEASE_TAG"
+      # The retry step above compares candidate hashes against PyPI's own
+      # digests and fails the job on a conflict. skip-existing only covers the
+      # window where the CDN-cached JSON API has not caught up with an upload.
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        if: steps.retry.outputs.present != 'true'
+        with:
+          packages-dir: upload/
+          skip-existing: true
+  marketplace:
+    needs: qualify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: dist
+      - name: Check retry content
+        id: retry
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/release.mjs marketplace "$RELEASE_TAG"
+      # The same pin that built the candidate publishes it, and the candidate
+      # itself is uploaded rather than a repackaged copy.
+      - if: steps.retry.outputs.present != 'true'
+        run: npm --prefix editor ci
+      - if: steps.retry.outputs.present != 'true'
+        working-directory: editor
+        run: node node_modules/@vscode/vsce/vsce publish --oidc --packagePath "../dist/${{ steps.retry.outputs.vsix }}"

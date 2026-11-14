@@ -1,0 +1,10 @@
+.vscode-test/**
+test/**
+build_vsix.py
+pysx-root.json
+package-lock.json
+*.vsix
+**/.gitignore
+**/tsconfig.json
+**/*.map
+**/*.ts

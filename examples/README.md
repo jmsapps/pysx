@@ -162,7 +162,7 @@ background updates; a second tab has its own draft and resource. Ctrl+C disposes
 sessions and their work. The loader is local and needs no network/database or extra
 host setup. Optional ASGI launch:
 `uv run --project . pysx --app examples.resources:example --asgi` (Uvicorn is in the
-checkout dev environment; installed users need `pysx[asgi]`). See
+checkout dev environment; installed users need `pysx-framework[asgi]`). See
 [resources](../docs/RESOURCES.md) and [hosting](../docs/HOSTING.md).
 
 ## Keyed rows

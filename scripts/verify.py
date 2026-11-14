@@ -62,6 +62,7 @@ def playwright_setup() -> tuple[Gate, ...]:
 
 
 GATES: tuple[Gate, ...] = (
+    Gate("python", "release", ("node", "--test", "tests/release.test.mjs")),
     Gate("setup", "npm-tests", ("npm", "--prefix", "tests", "ci")),
     Gate("setup", "npm-editor", ("npm", "--prefix", "editor", "ci")),
     *playwright_setup(),

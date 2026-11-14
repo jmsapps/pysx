@@ -15,7 +15,8 @@ CARD_SAMPLES = (CodeSample(code.card_normal), CodeSample(code.card_strong))
 def greeting() -> Fragment:
     name = signal("Learner")
     message = derived(lambda: f"Hello, {name()}!")
-    environment = f"Python {platform.python_version()} · pysx {version('pysx')} · server process"
+    pysx_version = version("pysx-framework")
+    environment = f"Python {platform.python_version()} · pysx {pysx_version} · server process"
 
     return pysx(t"""
         label(for="greeting-name"): "Your name"

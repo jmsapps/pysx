@@ -13,6 +13,8 @@ node_modules/
 # Editor extension build output
 editor/*.vsix
 editor/pysx-root.json
+# Staged into the extension directory for the duration of a vsce build
+editor/LICENSE
 .vscode-test/
 _pysx_revision_*/
 _pysx_revision_*.json

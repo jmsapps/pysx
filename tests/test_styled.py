@@ -1,7 +1,6 @@
 """Typed styled bases and deterministic flat-declaration inheritance."""
 
 import ast
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -278,30 +277,21 @@ def test_styling_diagnostics_styled_effect_parity() -> None:
 
 def test_styling_diagnostics_fresh_vsix_contents(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
-    destination = tmp_path / "editor"
-    destination.mkdir()
-    shutil.copyfile(root / "LICENSE", tmp_path / "LICENSE")
-
-    for name in ("build_vsix.py", "package.json", "extension.js", "authoring.js", "client.js"):
-        shutil.copyfile(root / "editor" / name, destination / name)
-    shutil.copytree(root / "editor" / "syntaxes", destination / "syntaxes")
-    shutil.copytree(root / "editor" / "snippets", destination / "snippets")
-    # The build refuses to ship a declared dependency it cannot find, so the
-    # staged tree needs the same runtime closure a real build has.
-    shutil.copytree(
-        root / "editor" / "node_modules",
-        destination / "node_modules",
-        ignore=shutil.ignore_patterns("@vscode", ".bin"),
-    )
+    # Packaging is delegated to vsce, which reads the real extension directory,
+    # so freshness comes from writing to a path that cannot hold a prior build
+    # rather than from staging sources into a scratch tree.
+    archive = tmp_path / "fresh.vsix"
+    assert not archive.exists()
     result = subprocess.run(
-        [sys.executable, str(destination / "build_vsix.py")],
+        [sys.executable, str(root / "editor" / "build_vsix.py"), "--out", str(archive)],
         capture_output=True,
         text=True,
         check=False,
+        cwd=root,
     )
     assert result.returncode == 0, result.stderr
-    archive = Path(result.stdout.strip())
-    assert archive.parent == destination
+    assert Path(result.stdout.strip()) == archive
+    assert archive.is_file()
 
     with zipfile.ZipFile(archive) as package:
         grammar = "syntaxes/pysx.injection.tmLanguage.json"

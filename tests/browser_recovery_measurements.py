@@ -535,7 +535,7 @@ async def measure(count: int, directory: Path) -> dict[str, object]:
             "system": platform.system(),
             "machine": platform.machine(),
             "python": platform.python_version(),
-            "pysx": version("pysx"),
+            "pysx": version("pysx-framework"),
             "cryptography": version("cryptography"),
         },
         "source_sha256": source.hexdigest(),
