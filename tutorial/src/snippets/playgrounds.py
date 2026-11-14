@@ -1456,7 +1456,7 @@ def DevelopmentPart3() -> Fragment:
         span(data-syntax="tag"): "p"
         ": "
         span(data-syntax="string"): "\"Use the pysx editor extension with the environm"
-        span(data-syntax="string"): "ent containing pysx[lsp].\""
+        span(data-syntax="string"): "ent containing pysx-framework[lsp].\""
         "\n"
         "    \"\"\""
         span(data-syntax="keyword"): ")"

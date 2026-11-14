@@ -133,7 +133,8 @@ are cleaned on failure or termination. `PYSX_BROWSER_PORT` sets a fixed first po
 fault tests; occupied listeners are never taken over. Browser launches clear macOS
 `DYLD_LIBRARY_PATH` so bundled NSS libraries are used.
 
-Editor tests freshly build the stdlib VSIX, unpack it into a disposable directory and
+Editor tests freshly build the production VSIX with the pinned vsce packager, unpack it
+into a disposable directory and
 load that artifact in an isolated profile. The runner discovers local VSCode or downloads
 the pinned version; `PYSX_VSCODE_EXECUTABLE` explicitly selects a managed executable.
 Inherited VSCode/Node-host environment variables are removed. Activation, saved-file

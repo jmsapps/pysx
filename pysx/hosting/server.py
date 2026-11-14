@@ -141,7 +141,9 @@ def main() -> None:
 
             from ._uvicorn import websocket_protocol
         except ImportError:
-            raise SystemExit("ASGI serving requires pysx[asgi]; install that extra.") from None
+            raise SystemExit(
+                "ASGI serving requires pysx-framework[asgi]; install that extra."
+            ) from None
         uvicorn.run(
             application.asgi(),
             host=args.host,

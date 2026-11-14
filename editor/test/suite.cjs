@@ -23,7 +23,7 @@ exports.run = async function () {
   if (["editor_surface", "template_import_usage"].includes(process.env.PYSX_EDITOR_SUITE)) {
     return require("./surface_suite.cjs").run();
   }
-  const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
+  const extension = vscode.extensions.getExtension("jmsapps.pysx");
   assert(extension, "fresh extension registered");
   await extension.activate();
   assert(extension.isActive, "actual extension activation");

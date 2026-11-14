@@ -32,7 +32,7 @@ exports.run = async function () {
   await vscode.workspace.getConfiguration("python").update("defaultInterpreterPath", process.env.PYSX_EDITOR_PYTHON, vscode.ConfigurationTarget.Workspace);
   const pylance = vscode.extensions.getExtension("ms-python.vscode-pylance");
   await pylance.activate();
-  const extension = vscode.extensions.getExtension("pysx-local.pysx-lang");
+  const extension = vscode.extensions.getExtension("jmsapps.pysx");
   await extension.activate();
   const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
   const filename = path.join(root, "lesson.py");

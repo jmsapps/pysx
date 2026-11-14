@@ -463,7 +463,7 @@ class Session:
                     types.LogMessageParams(
                         types.MessageType.Error,
                         f"PYSX analysis unavailable: {error}. "
-                        "Install pysx[lsp] or restart the server.",
+                        "Install pysx-framework[lsp] or restart the server.",
                     )
                 )
                 self.ready.set()

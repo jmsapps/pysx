@@ -79,7 +79,7 @@ class TutorialWorker:
                 sys.executable,
                 str(self.site / "bootstrap.py"),
                 "--wheel",
-                str(artifacts / "pysx-0.1.0-py3-none-any.whl"),
+                str(artifacts / "pysx_framework-0.1.0-py3-none-any.whl"),
             ],
             cwd=workspace,
             env=clean_env(),
@@ -104,7 +104,7 @@ class TutorialWorker:
                     "install",
                     "--python",
                     str(self.python),
-                    str(artifacts / "pysx-0.1.0-py3-none-any.whl") + "[lsp]",
+                    str(artifacts / "pysx_framework-0.1.0-py3-none-any.whl") + "[lsp]",
                 ]
             )
         probe = subprocess.run(

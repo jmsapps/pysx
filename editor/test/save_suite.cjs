@@ -40,7 +40,9 @@ exports.run = async function () {
   await editor.update("formatOnSave", false, vscode.ConfigurationTarget.Workspace);
   const files = vscode.workspace.getConfiguration("files");
   await files.update("autoSave", "off", vscode.ConfigurationTarget.Workspace);
-  const api = await vscode.extensions.getExtension("pysx-local.pysx-lang").activate();
+  const api = await vscode.extensions.getExtension("jmsapps.pysx").activate();
+  const readme = await vscode.workspace.openTextDocument(path.join(root, "examples", "README.md"));
+  await vscode.window.showTextDocument(readme);
   const document = await vscode.workspace.openTextDocument(filename);
   await vscode.window.showTextDocument(document);
   await until(async () => {
@@ -189,7 +191,6 @@ exports.run = async function () {
             checkpoint("before-enable-focus-autosave", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
             await files.update("autoSave", "onFocusChange", vscode.ConfigurationTarget.Workspace);
             checkpoint("focus-autosave-enabled", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
-            const readme = await vscode.workspace.openTextDocument(path.join(root, "examples", "README.md"));
             checkpoint("readme-opened", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
             await vscode.window.showTextDocument(readme);
             checkpoint("focus-change-command-completed", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});

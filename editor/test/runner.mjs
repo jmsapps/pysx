@@ -91,7 +91,7 @@ try {
   const proof = suite === "packaging";
   const build = spawnSync("uv", ["run", "--project", root, "python", ...(proof ? ["-c",
     "import json,sys; from pathlib import Path; from tests.prototypes.distribution import prepare_editor_fixture; print(json.dumps(prepare_editor_fixture(Path(sys.argv[1]))))", workspace] : ["editor/build_vsix.py"])],
-    { cwd: root, encoding: "utf8", timeout: proof ? 120000 : 30000 });
+    { cwd: root, encoding: "utf8", timeout: 120000 });
   if (build.status !== 0) throw new Error(`fresh VSIX build failed: ${build.stderr}`);
   let fixture = proof ? JSON.parse(build.stdout) : null;
   const artifact = fixture ? fixture.vsix : build.stdout.trim();

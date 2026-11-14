@@ -1,7 +1,7 @@
 # Compatibility and support
 
 The current package is a pre-1.0 candidate. The following contract applies from
-1.0.0; the version is available through `importlib.metadata.version("pysx")`.
+1.0.0; the version is available through `importlib.metadata.version("pysx-framework")`.
 
 ## Public surface
 

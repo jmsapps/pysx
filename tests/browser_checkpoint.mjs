@@ -94,13 +94,15 @@ try {
   await page.click("#delayed");
   await page.waitForFunction(previous => window.recoveryFrames.filter(frame => frame.capsule).at(-1).capsule !== previous, hidden.capsule);
   await page.waitForFunction(() => window.recoveryFrames.some(frame => frame.t === "checkpoint" && frame.capsule));
-  const latest = await page.evaluate(() => window.recoveryFrames.filter(frame => frame.capsule).at(-1));
-  await page.evaluate(latest => {
+  const latest = await page.evaluate(() => {
+    // Capture and close in one browser task so a newer frame cannot arrive between them.
+    const latest = window.recoveryFrames.filter(frame => frame.capsule).at(-1);
     window.traceRecovery("test-captured-latest", latest);
     window.traceRecovery("test-before-close", window.recoveryFrames.filter(frame => frame.capsule).at(-1));
     window.retiredRecoverySocket = window.recoverySocket;
     window.recoverySocket.close();
-  }, latest);
+    return latest;
+  });
   await page.waitForFunction(() => window.recoveryHellos.length >= 2 && document.getElementById("pysx-root").dataset.pysxAttached === "true");
   const resumed = await page.evaluate(() => window.recoveryHellos.at(-1));
   if (resumed.capsule !== latest.capsule) {

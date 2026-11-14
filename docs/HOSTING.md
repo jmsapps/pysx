@@ -30,7 +30,7 @@ For local edit-and-reload development, add `--watch`; see the
 [development workflow](DEVELOPMENT.md) for source roots, candidate failure recovery,
 browser reloads and the separate local proxy's limits.
 
-Install `pysx[asgi]` to use `pysx --app user_app:host --asgi --port 8750`.
+Install `pysx-framework[asgi]` to use `pysx --app user_app:host --asgi --port 8750`.
 The optional host pins Uvicorn 0.54.0; the core package has no Uvicorn dependency.
 For another ASGI server or middleware stack, expose `asgi_app = host.asgi()`.
 The adapter implements ASGI 3 HTTP, WebSocket and lifespan messages. Configure
