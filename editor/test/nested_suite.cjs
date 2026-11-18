@@ -128,6 +128,16 @@ exports.run = async function (mode, progress) {
   assert.equal(unsaved.line, captionDefinition.line);
   passed.push("unsaved edit resolution");
 
+  // A constant interpolated directly must resolve to its declaring module and keep its
+  // type; the f-string form would hide an unresolved constant behind `str`.
+  progress("resolve the directly interpolated constant");
+  const constant = destination(await definitionOf(reopened.uri,
+    sitePosition(reopened, "PYSX_BASE_PATH}", "pysx(t"), "the interpolated constant"));
+  assert.equal(constant.file,
+    fs.realpathSync.native(path.join(APPLICATION, "app", "settings", "constants.py")),
+    "the constant resolves into the application's own settings package");
+  passed.push("direct constant definition");
+
   if (mode === "worker") {
     // 7. The worker builds its projection mirror inside the application's own project,
     // which is the observable form of per-project routing in this adapter.

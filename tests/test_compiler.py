@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -730,3 +730,132 @@ def test_nested_project_discovery_never_escapes_the_supplied_workspace(tmp_path:
     view = nested_application(tmp_path)
     inner = analyze(view.read_text(), str(view), workspace_roots=(tmp_path / "apps" / "web",))
     assert all(root.is_relative_to(tmp_path / "apps" / "web") for root in inner.resolver.roots)
+
+
+def constant_application(tmp_path: Path, *, resolvable: bool = True) -> Path:
+    """The reported layout: a styled link and a constant declared in a sibling package."""
+    web = tmp_path / "apps" / "web"
+    (web / "app" / "settings").mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "outer"\nversion = "0"\n')
+    (web / "pyproject.toml").write_text('[project]\nname = "web"\nversion = "0"\n')
+    (web / "app" / "__init__.py").write_text("")
+    (web / "app" / "settings" / "__init__.py").write_text("")
+
+    if resolvable:
+        (web / "app" / "settings" / "constants.py").write_text('PYSX_BASE_PATH = "/pysx/learn"\n')
+    (web / "app" / "components").mkdir(parents=True)
+    (web / "app" / "components" / "__init__.py").write_text(
+        'from pysx import styled\n\nHeaderLink = styled.a(t"color: red")\n'
+    )
+    container = web / "app" / "containers" / "header"
+    container.mkdir(parents=True)
+    (container / "__init__.py").write_text("")
+    view = container / "view.py"
+    view.write_text(
+        "from app.components import HeaderLink\n"
+        "from app.settings.constants import PYSX_BASE_PATH\n"
+        "from pysx import Fragment, pysx\n\n\n"
+        "def view() -> Fragment:\n"
+        '    return pysx(t\'HeaderLink(href={PYSX_BASE_PATH}): "Learn"; '
+        'HeaderLink(href={f"{PYSX_BASE_PATH}"}): "Learn"\')\n'
+    )
+
+    return view
+
+
+def checked_projection(
+    tmp_path: Path, view: Path, roots: tuple[Path, ...], suffix: str = ""
+) -> tuple[list[dict[str, Any]], str]:
+    """Run real strict Pyright over the projection, pinned to the fixture's own config."""
+    compilation = analyze(view.read_text(), str(view), workspace_roots=roots)
+    target = view.parent / "projected.py"
+    target.write_text(compilation.projection().text + suffix)
+    config = tmp_path / "pyrightconfig.json"
+    config.write_text(
+        json.dumps(
+            {
+                "typeCheckingMode": "strict",
+                "pythonVersion": "3.14",
+                # Without an explicit project the checker finds this repository's own
+                # configuration, and every application import resolves as unknown.
+                "extraPaths": [
+                    str(Path(__file__).resolve().parents[1]),
+                    str(tmp_path / "apps" / "web"),
+                ],
+            }
+        )
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pyright", "--outputjson", "--project", str(config), str(target)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    report = cast("dict[str, Any]", json.loads(result.stdout or "{}"))
+    target.unlink()
+
+    return cast("list[dict[str, Any]]", report.get("generalDiagnostics", [])), result.stdout
+
+
+@pytest.mark.parametrize("workspace", ["repository-root", "application-root"])
+def test_direct_constant_retains_its_literal_type(tmp_path: Path, workspace: str) -> None:
+    """A known constant passed directly keeps its type; the f-string form is not required."""
+    view = constant_application(tmp_path)
+    roots = (tmp_path,) if workspace == "repository-root" else (tmp_path / "apps" / "web",)
+    diagnostics, output = checked_projection(
+        tmp_path, view, roots, "\nreveal_type(PYSX_BASE_PATH)\n"
+    )
+    errors = [item for item in diagnostics if item["severity"] == "error"]
+    assert not errors, output
+    revealed = [item["message"] for item in diagnostics if "Type of" in item["message"]]
+    assert any("Literal['/pysx/learn']" in message for message in revealed), revealed
+
+
+def test_direct_constant_module_local_declaration_retains_its_type(tmp_path: Path) -> None:
+    view = constant_application(tmp_path)
+    view.write_text(
+        "from app.components import HeaderLink\n"
+        "from pysx import Fragment, pysx\n\n"
+        'LOCAL_BASE_PATH = "/pysx/local"\n\n\n'
+        "def view() -> Fragment:\n"
+        "    return pysx(t'HeaderLink(href={LOCAL_BASE_PATH}): \"Learn\"')\n"
+    )
+    diagnostics, output = checked_projection(
+        tmp_path, view, (tmp_path,), "\nreveal_type(LOCAL_BASE_PATH)\n"
+    )
+    assert not [item for item in diagnostics if item["severity"] == "error"], output
+    assert any("Literal['/pysx/local']" in item["message"] for item in diagnostics)
+
+
+def test_direct_constant_unresolvable_declaration_is_still_diagnosed(tmp_path: Path) -> None:
+    """An analysis that stopped inferring would pass the cases above and fail this one."""
+    view = constant_application(tmp_path, resolvable=False)
+    diagnostics, output = checked_projection(tmp_path, view, (tmp_path,))
+    messages = [item["message"] for item in diagnostics]
+    assert any("app.settings.constants" in message for message in messages), output
+    assert any('Type of "PYSX_BASE_PATH" is unknown' in message for message in messages), output
+
+
+def test_direct_constant_incompatible_value_still_errors(tmp_path: Path) -> None:
+    """The styled tag forwards to native `A`, so a non-string href must still be rejected."""
+    view = constant_application(tmp_path)
+    (tmp_path / "apps" / "web" / "app" / "settings" / "constants.py").write_text(
+        'PYSX_BASE_PATH = "/pysx/learn"\nPYSX_BASE_PATH_COUNT = 3\n'
+    )
+    view.write_text(
+        "from app.components import HeaderLink\n"
+        "from app.settings.constants import PYSX_BASE_PATH_COUNT\n"
+        "from pysx import Fragment, pysx\n\n\n"
+        "def view() -> Fragment:\n"
+        "    return pysx(t'HeaderLink(href={PYSX_BASE_PATH_COUNT}): \"Learn\"')\n"
+    )
+    diagnostics, output = checked_projection(tmp_path, view, (tmp_path,))
+    errors = [item["message"] for item in diagnostics if item["severity"] == "error"]
+    assert any(
+        'cannot be assigned to parameter "href"' in message and "Literal[3]" in message
+        for message in errors
+    ), output
+    assert not any("is not defined" in message for message in errors), (
+        f"the fixture must isolate the type error: {errors}"
+    )

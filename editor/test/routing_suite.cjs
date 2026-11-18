@@ -71,9 +71,9 @@ exports.run = async function () {
     await withDeadline(() => extension.activate(), "extension activation");
     assert(extension.isActive, "actual extension activation");
     const names = await require("./nested_suite.cjs").run(mode, progress);
-    assert.equal(names.length, 7, `seven worker cases: ${names.join(", ")}`);
+    assert.equal(names.length, 8, `eight worker cases: ${names.join(", ")}`);
     progress("complete");
-    console.log(`PYSX EDITOR CASES PASSED: 7 (${names.join(", ")})`);
+    console.log(`PYSX EDITOR CASES PASSED: 8 (${names.join(", ")})`);
     return;
   }
   const python = process.env.PYSX_EDITOR_PYTHON;
@@ -264,9 +264,9 @@ exports.run = async function () {
   await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
   const nestedCases = await require("./nested_suite.cjs").run(mode, progress);
-  assert.equal(nestedCases.length, 8, `eight resident nested-project cases: ${nestedCases.join(", ")}`);
+  assert.equal(nestedCases.length, 9, `nine resident nested-project cases: ${nestedCases.join(", ")}`);
   progress("complete");
-  console.log("PYSX EDITOR CASES PASSED: 16 (per-folder environments, nested ownership, " +
+  console.log("PYSX EDITOR CASES PASSED: 17 (per-folder environments, nested ownership, " +
     "setting change, API selection, coalesced rapid changes, missing-extra recovery, " +
     `restart re-resolution, removed-folder disposal, ${nestedCases.join(", ")})`);
 };

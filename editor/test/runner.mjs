@@ -186,6 +186,9 @@ try {
     write(path.join(application, "pyproject.toml"), '[project]\nname = "web"\nversion = "0"\n');
     write(path.join(application, "app", "__init__.py"), "");
     write(path.join(application, "app", "components", "__init__.py"), "");
+    write(path.join(application, "app", "settings", "__init__.py"), "");
+    write(path.join(application, "app", "settings", "constants.py"),
+      'PYSX_BASE_PATH = "/pysx/learn"\n');
     write(path.join(application, "app", "components", "controls", "__init__.py"),
       'from pysx import Fragment, pysx, styled\n\nButton = styled.button(t"color: red")\n\n\n' +
       'def Caption() -> Fragment:\n    return pysx(t\'span: "caption"\')\n');
@@ -193,8 +196,10 @@ try {
     mkdirSync(path.join(application, "app", "containers"), { recursive: true });
     write(path.join(application, "app", "containers", "tutorial", "__init__.py"), "");
     write(path.join(application, "app", "containers", "tutorial", "view.py"),
-      'from app.components.controls import Button, Caption\nfrom pysx import Fragment, pysx\n\n\n' +
-      'def view() -> Fragment:\n    return pysx(t\'Button(id="go"): "press"; Caption; br\')\n');
+      'from app.components.controls import Button, Caption\n' +
+      'from app.settings.constants import PYSX_BASE_PATH\nfrom pysx import Fragment, pysx\n\n\n' +
+      'def view() -> Fragment:\n    return pysx(t\'Button(id="go"): "press"; ' +
+      'a(href={PYSX_BASE_PATH}): "Learn"; Caption; br\')\n');
     // The application configures its own interpreter the way a real nested project does,
     // so the selection exists before the folder is ever added to the workspace.
     write(path.join(application, ".vscode", "settings.json"),
@@ -243,7 +248,7 @@ try {
       // buffered when "exit" fires.
       child.once("close", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`editor host exited ${code}: ${output}`)); });
     });
-    const cases = suite === "navigation_latency" ? 4 : suite === "save_latency" ? 6 : suite === "interpreter_routing" ? (process.env.PYSX_EDITOR_ROUTING_MODE === "worker" ? 7 : 16) : suite === "authoring" ? 11 : suite === "client_verify" ? 12 : suite === "editor_surface" ? 11 : suite === "template_import_usage" ? 7 : 3;
+    const cases = suite === "navigation_latency" ? 4 : suite === "save_latency" ? 6 : suite === "interpreter_routing" ? (process.env.PYSX_EDITOR_ROUTING_MODE === "worker" ? 8 : 17) : suite === "authoring" ? 11 : suite === "client_verify" ? 12 : suite === "editor_surface" ? 12 : suite === "template_import_usage" ? 8 : 3;
     if (lifecycleFailures.test(output)) throw new Error(`lifecycle failure in host output: ${output}`);
     const findings = inspect(path.join(workspace, "profile", "logs"));
     if (findings.length) throw new Error(`lifecycle failure in host logs:\n${findings.join("\n")}`);

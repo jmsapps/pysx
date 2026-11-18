@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from pysx.tooling.analysis import projection_for_source, utf16_offsets
-from pysx.tooling.editor.model import MAX_FILES, workspace_model
+from pysx.tooling.editor.model import MAX_FILES, Model, workspace_model
 from pysx.tooling.editor.types import diagnostics
 
 
@@ -390,3 +390,30 @@ def test_nested_project_bounds_apply_per_project(tmp_path: Path) -> None:
                 "lint": False,
             }
         )
+
+
+def test_direct_constant_model_is_identical_under_both_roots(tmp_path: Path) -> None:
+    """The reported constant site must project the same way from either workspace root."""
+    from test_compiler import constant_application
+
+    view = constant_application(tmp_path)
+    web = tmp_path / "apps" / "web"
+
+    def projected(root: Path) -> Model:
+        models = workspace_model(
+            {
+                "root": str(root),
+                "revision": "_pysx_revision_constant",
+                "buffers": {},
+                "selected": [str(view)],
+                "lint": False,
+            }
+        )
+        assert len(models) == 1
+
+        return models[0]
+
+    outer, inner = projected(tmp_path), projected(web)
+    assert outer["text"] == inner["text"]
+    assert "PYSX_BASE_PATH" in outer["text"]
+    assert not [item for item in outer["diagnostics"] if "PYSX_BASE_PATH" in item["message"]]
