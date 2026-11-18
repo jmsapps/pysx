@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from pysx.tooling.analysis import projection_for_source, utf16_offsets
-from pysx.tooling.editor.model import workspace_model
+from pysx.tooling.editor.model import MAX_FILES, workspace_model
 from pysx.tooling.editor.types import diagnostics
 
 
@@ -331,3 +331,62 @@ def test_editor_owned_types_check_snapshot_and_clean_configuration(tmp_path: Pat
     assert "title" in str(result["generalDiagnostics"])
     assert not (tmp_path / f"{revision}.json").exists()
     assert "raise RuntimeError" in producer.read_text(encoding="utf-8")
+
+
+def test_nested_project_model_matches_the_application_root(tmp_path: Path) -> None:
+    """A repository root and the application root project the same nested source."""
+    from test_compiler import nested_application
+
+    view = nested_application(tmp_path)
+    web = tmp_path / "apps" / "web"
+
+    def projected(root: Path) -> str:
+        models = workspace_model(
+            {
+                "root": str(root),
+                "revision": "_pysx_revision_nested",
+                "buffers": {},
+                "selected": [str(view)],
+                "lint": False,
+            }
+        )
+        assert len(models) == 1
+
+        return models[0]["text"]
+
+    assert "_native.Button" in projected(web)
+    assert projected(web) == projected(tmp_path)
+
+
+def test_nested_project_bounds_apply_per_project(tmp_path: Path) -> None:
+    """Unrelated outer sources never consume the nested application's analysis limits."""
+    from test_compiler import nested_application
+
+    view = nested_application(tmp_path)
+    web = tmp_path / "apps" / "web"
+    bulk = tmp_path / "unrelated"
+    bulk.mkdir()
+
+    for index in range(MAX_FILES + 8):
+        (bulk / f"module_{index}.py").write_text("value = 1\n")
+    models = workspace_model(
+        {
+            "root": str(web),
+            "revision": "_pysx_revision_bounded",
+            "buffers": {},
+            "selected": [str(view)],
+            "lint": False,
+        }
+    )
+    assert len(models) == 1
+
+    with pytest.raises(ValueError, match="between 1 and 512"):
+        workspace_model(
+            {
+                "root": str(tmp_path),
+                "revision": "_pysx_revision_bounded",
+                "buffers": {},
+                "selected": [str(view)],
+                "lint": False,
+            }
+        )

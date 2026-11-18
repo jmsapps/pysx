@@ -34,12 +34,15 @@ def test_editor_worker_matches_python_resolved_paths() -> None:
         script = """
 const fs = require('node:fs');
 const vm = require('node:vm');
+const path = require('node:path');
+const local = (name) => path.join(path.dirname(process.argv[1]), name);
 const result = {};
 vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8') +
   '\\nexports.resolved = canonical(process.argv[2]);', {
   exports: result,
   process,
-  require: (name) => name === 'vscode' ? {} : require(name),
+  require: (name) => name === 'vscode' ? {}
+    : require(name.startsWith('.') ? local(name) : name),
 });
 console.log(JSON.stringify({worker: result.resolved,
   legacy: fs.realpathSync(process.argv[2]), native: fs.realpathSync.native(process.argv[2])}));
@@ -504,3 +507,95 @@ def test_resident_commands_vsix_ships_every_advertised_command(vsix: zipfile.Zip
     assert '"pysx.restartServer"' in vsix.read("extension/client.js").decode()
     dispatcher = vsix.read("extension/extension.js").decode()
     assert "contributes.commands" in dispatcher or "contributes" in dispatcher
+
+
+NAVIGATION_HARNESS = """
+const assert = require("node:assert/strict");
+const timing = require(process.argv[1]);
+
+// A controlled clock makes the measured interval exact rather than approximately right.
+function clockOver(stamps) {
+  const values = [...stamps];
+  let last = 0;
+  return () => { last = values.length ? values.shift() : last; return last; };
+}
+const target = { uri: { fsPath: "/app/controls.py" }, range: { start: { line: 2 } } };
+const expect = (found) => found.uri.fsPath === "/app/controls.py" ? null
+  : `expected /app/controls.py, found ${found.uri.fsPath}`;
+
+(async () => {
+  // 1. The interval is provider invocation until the result resolves.
+  const delayed = await timing.sample({
+    clock: clockOver([0, 120]), request: async () => [target], expect, label: "delayed",
+  });
+  assert.equal(delayed.ok, true, JSON.stringify(delayed));
+  assert.equal(delayed.ms, 120, "the harness observes the controlled delay exactly");
+
+  // 2. A wrong destination is a failure, never a timing sample.
+  const wrong = await timing.sample({
+    clock: clockOver([0, 5]),
+    request: async () => [{ uri: { fsPath: "/outer/controls.py" }, range: { start: { line: 2 } } }],
+    expect, label: "wrong",
+  });
+  assert.equal(wrong.ok, false);
+  assert.equal(wrong.reason, "wrong-target");
+
+  // 3. An empty result is recorded as a failure with its own reason.
+  const empty = await timing.sample({
+    clock: clockOver([0, 5]), request: async () => [], expect, label: "empty",
+  });
+  assert.equal(empty.ok, false);
+  assert.equal(empty.reason, "empty");
+
+  // 4. A timeout is recorded rather than hanging or being dropped.
+  const timedOut = await timing.sample({
+    clock: clockOver([0, 30]), request: () => new Promise(() => {}), expect,
+    label: "timeout", timeout: 25,
+  });
+  assert.equal(timedOut.ok, false);
+  assert.equal(timedOut.reason, "timeout");
+
+  // 5. Statistics describe only successful samples, and failures stay counted.
+  let call = 0;
+  const mixed = await timing.scenario({
+    label: "ready", repetitions: 4, warmup: 1,
+    clock: clockOver([0, 10, 0, 10, 0, 20, 0, 30, 0, 40]),
+    request: async () => (++call === 3 ? [] : [target]),
+    expect,
+  });
+  assert.equal(mixed.samples.length, 4, "warm-up samples are excluded");
+  assert.equal(mixed.ok, 3);
+  assert.equal(mixed.failures, 1);
+  assert.equal(mixed.median_ms, 30);
+  assert.equal(mixed.min_ms, 10);
+  assert.equal(mixed.max_ms, 40);
+
+  assert.equal(timing.median([]), null, "no samples yield no median");
+  console.log("NAVIGATION HARNESS OK");
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+
+
+def test_navigation_measurement_harness_boundaries_and_failures() -> None:
+    """The timing harness must observe real delays and refuse to time a wrong answer."""
+    module = EDITOR / "test" / "navigation_timing.cjs"
+    assert module.is_file(), "the navigation timing module is registered"
+    result = subprocess.run(
+        ["node", "-e", NAVIGATION_HARNESS, str(module)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "NAVIGATION HARNESS OK" in result.stdout
+
+
+def test_navigation_measurement_suite_is_registered() -> None:
+    """An unregistered suite would never run inside the unfiltered editor gate."""
+    runner = (EDITOR / "test" / "runner.mjs").read_text(encoding="utf-8")
+    suite = (EDITOR / "test" / "suite.cjs").read_text(encoding="utf-8")
+    assert '"navigation_latency"' in runner, "the suite is selectable"
+    assert "navigation_latency_suite.cjs" in suite, "the host dispatches the suite"
+    assert (EDITOR / "test" / "navigation_latency_suite.cjs").is_file()

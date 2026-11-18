@@ -1105,3 +1105,23 @@ def test_buffer_readiness_sdk_imports_keep_canonical_identity(tmp_path: Path) ->
         assert index.dependencies(str(consumer)) == {str(library)}
     finally:
         index.close()
+
+
+def test_nested_project_session_partitions_at_the_application(tmp_path: Path) -> None:
+    """Opening the repository root analyses the nested application as its own project."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_compiler import nested_application
+
+    view = nested_application(tmp_path)
+    web = tmp_path / "apps" / "web"
+    instance = Client(tmp_path)
+
+    try:
+        instance.open(view, view.read_text())
+        state = instance.settled(lambda status: bool(status["workspaces"]))["workspaces"][0]
+        assert Path(state["root"]).resolve() == web.resolve()
+        hover = instance.hover(view, 3, 19)
+        assert hover is not None
+        assert "Button" in json.dumps(hover)
+    finally:
+        instance.close()

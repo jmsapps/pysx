@@ -16,6 +16,7 @@ from uuid import uuid4
 from lsprotocol import types
 from pygls.uris import to_fs_path
 
+from pysx.compiler.projects import import_roots
 from pysx.compiler.source_map import Positions, utf16_offsets
 from pysx.tooling.editor.config import parse_json_configuration
 from pysx.tooling.editor.model import MAX_FILES, Model, workspace_model
@@ -290,7 +291,7 @@ class WorkspaceIndex:
             tree = ast.parse(source, filename=filename)
         except SyntaxError:
             return dependencies & self._files
-        roots = (self.root, self.root / "src", path.parent)
+        roots = (*import_roots(self.root), path.parent)
 
         def include(base: Path, names: tuple[str, ...]) -> None:
             for length in range(1, len(names) + 1):
@@ -386,7 +387,7 @@ class WorkspaceIndex:
             ignore=[],
             typeCheckingMode="strict",
             reportUnusedFunction="error",
-            extraPaths=[str(self.root), str(self.root / "src"), *cast("list[str]", extra_paths)],
+            extraPaths=[*map(str, import_roots(self.root)), *cast("list[str]", extra_paths)],
         )
         target = self.directory / "pyrightconfig.json"
         content = json.dumps(config, sort_keys=True)

@@ -51,6 +51,34 @@ Highlighting applies at literal call sites, including calls where a formatter pu
 the opening t-string on the next line. TextMate grammars do not follow variables or dataflow.
 Diagnostics refresh when a file opens or is saved, rather than as you type.
 
+### Component colours
+
+Component tags are green and never emboldened, for both uppercase and lowercase
+bindings. Two surfaces colour them, and both are overridable.
+
+Uppercase tags in direct literals come from the injection grammar. Override the
+TextMate scope in your own settings:
+
+```json
+"editor.tokenColorCustomizations": {
+  "textMateRules": [
+    { "scope": "support.class.component.pysx", "settings": { "foreground": "#2EA043" } }
+  ]
+}
+```
+
+Lowercase, binding-aware component names are decorated by the extension and follow
+the `pysx.markup.class` theme colour, which has separate dark, light and high
+contrast defaults. Override it per theme:
+
+```json
+"workbench.colorCustomizations": {
+  "[Default Light Modern]": { "pysx.markup.class": "#1A7F37" }
+}
+```
+
+Setting `fontStyle` on the TextMate scope restores bold if you prefer it.
+
 See the [template grammar](https://github.com/jmsapps/pysx/blob/master/docs/GRAMMAR.md)
 for authoring rules and
 [verification setup](https://github.com/jmsapps/pysx/blob/master/tests/VERIFICATION.md)

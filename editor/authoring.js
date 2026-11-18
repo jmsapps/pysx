@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
+const { analysisRoot } = require("./projects.js");
 
 const selector = { language: "python", scheme: "file" };
 const canonical = (file) => fs.existsSync(file) ? fs.realpathSync.native(file) : path.resolve(file);
@@ -25,9 +26,12 @@ async function interpreter(document) {
   }
   const configured = vscode.workspace.getConfiguration("python", document.uri).get("defaultInterpreterPath");
   if (configured) candidates.push(configured.replaceAll("${workspaceFolder}", folder?.uri.fsPath ?? ""));
-  for (const item of vscode.workspace.workspaceFolders ?? []) {
-    candidates.push(path.join(item.uri.fsPath, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python"));
-  }
+  const interpreterIn = (directory) => path.join(directory, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  // The document's own project owns its environment; a sibling project's .venv must
+  // never be adopted just because it is listed as a workspace folder.
+  const owning = analysisRoot(vscode, document.uri, document.fileName);
+  if (owning) candidates.push(interpreterIn(owning));
+  for (const item of vscode.workspace.workspaceFolders ?? []) candidates.push(interpreterIn(item.uri.fsPath));
   return candidates.find((item) => item && fs.existsSync(item) && fs.statSync(item).isFile());
 }
 
@@ -176,7 +180,7 @@ exports.activate = function (context) {
       const current = vscode.workspace.textDocuments.find((doc) => canonical(doc.fileName) === filename && managed(doc));
       if (!current || current.version !== buffer.version) return null;
     }
-    const folderRoot = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath ?? path.dirname(document.fileName);
+    const folderRoot = analysisRoot(vscode, document.uri, document.fileName);
     const directory = path.join(folderRoot, revision);
     fs.mkdirSync(directory, { recursive: true });
     directories.add(directory);
@@ -228,7 +232,7 @@ exports.activate = function (context) {
 
   async function refresh(document) {
     if (!managed(document)) return null;
-    const root = canonical(vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath ?? path.dirname(document.fileName));
+    const root = canonical(analysisRoot(vscode, document.uri, document.fileName));
     const existing = states.get(root);
     if (valid(existing)) {
       const model = existing.models.find((item) => item.filename === canonical(document.fileName));
@@ -464,7 +468,7 @@ exports.activate = function (context) {
 
   const run = (doc) => {
     if (!managed(doc)) return;
-    const root = canonical(vscode.workspace.getWorkspaceFolder(doc.uri)?.uri.fsPath ?? path.dirname(doc.fileName));
+    const root = canonical(analysisRoot(vscode, doc.uri, doc.fileName));
     clearTimeout(timers.get(root));
     for (const item of vscode.workspace.textDocuments) {
       if (managed(item) && canonical(item.fileName).startsWith(root + path.sep)) collection.delete(item.uri);
@@ -480,7 +484,7 @@ exports.activate = function (context) {
     if (generated(uri.fsPath)) return;
     const folder = vscode.workspace.getWorkspaceFolder(uri);
     if (!folder) return;
-    const root = canonical(folder.uri.fsPath), state = states.get(root);
+    const root = canonical(analysisRoot(vscode, uri, uri.fsPath)), state = states.get(root);
     const job = inflight.get(root);
     if (job) {
       pending.set(root, ++sequence);

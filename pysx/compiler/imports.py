@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .projects import import_roots, project_root
 from .scope import Binding, Scope, ScopeIndex
 
 if TYPE_CHECKING:
@@ -26,6 +27,15 @@ class ModuleSource:
     scope: Scope
     path: Path
     digest: str
+
+
+def project_roots(path: Path, supplied: tuple[Path, ...]) -> tuple[Path, ...]:
+    """Prefer the document's own project over whatever root the editor supplied."""
+    enclosing = [root.absolute() for root in supplied if path.is_relative_to(root.absolute())]
+    bound = min(enclosing, key=lambda root: len(root.parts)) if enclosing else None
+    owner = project_root(path, bound=bound if bound is not None else package_context(str(path))[0])
+
+    return import_roots(owner) if owner is not None else ()
 
 
 def package_context(filename: str) -> tuple[Path, str]:
@@ -53,7 +63,8 @@ class WorkspaceResolver:
 
         if package is not None:
             self.package = package
-        self.roots = tuple(dict.fromkeys((*roots, root, Path(filename).absolute().parent)))
+        path = Path(filename).absolute()
+        self.roots = tuple(dict.fromkeys((*project_roots(path, roots), *roots, root, path.parent)))
         self.buffers = buffers or {}
         self.modules: dict[str, ModuleSource | None] = {}
         self.dependencies: dict[Path, str | None] = {}

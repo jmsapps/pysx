@@ -217,7 +217,9 @@ const vscode = {
 };
 const select = vm.runInNewContext(fs.readFileSync("editor/authoring.js", "utf8") +
   "\ninterpreter;", {
-    require: name => name === "vscode" ? vscode : require(name), exports: {}, process,
+    require: name => name === "vscode" ? vscode
+      : require(name.startsWith(".") ? require("node:path").resolve("editor", name) : name),
+    exports: {}, process,
   });
 select({ uri: {} }).then(result => {
   assert.equal(result, executable);

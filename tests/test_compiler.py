@@ -653,3 +653,80 @@ view = pysx(t"Panel(title={{'hello'}}): 'Child'")
 
     if not valid:
         assert "component_result" in output, output
+
+
+def nested_application(tmp_path: Path) -> Path:
+    """Build the layout that breaks the package walk: no `__init__.py` at `containers`."""
+    web = tmp_path / "apps" / "web"
+    controls = web / "app" / "components" / "controls"
+    controls.mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "outer"\nversion = "0"\n')
+    (web / "pyproject.toml").write_text('[project]\nname = "web"\nversion = "0"\n')
+    (web / "app" / "__init__.py").write_text("")
+    (web / "app" / "components" / "__init__.py").write_text("")
+    (controls / "__init__.py").write_text(
+        'from pysx import styled\nButton = styled.button(t"color: red")\n'
+    )
+    container = web / "app" / "containers" / "tutorial"
+    container.mkdir(parents=True)
+    (container / "__init__.py").write_text("")
+    view = container / "app.py"
+    view.write_text(
+        "from pysx import Fragment, pysx\nfrom app.components.controls import Button\n"
+        "def view() -> Fragment:\n    return pysx(t\"Button(id='x'): 'go'\")\n"
+    )
+
+    return view
+
+
+def test_nested_project_resolves_from_the_repository_root(tmp_path: Path) -> None:
+    """The application's own project root wins over the workspace root the editor supplies."""
+    view = nested_application(tmp_path)
+    source = view.read_text()
+    outer = analyze(source, str(view), workspace_roots=(tmp_path,))
+    inner = analyze(source, str(view), workspace_roots=(tmp_path / "apps" / "web",))
+    assert outer.resolver.module("app.components.controls") is not None
+    assert outer.projection().text == inner.projection().text
+    assert "_native.Button" in outer.projection().text
+
+
+def test_nested_project_import_root_precedes_a_shadowing_package(tmp_path: Path) -> None:
+    """A same-named package nearer the workspace root may not shadow the application's own."""
+    view = nested_application(tmp_path)
+    shadow = tmp_path / "app" / "components" / "controls"
+    shadow.mkdir(parents=True)
+    (tmp_path / "app" / "__init__.py").write_text("")
+    (tmp_path / "app" / "components" / "__init__.py").write_text("")
+    (shadow / "__init__.py").write_text("Button = 3\n")
+    compilation = analyze(view.read_text(), str(view), workspace_roots=(tmp_path,))
+    module = compilation.resolver.module("app.components.controls")
+    assert module is not None
+    assert (
+        module.path == tmp_path / "apps" / "web" / "app" / "components" / "controls" / "__init__.py"
+    )
+
+
+def test_nested_project_declared_source_root_is_an_import_root(tmp_path: Path) -> None:
+    """A conventional `src/` layout resolves without the editor naming it."""
+    project = tmp_path / "service"
+    package = project / "src" / "widgets"
+    package.mkdir(parents=True)
+    (project / "pyproject.toml").write_text('[project]\nname = "service"\nversion = "0"\n')
+    (package / "__init__.py").write_text(
+        'from pysx import styled\nCard = styled.div(t"color: red")\n'
+    )
+    view = project / "src" / "view.py"
+    view.write_text(
+        "from pysx import Fragment, pysx\nfrom widgets import Card\n"
+        "def view() -> Fragment:\n    return pysx(t\"Card: 'body'\")\n"
+    )
+    compilation = analyze(view.read_text(), str(view), workspace_roots=(tmp_path,))
+    assert compilation.resolver.module("widgets") is not None
+    assert "_native.Div" in compilation.projection().text
+
+
+def test_nested_project_discovery_never_escapes_the_supplied_workspace(tmp_path: Path) -> None:
+    """Discovery is bounded, so an unrelated outer marker never becomes an import root."""
+    view = nested_application(tmp_path)
+    inner = analyze(view.read_text(), str(view), workspace_roots=(tmp_path / "apps" / "web",))
+    assert all(root.is_relative_to(tmp_path / "apps" / "web") for root in inner.resolver.roots)

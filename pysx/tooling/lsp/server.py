@@ -22,6 +22,7 @@ from pygls.workspace.position_codec import ServerTextPosition, ServerTextRange
 from pygls.workspace.text_document import TextDocument
 
 from pysx.compiler.compiler import component_binding_identity
+from pysx.compiler.projects import project_root
 from pysx.compiler.source_map import SourceSpan, utf16_offsets
 from pysx.components.schema import NATIVE_TAGS, tag_info
 from pysx.tooling.editor.model import MAX_BYTES, MAX_FILES, Buffer
@@ -668,7 +669,10 @@ class ResidentServer(LanguageServer):
         if self.workspace.root_path is not None:
             folders.append(Path(self.workspace.root_path).resolve())
         roots = [root for root in folders if path.is_relative_to(root)]
-        root = max(roots, key=lambda root: len(root.parts)) if roots else path.parent
+        folder = max(roots, key=lambda root: len(root.parts)) if roots else path.parent
+        # Analysis is partitioned per project, so a repository root resolves a nested
+        # application exactly as opening that application directly does.
+        root = project_root(path, bound=folder) or folder
 
         if root not in self.sessions:
             if len(self.sessions) >= 8:

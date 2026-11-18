@@ -1,4 +1,3 @@
-// Browser half of the acceptance test (PLAN.md §1).
 import playwright from "playwright";
 const engine = playwright[process.env.PYSX_BROWSER_ENGINE ?? "chromium"];
 

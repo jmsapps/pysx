@@ -6,7 +6,6 @@ exports.activate = function (client, output, owns = () => true) {
   const types = new Map(["type", "class", "property", "keyword", "variable", "string"]
     .map((kind) => [kind, vscode.window.createTextEditorDecorationType({
       color: new vscode.ThemeColor(`pysx.markup.${kind}`),
-      ...(kind === "class" ? { fontWeight: "bold" } : {}),
     })]));
   const timers = new Map();
   const serials = new Map();

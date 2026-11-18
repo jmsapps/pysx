@@ -38,18 +38,18 @@ try {
   };
   const fixtures = suite === "tutorial_website" ? ["tutorial_website"] :
     suite === "corpus_executable" ? ["corpus_executable"] :
-    suite === "client_verify" || suite === "editor_surface" ? ["client_verify"] :
-    suite === "diagnostics_actions" ? ["diagnostics_actions"] :
-    suite === "fallback_empty" ? ["fallback_empty"] :
-    suite === "identity_cleanup" ? ["keyed_identity"] :
-    suite === "templates_example" ? ["templates_example"] :
-    suite === "inline_siblings" ? ["inline_siblings"] :
-    suite === "render_snapshot" ? ["render_snapshot"] :
-    suite === "styled_authoring" ? ["styled_authoring"] :
-    suite === "composition_recursive" ? ["composition"] :
-    suite === "styling_diagnostics" ? ["styling"] :
-    suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
-    ["tutorial_website", "corpus_executable", "counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity", "fallback_empty", "diagnostics_actions", "client_verify"];
+      suite === "client_verify" || suite === "editor_surface" ? ["client_verify"] :
+        suite === "diagnostics_actions" ? ["diagnostics_actions"] :
+          suite === "fallback_empty" ? ["fallback_empty"] :
+            suite === "identity_cleanup" ? ["keyed_identity"] :
+              suite === "templates_example" ? ["templates_example"] :
+                suite === "inline_siblings" ? ["inline_siblings"] :
+                  suite === "render_snapshot" ? ["render_snapshot"] :
+                    suite === "styled_authoring" ? ["styled_authoring"] :
+                      suite === "composition_recursive" ? ["composition"] :
+                        suite === "styling_diagnostics" ? ["styling"] :
+                          suite === "injection" ? ["counter", "unclosed_paren", "odd_quote"] :
+                            ["tutorial_website", "corpus_executable", "counter", "unclosed_paren", "odd_quote", "styling", "composition", "styled_authoring", "render_snapshot", "templates_example", "inline_siblings", "keyed_identity", "fallback_empty", "diagnostics_actions", "client_verify"];
   for (const fixture of fixtures) {
     const source = fixture === "tutorial_website" ? "../../tutorial/src/components/pages.py" :
       fixture === "templates_example" ? "../../examples/templates.py" : `fixtures/${fixture}.txt`;
