@@ -9,7 +9,6 @@ Scaffold this playground, then run it:
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -21,6 +20,7 @@ from pysx import (
     SQLiteOwnershipStore,
     StateCodec,
     derived,
+    persistent_path,
     project,
     pysx,
 )
@@ -28,7 +28,8 @@ from pysx import (
 if TYPE_CHECKING:
     from pysx.runtime.wire import JSONValue
 
-STORE = Path(__file__).parent / ".state" / "durable" / "store.sqlite3"
+
+STORE = persistent_path("pysx-playground-durable") / "store.sqlite3"
 
 
 @dataclass(frozen=True)
@@ -85,8 +86,6 @@ def view(state: Signal[State]) -> Fragment:
             p: "This local demonstration identity is not production authentication."
     """)
 
-
-STORE.parent.mkdir(parents=True, exist_ok=True)
 
 app = DurableApplication(
     view,

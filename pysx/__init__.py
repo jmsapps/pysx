@@ -91,6 +91,7 @@ from .runtime.routing import (
     RouteState,
     match_route,
 )
+from .runtime.state_paths import persistent_path, temporary_path
 from .runtime.transport import TransportLimits
 from .styling.styled import StyledCallable, StyledTag, global_style, styled, stylesheet
 from .styling.styles import Theme, Themes, css
@@ -203,6 +204,7 @@ __all__ = [
     "own_task",
     "own_timer",
     "p",
+    "persistent_path",
     "project",
     "push",
     "pysx",
@@ -216,6 +218,7 @@ __all__ = [
     "structured",
     "styled",
     "stylesheet",
+    "temporary_path",
     "ul",
     "when",
 ]

@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from http import HTTPStatus
 from importlib.resources import files
+from pathlib import Path  # noqa: TC003 - public host API annotations resolve at runtime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlsplit
@@ -31,7 +32,6 @@ from .telemetry import RequestEvent, record
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping
-    from pathlib import Path
     from string.templatelib import Template
 
     from websockets.asyncio.server import Server, ServerConnection
@@ -94,6 +94,8 @@ class HostConfig:
     recovery: bool = True
     recovery_namespace: str | None = None
     recovery_key_directory: Path | None = None
+    state_directory: Path | None = None
+    state_namespace: str | None = None
 
     def __post_init__(self) -> None:
         if self.production and (
@@ -393,10 +395,21 @@ class Application:
                 from pysx.runtime.capsule import CapsuleIssuer
 
                 from .browser_recovery import BrowserRecovery
-                from .recovery_keys import default_directory, load_keys
+                from .recovery_keys import (
+                    default_directory,
+                    load_keys,
+                    managed_key_directory,
+                )
 
                 namespace = self.config.recovery_namespace or portable_identity_for(self.app)
-                directory = self.config.recovery_key_directory or default_directory(namespace)
+                # `recovery_namespace` stays the cryptographic context; where the keys
+                # live is a separate decision, so a deployment can stabilise one without
+                # changing the other.
+                directory = self.config.recovery_key_directory or managed_key_directory(
+                    self.config.state_namespace or namespace,
+                    legacy=default_directory(namespace),
+                    directory=self.config.state_directory,
+                )
                 self.recovery_issuer = CapsuleIssuer(
                     load_keys(directory, provision=self.config.recovery_key_directory is None)
                 )

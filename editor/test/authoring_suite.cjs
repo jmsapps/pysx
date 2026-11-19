@@ -95,6 +95,11 @@ def tree() -> Fragment:
   assert(!vscode.languages.getDiagnostics(doc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("producer.Panel")), "saved later-sibling import retained");
   await replace(doc, "'Hello'", "'Unsaved'");
   await eventually(async () => Boolean(await extension.exports.refresh(doc)), "immutable snapshot");
+  const snapshot = await extension.exports.refresh(doc);
+  const stateRoot = process.env.PYSX_STATE_DIR ?? path.join(root, ".pysx");
+  assert(path.relative(stateRoot, snapshot.directory).split(path.sep).includes("temporary"), "projections use managed temporary state");
+  assert(!path.relative(stateRoot, snapshot.directory).startsWith(".."), "projections stay inside the state root");
+  assert(!fs.existsSync(path.join(root, "pysx-analysis")), "no external mirror directory or symlink");
   await eventually(() => vscode.languages.getDiagnostics(doc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("UnusedWidget")), "genuine unused import");
   assert(!vscode.languages.getDiagnostics(doc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("producer.Panel")));
   assert(vscode.extensions.getExtension("charliermarsh.ruff"), "actual Ruff extension must exercise its nullable configuration");

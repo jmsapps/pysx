@@ -55,6 +55,19 @@ def _pending_task_stacks() -> str:
 
 
 @pytest.fixture(autouse=True)
+def _isolated_state_directory(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep framework-managed state out of this checkout.
+
+    The default state root is the owning project's `.pysx/`, which for a test run is
+    this repository. Tests that care about the location set their own; everything else
+    gets a disposable one instead of writing recovery keys into the working tree.
+    """
+    monkeypatch.setenv("PYSX_STATE_DIR", str(tmp_path_factory.mktemp("pysx-state", numbered=True)))
+
+
+@pytest.fixture(autouse=True)
 def _asyncio_hang_watchdog() -> Iterator[None]:
     seconds = float(os.environ.get("PYSX_TASK_WATCHDOG_SECONDS", "90"))
 

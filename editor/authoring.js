@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
-const { analysisRoot } = require("./projects.js");
+const { analysisRoot, stateNamespace, temporaryPath } = require("./projects.js");
 const setup = require("./setup.js");
 
 const selector = { language: "python", scheme: "file" };
@@ -59,6 +59,11 @@ function generatedOffsetAt(model, position) {
   if (end < 0) end = model.text.length;
   if (model.text[end - 1] === "\r") end--;
   return Math.min(start + position.character, end);
+}
+
+function generatedPositionAt(model, offset) {
+  const lines = model.text.slice(0, offset).split("\n");
+  return { line: lines.length - 1, character: lines.at(-1).length };
 }
 
 exports.activate = function (context) {
@@ -180,13 +185,15 @@ exports.activate = function (context) {
       if (!current || current.version !== buffer.version) return null;
     }
     const folderRoot = analysisRoot(vscode, document.uri, document.fileName);
-    const directory = path.join(folderRoot, revision);
+    const directory = path.join(
+      temporaryPath(folderRoot, stateNamespace(folderRoot), "editor-worker"), revision);
     fs.mkdirSync(directory, { recursive: true });
     directories.add(directory);
     fs.writeFileSync(path.join(directory, "__init__.py"), "");
     // Replacement coverage is observed, not assumed: the model records whether Ruff was
     // actually qualified, and the types pass either produced results or it did not.
-    const state = { root, directory, models, token, ready: false, typeDiagnostics: new Map(),
+    const state = { root, directory, models, token, python, ready: false, typeDiagnostics: new Map(),
+      semanticJob: Promise.resolve(), definitions: new Map(),
       coverage: { ruff: models.every((item) => !`${item.configuration}`.includes("unqualified")),
         types: false } };
     for (const model of models) {
@@ -274,6 +281,21 @@ exports.activate = function (context) {
     const site = model.sites.find((item) => item.start <= offset && offset <= item.end);
     if (!site) return null;
     const entry = entries.get(canonical(model.target));
+    if (command === "vscode.executeDefinitionProvider") {
+      const generated = site.generated + offset - site.start;
+      const key = model.target + ":" + generated;
+      if (!state.definitions.has(key)) {
+        state.definitions.set(key, semantic(state, model, generated, "definition").catch((error) => {
+          state.definitions.delete(key);
+          throw error;
+        }));
+      }
+      const locations = await state.definitions.get(key);
+      const result = locations?.map((item) => new vscode.Location(vscode.Uri.file(item.file),
+        new vscode.Range(item.range.start.line, item.range.start.character,
+          item.range.end.line, item.range.end.character)));
+      return valid(state) ? { state, model, site, entry, result } : null;
+    }
     if (command === "vscode.executeReferenceProvider") await openAllMirrors(state);
     entry.document ??= await vscode.workspace.openTextDocument(model.target);
     if (!valid(state)) return null;
@@ -316,6 +338,16 @@ exports.activate = function (context) {
       const entry = entries.get(canonical(model.target));
       entry.document ??= await vscode.workspace.openTextDocument(model.target);
     }
+  }
+
+  function semantic(state, model, offset, operation, newName) {
+    const job = state.semanticJob.then(() => valid(state) ? worker(state.python,
+      ["-m", "pysx.tooling.editor.semantic", state.directory, state.root, operation],
+      state.root, JSON.stringify({ file: model.target,
+        position: generatedPositionAt(model, offset), newName }), state.token) : null);
+    // A failed request must not prevent a later operation on the same snapshot.
+    state.semanticJob = job.catch(() => {});
+    return job;
   }
   for (const [register, method, command] of [
     ["registerDefinitionProvider", "provideDefinition", "vscode.executeDefinitionProvider"],
@@ -363,13 +395,13 @@ exports.activate = function (context) {
     if (generatedOffset < 0) return false;
     newName ??= await vscode.window.showInputBox({ prompt: "Rename Python symbol and matching markup", validateInput: (value) => /^[A-Za-z_]\w*$/.test(value) ? null : "Enter a Python identifier" });
     if (!newName) return false;
-    const entry = entries.get(canonical(model.target));
-    await openAllMirrors(state);
-    if (!valid(state)) return false;
-    const backend = await vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", entry.document.uri, entry.document.positionAt(generatedOffset), newName);
+    // Pylance can inspect an open hidden mirror without tracking it for workspace
+    // rename. Analyse this immutable snapshot as its own project instead.
+    const backend = await semantic(state, model, generatedOffset, "rename", newName);
     if (!backend || !valid(state)) return false;
     const edit = new vscode.WorkspaceEdit(), seen = new Set(), ranges = new Map();
-    for (const [uri, changes] of backend.entries()) {
+    for (const { file, edits: changes } of backend) {
+      const uri = vscode.Uri.file(file);
       const target = entries.get(canonical(uri.fsPath));
       if (!target || target.state !== state) return false;
       const source = await sourceDocument(target.model);

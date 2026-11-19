@@ -286,23 +286,78 @@ def test_keys_host_startup_and_no_import_provisioning(tmp_path: Path) -> None:
         asyncio.run(missing.start())
 
 
-def test_keys_automatic_host_ownership(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    directory = tmp_path / "automatic"
+def test_application_state_keys_land_under_the_configured_state_root(tmp_path: Path) -> None:
+    """Provisioned keys live under the application's own state root, not the project."""
+    from pysx.runtime.state_paths import PERSISTENT
 
-    def location(_namespace: str) -> Path:
-        return directory
-
-    monkeypatch.setattr(recovery_keys, "default_directory", location)
-    app = Application(lambda: native.P("hello"))
-    assert not directory.exists()
+    root = tmp_path / "state"
+    app = Application(
+        lambda: native.P("hello"),
+        config=HostConfig(state_directory=root, state_namespace="demo"),
+    )
 
     async def exercise() -> None:
         await app.start()
         assert app.recovery_issuer is not None
+        directory = root / "demo" / PERSISTENT / "recovery"
+        assert (directory / "recovery.keys").is_file()
         assert app.recovery_issuer.ring == load_keys(directory)
         await app.close()
 
     asyncio.run(exercise())
+    assert not (root / ".gitignore").exists(), "an explicit root is not a `.pysx` directory"
+
+
+def test_application_state_migrates_implicit_legacy_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The implicit platform default is carried forward without changing key identity."""
+    from pysx.runtime.state_paths import PERSISTENT
+
+    legacy = tmp_path / "legacy"
+    legacy.mkdir(mode=0o700)
+
+    def legacy_location(_namespace: str) -> Path:
+        return legacy
+
+    monkeypatch.setattr(recovery_keys, "default_directory", legacy_location)
+    original = load_keys(legacy, provision=True)
+    root = tmp_path / "state"
+    app = Application(
+        lambda: native.P("hello"),
+        config=HostConfig(state_directory=root, state_namespace="demo"),
+    )
+
+    async def exercise() -> None:
+        await app.start()
+        assert app.recovery_issuer is not None
+        # Same keys, new home, and the legacy copy is retained rather than moved.
+        assert app.recovery_issuer.ring == original
+        assert (root / "demo" / PERSISTENT / "recovery" / "recovery.keys").is_file()
+        assert (legacy / "recovery.keys").is_file()
+        await app.close()
+
+    asyncio.run(exercise())
+
+
+def test_application_state_conflicting_migration_is_refused(tmp_path: Path) -> None:
+    """Differing data at the destination is reported, never overwritten or merged."""
+    from pysx.runtime.state_paths import StateConflictError, migrate
+
+    legacy, destination = tmp_path / "legacy", tmp_path / "destination"
+    legacy.mkdir()
+    destination.mkdir()
+    (legacy / "recovery.keys").write_bytes(b"legacy")
+    (destination / "recovery.keys").write_bytes(b"different")
+
+    with pytest.raises(StateConflictError, match="already holds different data"):
+        migrate(legacy, destination, names=("recovery.keys",))
+    assert (legacy / "recovery.keys").read_bytes() == b"legacy"
+    assert (destination / "recovery.keys").read_bytes() == b"different"
+
+    # An identical destination is a no-op rather than a failure.
+    (destination / "recovery.keys").write_bytes(b"legacy")
+    assert migrate(legacy, destination, names=("recovery.keys",)) == ()
 
 
 def test_keys_default_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

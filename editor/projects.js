@@ -1,3 +1,4 @@
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -27,4 +28,40 @@ function analysisRoot(vscode, uri, fileName) {
   return projectRoot(fileName, folder) ?? fallback;
 }
 
-module.exports = { MARKERS, projectRoot, analysisRoot };
+// Mirrors pysx/runtime/state_paths.py. Projections are disposable analysis output, so
+// they live under the project's own `.pysx/` state root rather than beside the user's
+// source, and the root ignores itself instead of editing the user's .gitignore.
+const STATE_MARKER = ".pysx";
+
+function stateComponent(namespace) {
+  const cleaned = namespace.replace(/[^A-Za-z0-9._-]/g, "-").replace(/^[.-]+|[.-]+$/g, "");
+  if (cleaned && cleaned === namespace && cleaned.length <= 64) return cleaned;
+  const digest = crypto.createHash("sha256").update(namespace).digest("hex").slice(0, 16);
+  const prefix = cleaned.slice(0, 32).replace(/^[.-]+|[.-]+$/g, "");
+  return prefix ? `${prefix}-${digest}` : digest;
+}
+
+// A readable project name plus a digest of its full path: legible when a user opens
+// `.pysx/`, still distinct when two projects share one configured state root.
+function stateNamespace(root) {
+  const digest = crypto.createHash("sha256").update(root).digest("hex").slice(0, 16);
+  return `${path.basename(root)}-${digest}`;
+}
+
+function temporaryPath(root, namespace, owner) {
+  const configured = process.env.PYSX_STATE_DIR;
+  const base = configured ? path.resolve(configured) : path.join(root, STATE_MARKER);
+  fs.mkdirSync(base, { recursive: true });
+  if (path.basename(base) === STATE_MARKER) {
+    const ignore = path.join(base, ".gitignore");
+    if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, "*\n");
+  }
+  const directory = path.join(base, stateComponent(namespace), "temporary", stateComponent(owner));
+  fs.mkdirSync(directory, { recursive: true });
+  return directory;
+}
+
+module.exports = {
+  MARKERS, STATE_MARKER, projectRoot, analysisRoot, stateComponent,
+  stateNamespace, temporaryPath,
+};

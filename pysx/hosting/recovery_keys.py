@@ -54,6 +54,32 @@ def default_directory(namespace: str) -> Path:
     return root / hashlib.sha256(namespace.encode("utf-8")).hexdigest()
 
 
+KEY_FILES = ("recovery.keys",)
+
+
+def managed_key_directory(
+    namespace: str, *, legacy: Path | None = None, directory: Path | None = None
+) -> Path:
+    """Recovery keys under the application's own state root, migrating implicit defaults.
+
+    Only the implicit platform default is migrated, and it is copied rather than moved:
+    an interrupted migration leaves the original usable, and a destination that already
+    differs is reported instead of being overwritten.
+    """
+    from pysx.runtime.state_paths import migrate, persistent_path
+
+    destination = persistent_path(namespace, directory=directory) / "recovery"
+    destination.mkdir(parents=True, exist_ok=True)
+
+    with suppress(OSError):
+        destination.chmod(0o700)
+
+    if legacy is not None:
+        migrate(legacy, destination, names=KEY_FILES)
+
+    return destination
+
+
 def posix_key_storage() -> bool:
     """Descriptor traversal and file ownership are what make the ring safe to read."""
 

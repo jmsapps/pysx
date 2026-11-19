@@ -65,6 +65,18 @@ To override the provisioned tools, set `pysx.pythonPath` to an environment that 
 has compatible versions installed. Pyright additionally needs Node.js; if it is missing,
 template diagnostics and highlighting continue to work without it.
 
+### Where the extension writes
+
+Analysis projections are disposable files under
+`.pysx/<project-namespace>/temporary/editor-worker/`, removed when superseded or the
+session ends. The state root ignores itself; the existing `_pysx_revision_*` explorer
+exclusion also covers older snapshots. Set `PYSX_STATE_DIR` to choose another state root.
+Definitions and coordinated rename analyse the frozen snapshot as its own project, so hidden state
+directories retain cross-file rename without changing your analysis exclusions.
+
+Managed tooling is separate: it is shared across applications and lives in the
+extension's own storage, never in your project.
+
 ### Developing the extension itself
 
 These scripts are repository tools and are not part of the Python distribution:

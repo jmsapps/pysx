@@ -297,7 +297,10 @@ def test_editor_model_rejects_ambiguous_layout_and_revision_conflicts(tmp_path: 
         workspace_model(request)
 
 
-def test_editor_owned_types_check_snapshot_and_clean_configuration(tmp_path: Path) -> None:
+@pytest.mark.parametrize("managed", [False, True])
+def test_editor_owned_types_check_snapshot_and_clean_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, managed: bool
+) -> None:
     producer = tmp_path / "producer.py"
     producer.write_text(
         "raise RuntimeError('never import original applications')\n", encoding="utf-8"
@@ -318,8 +321,13 @@ def test_editor_owned_types_check_snapshot_and_clean_configuration(tmp_path: Pat
             "buffers": {str(producer): {"source": typed, "version": 2}},
         }
     )
-    directory = tmp_path / revision
-    directory.mkdir()
+    monkeypatch.setenv("PYSX_STATE_DIR", str(tmp_path / ".pysx"))
+    directory = (
+        tmp_path / ".pysx" / "app" / "temporary" / "editor-worker" / revision
+        if managed
+        else tmp_path / revision
+    )
+    directory.mkdir(parents=True)
     (directory / "__init__.py").write_text("", encoding="utf-8")
 
     for model in models:
@@ -329,7 +337,7 @@ def test_editor_owned_types_check_snapshot_and_clean_configuration(tmp_path: Pat
     result = diagnostics(directory, tmp_path)
     assert "reportArgumentType" in str(result["generalDiagnostics"])
     assert "title" in str(result["generalDiagnostics"])
-    assert not (tmp_path / f"{revision}.json").exists()
+    assert not (directory.parent / f"{revision}.json").exists()
     assert "raise RuntimeError" in producer.read_text(encoding="utf-8")
 
 

@@ -175,3 +175,40 @@ def test_capstone_codec_rejects_invalid_records(tmp_path: Path, value: object) -
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_application_state_playground_store_is_outside_the_installed_package() -> None:
+    """A store inside the package cannot be written on a read-only installation."""
+    from pysx.playgrounds import capstone, durable
+
+    package = Path(durable.__file__).resolve().parent
+
+    for module in (durable, capstone):
+        store = Path(module.STORE).resolve()
+        assert not store.is_relative_to(package), f"{module.__name__} writes into the package"
+        assert store.parent.is_dir(), "the managed state directory is created on demand"
+        assert store.name == "store.sqlite3"
+
+
+def test_application_state_scaffold_refresh_keeps_managed_persistent_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refreshing a scaffold replaces source, never the application's accumulated data."""
+    from pysx.runtime.state_paths import persistent_path
+    from pysx.tooling.playground import scaffold
+
+    monkeypatch.setenv("PYSX_STATE_DIR", str(tmp_path / "state"))
+    managed = persistent_path("pysx-playground-durable")
+    (managed / "store.sqlite3").write_bytes(b"accumulated")
+    root = tmp_path / "scaffold"
+    root.mkdir()
+    scaffold(("durable",), root=root)
+    from pysx.tooling.playground import DIRECTORY
+
+    legacy = root / DIRECTORY / ".state" / "durable"
+    legacy.mkdir(parents=True)
+    (legacy / "disposable").write_text("x", encoding="utf-8")
+
+    scaffold(("durable",), root=root)
+    assert (managed / "store.sqlite3").read_bytes() == b"accumulated"
+    assert not legacy.exists(), "the legacy in-tree disposable state is still cleared"

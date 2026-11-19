@@ -76,6 +76,12 @@ def main() -> None:
     )
     parser.add_argument("--port", type=int, default=8750)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        default=None,
+        help="root for PYSX-managed application state (default: the project's .pysx)",
+    )
     parser.add_argument("--dev", action="store_true", help="log development source tracebacks")
     parser.add_argument("--asgi", action="store_true", help="serve through the optional ASGI host")
     parser.add_argument(
@@ -125,6 +131,9 @@ def main() -> None:
         from pysx.tooling.editor_install import run as install_extension
 
         raise SystemExit(install_extension(operation))
+
+    if args.state_dir is not None:
+        os.environ["PYSX_STATE_DIR"] = str(Path(args.state_dir).absolute())
 
     if args.app is None:
         parser.error("--app is required to serve an application")

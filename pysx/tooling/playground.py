@@ -33,6 +33,9 @@ def scaffold(requested: tuple[str, ...], *, root: Path) -> tuple[Path, ...]:
         destination = target / f"{name}.py"
         destination.write_text(source, encoding="utf-8")
         written.append(destination)
+        # Refreshing a scaffold replaces its source, not the data it accumulated. The
+        # legacy in-tree `.state` tree is still cleared, because that location was only
+        # ever disposable; managed persistent state lives outside the scaffold now.
         shutil.rmtree(target / STATE / name, ignore_errors=True)
 
     return tuple(written)

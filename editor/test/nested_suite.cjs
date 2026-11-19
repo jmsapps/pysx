@@ -139,11 +139,14 @@ exports.run = async function (mode, progress) {
   passed.push("direct constant definition");
 
   if (mode === "worker") {
-    // 7. The worker builds its projection mirror inside the application's own project,
-    // which is the observable form of per-project routing in this adapter.
+    // 7. The worker's managed state belongs to the application's own project.
     progress("verify the worker analyses the application project");
-    const mirrored = (directory) => fs.existsSync(directory) &&
-      fs.readdirSync(directory).some((entry) => entry.startsWith("_pysx_revision_"));
+    const { stateNamespace } = require("../projects.js");
+    const mirrored = (directory) => {
+      const stateRoot = process.env.PYSX_STATE_DIR ?? path.join(directory, ".pysx");
+      const owned = path.join(stateRoot, stateNamespace(directory), "temporary", "editor-worker");
+      return fs.existsSync(owned) && fs.readdirSync(owned).some((entry) => entry.startsWith("_pysx_revision_"));
+    };
     await until(async () => mirrored(APPLICATION), "the application's own projection mirror");
     assert(!mirrored(REPOSITORY), "the repository root is never the worker's analysis root");
     const own = path.join(APPLICATION, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
