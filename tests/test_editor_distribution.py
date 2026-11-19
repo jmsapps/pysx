@@ -36,12 +36,25 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const local = (name) => path.join(path.dirname(process.argv[1]), name);
+// Shared modules are loaded through real `require`, so the stub lives at module level.
+const Module = require('node:module');
+const realRequire = Module.prototype.require;
+const vscodeStub = {
+  ConfigurationTarget: { WorkspaceFolder: 3 },
+  commands: { registerCommand: () => ({ dispose() {} }) },
+  window: { showWarningMessage() {}, showInformationMessage() {} },
+  workspace: { getConfiguration: () => ({ get: () => undefined, update: async () => {} }) },
+};
+Module.prototype.require = function (name) {
+  if (name === 'vscode') return vscodeStub;
+  return realRequire.apply(this, arguments);
+};
 const result = {};
 vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8') +
   '\\nexports.resolved = canonical(process.argv[2]);', {
   exports: result,
   process,
-  require: (name) => name === 'vscode' ? {}
+  require: (name) => name === 'vscode' ? vscodeStub
     : require(name.startsWith('.') ? local(name) : name),
 });
 console.log(JSON.stringify({worker: result.resolved,
@@ -499,11 +512,20 @@ def test_resident_commands_vsix_ships_every_advertised_command(vsix: zipfile.Zip
         "pysx.restartServer",
         "pysx.restoreTooling",
     } == advertised
-    assert "extension/commands.js" in set(vsix.namelist())
-    commands = vsix.read("extension/commands.js").decode()
+    shipped = set(vsix.namelist())
+
+    for name in ("commands.js", "setup.js", "tooling.js", "projects.js"):
+        assert f"extension/{name}" in shipped, f"{name} is missing from the artifact"
+    # Setup and restore are implemented once, in the shared controller, and the
+    # mode-specific modules supply only their adapters.
+    implementations = "".join(
+        vsix.read(f"extension/{name}").decode() for name in ("commands.js", "setup.js")
+    )
 
     for command in advertised - {"pysx.restartServer"}:
-        assert f'"{command}"' in commands, f"{command} has no resident implementation"
+        assert f'"{command}"' in implementations, f"{command} has no resident implementation"
+    worker = vsix.read("extension/authoring.js").decode()
+    assert '"pysx.configureTooling"' not in worker, "the worker registers setup separately"
     assert '"pysx.restartServer"' in vsix.read("extension/client.js").decode()
     dispatcher = vsix.read("extension/extension.js").decode()
     assert "contributes.commands" in dispatcher or "contributes" in dispatcher
@@ -599,3 +621,274 @@ def test_navigation_measurement_suite_is_registered() -> None:
     assert '"navigation_latency"' in runner, "the suite is selectable"
     assert "navigation_latency_suite.cjs" in suite, "the host dispatches the suite"
     assert (EDITOR / "test" / "navigation_latency_suite.cjs").is_file()
+
+
+MANAGED_PROBE = """
+const tooling = require(process.argv[1]);
+const { execFileSync } = require("node:child_process");
+const options = JSON.parse(process.argv[2]);
+(async () => {
+  const result = await tooling.provision(options);
+  const version = (tool) =>
+    execFileSync(result.tools[tool], ["--version"], { encoding: "utf8", timeout: 180000 }).trim();
+  console.log(JSON.stringify({
+    root: result.root, installer: result.installer ?? null, provisioned: result.provisioned,
+    tools: result.tools, site: result.site,
+    versions: { ruff: version("ruff"), pyright: version("pyright") },
+  }));
+})().catch((error) => { console.error(error.message); process.exitCode = 1; });
+"""
+
+
+def managed_closure(storage: Path, interpreter: Path, **options: object) -> dict[str, Any]:
+    payload = {"storage": str(storage), "interpreter": str(interpreter), **options}
+    result = subprocess.run(
+        ["node", "-e", MANAGED_PROBE, str(EDITOR / "tooling.js"), json.dumps(payload)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=900,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    return cast("dict[str, Any]", json.loads(result.stdout))
+
+
+@pytest.fixture(scope="module")
+def application_without_extras(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A real installed application carrying PYSX but no editor-only tooling extras."""
+    from prototypes.distribution import dependency_cache, installed
+
+    workspace = tmp_path_factory.mktemp("managed-tooling")
+    uv = shutil.which("uv")
+    assert uv is not None, "uv builds the application wheel"
+    cache = dependency_cache(workspace / "cache")
+    artifacts = workspace / "artifacts"
+    subprocess.run(
+        [
+            uv,
+            "--offline",
+            "--cache-dir",
+            str(cache),
+            "build",
+            str(ROOT),
+            "--wheel",
+            "--out-dir",
+            str(artifacts),
+            "--python",
+            sys.executable,
+        ],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=900,
+        check=True,
+    )
+
+    return installed(workspace, next(artifacts.glob("*.whl")), cache, extra=False)
+
+
+def installed_names(python: Path) -> set[str]:
+    result = subprocess.run(
+        [
+            str(python),
+            "-P",
+            "-c",
+            "import json;from importlib.metadata import distributions;"
+            "print(json.dumps(sorted(d.metadata['Name'].lower() for d in distributions())))",
+        ],
+        # Outside the checkout and without the working directory on the path: otherwise
+        # this repository's own sources answer for the installed application's.
+        cwd=python.parent.parent,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    )
+
+    return set(cast("list[str]", json.loads(result.stdout)))
+
+
+def test_managed_tooling_uses_application_pysx_and_private_tools(
+    application_without_extras: Path, tmp_path: Path
+) -> None:
+    """Analysis must come from the application's PYSX while tools stay extension-owned."""
+    python = application_without_extras
+    before = installed_names(python)
+    assert "pysx-framework" in before
+    assert not {"ruff", "pyright", "pygls", "lsprotocol"} & before, (
+        f"the application starts without editor extras: {sorted(before)}"
+    )
+    closure = managed_closure(tmp_path / "storage", python)
+    assert closure["provisioned"] is True
+    assert closure["versions"]["ruff"] == f"ruff {RUFF_REQUIREMENT}"
+    assert "1.1.414" in closure["versions"]["pyright"]
+
+    # The tools must not resolve inside the application environment.
+    for tool in closure["tools"].values():
+        assert Path(tool).is_relative_to(tmp_path), tool
+        assert not Path(tool).is_relative_to(python.parent.parent), tool
+
+    # The application's PYSX is the one that supplies analysis.
+    origin = subprocess.run(
+        [str(python), "-P", "-c", "import pysx, json;print(json.dumps(pysx.__file__))"],
+        cwd=python.parent.parent,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    )
+    assert Path(json.loads(origin.stdout)).is_relative_to(python.parent.parent)
+
+    # Provisioning never adds anything to the application environment.
+    assert installed_names(python) == before
+
+
+def test_managed_tooling_reuses_a_verified_closure(
+    application_without_extras: Path, tmp_path: Path
+) -> None:
+    storage = tmp_path / "storage"
+    first = managed_closure(storage, application_without_extras)
+    second = managed_closure(storage, application_without_extras)
+    assert first["provisioned"] is True
+    assert second["provisioned"] is False, "a verified closure is reused rather than rebuilt"
+    assert second["root"] == first["root"]
+
+
+def test_managed_tooling_rejects_a_corrupt_closure(
+    application_without_extras: Path, tmp_path: Path
+) -> None:
+    """A pruned or half-written cache must be reprovisioned, never trusted."""
+    storage = tmp_path / "storage"
+    first = managed_closure(storage, application_without_extras)
+    Path(first["tools"]["ruff"]).unlink()
+    repaired = managed_closure(storage, application_without_extras)
+    assert repaired["provisioned"] is True
+    assert repaired["versions"]["ruff"] == f"ruff {RUFF_REQUIREMENT}"
+
+
+def test_managed_tooling_offline_without_a_cache_is_actionable(tmp_path: Path) -> None:
+    payload = {
+        "storage": str(tmp_path / "storage"),
+        "interpreter": sys.executable,
+        "offline": True,
+    }
+    result = subprocess.run(
+        ["node", "-e", MANAGED_PROBE, str(EDITOR / "tooling.js"), json.dumps(payload)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "offline" in result.stderr
+    assert "pysx.toolingPath" in result.stderr, "the failure names a way forward"
+
+
+def test_managed_tooling_ignores_a_bare_installer_name(tmp_path: Path) -> None:
+    """The GUI PATH is not the shell PATH, so only an absolute installer may be used."""
+    closure = managed_closure(tmp_path / "storage", Path(sys.executable), uv="uv")
+    assert closure["installer"] == "ensurepip"
+
+
+CHILD_PROBE = """
+const tooling = require(process.argv[1]);
+const { execFileSync } = require("node:child_process");
+const options = JSON.parse(process.argv[2]);
+(async () => {
+  const closure = await tooling.provision(options);
+  const environment = tooling.childEnvironment(closure, { PATH: process.env.PATH });
+  const script = [
+    "import json, sys",
+    "import pysx, ruff, pyright",
+    "from importlib.metadata import distribution",
+    "print(json.dumps({",
+    "  'pysx': pysx.__file__,",
+    "  'ruff': ruff.__file__,",
+    "  'pyright_version': distribution('pyright').version,",
+    "  'pth_executed': hasattr(sys, '_pysx_pth_marker'),",
+    "  'conflict': __import__('conflictprobe').ORIGIN,",
+    "}))",
+  ].join("\\n");
+  const stdout = execFileSync(options.interpreter, ["-c", script],
+    { encoding: "utf8", timeout: 180000, env: environment, cwd: require("node:os").tmpdir() });
+  console.log(JSON.stringify({
+    child: JSON.parse(stdout), managed: environment.PYSX_MANAGED_TOOLING }));
+})().catch((error) => { console.error(error.message); process.exitCode = 1; });
+"""
+
+
+def test_managed_tooling_child_prefers_the_closure_over_conflicting_packages(
+    application_without_extras: Path, tmp_path: Path
+) -> None:
+    """Parent sys.path does not propagate, so each child names the closure explicitly."""
+    python = application_without_extras
+    site = subprocess.run(
+        [str(python), "-P", "-c", "import site;print(site.getsitepackages()[0])"],
+        cwd=python.parent.parent,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    ).stdout.strip()
+
+    # A conflicting copy installed in the application environment, plus a .pth hook that
+    # must never run when the closure is exposed through PYTHONPATH.
+    (Path(site) / "conflictprobe").mkdir(parents=True, exist_ok=True)
+    (Path(site) / "conflictprobe" / "__init__.py").write_text("ORIGIN = 'application'\n")
+    storage = tmp_path / "storage"
+    closure = managed_closure(storage, python)
+
+    for directory in cast("list[str]", closure["site"]):
+        probe = Path(directory) / "conflictprobe"
+        probe.mkdir(parents=True, exist_ok=True)
+        (probe / "__init__.py").write_text("ORIGIN = 'closure'\n")
+        (Path(directory) / "pysx_probe.pth").write_text("import sys; sys._pysx_pth_marker = True\n")
+
+    result = subprocess.run(
+        [
+            "node",
+            "-e",
+            CHILD_PROBE,
+            str(EDITOR / "tooling.js"),
+            json.dumps({"storage": str(storage), "interpreter": str(python)}),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=900,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    observed = cast("dict[str, Any]", json.loads(result.stdout))
+    child = cast("dict[str, Any]", observed["child"])
+
+    assert child["conflict"] == "closure", "the pinned closure outranks an application copy"
+    assert child["pth_executed"] is False, "dependency .pth hooks must never be executed"
+    assert child["pyright_version"] == "1.1.414"
+    assert Path(cast("str", child["ruff"])).is_relative_to(storage), child["ruff"]
+    # PYSX still comes from the application, which is what supplies analysis.
+    origin = Path(cast("str", child["pysx"]))
+    assert origin.is_relative_to(python.parent.parent), origin
+    assert observed["managed"] == closure["root"]
+
+
+def test_managed_tooling_ruff_resolution_prefers_an_explicit_location(tmp_path: Path) -> None:
+    """The editor supplies a resolved location; the CLI keeps its co-location behaviour."""
+    from pysx.tooling.tools import RUFF_REQUIREMENT, ToolingError, resolve_ruff
+
+    closure = managed_closure(tmp_path / "storage", Path(sys.executable))
+    managed = Path(cast("str", closure["root"]))
+    empty = tmp_path / "empty"
+    (empty / "bin").mkdir(parents=True)
+    interpreter = empty / "bin" / "python"
+    interpreter.write_text("")
+
+    tool = resolve_ruff(interpreter, location=managed)
+    assert tool.version == RUFF_REQUIREMENT
+    assert Path(tool.path).is_relative_to(managed)
+
+    with pytest.raises(ToolingError, match="is not installed"):
+        resolve_ruff(interpreter)

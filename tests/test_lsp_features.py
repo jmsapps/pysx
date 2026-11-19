@@ -207,7 +207,7 @@ def test_buffer_readiness_unqualified_lint_keeps_every_other_feature(tmp_path: P
         "-c",
         """
 import pysx.tooling.tools as tools
-tools._candidates = lambda interpreter: []
+tools._candidates = lambda interpreter, managed=None: []
 from pysx.tooling.lsp.server import create_server
 create_server().start_io()
 """,

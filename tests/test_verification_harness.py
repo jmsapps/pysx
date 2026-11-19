@@ -201,6 +201,10 @@ const vm = require("node:vm");
 const executable = process.argv[1], explicit = process.argv[2];
 let discoveries = 0;
 const vscode = {
+  // The shared setup controller reads this at module load.
+  ConfigurationTarget: { WorkspaceFolder: 3 },
+  commands: { registerCommand: () => ({ dispose() {} }) },
+  window: { showWarningMessage() {}, showInformationMessage() {} },
   workspace: {
     getWorkspaceFolder: () => null,
     workspaceFolders: [],
@@ -215,12 +219,21 @@ const vscode = {
     } }) };
   } },
 };
+// authoring.js now loads shared modules through real `require`, so the stub has to be
+// installed at the module level rather than only in the vm context.
+const Module = require("node:module");
+const realRequire = Module.prototype.require;
+Module.prototype.require = function (name) {
+  if (name === "vscode") return vscode;
+  return realRequire.apply(this, arguments);
+};
 const select = vm.runInNewContext(fs.readFileSync("editor/authoring.js", "utf8") +
   "\ninterpreter;", {
     require: name => name === "vscode" ? vscode
       : require(name.startsWith(".") ? require("node:path").resolve("editor", name) : name),
     exports: {}, process,
   });
+Module.prototype.require = realRequire;
 select({ uri: {} }).then(result => {
   assert.equal(result, executable);
   assert.equal(discoveries, explicit === executable ? 0 : 1);

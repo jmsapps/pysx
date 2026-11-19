@@ -33,7 +33,41 @@ Install **PYSX** (`jmsapps.pysx`) from the VS Code Marketplace. Select a
 Python 3.14 or later environment with PYSX and Ruff installed; the Python
 extension's selected interpreter is used unless `pysx.pythonPath` is set.
 
-To build and install the same extension locally from the repository root:
+You can also install and remove it from the command line, outside any checkout:
+
+```sh
+pysx --install-vscode-extension
+pysx --uninstall-vscode-extension
+```
+
+Both commands need VSCode's `code` command on your PATH. If it is missing, open VSCode
+and run **Shell Command: Install 'code' command in PATH**, or point `PYSX_VSCODE_CLI` at
+the `code` executable. Neither command needs `--app` and neither starts an application.
+They report VSCode's own output and exit nonzero when an install or removal fails, so a
+Marketplace or network problem is never reported as success. Installing or removing the
+extension changes VSCode, not your project: no project settings are touched.
+
+### Tooling and setup
+
+The extension provisions the developer tooling it needs — Ruff and Pyright at exactly
+pinned versions — into its own storage, and uses your selected interpreter's PYSX for
+analysis. Your application needs no editor-only extras, and its environment, manifests
+and lockfile are never modified.
+
+Once analysis is ready, the extension offers to configure the folder so template-only
+imports survive organize-imports and unused-symbol checks. The offer explains what it
+changes, appears only in trusted workspaces, and can be declined permanently. Run it
+yourself at any time with **PYSX: Configure Template-Aware Imports**, and undo it with
+**PYSX: Restore Editor Settings**, which only reverses settings PYSX wrote and leaves any
+you changed afterwards alone.
+
+To override the provisioned tools, set `pysx.pythonPath` to an environment that already
+has compatible versions installed. Pyright additionally needs Node.js; if it is missing,
+template diagnostics and highlighting continue to work without it.
+
+### Developing the extension itself
+
+These scripts are repository tools and are not part of the Python distribution:
 
 ```sh
 ./scripts/install-extension.sh
@@ -41,7 +75,9 @@ To build and install the same extension locally from the repository root:
 ```
 
 Either script changes the installed extension but not the running window, so run
-**Developer: Reload Window** afterwards.
+**Developer: Reload Window** afterwards. A local build and the published extension share
+the identifier `jmsapps.pysx`, so installing a local build replaces the published one,
+and uninstalling removes whichever build is currently installed.
 
 The extension provides syntax highlighting for markup inside `pysx(t"""...""")`
 and advisory diagnostics for unknown component tags, unparenthesised lambdas,

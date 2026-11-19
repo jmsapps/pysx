@@ -257,7 +257,8 @@ def test_edits_formatting_setup_cli_round_trips_plan_and_restore(tmp_path: Path)
 
 def test_resident_commands_client_owns_exactly_the_planned_settings() -> None:
     """The client may not write a key the planner does not own, or miss one."""
-    source = (ROOT / "editor" / "commands.js").read_text()
+    # One controller owns the key list for both analysis modes.
+    source = (ROOT / "editor" / "setup.js").read_text()
     listed = source.split("const OWNED = [", 1)[1].split("];", 1)[0]
     owned = [line.strip().strip('",') for line in listed.splitlines() if '"' in line]
     assert owned == sorted(desired({}), key=owned.index)
@@ -277,3 +278,152 @@ def test_resident_commands_repeated_setup_keeps_the_original_baseline(tmp_path: 
     steps, skipped = restore_plan(applied, retained)
     assert skipped == ()
     assert {step.key: step.value for step in steps}["editor.codeActionsOnSave"] == baseline
+
+
+SHARED_SETUP_PROBE = """
+const assert = require("node:assert/strict");
+const path = require("node:path");
+const Module = require("node:module");
+const editor = process.argv[1];
+
+// A fake host: enough VSCode surface for the shared controller, and nothing mode
+// specific, so anything the controller needs must come from its adapter.
+const settings = new Map();
+const registered = new Map();
+const stored = new Map();
+const section = (name, resource) => ({
+  get: (key, fallback) =>
+    settings.has(`${name}.${key}`) ? settings.get(`${name}.${key}`) : fallback,
+  update: async (key, value) => {
+    if (value === undefined) settings.delete(`${name}.${key}`);
+    else settings.set(`${name}.${key}`, value);
+  },
+});
+const vscode = {
+  ConfigurationTarget: { WorkspaceFolder: 3 },
+  Uri: { file: (value) => ({ fsPath: value, toString: () => `file://${value}` }) },
+  workspace: {
+    isTrusted: true,
+    getConfiguration: section,
+    openTextDocument: async () => { throw new Error("unused"); },
+  },
+  commands: {
+    registerCommand: (name, handler) => {
+      registered.set(name, handler);
+      return { dispose() {} };
+    },
+  },
+  window: { showWarningMessage() {}, showInformationMessage() {} },
+};
+const original = Module.prototype.require;
+Module.prototype.require = function (name) {
+  if (name === "vscode") return vscode;
+  return original.apply(this, arguments);
+};
+const setup = require(path.join(editor, "setup.js"));
+Module.prototype.require = original;
+
+const context = { subscriptions: [], workspaceState: {
+  get: (key) => stored.get(key), update: async (key, value) => {
+    if (value === undefined) stored.delete(key); else stored.set(key, value);
+  } } };
+const output = { appendLine() {}, show() {} };
+const folder = { name: "app", uri: vscode.Uri.file(process.argv[3]) };
+
+const adapter = { resolve: async () => ({
+  document: { uri: folder.uri }, folder, python: process.argv[2],
+  readiness: { ready: true, root: process.argv[3], coverage: { ruff: true, types: true } },
+}) };
+const controller = setup.register(context, { output, adapter });
+
+(async () => {
+  assert(registered.has("pysx.configureTooling"), "setup registers configure once");
+  assert(registered.has("pysx.restoreTooling"), "setup registers restore once");
+
+  // A user value that setup must preserve and later give back untouched.
+  settings.set("ruff.lint.ignore", ["E501"]);
+  const before = new Map(settings);
+
+  // The projection exclusion is an owned, recorded change rather than a silent write.
+  await setup.ownMirrorExclusion(context, { folder, root: process.argv[3],
+    pattern: "**/_pysx_revision_*/**" });
+  assert(settings.get("python.analysis.ignore").includes("**/_pysx_revision_*/**"),
+    "the mirror exclusion is applied");
+
+  assert.equal(await controller.configure(), true, "setup applies the planned configuration");
+  assert.notDeepEqual(settings.get("ruff.lint.ignore"), before.get("ruff.lint.ignore"));
+
+  // Repeating setup must not promote already-owned values into the baseline.
+  assert.equal(await controller.configure(), true, "repeated setup succeeds");
+  assert.equal(await controller.restore(), true, "restore reverses what setup owned");
+
+  for (const key of setup.OWNED) {
+    assert.deepEqual(settings.get(key), before.get(key),
+      `${key} returned to its original value, got ${JSON.stringify(settings.get(key))}`);
+  }
+  assert.equal(await controller.restore(), false, "nothing remains owned after restoration");
+
+  // The offer is gated on genuine replacement coverage and remembers a refusal.
+  const asked = [];
+  const prompt = (message, ...choices) => { asked.push(message); return choices[0]; };
+  const silent = () => { throw new Error("the offer must not prompt here"); };
+
+  const partial = { resolve: async () => ({
+    folder, python: process.argv[2],
+    readiness: { ready: true, root: process.argv[3], coverage: { ruff: true, types: false } },
+  }) };
+  assert.equal(await setup.offer(context, { output, adapter: partial, controller,
+    prompt: silent }), "uncovered", "partial coverage never establishes readiness");
+
+  const unready = { resolve: async () => ({
+    folder, python: process.argv[2], readiness: { ready: false, root: process.argv[3] },
+  }) };
+  assert.equal(await setup.offer(context, { output, adapter: unready, controller,
+    prompt: silent }), "not-ready");
+
+  assert.equal(await setup.offer(context, { output, adapter, controller,
+    prompt: (message, ...choices) => { asked.push(message); return choices[2]; } }), "never",
+    "the user can refuse permanently");
+  assert.equal(await setup.offer(context, { output, adapter, controller, prompt: silent }),
+    "dismissed", "a remembered refusal is never re-prompted");
+  assert.equal(asked.length, 1, "exactly one prompt was raised");
+  assert(asked[0].includes("Restore Editor Settings"), "the prompt explains how to undo it");
+
+  vscode.workspace.isTrusted = false;
+  assert.equal(await setup.offer(context, { output, adapter: partial, controller,
+    prompt: silent }), "untrusted", "an untrusted workspace is never provisioned");
+  vscode.workspace.isTrusted = true;
+  console.log("SHARED SETUP OK");
+})().catch((error) => { console.error(error.message); process.exitCode = 1; });
+"""
+
+
+def test_shared_setup_controller_is_reversible_for_any_adapter(tmp_path: Path) -> None:
+    """One controller, one policy owner, and a baseline that survives repeated setup."""
+    root = Path(__file__).resolve().parents[1]
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "app"\nversion = "0"\n')
+    result = subprocess.run(
+        ["node", "-e", SHARED_SETUP_PROBE, str(root / "editor"), sys.executable, str(tmp_path)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "SHARED SETUP OK" in result.stdout
+
+
+def test_shared_setup_policy_has_one_owner_in_both_modes() -> None:
+    """Neither adapter may carry its own copy of the settings recipe."""
+    editor = Path(__file__).resolve().parents[1] / "editor"
+    worker = (editor / "authoring.js").read_text(encoding="utf-8")
+    resident = (editor / "commands.js").read_text(encoding="utf-8")
+
+    for name, source in (("authoring.js", worker), ("commands.js", resident)):
+        assert "setup.js" in source or "./setup.js" in source, f"{name} uses the shared controller"
+        assert "reportUnusedImport" not in source, f"{name} still carries a duplicate rule list"
+        assert "source.organizeImports" not in source, f"{name} still writes save actions directly"
+        assert 'registerCommand("pysx.configureTooling"' not in source, (
+            f"{name} registers setup separately"
+        )

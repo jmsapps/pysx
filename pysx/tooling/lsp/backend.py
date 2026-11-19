@@ -130,10 +130,17 @@ class TypeBackend:
 
     async def start(self, root: Path, interpreter: str) -> None:
         self.query_uri = (root / "pysx_native_query.py").as_uri()
-        node = shutil.which("node")
+        # The editor names the Node it qualified; PATH is only the fallback, because the
+        # GUI PATH an extension host inherits is not the shell PATH a developer sees.
+        supplied = os.environ.get("PYSX_MANAGED_NODE")
+        node = supplied if supplied and Path(supplied).is_file() else shutil.which("node")
 
         if node is None:
-            raise RuntimeError("Pyright requires Node.js in the language server environment")
+            raise RuntimeError(
+                "Pyright needs Node.js, which was not found. Install Node 18 or later and "
+                "restart the editor, or set `pysx.nodePath` to its location. Template "
+                "diagnostics and highlighting continue to work without it."
+            )
         distribution = importlib.metadata.distribution("pyright")
 
         if distribution.version != "1.1.414":

@@ -222,6 +222,9 @@ const registry = [
     [0, "diagnostics_fixture", "browser_diagnostics.mjs", "DIAGNOSTICS ACTIONS BROWSER PASSED"],
     [1, "authoring_fixture", "browser_authoring.mjs", "AUTHORING BROWSER PASSED"],
   ] },
+  { suite: "nginx_proxy", cases: [
+    [0, "nginx_proxy_fixture", "browser_nginx_proxy.mjs", "NGINX PROXY BROWSER PASSED"],
+  ] },
   { suite: "template_ergonomics", cases: [
     [0, "reactive_state", "browser_operators.mjs", "OPERATORS BROWSER PASSED"],
   ] },
@@ -337,6 +340,8 @@ try {
       ["tests/browser_tutorial_fixture.py", "--port", String(port), "--packaged"] :
       name === "tutorial_fixture" ?
       ["tests/browser_tutorial_fixture.py", "--port", String(port)] :
+      name === "nginx_proxy_fixture" ?
+      ["tests/browser_nginx_proxy_fixture.py", "--port", String(port)] :
       name === "development_fixture" ?
       ["tests/browser_development_fixture.py", "--port", String(port)] :
       name === "development_no_inspector_fixture" ?

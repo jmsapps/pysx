@@ -1,5 +1,7 @@
 """Fresh wheel and sdist consumer evidence for the isolated packaging candidate."""
 
+import json
+import os
 import shutil
 import socket
 import subprocess
@@ -429,3 +431,141 @@ def test_client_verify_bundled_client_installs_outside_the_checkout(tmp_path: Pa
         for name in names:
             if name.endswith((".js", ".json")):
                 assert str(ROOT).encode() not in archive.read(name), name
+
+
+def controlled_code(directory: Path, *, exit_code: int = 0, message: str = "") -> Path:
+    """A stand-in for VSCode's CLI that records exactly how it was invoked."""
+    record = directory / "invocation.json"
+    shim = directory / ("code.cmd" if os.name == "nt" else "code")
+    shim.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        f"open({str(record)!r}, 'w').write(json.dumps(sys.argv[1:]))\n"
+        f"print({message!r})\n"
+        f"sys.exit({exit_code})\n"
+    )
+    shim.chmod(0o755)
+
+    return shim
+
+
+def extension_cli(
+    shim: Path, *arguments: str, extra: dict[str, str] | None = None
+) -> tuple[int, str]:
+    environment = {**os.environ, "PYSX_VSCODE_CLI": str(shim), **(extra or {})}
+    result = subprocess.run(
+        [sys.executable, "-m", "pysx.hosting.server", *arguments],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env=environment,
+    )
+
+    return result.returncode, result.stdout + result.stderr
+
+
+def test_vscode_extension_cli_installs_the_published_identifier(tmp_path: Path) -> None:
+    shim = controlled_code(tmp_path, message="Extension 'jmsapps.pysx' was installed.")
+    status, output = extension_cli(shim, "--install-vscode-extension")
+    assert status == 0, output
+    assert json.loads((tmp_path / "invocation.json").read_text()) == [
+        "--install-extension",
+        "jmsapps.pysx",
+    ]
+    assert "was installed" in output, "VSCode's own output is surfaced"
+
+
+def test_vscode_extension_cli_uninstalls_only_the_named_extension(tmp_path: Path) -> None:
+    shim = controlled_code(tmp_path)
+    status, output = extension_cli(shim, "--uninstall-vscode-extension")
+    assert status == 0, output
+    assert json.loads((tmp_path / "invocation.json").read_text()) == [
+        "--uninstall-extension",
+        "jmsapps.pysx",
+    ]
+
+
+def test_vscode_extension_cli_reports_a_failed_operation(tmp_path: Path) -> None:
+    """A Marketplace or network failure must not be reported as success."""
+    shim = controlled_code(tmp_path, exit_code=1, message="Failed to install: network unreachable")
+    status, output = extension_cli(shim, "--install-vscode-extension")
+    assert status == 1
+    assert "network unreachable" in output
+    assert "could not install" in output
+
+
+def test_vscode_extension_cli_reports_a_missing_vscode_cli(tmp_path: Path) -> None:
+    status, output = extension_cli(tmp_path / "absent", "--install-vscode-extension")
+    assert status != 0
+    assert "Shell Command: Install" in output, "the failure explains how to recover"
+
+
+def test_vscode_extension_cli_rejects_serving_combinations(tmp_path: Path) -> None:
+    shim = controlled_code(tmp_path)
+    status, output = extension_cli(shim, "--install-vscode-extension", "--app", "x:y")
+    assert status != 0
+    assert "cannot be combined with app" in output
+    assert not (tmp_path / "invocation.json").exists(), "no CLI runs when arguments conflict"
+
+    status, output = extension_cli(
+        shim, "--install-vscode-extension", "--uninstall-vscode-extension"
+    )
+    assert status != 0
+    assert "not allowed with argument" in output
+
+
+def test_vscode_extension_cli_needs_no_application(tmp_path: Path) -> None:
+    """Neither command may import or start an application."""
+    shim = controlled_code(tmp_path)
+    status, output = extension_cli(shim, "--install-vscode-extension")
+    assert status == 0, output
+    assert "Serving" not in output
+    assert "http://" not in output
+
+    status, output = extension_cli(shim)
+    assert status != 0
+    assert "--app is required to serve an application" in output
+
+
+def test_vscode_extension_cli_is_advertised_in_installed_help(tmp_path: Path) -> None:
+    uv = shutil.which("uv")
+    assert uv is not None
+    cache = dependency_cache(tmp_path / "cache")
+    artifacts = tmp_path / "artifacts"
+    command(
+        [
+            uv,
+            "--offline",
+            "--cache-dir",
+            str(cache),
+            "build",
+            str(ROOT),
+            "--wheel",
+            "--out-dir",
+            str(artifacts),
+            "--python",
+            sys.executable,
+        ],
+        tmp_path,
+    )
+    wheel = next(artifacts.glob("*.whl"))
+
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
+        assert "pysx/tooling/editor_install.py" in names
+        assert not [name for name in names if name.endswith(".vsix")], "no VSIX ships"
+        assert not [name for name in names if "install-extension.sh" in name], (
+            "repository development scripts stay out of the distribution"
+        )
+    python = installed(tmp_path, wheel, cache, extra=False)
+    result = subprocess.run(
+        [str(_console(python, "pysx")), "--help"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    )
+    assert "--install-vscode-extension" in result.stdout
+    assert "--uninstall-vscode-extension" in result.stdout

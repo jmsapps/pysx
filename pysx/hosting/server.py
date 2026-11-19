@@ -60,7 +60,20 @@ def _load_app(spec: str, *, development: bool = False) -> Application:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="pysx")
-    parser.add_argument("--app", required=True, help="module:attr of an app or Application")
+    # Serving needs --app, but the extension commands do not, so the requirement is
+    # enforced after parsing rather than by argparse.
+    parser.add_argument("--app", help="module:attr of an app or Application")
+    extension = parser.add_mutually_exclusive_group()
+    extension.add_argument(
+        "--install-vscode-extension",
+        action="store_true",
+        help="install the published PYSX VSCode extension and exit",
+    )
+    extension.add_argument(
+        "--uninstall-vscode-extension",
+        action="store_true",
+        help="remove the published PYSX VSCode extension and exit",
+    )
     parser.add_argument("--port", type=int, default=8750)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--dev", action="store_true", help="log development source tracebacks")
@@ -86,6 +99,35 @@ def main() -> None:
         "--drain-signal", action="store_true", help="drain durable admission on SIGUSR1"
     )
     args = parser.parse_args()
+    operation = (
+        "install"
+        if args.install_vscode_extension
+        else "uninstall"
+        if args.uninstall_vscode_extension
+        else None
+    )
+
+    if operation is not None:
+        # These commands manage an editor extension; combining them with serving options
+        # would silently ignore one half of the request.
+        serving = {
+            name: value
+            for name, value in vars(args).items()
+            if not name.startswith(("install_vscode", "uninstall_vscode"))
+            and value != parser.get_default(name)
+        }
+
+        if serving:
+            parser.error(
+                "--install-vscode-extension/--uninstall-vscode-extension manage the editor "
+                f"extension and cannot be combined with {', '.join(sorted(serving))}"
+            )
+        from pysx.tooling.editor_install import run as install_extension
+
+        raise SystemExit(install_extension(operation))
+
+    if args.app is None:
+        parser.error("--app is required to serve an application")
 
     if args.watch:
         from pysx.development.development import WatchConfig
