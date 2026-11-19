@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from urllib.parse import parse_qs, urlsplit
 
 from pysx import Fragment, pysx, signal
@@ -33,7 +33,7 @@ from .components import (
 if TYPE_CHECKING:
     from pysx.hosting.http import HTTPResult
     from pysx.hosting.request import RequestContext
-    from pysx.runtime.connection import Connection
+    from pysx.runtime.connection import BoundedConnection, Connection
 
 PUBLIC_ORIGIN = os.environ.get("PYSX_ORIGIN", "https://localhost:8443")
 TRUSTED_PROXIES = tuple(
@@ -114,6 +114,11 @@ class Deployment(Application):
 
         return await super().http(request, method=method)
 
+    def accepts_websocket(self, path: str) -> bool:
+        # The mounted application's socket lives under its own prefix, so the host must
+        # upgrade there too, not only at the parent's path.
+        return path == self.reports.path("ws") or super().accepts_websocket(path)
+
     async def websocket(self, connection: Connection) -> None:
         # A session names the page it belongs to in `location`, so the socket is routed
         # the same way its document was; the request path is always /ws.
@@ -121,6 +126,20 @@ class Deployment(Application):
         path = urlsplit(location).path
 
         if path == MOUNT or path.startswith(f"{MOUNT}/"):
+            # Admission was recorded against this application during the handshake, so
+            # the parent releases it and the child takes its own reservation; otherwise
+            # the delegated connection looks unadmitted and is closed immediately.
+            self.handshakes.pop(getattr(connection, "admission_key", id(connection)), None)
+
+            if getattr(connection, "reserved", False):
+                self.runtime.unreserve()
+                cast("BoundedConnection", connection).reserved = False
+
+                if not self.reports.runtime.reserve():
+                    await connection.close(1013, "mounted application capacity")
+
+                    return
+                cast("BoundedConnection", connection).reserved = True
             await self.reports.websocket(connection)
 
             return

@@ -6,7 +6,16 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pysx import Application, Fragment, HostConfig, StaticAsset, current_request, native, on_cleanup
+from pysx import (
+    Application,
+    Fragment,
+    HostConfig,
+    StaticAsset,
+    current_request,
+    native,
+    on_cleanup,
+    pysx,
+)
 from pysx.hosting.hosting import request_from_headers
 
 if TYPE_CHECKING:
@@ -287,12 +296,11 @@ def test_host_config_asgi_connected_session_cleanup(finish: str) -> None:
 
 def test_nginx_proxy_serves_the_parent_and_the_mounted_application() -> None:
     """Real nginx, real TLS: the full path survives, so a mounted prefix still resolves."""
-    import ssl
     import tempfile
     import urllib.request
     from pathlib import Path
 
-    from nginx_proxy import application, free_port, nginx
+    from nginx_proxy import application, disposable_tls_client, free_port, nginx
 
     port = free_port()
 
@@ -304,8 +312,8 @@ def test_nginx_proxy_serves_the_parent_and_the_mounted_application() -> None:
         ) as upstream,
         nginx(Path(directory), upstream, port=port) as proxied,
     ):
-        context = ssl._create_unverified_context()
-        pages = {}
+        context = disposable_tls_client()
+        pages: dict[str, tuple[int, str, str]] = {}
 
         for path in ("/", "/reports"):
             request = urllib.request.Request(f"https://localhost:{proxied}{path}")
@@ -338,3 +346,19 @@ def test_nginx_proxy_mounted_application_shares_host_configuration() -> None:
     assert child.recovery_namespace != parent.recovery_namespace, (
         "a mounted application keeps its own recovery identity"
     )
+
+
+def test_nginx_proxy_mounted_application_owns_its_socket_path() -> None:
+    """A mounted application is upgraded and validated at its own prefix, not the root's."""
+    from examples.nginx import MOUNT, Deployment
+
+    deployment = Deployment()
+    assert deployment.accepts_websocket("/ws"), "the parent still serves its own socket"
+    assert deployment.accepts_websocket(f"{MOUNT}/ws"), "the mounted prefix is upgraded too"
+    assert not deployment.accepts_websocket("/elsewhere/ws")
+
+    # A plain application is unchanged: only its own socket path upgrades.
+    plain = Application(lambda: pysx(t"div: 'plain'"), config=HostConfig())
+    assert plain.accepts_websocket("/ws")
+    assert not plain.accepts_websocket(f"{MOUNT}/ws")
+    assert deployment.reports.path("ws") == f"{MOUNT}/ws"

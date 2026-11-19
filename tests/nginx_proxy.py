@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import socket
+import ssl
 import subprocess
 import time
 from contextlib import closing, contextmanager
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
 
 CONFIGURATION = """
 worker_processes 1;
@@ -62,6 +63,15 @@ http {{
 """
 
 
+def disposable_tls_client() -> ssl.SSLContext:
+    """Trust the fixture's own generated certificate without touching system trust."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+
+    return context
+
+
 def free_port() -> int:
     with closing(socket.socket()) as probe:
         probe.bind(("127.0.0.1", 0))
@@ -101,7 +111,7 @@ def certificate(prefix: Path) -> None:
 
 
 @contextmanager
-def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Iterator[int]:
+def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Generator[int]:
     """Serve HTTPS on a disposable port, forwarding to an already running application."""
     executable = os.environ.get("PYSX_NGINX") or shutil.which("nginx")
 
@@ -152,7 +162,7 @@ def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Iterator[i
 
 
 @contextmanager
-def application(target: str, *, environment: dict[str, str] | None = None) -> Iterator[int]:
+def application(target: str, *, environment: dict[str, str] | None = None) -> Generator[int]:
     """Start a real PYSX process, the way the documented deployment does."""
     import sys
 

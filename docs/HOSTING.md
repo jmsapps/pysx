@@ -126,6 +126,36 @@ incoming forwarded headers before setting its own. Paths/base paths must be
 preserved explicitly; forwarded path prefixes are unsupported. ASGI servers should
 disable their independent proxy-header rewriting so this policy sees the real peer.
 
+### Mounted applications behind a proxy
+
+An application that dispatches to another under a path prefix gives the child the same
+host configuration, so allowed origins, trusted proxies and cookie policy are decided
+once. Build both from one factory rather than restating them:
+
+```python
+config = HostConfig(secure_cookies=True, security=SecurityPolicy(
+    origins=("https://app.example",), trusted_proxies=("10.0.0.0/8",)))
+parent = Application(view, config=config)
+child = Application(reports, config=replace(config, base_path="/reports"))
+```
+
+A dispatching application routes three things to the child: HTTP by request path,
+websockets by the session's `location` query value, and shutdown. It also widens
+`Application.accepts_websocket()` to the child's prefix, because the host upgrades only
+the paths the root application claims:
+
+```python
+def accepts_websocket(self, path: str) -> bool:
+    return path == self.child.path("ws") or super().accepts_websocket(path)
+```
+
+Before delegating a connection, release the parent's handshake admission and move the
+runtime reservation to the child; a delegated connection that is still admitted against
+the parent is closed as unadmitted. The socket path is validated against the application
+that handles the connection, so a child serves `"<prefix>/ws"` while the root serves
+`/ws`. Proxy `proxy_pass` without a replacement URI so the full path, including the
+prefix, reaches the application. A runnable example is in `examples/nginx.py`.
+
 The browser identity cookie is HttpOnly, SameSite=Lax and optionally Secure; it is
 an ownership binder, not authentication. Application auth cookies should also be
 HttpOnly/Secure with an appropriate SameSite policy. Adoption handles remain in

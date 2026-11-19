@@ -15,7 +15,6 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from http import HTTPStatus
 from importlib.resources import files
-from pathlib import Path  # noqa: TC003 - public from_path annotations resolve at runtime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlsplit
@@ -32,6 +31,7 @@ from .telemetry import RequestEvent, record
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping
+    from pathlib import Path
     from string.templatelib import Template
 
     from websockets.asyncio.server import Server, ServerConnection
@@ -220,6 +220,16 @@ class Application:
 
     def path(self, path: str) -> str:
         return self.config.base_path + "/" + path.lstrip("/")
+
+    def accepts_websocket(self, path: str) -> bool:
+        """Which request paths upgrade to a websocket.
+
+        An application that dispatches to mounted applications widens this to their
+        prefixes; otherwise only this application's own socket path is upgraded, so
+        single-application hosts are unaffected.
+        """
+
+        return path == self.path("ws")
 
     def prepare(self, request: RequestContext, *, websocket: bool = False) -> RequestContext:
         context = replace(request, base_path=request.base_path or self.config.base_path)
@@ -594,7 +604,10 @@ class Application:
 
             return
 
-        if urlsplit(connection.request.path).path != connection.request.base_path + "/ws":
+        # Validate against the application actually handling this connection. A
+        # dispatched mounted application serves its own prefix, and the incoming request
+        # still carries the root's base path, so comparing to that rejects the child.
+        if urlsplit(connection.request.path).path != self.path("ws"):
             await bounded.close(code=1008, reason="invalid socket path")
 
             if bounded.reserved:
@@ -763,7 +776,7 @@ class Application:
 
             method = _connection.method if isinstance(_connection, HTTPConnection) else "GET"
 
-            if method == "GET" and urlsplit(request.path).path == self.path("ws"):
+            if method == "GET" and self.accepts_websocket(urlsplit(request.path).path):
                 from urllib.parse import parse_qs
 
                 try:

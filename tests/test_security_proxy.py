@@ -195,17 +195,16 @@ def test_deployment_security_redacts_logs_observer_errors_and_metrics(
 
 def test_nginx_proxy_accepts_forwarded_identity_from_a_trusted_proxy() -> None:
     """Behind a configured proxy, the public origin is what the application validates."""
-    import ssl
     import tempfile
     from pathlib import Path
 
-    from nginx_proxy import application, free_port, nginx
+    from nginx_proxy import application, disposable_tls_client, free_port, nginx
 
     port = free_port()
     public = f"https://localhost:{port}"
 
     async def exercise(proxied: int) -> tuple[bool, bool]:
-        context = ssl._create_unverified_context()
+        context = disposable_tls_client()
 
         async def attempt(origin: str) -> bool:
             try:

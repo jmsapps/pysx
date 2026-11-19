@@ -31,13 +31,12 @@ try {
   console.log("  ok  forwarded protocol produces secure cookies");
 
   // The mounted application resolves under its prefix because the full path is proxied
-  // with no replacement URI. Its server-rendered document is asserted here; browser
-  // attachment for a mounted application is an unfinished check recorded in the task
-  // evidence, not something this suite silently claims.
+  // with no replacement URI, and it attaches over its own prefixed websocket.
   const mounted = await page.goto(`https://localhost:${port}/reports`);
   assert.equal(mounted.status(), 200, "the mounted application is served under its prefix");
   assert.match(await page.locator("#pysx-root").textContent(), /path prefix/i);
-  console.log("  ok  the mounted application is served under its prefix");
+  await page.waitForFunction(() => document.querySelector("#pysx-root")?.dataset.pysxAttached === "true");
+  console.log("  ok  the mounted application is served and attaches under its prefix");
 
   console.log("NGINX PROXY BROWSER PASSED");
 } finally {
