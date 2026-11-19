@@ -2,10 +2,12 @@
 
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import tomllib
@@ -569,3 +571,152 @@ def test_vscode_extension_cli_is_advertised_in_installed_help(tmp_path: Path) ->
     )
     assert "--install-vscode-extension" in result.stdout
     assert "--uninstall-vscode-extension" in result.stdout
+
+
+def long_description(artifact: Path) -> str:
+    """The description PyPI renders, read from the built artifact rather than the source."""
+
+    if artifact.suffix == ".whl":
+        with zipfile.ZipFile(artifact) as archive:
+            name = next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))
+            raw = archive.read(name).decode()
+    else:
+        with tarfile.open(artifact) as archive:
+            name = next(n for n in archive.getnames() if n.endswith("/PKG-INFO"))
+            member = archive.extractfile(name)
+            assert member is not None
+            raw = member.read().decode()
+    _, separator, body = raw.partition("\n\n")
+    assert separator, "the metadata carries a long description"
+
+    return body
+
+
+@pytest.fixture(scope="module")
+def release_artifacts(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    sys.path.insert(0, str(ROOT / "tests"))
+    from release_support import build_release_artifacts
+
+    workspace = tmp_path_factory.mktemp("package-description")
+    wheel, _, _ = build_release_artifacts(workspace)
+    sdist = next((workspace / "artifacts").glob("*.tar.gz"))
+    assert wheel.suffix == ".whl"
+    assert sdist.name.endswith(".tar.gz")
+
+    return wheel, sdist
+
+
+def test_package_description_has_no_repository_relative_targets(
+    release_artifacts: tuple[Path, Path],
+) -> None:
+    """Relative URLs resolve against PyPI's own host, so every one of them would 404."""
+    relative = re.compile(r"\]\((?!https?://|#)[^)]+\)|src=\"(?!https?://)[^\"]+\"", re.IGNORECASE)
+
+    for artifact in release_artifacts:
+        description = long_description(artifact)
+        found = relative.findall(description)
+        assert not found, f"{artifact.name} still carries relative targets: {found}"
+
+
+def test_package_description_links_the_matching_release_tag(
+    release_artifacts: tuple[Path, Path],
+) -> None:
+    """A released artifact documents itself, not a moving development branch."""
+    from shared import RELEASE_VERSION
+
+    for artifact in release_artifacts:
+        description = long_description(artifact)
+        tags = set(re.findall(r"github\.com/jmsapps/pysx/blob/([^/]+)/", description))
+        assert tags, f"{artifact.name} documents nothing"
+        assert tags == {f"v{RELEASE_VERSION}"}, tags
+        assert "/blob/master/" not in description, "a release must not float on master"
+
+
+def test_package_description_renders_without_warnings(
+    release_artifacts: tuple[Path, Path],
+) -> None:
+    """Render it the way PyPI does, rather than trusting `twine check` alone."""
+    import readme_renderer.markdown
+
+    warnings: list[str] = []
+
+    for artifact in release_artifacts:
+        rendered = readme_renderer.markdown.render(
+            long_description(artifact), stream=_Collector(warnings)
+        )
+        assert rendered is not None, f"{artifact.name} failed to render"
+        assert not warnings, warnings
+        # Both images survive sanitising and point at their public source.
+        assert rendered.count("https://jmsapps.ca/assets/pysx-logo.png") == 1
+        assert rendered.count("https://jmsapps.ca/assets/pysx-counter.svg") == 1
+        assert "docs/QUICKSTART.md" not in rendered or "https://" in rendered
+
+
+class _Collector:
+    def __init__(self, sink: list[str]) -> None:
+        self.sink = sink
+
+    def write(self, message: str) -> int:
+        if message.strip():
+            self.sink.append(message.strip())
+
+        return len(message)
+
+
+def project_urls(artifact: Path) -> dict[str, str]:
+    """The project links PyPI renders, read from the built artifact."""
+
+    if artifact.suffix == ".whl":
+        with zipfile.ZipFile(artifact) as archive:
+            name = next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))
+            raw = archive.read(name).decode()
+    else:
+        with tarfile.open(artifact) as archive:
+            name = next(n for n in archive.getnames() if n.endswith("/PKG-INFO"))
+            member = archive.extractfile(name)
+            assert member is not None
+            raw = member.read().decode()
+    headers, _, _ = raw.partition("\n\n")
+    found: dict[str, str] = {}
+
+    for line in headers.splitlines():
+        if line.startswith("Project-URL:"):
+            label, _, destination = line.removeprefix("Project-URL:").strip().partition(",")
+            found[label.strip()] = destination.strip()
+
+    return found
+
+
+def test_project_urls_expose_the_public_repository(
+    release_artifacts: tuple[Path, Path],
+) -> None:
+    """Without Project-URL entries PyPI has nothing to put in its project-links sidebar."""
+    repository = "https://github.com/jmsapps/pysx"
+
+    for artifact in release_artifacts:
+        found = project_urls(artifact)
+        assert found, f"{artifact.name} carries no project links"
+        assert found.get("Repository") == repository, found
+        assert found.get("Homepage") == repository, found
+        assert found.get("Issues") == f"{repository}/issues", found
+        assert set(found) >= {"Homepage", "Repository", "Documentation", "Changelog", "Issues"}
+
+        for label, destination in found.items():
+            assert destination.startswith("https://"), (label, destination)
+
+
+def test_project_urls_version_links_match_the_release(
+    release_artifacts: tuple[Path, Path],
+) -> None:
+    """Versioned metadata links follow the release tag, from the one version source."""
+    from shared import RELEASE_VERSION
+
+    for artifact in release_artifacts:
+        found = project_urls(artifact)
+        tagged = {
+            label: destination for label, destination in found.items() if "/blob/" in destination
+        }
+        assert set(tagged) == {"Documentation", "Changelog"}, tagged
+
+        for label, destination in tagged.items():
+            assert f"/blob/v{RELEASE_VERSION}/" in destination, (label, destination)

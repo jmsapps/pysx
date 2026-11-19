@@ -59,3 +59,38 @@ def test_release_version_tutorial_bootstrap_works_before_install(tmp_path: Path)
     )
     assert result.returncode != 0
     assert f"Expected the actual pysx {RELEASE_VERSION} candidate wheel" in result.stderr
+
+
+def test_package_description_release_links_follow_the_version(tmp_path: Path) -> None:
+    """A released description must document its own tag, not a frozen earlier one."""
+    shutil.copytree(
+        ROOT,
+        tmp_path / "checkout",
+        dirs_exist_ok=True,
+        symlinks=True,
+        ignore=shutil.ignore_patterns(
+            ".git", ".venv", "node_modules", "dist", ".pysx", "__pycache__"
+        ),
+    )
+    checkout = tmp_path / "checkout"
+    readme = checkout / "README.md"
+    assert f"/blob/v{RELEASE_VERSION}/" in readme.read_text()
+
+    changed = updates(checkout, "9.9.9")
+    assert readme in changed, "the release-tagged links are synchronized"
+    updated = changed[readme]
+    assert "/blob/v9.9.9/" in updated
+    assert f"/blob/v{RELEASE_VERSION}/" not in updated
+    # Only the tag moves; the documentation targets themselves are untouched.
+    assert updated.count("/blob/v9.9.9/") == readme.read_text().count(f"/blob/v{RELEASE_VERSION}/")
+
+
+def test_package_description_uses_public_absolute_targets() -> None:
+    """The long description is the README verbatim, so its targets must be public."""
+    import re
+
+    text = (ROOT / "README.md").read_text()
+    relative = re.findall(r"\]\((?!https?://|#)[^)]+\)|src=\"(?!https?://)[^\"]+\"", text)
+    assert not relative, relative
+    assert 'src="https://jmsapps.ca/assets/pysx-logo.png"' in text
+    assert 'src="https://jmsapps.ca/assets/pysx-counter.svg"' in text

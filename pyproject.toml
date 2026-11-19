@@ -33,6 +33,13 @@ pysx-build = "pysx.tooling.build:main"
 requires = ["uv_build==0.11.8"]
 build-backend = "uv_build"
 
+[project.urls]
+Homepage = "https://github.com/jmsapps/pysx"
+Repository = "https://github.com/jmsapps/pysx"
+Documentation = "https://github.com/jmsapps/pysx/blob/v0.7.0/docs/QUICKSTART.md"
+Changelog = "https://github.com/jmsapps/pysx/blob/v0.7.0/CHANGELOG.md"
+Issues = "https://github.com/jmsapps/pysx/issues"
+
 [dependency-groups]
 dev = [
     "typer==0.27.2",
@@ -42,6 +49,7 @@ dev = [
     "pyright==1.1.414",
     "uvicorn==0.54.0",
     "pygls==2.1.1",
+    "readme-renderer[md]==46.0",
 ]
 
 [tool.uv.build-backend]
