@@ -243,10 +243,11 @@ exports.activate = function (context) {
     return state;
   }
 
-  async function refresh(document) {
+  async function refresh(document, force = false) {
     if (!managed(document)) return null;
     const root = canonical(analysisRoot(vscode, document.uri, document.fileName));
     const existing = states.get(root);
+    if (force && existing) existing.ready = false;
     if (valid(existing)) {
       const model = existing.models.find((item) => item.filename === canonical(document.fileName));
       const entry = model && entries.get(canonical(model.target));
@@ -260,7 +261,7 @@ exports.activate = function (context) {
     }
     const key = digest(JSON.stringify(buffers));
     const previous = inflight.get(root);
-    if (previous?.key === key) return previous.promise;
+    if (!force && previous?.key === key) return previous.promise;
     const token = ++sequence;
     pending.set(root, token);
     if (previous?.child) stop(previous.child);
@@ -510,7 +511,7 @@ exports.activate = function (context) {
     if (doc) run(doc);
   };
   context.subscriptions.push(
-    vscode.commands.registerCommand("pysx.refresh", () => refresh(vscode.window.activeTextEditor?.document)),
+    vscode.commands.registerCommand("pysx.refresh", () => refresh(vscode.window.activeTextEditor?.document, true)),
     vscode.workspace.onDidOpenTextDocument(run),
     vscode.workspace.onDidSaveTextDocument(run),
     vscode.workspace.onDidChangeTextDocument((event) => run(event.document)),

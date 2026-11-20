@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import sys
+import time
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
@@ -284,6 +285,8 @@ class Session:
             )
 
             return
+        # Measure raw backend work, including output rejected below. Moving this
+        # after version filtering would hide unrelated workspace publications.
         self.republished.add(item.relative)
 
         # Backend URI spelling may differ (notably drive case/escaping on Windows).
@@ -292,12 +295,14 @@ class Session:
 
         if os.environ.get("PYSX_LSP_TRACE_PUBLICATIONS") == "1":
             LOG.warning(
-                "Publication trace: generation=%s file=%s received=%s sent=%s changed=%s",
+                "Publication trace: generation=%s file=%s received=%s sent=%s "
+                "changed=%s monotonic_ns=%s",
                 self.generation,
                 item.relative,
                 params.version,
                 self.sent.get(uri),
                 self.changed,
+                time.monotonic_ns(),
             )
 
         if params.version is None or self.sent.get(uri) != params.version:
@@ -502,6 +507,25 @@ class Session:
                         types.FileEvent(target.as_uri(), types.FileChangeType.Deleted)
                     )
         config_changed = self.index.write_config()
+
+        if os.environ.get("PYSX_LSP_TRACE_PUBLICATIONS") == "1":
+            LOG.warning(
+                "Synchronization trace: generation=%s baseline=%s complete=%s "
+                "affected=%s disk_events=%s config_changed=%s monotonic_ns=%s",
+                generation,
+                None if baseline is None else baseline.stamp.generation,
+                complete,
+                [item.relative for item in snapshot.files if item.filename in affected],
+                [
+                    (
+                        path_for_uri(event.uri).relative_to(self.index.projected).as_posix(),
+                        event.type.name,
+                    )
+                    for event in disk_events
+                ],
+                config_changed,
+                time.monotonic_ns(),
+            )
         LOG.warning(
             "Type projection snapshot: generation=%s complete=%s root=%s files=%s buffers=%s",
             generation,

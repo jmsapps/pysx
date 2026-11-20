@@ -96,6 +96,9 @@ def tree() -> Fragment:
   await replace(doc, "'Hello'", "'Unsaved'");
   await eventually(async () => Boolean(await extension.exports.refresh(doc)), "immutable snapshot");
   const snapshot = await extension.exports.refresh(doc);
+  const refreshed = await vscode.commands.executeCommand("pysx.refresh");
+  assert(refreshed && refreshed.token > snapshot.token, "explicit refresh replaces an unchanged snapshot");
+  assert.notEqual(refreshed.directory, snapshot.directory, "explicit refresh creates a cold projection");
   const stateRoot = process.env.PYSX_STATE_DIR ?? path.join(root, ".pysx");
   assert(path.relative(stateRoot, snapshot.directory).split(path.sep).includes("temporary"), "projections use managed temporary state");
   assert(!path.relative(stateRoot, snapshot.directory).startsWith(".."), "projections stay inside the state root");

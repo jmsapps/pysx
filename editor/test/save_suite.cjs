@@ -147,6 +147,7 @@ exports.run = async function () {
           const scopedFiles = vscode.workspace.getConfiguration("files", document);
           const scopedEditor = vscode.workspace.getConfiguration("editor", document);
           const event = {mode, edit, elapsed_ms: Math.round(performance.now() - checkpointStarted), name,
+            since_save_ms: savedAt === null ? null : Math.round(performance.now() - savedAt),
             version: document.version, language: document.languageId, windowFocused: vscode.window.state.focused,
             autoSave: scopedFiles.get("autoSave"), autoSaveDelay: scopedFiles.get("autoSaveDelay"),
             autoSaveWhenNoErrors: scopedFiles.get("autoSaveWhenNoErrors"),
@@ -207,15 +208,19 @@ exports.run = async function () {
           assert.ok(fs.readFileSync(filename, "utf8").includes(after));
           checkpoint("disk-content-verified", {active: editorLabel(vscode.window.activeTextEditor), dirty: document.isDirty});
           await page.bringToFront();
+          checkpoint("browser-foreground");
           if (edit === "title") await page.waitForFunction(title => document.querySelector("h1")?.textContent === title, `${mode} save`, {polling: "raf"});
           else await value(initializer);
+          checkpoint("browser-content-observed");
           // An initializer reset to the same displayed number must still await
           // the actual new generation rather than timing an unchanged old DOM.
           await until(async () => {
             const status = await (await fetch(base + "/__pysx_dev__/status")).json();
             return status.generation > samples.length + 1 && status;
           }, "new worker generation");
+          checkpoint("worker-generation-observed");
           await connected();
+          checkpoint("browser-connected");
           const visible = performance.now();
           const status = await (await fetch(base + "/__pysx_dev__/status")).json();
           const sample = {mode, edit, save_seconds: (savedAt-started)/1000, visible_seconds: (visible-started)/1000,

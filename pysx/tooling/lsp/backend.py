@@ -7,6 +7,7 @@ import importlib.metadata
 import logging
 import os
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
@@ -98,7 +99,9 @@ class TypeBackend:
         def progress(method: str) -> Callable[[object], None]:
             def report(_params: object) -> None:
                 if os.environ.get("PYSX_LSP_TRACE_PUBLICATIONS") == "1":
-                    LOG.warning("Type backend progress: %s", method)
+                    LOG.warning(
+                        "Type backend progress: %s monotonic_ns=%s", method, time.monotonic_ns()
+                    )
 
             return report
 

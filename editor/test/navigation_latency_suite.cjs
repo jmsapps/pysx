@@ -60,12 +60,13 @@ exports.run = async function (mode, progress) {
   progress(`${mode}: cold samples`);
   await ready();
   // A cold sample must not reuse a warm analysis. The resident adapter exposes a restart
-  // command; the worker adapter has none, so its analysis is invalidated at the source it
-  // actually watches. Reporting warm numbers under a "cold" label would be a false baseline.
+  // command; the worker's explicit refresh replaces its snapshot even for unchanged text.
+  // Await that operation: a watched-source rewrite can return an old successful definition
+  // before the watcher invalidates it, then race the actual timed request with the rebuild.
   const invalidate = mode === "worker"
-    ? async () => fs.writeFileSync(CONTROLS, fs.readFileSync(CONTROLS, "utf8"))
+    ? async () => { assert(await vscode.commands.executeCommand("pysx.refresh"), "cold projection refresh"); }
     : async () => { await vscode.commands.executeCommand("pysx.restartServer").then(() => {}, () => {}); };
-  const coldInduction = mode === "worker" ? "watched-source rewrite" : "pysx.restartServer";
+  const coldInduction = mode === "worker" ? "pysx.refresh" : "pysx.restartServer";
   scenarios.push(await timing.scenario({
     label: "cold", repetitions: COLD_SAMPLES, clock, request, expect,
     before: async () => { await invalidate(); await ready(); },
