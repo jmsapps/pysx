@@ -17,6 +17,7 @@ from pysx.components.native_support import element
 from pysx.reactive.reactive import Signal, batch, derived, signal, untracked
 from pysx.rendering.render import Fragment, each, pysx
 
+from .browser import DisconnectFor
 from .events import BrowserEvent, EventHandler, on_event
 
 if TYPE_CHECKING:
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from pysx.components.composition import Children
     from pysx.components.native import AAttrs
 
+    from .dom import DomRef
     from .wire import NavigationMessage, RoutingMessage
 
 FORBIDDEN_URL_CHARS = re.compile(r"[\x00-\x20\x7f\\]")
@@ -189,9 +191,18 @@ route_host: ContextVar[RouteHost | None] = ContextVar("pysx_route_host", default
 
 class Router:
     def __init__(
-        self, routes: Sequence[Route], *, initial: str | None = None, base_path: str | None = None
+        self,
+        routes: Sequence[Route],
+        *,
+        initial: str | None = None,
+        base_path: str | None = None,
+        scroll_container: DomRef | None = None,
     ) -> None:
         host = route_host.get()
+
+        if scroll_container is not None:
+            scroll_container.scroll_container = True
+        self.scroll_container = scroll_container
         base = Location.parse(
             base_path if base_path is not None else (host.base_path or "/" if host else "/")
         )
@@ -362,6 +373,9 @@ def Link(  # noqa: N802 - public component constructor
     if href is None:
         raise TypeError("Link requires href")
     supplied = attrs.get("on_click")
+
+    if isinstance(supplied, DisconnectFor):
+        raise TypeError("Link navigates over the transport a local action interrupts")
     policy = supplied if isinstance(supplied, EventHandler) else on_event(lambda _event: None)
     callback = supplied.callback if isinstance(supplied, EventHandler) else supplied
 

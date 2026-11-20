@@ -62,6 +62,7 @@ from pysx.components.lifecycle import Scopes, active_scope
 from pysx.components.schema import BOOLEAN_ATTRS, NATIVE_TAGS, normalize_attr
 from pysx.development import tracing as _tracing
 from pysx.reactive.reactive import Effect, Readable, Signal, derived, untracked
+from pysx.runtime.browser import DisconnectFor, LocalFlag, LocalText, behavior_payload
 from pysx.runtime.dom import DomController, DomError, DomRef, dom_context
 from pysx.runtime.events import EventHandler
 from pysx.runtime.forms import Binding, make_binding
@@ -1339,6 +1340,16 @@ class _Emitter:
             return self.list_slot(
                 hole, cast("Each[object]", value), static=static, root_classes=root_classes
             )
+
+        if isinstance(value, LocalText):
+            encoded = _htmlmod.escape(
+                json.dumps(value.payload(), separators=(",", ":")), quote=True
+            )
+
+            return (
+                f'<pysx-local data-pysx-local="{encoded}">'
+                f"{_htmlmod.escape(value.default)}</pysx-local>"
+            )
         slot = f"{self.prefix}{hole.index}"
         text = str(_seed_read(value))
 
@@ -1970,6 +1981,8 @@ class _Emitter:
             if not static:
                 self.out.watchers.append(style_watcher)
 
+        local_attrs: dict[str, object] = {}
+
         for name, value in el.attrs:
             if name == "variant" and isinstance(found, StyledTag):
                 continue
@@ -2000,6 +2013,17 @@ class _Emitter:
                 continue
 
             raw = self._value(value)
+
+            if name == "behaviors":
+                attrs.append(
+                    " data-pysx-behavior='"
+                    + _htmlmod.escape(
+                        json.dumps(behavior_payload(raw), separators=(",", ":")), quote=True
+                    )
+                    + "'"
+                )
+
+                continue
 
             if name == "ref":
                 if not isinstance(raw, DomRef):
@@ -2037,6 +2061,9 @@ class _Emitter:
                     token = self.out.dom.mount(raw, self.prefix)
                 attrs.append(f' data-pysx-ref="{token}"')
 
+                if raw.scroll_container:
+                    attrs.append(' data-pysx-scroll-container="true"')
+
                 if raw.imperative:
                     if el.children:
                         raise DomError("imperative zones must have no reactive children")
@@ -2047,6 +2074,15 @@ class _Emitter:
             if kind is HoleKind.EVENT:
                 hid = self._handler_id(value.index, mount)
                 event_type = name[2:].lower()
+
+                if isinstance(raw, DisconnectFor):
+                    encoded = _htmlmod.escape(
+                        json.dumps(raw.payload(), separators=(",", ":")), quote=True
+                    )
+                    attrs.append(f' data-pysx-local-{event_type}="{encoded}"')
+                    attrs.append(f' data-pysx-local-event="{event_type}"')
+
+                    continue
 
                 if isinstance(raw, EventHandler):
                     policy = raw.policy(event_type)
@@ -2113,6 +2149,13 @@ class _Emitter:
                     self.out.watchers.append(BindingWatcher(binding, current))
 
             else:  # ATTR
+                if isinstance(raw, LocalFlag):
+                    local_attrs[name] = raw.payload()
+
+                    if raw.negate:
+                        attrs.append(f" {name}")
+
+                    continue
                 text = _seed_class(raw) if name == "class" else _seed_attr(raw, name)
 
                 if name == "value":
@@ -2156,6 +2199,10 @@ class _Emitter:
 
         if class_attr:
             attrs.insert(0, f' class="{_htmlmod.escape(class_attr, quote=True)}"')
+
+        if local_attrs:
+            encoded = _htmlmod.escape(json.dumps(local_attrs, separators=(",", ":")), quote=True)
+            attrs.append(f' data-pysx-local-attrs="{encoded}"')
 
         if element_id:
             attrs.append(f' data-pysx-el="{_htmlmod.escape(element_id, quote=True)}"')

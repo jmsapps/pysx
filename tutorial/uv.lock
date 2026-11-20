@@ -231,7 +231,7 @@ dependencies = [
     { name = "websockets" },
 ]
 wheels = [
-    { filename = "pysx_framework-0.7.0-py3-none-any.whl", hash = "sha256:29d6708564e0be6d63a1fa536e784440ff0545feb2775d840d44824b986e6a3e" },
+    { filename = "pysx_framework-0.7.0-py3-none-any.whl", hash = "sha256:82c3b6a6bfc8ccd71db1bc8d8c14ffec0231c8b4b82cae6c15ea7bce19c43091" },
 ]
 
 [package.optional-dependencies]

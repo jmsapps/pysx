@@ -925,3 +925,25 @@ def test_python_operator_operators_reactive_typing_contracts(
         # Every negative must be rejected for its own contract, never an import failure.
         assert "reportMissingImports" not in output, output
         assert "[import-not-found]" not in output, output
+
+
+@pytest.mark.parametrize("checker", ["mypy", "pyright"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_browser_behaviors_types(tmp_path: Path, checker: str, valid: bool) -> None:
+    source = ROOT / "tests/typing" / f"browser_behaviors_{'valid' if valid else 'invalid'}.txt"
+    fixture = tmp_path / "browser_behaviors.py"
+    fixture.write_text(source.read_text())
+    args = [sys.executable, "-m", checker]
+
+    if checker == "mypy":
+        args.append("--strict")
+    result = subprocess.run(
+        [*args, str(fixture)], cwd=ROOT, capture_output=True, text=True, timeout=120, check=False
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == (0 if valid else 1), output
+
+    if not valid:
+        assert reports(output, f"{fixture}:3:"), output
+        assert reports(output, f"{fixture}:4:"), output
+        assert ("[arg-type]" if checker == "mypy" else "reportArgumentType") in output, output

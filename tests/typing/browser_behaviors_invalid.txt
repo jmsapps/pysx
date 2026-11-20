@@ -1,0 +1,4 @@
+from pysx import Reveal, native
+
+native.Div("card", behaviors="reveal")
+native.Button("Disconnect", on_click=Reveal())

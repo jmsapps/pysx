@@ -65,6 +65,12 @@ from .rendering.render import (
     when,
 )
 from .runtime.async_runtime import push
+from .runtime.browser import (
+    BrowserBehaviorError,
+    DisconnectFor,
+    Reveal,
+    browser,
+)
 from .runtime.dom import Dom, DomError, DomListener, DomNode, DomRef, Rect
 from .runtime.durable import DurableSession
 from .runtime.events import BrowserEvent, EventHandler, on_event
@@ -101,10 +107,12 @@ __all__ = [
     "Application",
     "AuthenticatedIdentity",
     "Binding",
+    "BrowserBehaviorError",
     "BrowserEvent",
     "Children",
     "Component",
     "Deferred",
+    "DisconnectFor",
     "Document",
     "Dom",
     "DomError",
@@ -135,6 +143,7 @@ __all__ = [
     "RequestEvent",
     "Resource",
     "ResourceState",
+    "Reveal",
     "Route",
     "RouteResponse",
     "RouteState",
@@ -161,6 +170,7 @@ __all__ = [
     "batch",
     "bounded_while",
     "br",
+    "browser",
     "button",
     "concat",
     "contains",

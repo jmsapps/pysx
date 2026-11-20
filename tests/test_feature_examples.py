@@ -23,6 +23,7 @@ from examples.reactive_state import app
 from examples.reconnect import app as reconnect_app
 from examples.recovery import app as recovery_app
 from examples.resources import app as resources_app
+from examples.reveal import SECTIONS
 from examples.session_security import app as security_app
 from examples.templates import app as templates_app
 from examples.themes import app as themes_app
@@ -1361,3 +1362,21 @@ def test_examples_share_one_favicon_asset() -> None:
         application = getattr(importlib.import_module(module_name), attribute)
         assert application.assets["/favicon.ico"] is asset
         assert "/client.js" in application.assets
+
+
+def test_browser_behaviors_reveal_example_declares_everything_in_python() -> None:
+    from examples.reveal import app as reveal_app
+
+    async def exercise() -> None:
+        runtime = HTTPRuntime(reveal_app)
+        initial = runtime.render(RequestContext(), "reveal")
+        body = initial.body.decode()
+        assert body.count("data-pysx-behavior=") == len(SECTIONS)
+        assert "data-pysx-local-click=" in body
+        assert "data-pysx-local-attrs=" in body
+        assert ">Connecting…</pysx-local>" in body
+        scripts = [line for line in body.split("<script")[1:] if "/client.js" not in line[:60]]
+        assert not scripts, "the example carries no application JavaScript"
+        runtime.close()
+
+    asyncio.run(exercise())

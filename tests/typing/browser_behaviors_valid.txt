@@ -1,0 +1,27 @@
+from typing import assert_type
+
+from pysx import DisconnectFor, Fragment, Reveal, browser, native
+
+connection = browser.connection()
+
+
+def app() -> Fragment:
+    return native.Div(
+        native.P(
+            connection.text(
+                connected="Connected",
+                reconnecting="Reconnecting",
+                default="Connecting",
+            )
+        ),
+        native.Button(
+            "Disconnect",
+            disabled=connection.not_connected,
+            on_click=DisconnectFor(seconds=5),
+        ),
+        behaviors=Reveal(visible_class="is-visible"),
+    )
+
+
+assert_type(Reveal().once, bool)
+assert_type(DisconnectFor(seconds=1).seconds, float)
