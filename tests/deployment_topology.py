@@ -52,6 +52,11 @@ class Deployment:
             "PYSX_TLS_CERT": str(directory / "cert.pem"),
             "PYSX_TLS_KEY": str(directory / "key.pem"),
         }
+        self.overlays = (
+            (str(ROOT / "tests/deploy_trace.yaml"),)
+            if os.environ.get("PYSX_TRACE_RESUME") == "1"
+            else ()
+        )
 
     def command(self, *arguments: str, timeout: float = 60) -> str:
         result = subprocess.run(
@@ -62,6 +67,7 @@ class Deployment:
                 self.project,
                 "-f",
                 str(ROOT / "deploy/compose.yaml"),
+                *(argument for overlay in self.overlays for argument in ("-f", overlay)),
                 *arguments,
             ],
             cwd=ROOT,

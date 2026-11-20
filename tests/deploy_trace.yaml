@@ -1,0 +1,7 @@
+services:
+  worker-a:
+    environment:
+      PYSX_TRACE_RESUME: "${PYSX_TRACE_RESUME:-}"
+  worker-b:
+    environment:
+      PYSX_TRACE_RESUME: "${PYSX_TRACE_RESUME:-}"
