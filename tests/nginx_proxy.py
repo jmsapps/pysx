@@ -7,7 +7,6 @@ touched, and the generated key material never leaves the test directory.
 from __future__ import annotations
 
 import os
-import shutil
 import socket
 import ssl
 import subprocess
@@ -16,29 +15,31 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from scripts.setup_proxy import nginx_binary, openssl_binary
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
 CONFIGURATION = """
 worker_processes 1;
-pid {prefix}/nginx.pid;
-error_log {prefix}/error.log warn;
+pid "{prefix}/nginx.pid";
+error_log "{prefix}/error.log" warn;
 events {{ worker_connections 64; }}
 http {{
-  access_log {prefix}/access.log;
-  client_body_temp_path {prefix}/body;
-  proxy_temp_path {prefix}/proxy;
-  fastcgi_temp_path {prefix}/fastcgi;
-  uwsgi_temp_path {prefix}/uwsgi;
-  scgi_temp_path {prefix}/scgi;
+  access_log "{prefix}/access.log";
+  client_body_temp_path "{prefix}/body";
+  proxy_temp_path "{prefix}/proxy";
+  fastcgi_temp_path "{prefix}/fastcgi";
+  uwsgi_temp_path "{prefix}/uwsgi";
+  scgi_temp_path "{prefix}/scgi";
   map $http_upgrade $connection_upgrade {{ default upgrade; '' close; }}
 
   server {{
     listen {port} ssl;
     http2 on;
     server_name localhost;
-    ssl_certificate {prefix}/tls.crt;
-    ssl_certificate_key {prefix}/tls.key;
+    ssl_certificate "{prefix}/tls.crt";
+    ssl_certificate_key "{prefix}/tls.key";
 
     location / {{
       # No replacement URI, so the full request path reaches the application and a
@@ -80,7 +81,7 @@ def free_port() -> int:
 
 
 def certificate(prefix: Path) -> None:
-    openssl = shutil.which("openssl")
+    openssl = openssl_binary()
 
     if openssl is None:
         raise RuntimeError("openssl is required to generate disposable TLS material")
@@ -113,7 +114,7 @@ def certificate(prefix: Path) -> None:
 @contextmanager
 def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Generator[int]:
     """Serve HTTPS on a disposable port, forwarding to an already running application."""
-    executable = os.environ.get("PYSX_NGINX") or shutil.which("nginx")
+    executable = nginx_binary()
 
     if executable is None:
         raise RuntimeError("nginx is required for reverse-proxy qualification")
@@ -124,10 +125,11 @@ def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Generator[
     certificate(prefix)
     configuration = prefix / "nginx.conf"
     configuration.write_text(
-        CONFIGURATION.format(prefix=prefix, port=selected, upstream=upstream), encoding="utf-8"
+        CONFIGURATION.format(prefix=prefix.as_posix(), port=selected, upstream=upstream),
+        encoding="utf-8",
     )
     process = subprocess.Popen(
-        [executable, "-p", str(prefix), "-c", str(configuration), "-g", "daemon off;"],
+        [executable, "-p", prefix.as_posix(), "-c", configuration.as_posix(), "-g", "daemon off;"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -152,7 +154,13 @@ def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Generator[
 
         yield selected
     finally:
-        process.terminate()
+        if process.poll() is None:
+            subprocess.run(
+                [executable, "-p", prefix.as_posix(), "-c", configuration.as_posix(), "-s", "quit"],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
 
         try:
             process.wait(timeout=10)

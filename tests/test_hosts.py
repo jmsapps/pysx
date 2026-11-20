@@ -310,7 +310,7 @@ def test_nginx_proxy_serves_the_parent_and_the_mounted_application() -> None:
             "examples.nginx:example",
             environment={"PYSX_ORIGIN": f"https://localhost:{port}"},
         ) as upstream,
-        nginx(Path(directory), upstream, port=port) as proxied,
+        nginx(Path(directory) / "proxy with spaces", upstream, port=port) as proxied,
     ):
         context = disposable_tls_client()
         pages: dict[str, tuple[int, str, str]] = {}

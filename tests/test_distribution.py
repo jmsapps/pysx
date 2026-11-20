@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -435,20 +436,47 @@ def test_client_verify_bundled_client_installs_outside_the_checkout(tmp_path: Pa
                 assert str(ROOT).encode() not in archive.read(name), name
 
 
-def controlled_code(directory: Path, *, exit_code: int = 0, message: str = "") -> Path:
+def controlled_code(
+    directory: Path, *, exit_code: int = 0, message: str = "", windows: bool | None = None
+) -> Path:
     """A stand-in for VSCode's CLI that records exactly how it was invoked."""
     record = directory / "invocation.json"
-    shim = directory / ("code.cmd" if os.name == "nt" else "code")
-    shim.write_text(
-        "#!/usr/bin/env python3\n"
+    windows = os.name == "nt" if windows is None else windows
+    shim = directory / ("code.cmd" if windows else "code")
+    program = directory / "code.py"
+    program.write_text(
         "import json, sys\n"
         f"open({str(record)!r}, 'w').write(json.dumps(sys.argv[1:]))\n"
         f"print({message!r})\n"
         f"sys.exit({exit_code})\n"
     )
+    shim.write_text(
+        f'@echo off\n"{sys.executable}" "{program}" %*\n'
+        if windows
+        else f'#!/bin/sh\nexec {shlex.quote(sys.executable)} {shlex.quote(str(program))} "$@"\n'
+    )
     shim.chmod(0o755)
 
     return shim
+
+
+def test_vscode_extension_cli_windows_fixture_uses_a_batch_launcher(tmp_path: Path) -> None:
+    shim = controlled_code(tmp_path, windows=True)
+    assert shim.suffix == ".cmd"
+    assert shim.read_text().startswith("@echo off\n")
+    assert f'"{sys.executable}"' in shim.read_text()
+    assert "import json" not in shim.read_text()
+    result = subprocess.run(
+        [sys.executable, str(tmp_path / "code.py"), "--install-extension", "jmsapps.pysx"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads((tmp_path / "invocation.json").read_text()) == [
+        "--install-extension",
+        "jmsapps.pysx",
+    ]
 
 
 def extension_cli(

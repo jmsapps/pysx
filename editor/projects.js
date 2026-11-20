@@ -44,6 +44,8 @@ function stateComponent(namespace) {
 // A readable project name plus a digest of its full path: legible when a user opens
 // `.pysx/`, still distinct when two projects share one configured state root.
 function stateNamespace(root) {
+  root = fs.existsSync(root) ? fs.realpathSync.native(root) : path.resolve(root);
+  if (process.platform === "win32") root = root.replace(/^[A-Z]:/, drive => drive.toLowerCase());
   const digest = crypto.createHash("sha256").update(root).digest("hex").slice(0, 16);
   return `${path.basename(root)}-${digest}`;
 }

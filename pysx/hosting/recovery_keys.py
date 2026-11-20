@@ -340,6 +340,9 @@ def load_keys(directory: Path, *, provision: bool = False) -> KeyRing:
 
 
 def _posix_load(directory: Path, *, provision: bool, initial: KeyRing | None = None) -> KeyRing:
+    if sys.platform == "win32":
+        raise RuntimeError("posix recovery key storage is unavailable on this platform")
+
     if not posix_key_storage():
         raise RuntimeError(
             "recovery keys require POSIX directory descriptors and file ownership; "
