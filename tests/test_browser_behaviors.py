@@ -35,6 +35,11 @@ def test_browser_behaviors_reveal_serializes_its_declared_configuration() -> Non
         ({"visible_class": "two names"}, "single class name"),
         ({"root_margin": "10"}, "px or % unit"),
         ({"root_margin": "widepx"}, "not a number"),
+        ({"root_margin": "NaNpx"}, "finite CSS number"),
+        ({"root_margin": "Infinitypx"}, "finite CSS number"),
+        ({"root_margin": "1e309px"}, "finite CSS number"),
+        ({"root_margin": "1_0px"}, "finite CSS number"),
+        ({"root_margin": "1px\u00a02px"}, "CSS whitespace"),
         ({"root_margin": "0px 0px 0px 0px 0px"}, "one to four"),
         ({"threshold": 1.5}, "between 0 and 1"),
     ],
@@ -55,6 +60,11 @@ def test_browser_behaviors_reveal_descriptors_are_frozen_and_shareable() -> None
         shared.visible_class = "other"  # type: ignore[misc]
     assert shared == Reveal()
     assert hash(shared) == hash(Reveal())
+
+
+@pytest.mark.parametrize("margin", ["+.5px -10%", "1e3px", "0px 0px -10% 0px"])
+def test_browser_behaviors_reveal_accepts_finite_css_numbers(margin: str) -> None:
+    assert Reveal(root_margin=margin).payload()["rootMargin"] == margin
 
 
 def test_browser_behaviors_disconnect_action_bounds_its_duration() -> None:

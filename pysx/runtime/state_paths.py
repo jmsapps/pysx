@@ -10,9 +10,10 @@ tools' own caches.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import os
 import re
-from contextlib import suppress
+from functools import partial
 from pathlib import Path
 
 MARKER = ".pysx"
@@ -48,7 +49,37 @@ def project_root(start: Path | None = None) -> Path:
 
     base = (start or Path.cwd()).absolute()
 
-    return owning(base) or base
+    return owning(base) or (base.parent if base.is_file() else base)
+
+
+def application_source(app: object) -> Path | None:
+    """The defining source owns implicit state, including wrapped callables."""
+    from pysx.compiler.projects import project_root as owning
+
+    target = app
+
+    while isinstance(target, partial):
+        target = target.func
+
+    if inspect.ismethod(target):
+        target = target.__func__
+
+    if not inspect.isfunction(target):
+        target = type(target)
+    target = inspect.unwrap(target)
+
+    try:
+        filename = inspect.getsourcefile(target)
+    except TypeError:
+        return None
+
+    if filename:
+        source = Path(filename).absolute()
+
+        if source.is_file() and owning(source) is not None:
+            return source
+
+    return None
 
 
 def state_root(directory: Path | None = None, *, start: Path | None = None) -> Path:
@@ -104,40 +135,10 @@ class StateConflictError(RuntimeError):
 
 
 def migrate(legacy: Path, destination: Path, *, names: tuple[str, ...]) -> tuple[str, ...]:
-    """Copy implicit legacy defaults forward without changing or destroying anything.
+    """Migrate recovery material through its platform storage owner."""
+    from pysx.hosting.recovery_keys import KEY_FILES, migrate_keys
 
-    The legacy source is retained, an identical destination is a no-op, and differing
-    data at the destination fails with an actionable error instead of being merged.
-    """
+    if names != KEY_FILES:
+        raise ValueError("only recovery-key migration is supported")
 
-    if not legacy.is_dir() or legacy.resolve() == destination.resolve():
-        return ()
-    moved: list[str] = []
-
-    for name in names:
-        source = legacy / name
-
-        if not source.is_file():
-            continue
-        target = destination / name
-
-        if target.is_file():
-            if target.read_bytes() != source.read_bytes():
-                raise StateConflictError(
-                    f"{target} already holds different data than the legacy {source}. "
-                    "Choose one explicitly with HostConfig.state_directory or "
-                    "recovery_key_directory, then remove the other."
-                )
-
-            continue
-        destination.mkdir(parents=True, exist_ok=True)
-        # Publish atomically so an interrupted migration never leaves a partial key.
-        staging = target.with_name(f".{target.name}.incoming")
-        staging.write_bytes(source.read_bytes())
-        staging.replace(target)
-
-        with suppress(OSError):
-            target.chmod(source.stat().st_mode & 0o777)
-        moved.append(name)
-
-    return tuple(moved)
+    return migrate_keys(legacy, destination)

@@ -15,6 +15,8 @@ There is no expression language, no string DSL and no raw-JavaScript escape hatc
 
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast, final
 
@@ -27,6 +29,7 @@ MAX_DISCONNECT_SECONDS = 10
 MAX_CLASS_LENGTH = 128
 MAX_MARGIN_LENGTH = 64
 _MARGIN_UNITS = ("px", "%")
+_CSS_NUMBER = re.compile(r"[+-]?(?:[0-9]*\.[0-9]+|[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
 class BrowserBehaviorError(ValueError):
@@ -48,6 +51,9 @@ def _root_margin(value: str) -> str:
 
     if len(value) > MAX_MARGIN_LENGTH:
         raise BrowserBehaviorError("root_margin is too long")
+
+    if any(character.isspace() and character not in " \t\n\r\f" for character in value):
+        raise BrowserBehaviorError("root_margin requires CSS whitespace")
     parts = value.split()
 
     if not 1 <= len(parts) <= 4:
@@ -62,9 +68,12 @@ def _root_margin(value: str) -> str:
         number = part[: -len(unit)]
 
         try:
-            float(number)
+            numeric = float(number)
         except ValueError:
             raise BrowserBehaviorError(f"root_margin length is not a number: {part!r}") from None
+
+        if not math.isfinite(numeric) or _CSS_NUMBER.fullmatch(number) is None:
+            raise BrowserBehaviorError(f"root_margin length must be a finite CSS number: {part!r}")
 
     return value
 

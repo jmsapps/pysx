@@ -19,10 +19,10 @@ from pysx import (
 TALL = "height: 1200px; border: 1px solid #ccc"
 
 
-def card(label: str) -> Fragment:
+def card(label: str, *, once: bool = True) -> Fragment:
     return pysx(t"""
         div(class="card" id={f"card-{label}"} style={TALL}
-            behaviors={Reveal(visible_class="is-visible")}):
+            behaviors={Reveal(visible_class="is-visible", once=once)}):
             {label}
     """)
 
@@ -81,4 +81,6 @@ def app() -> Fragment:
             div(id="late")
                 if {extra}:
                     {card("late")}
+            {card("pending")}
+            {card("repeat", once=False)}
     """)

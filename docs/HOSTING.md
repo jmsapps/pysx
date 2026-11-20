@@ -144,6 +144,12 @@ the project default:
 | `HostConfig.state_directory`, `--state-dir`, `PYSX_STATE_DIR` | the application state root |
 | *(unset)* | `<project>/.pysx/` |
 
+For hosted recovery state, the project is discovered from the application's defining
+source, including wrapped functions, bound methods and callable instances. Launching
+the same application from an enclosing repository or its application directory uses
+the same default. Callables without a discoverable source project, including installed
+modules without a project marker, fall back to the launch project.
+
 `HostConfig.state_namespace` names the application within that root; it defaults to the
 same portable callable identity used elsewhere, sanitised and digested so it is always a
 single contained directory. It is deliberately separate from `recovery_namespace`, which
@@ -178,7 +184,12 @@ application's analysis exclusions or creating files beside its sources.
 Implicit legacy defaults migrate on first start. Recovery keys are copied, never moved,
 so an interrupted migration leaves the original usable; an identical destination is a
 no-op, and a destination holding different data fails with an actionable error rather
-than being overwritten or merged. A runnable example is in `examples/state.py`.
+than being overwritten or merged. Migration validates the platform's private key storage
+before reading or publishing keys, and concurrent starts retain the same winning ring.
+The previous launch-project and enclosing-project defaults for the same application
+namespace are also checked when correcting the implicit root. An unrelated previous
+launch directory cannot be discovered automatically; select that state root explicitly
+to recover it. A runnable example is in `examples/state.py`.
 
 ### Mounted applications behind a proxy
 

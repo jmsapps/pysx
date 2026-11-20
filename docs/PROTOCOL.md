@@ -154,6 +154,10 @@ first enters the viewport; the client owns the observer, its reconciliation acro
 patches and keyed reordering, and its cleanup. Reduced motion is part of the
 behaviour rather than a separate preference API: a visitor who asks for reduced
 motion is revealed immediately and never observed, so no content flashes hidden.
+Observers remain active during transport loss. DOM reconciliation releases removed
+targets and unused observers; pagehide suspends registrations and a persisted pageshow
+rebuilds them while retaining once-only completion for surviving elements. Observer
+margins must contain finite CSS numbers with `px` or `%` units.
 `Router(scroll_container=ref)` applies the existing navigation scroll policy to a
 nominated panel, falling back to the window when that panel is absent or is not the
 active scrolling surface. No observation costs a server round trip, and there is no

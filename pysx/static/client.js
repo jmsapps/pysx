@@ -829,7 +829,6 @@ function closeSocket(event) {
   clearTransportTimer();
   cancelRouteScroll();
   root.dataset.pysxAttached = "false";
-  detachBehaviors();
   window.dispatchEvent(new CustomEvent("pysx:disconnected"));
   if (stopped) return;
   if (developing && event.code === 4000 && event.reason === "development reload") {
@@ -875,7 +874,8 @@ function reconnect(manual = true) {
 
 attachSocket();
 window.addEventListener("pysx:reconnect", () => reconnect());
-const revealed = new WeakMap();
+const revealed = new Map();
+const completedReveals = new WeakMap();
 const revealObservers = new Map();
 const localEvents = new Set();
 const motionQuery = typeof matchMedia === "function"
@@ -888,13 +888,22 @@ function localConfig(source) {
 
 function revealNow(el, config) {
   el.classList.add(config.visibleClass);
-  if (config.once) releaseReveal(el);
+  if (config.once) {
+    completedReveals.set(el, el.dataset.pysxBehavior);
+    releaseReveal(el);
+  }
 }
 
 function releaseReveal(el) {
   const entry = revealed.get(el);
-  if (entry) entry.observer.unobserve(el);
+  if (!entry) return;
+  entry.group.observer.unobserve(el);
+  entry.group.targets.delete(el);
   revealed.delete(el);
+  if (!entry.group.targets.size) {
+    entry.group.observer.disconnect();
+    revealObservers.delete(entry.group.key);
+  }
 }
 
 function revealEntries(entries) {
@@ -908,27 +917,35 @@ function revealEntries(entries) {
 
 function revealObserver(config) {
   const key = `${config.rootMargin}|${config.threshold}`;
-  let observer = revealObservers.get(key);
-  if (observer === undefined) {
-    observer = new IntersectionObserver(revealEntries,
-      {rootMargin: config.rootMargin, threshold: config.threshold});
-    revealObservers.set(key, observer);
+  let group = revealObservers.get(key);
+  if (group === undefined) {
+    group = {key, targets: new Set(), observer: new IntersectionObserver(revealEntries,
+      {rootMargin: config.rootMargin, threshold: config.threshold})};
+    revealObservers.set(key, group);
   }
-  return observer;
+  return group;
 }
 
 function attachReveal(el, config) {
-  if (motionQuery?.matches) { revealNow(el, config); return; }
+  if (completedReveals.get(el) === el.dataset.pysxBehavior) {
+    el.classList.add(config.visibleClass);
+    return;
+  }
+  if (motionQuery?.matches) { releaseReveal(el); revealNow(el, config); return; }
   const tracked = revealed.get(el);
   if (tracked && tracked.key === el.dataset.pysxBehavior) return;
-  if (tracked) tracked.observer.unobserve(el);
+  if (tracked) releaseReveal(el);
   if (typeof IntersectionObserver !== "function") { revealNow(el, config); return; }
-  const observer = revealObserver(config);
-  revealed.set(el, {config, observer, key: el.dataset.pysxBehavior});
-  observer.observe(el);
+  const group = revealObserver(config);
+  group.targets.add(el);
+  revealed.set(el, {config, group, key: el.dataset.pysxBehavior});
+  group.observer.observe(el);
 }
 
 function attachBehaviors() {
+  for (const [el, entry] of revealed) {
+    if (!root.contains(el) || entry.key !== el.dataset.pysxBehavior) releaseReveal(el);
+  }
   for (const el of root.querySelectorAll("[data-pysx-behavior]")) {
     const declared = localConfig(el.dataset.pysxBehavior);
     if (!Array.isArray(declared)) continue;
@@ -941,17 +958,12 @@ function attachBehaviors() {
 }
 
 function detachBehaviors() {
-  for (const observer of revealObservers.values()) observer.disconnect();
+  for (const group of revealObservers.values()) group.observer.disconnect();
   revealObservers.clear();
+  revealed.clear();
 }
 
-motionQuery?.addEventListener?.("change", event => {
-  if (!event.matches) return;
-  for (const el of root.querySelectorAll("[data-pysx-behavior]")) {
-    const tracked = revealed.get(el);
-    if (tracked) revealNow(el, tracked.config);
-  }
-});
+motionQuery?.addEventListener?.("change", () => attachBehaviors());
 
 function runLocalAction(source) {
   const action = localConfig(source);
@@ -1020,10 +1032,11 @@ window.addEventListener("pagehide", () => {
   stopped = true;
   clearTransportTimer();
   cancelRouteScroll();
+  detachBehaviors();
   socket.close();
 });
 window.addEventListener("pageshow", event => {
-  if (event.persisted) { stopped = false; reconnect(false); }
+  if (event.persisted) { attachBehaviors(); stopped = false; reconnect(false); }
 });
 
 function apply(op) {

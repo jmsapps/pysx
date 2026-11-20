@@ -12,6 +12,20 @@ try {
   const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
+  await page.addInitScript(() => {
+    const NativeObserver = window.IntersectionObserver;
+    window.__revealTargets = new Set();
+    window.IntersectionObserver = class extends NativeObserver {
+      constructor(callback, options) { super(callback, options); this.owned = new Set(); }
+      observe(target) { this.owned.add(target); window.__revealTargets.add(target); super.observe(target); }
+      unobserve(target) { this.owned.delete(target); window.__revealTargets.delete(target); super.unobserve(target); }
+      disconnect() {
+        for (const target of this.owned) window.__revealTargets.delete(target);
+        this.owned.clear();
+        super.disconnect();
+      }
+    };
+  });
   await page.goto(url);
 
   const sources = await page.locator("script").evaluateAll(nodes => nodes.map(el => el.src || el.textContent));
@@ -35,6 +49,13 @@ try {
   console.log("  ok  a once-only reveal survives leaving the viewport again");
 
   await page.locator("#add").click();
+  await page.waitForFunction(() => [...window.__revealTargets].some(el => el.id === "card-late"));
+  await page.locator("#remove").click();
+  await page.waitForFunction(() => document.getElementById("card-late") === null);
+  assert.equal(await page.evaluate(() => [...window.__revealTargets].some(el => el.id === "card-late")), false,
+    "removing an unrevealed card releases its observer registration");
+
+  await page.locator("#add").click();
   await page.waitForSelector("#card-late");
   assert.equal(await revealed(page, "late"), false);
   await page.locator("#card-late").scrollIntoViewIfNeeded();
@@ -52,9 +73,24 @@ try {
   await page.locator("#drop").click();
   await page.waitForFunction(() => document.getElementById("status").textContent !== "Connected");
   assert.equal(await page.locator("#drop").isDisabled(), true);
+  assert.equal(await page.evaluate(() => [...window.__revealTargets].some(el => el.id === "card-pending")), true,
+    "browser-local observations stay active while the transport is down");
   await settled(page);
   assert.ok(Date.now() - beforeDrop >= 900, "the disconnect lasts the declared duration");
   console.log("  ok  a local action drops the transport for its bounded duration and resumes");
+
+  await page.locator("#card-pending").scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => document.getElementById("card-pending").classList.contains("is-visible"));
+  await page.locator("#card-repeat").scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => document.getElementById("card-repeat").classList.contains("is-visible"));
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForFunction(() => !document.getElementById("card-repeat").classList.contains("is-visible"));
+  await page.locator("#drop").click();
+  await page.waitForFunction(() => document.getElementById("status").textContent !== "Connected");
+  await settled(page);
+  await page.locator("#card-repeat").scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => document.getElementById("card-repeat").classList.contains("is-visible"));
+  console.log("  ok  pending and repeating reveals survive reconnect without application JavaScript");
 
   await page.locator("#panel").evaluate(el => el.scrollTo(0, 400));
   await page.locator("#go-next").click();

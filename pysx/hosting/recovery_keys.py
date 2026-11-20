@@ -58,24 +58,78 @@ KEY_FILES = ("recovery.keys",)
 
 
 def managed_key_directory(
-    namespace: str, *, legacy: Path | None = None, directory: Path | None = None
+    namespace: str,
+    *,
+    legacy: Path | None = None,
+    directory: Path | None = None,
+    start: Path | None = None,
 ) -> Path:
     """Recovery keys under the application's own state root, migrating implicit defaults.
 
-    Only the implicit platform default is migrated, and it is copied rather than moved:
-    an interrupted migration leaves the original usable, and a destination that already
-    differs is reported instead of being overwritten.
+    Implicit platform and former project defaults are copied rather than moved. An
+    interrupted migration leaves the original usable, and a destination that differs
+    is reported instead of being overwritten. Explicit resource paths remain authoritative.
     """
-    from pysx.runtime.state_paths import migrate, persistent_path
+    from pysx.runtime.state_paths import ENVIRONMENT, MARKER, PERSISTENT, component, state_root
 
-    destination = persistent_path(namespace, directory=directory) / "recovery"
-    destination.mkdir(parents=True, exist_ok=True)
+    root = state_root(directory, start=start)
+    destination = root / component(namespace) / PERSISTENT / "recovery"
 
-    with suppress(OSError):
-        destination.chmod(0o700)
+    if sys.platform == "win32":
+        _windows_directory(destination, create=True)
+    else:
+        descriptor = _directory(destination, create=True)
+        os.close(descriptor)
+
+    if root.name == MARKER:
+        if sys.platform == "win32":
+            try:
+                with (root / ".gitignore").open("x", encoding="utf-8") as stream:
+                    stream.write("*\n")
+            except FileExistsError:
+                pass
+        else:
+            descriptor = _directory(root, create=False, private=False)
+
+            try:
+                try:
+                    ignore = os.open(
+                        ".gitignore",
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                        0o600,
+                        dir_fd=descriptor,
+                    )
+                except FileExistsError:
+                    pass
+                else:
+                    with os.fdopen(ignore, "w", encoding="utf-8") as stream:
+                        stream.write("*\n")
+            finally:
+                os.close(descriptor)
 
     if legacy is not None:
-        migrate(legacy, destination, names=KEY_FILES)
+        migrate_keys(legacy, destination)
+
+    if directory is None and not os.environ.get(ENVIRONMENT) and start is not None:
+        from pysx.compiler.projects import project_root
+
+        previous_roots = {state_root()}
+        parent = root.parent.parent
+
+        for _ in range(64):
+            owner = project_root(parent)
+
+            if owner is None:
+                break
+            previous_roots.add(owner / MARKER)
+
+            if owner == owner.parent:
+                break
+            parent = owner.parent
+
+        for previous in sorted(previous_roots):
+            if previous != root:
+                migrate_keys(previous / component(namespace) / PERSISTENT / "recovery", destination)
 
     return destination
 
@@ -91,7 +145,7 @@ def posix_key_storage() -> bool:
     )
 
 
-def _directory(path: Path, *, create: bool) -> int:
+def _directory(path: Path, *, create: bool, private: bool = True) -> int:
     """Traverse by directory descriptor: no symlink following or path races."""
 
     if sys.platform == "win32":
@@ -114,7 +168,7 @@ def _directory(path: Path, *, create: bool) -> int:
             descriptor = child
         info = os.fstat(descriptor)
 
-        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        if private and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700):
             raise ValueError("recovery key directory must be private and owned")
 
         return descriptor
@@ -213,7 +267,22 @@ def _windows_reparse(path: Path) -> bool:
         return False
 
 
-def _windows_load(directory: Path, *, provision: bool) -> KeyRing:
+def _windows_directory(directory: Path, *, create: bool) -> None:
+    if not windows_key_storage():
+        raise RuntimeError("recovery keys require DPAPI on this platform")
+
+    if not directory.is_absolute():
+        raise ValueError("recovery key directory must be absolute")
+
+    for parent in (*reversed(directory.parents), directory):
+        if _windows_reparse(parent):
+            raise ValueError("recovery key directory must not traverse a reparse point")
+
+    if create:
+        directory.mkdir(parents=True, exist_ok=True)
+
+
+def _windows_load(directory: Path, *, provision: bool, initial: KeyRing | None = None) -> KeyRing:
     """Provision under the per-user profile, sealed with DPAPI.
 
     `%LOCALAPPDATA%` is already restricted to the account by Windows, so the
@@ -227,15 +296,7 @@ def _windows_load(directory: Path, *, provision: bool) -> KeyRing:
             "recovery keys require DPAPI on this platform; host it with HostConfig(recovery=False)"
         )
 
-    if not directory.is_absolute():
-        raise ValueError("recovery key directory must be absolute")
-
-    for parent in (*reversed(directory.parents), directory):
-        if _windows_reparse(parent):
-            raise ValueError("recovery key directory must not traverse a reparse point")
-
-    if provision:
-        directory.mkdir(parents=True, exist_ok=True)
+    _windows_directory(directory, create=provision)
     key = directory / "recovery.keys"
 
     if _windows_reparse(key):
@@ -251,11 +312,11 @@ def _windows_load(directory: Path, *, provision: bool) -> KeyRing:
 
     if not provision:
         raise FileNotFoundError(key)
-    raw = encode_ring(KeyRing(RootKey(secrets.token_bytes(8), secrets.token_bytes(32))))
+    raw = encode_ring(initial or KeyRing(RootKey(secrets.token_bytes(8), secrets.token_bytes(32))))
     temporary = directory / (".key-" + secrets.token_hex(16))
 
     try:
-        with temporary.open("wb") as stream:
+        with temporary.open("xb") as stream:
             stream.write(_dpapi(raw, protect=True))
             stream.flush()
             os.fsync(stream.fileno())
@@ -275,6 +336,10 @@ def load_keys(directory: Path, *, provision: bool = False) -> KeyRing:
     if sys.platform == "win32":
         return _windows_load(directory, provision=provision)
 
+    return _posix_load(directory, provision=provision)
+
+
+def _posix_load(directory: Path, *, provision: bool, initial: KeyRing | None = None) -> KeyRing:
     if not posix_key_storage():
         raise RuntimeError(
             "recovery keys require POSIX directory descriptors and file ownership; "
@@ -289,7 +354,9 @@ def load_keys(directory: Path, *, provision: bool = False) -> KeyRing:
         except FileNotFoundError:
             if not provision:
                 raise
-        raw = encode_ring(KeyRing(RootKey(secrets.token_bytes(8), secrets.token_bytes(32))))
+        raw = encode_ring(
+            initial or KeyRing(RootKey(secrets.token_bytes(8), secrets.token_bytes(32)))
+        )
         descriptor = os.open(
             temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent
         )
@@ -309,3 +376,37 @@ def load_keys(directory: Path, *, provision: bool = False) -> KeyRing:
         return _read(parent, "recovery.keys")
     finally:
         os.close(parent)
+
+
+def migrate_keys(legacy: Path, destination: Path) -> tuple[str, ...]:
+    """Validate and publish the original ring without replacing a concurrent winner."""
+    from pysx.runtime.state_paths import StateConflictError
+
+    try:
+        original = load_keys(legacy)
+    except FileNotFoundError:
+        return ()
+
+    try:
+        existing = load_keys(destination)
+    except FileNotFoundError:
+        existing = None
+
+    if existing is None:
+        existing = (
+            _windows_load(destination, provision=True, initial=original)
+            if sys.platform == "win32"
+            else _posix_load(destination, provision=True, initial=original)
+        )
+        moved: tuple[str, ...] = KEY_FILES
+    else:
+        moved = ()
+
+    if existing != original:
+        raise StateConflictError(
+            f"{destination / 'recovery.keys'} already holds different data than the legacy "
+            f"{legacy / 'recovery.keys'}. Choose one explicitly with HostConfig.state_directory "
+            "or recovery_key_directory, then remove the other."
+        )
+
+    return moved

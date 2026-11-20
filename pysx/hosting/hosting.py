@@ -393,6 +393,7 @@ class Application:
                 # Keep compiler/checker imports free of the host's crypto startup cost.
                 from pysx.components.composition import portable_identity_for
                 from pysx.runtime.capsule import CapsuleIssuer
+                from pysx.runtime.state_paths import application_source
 
                 from .browser_recovery import BrowserRecovery
                 from .recovery_keys import (
@@ -409,6 +410,7 @@ class Application:
                     self.config.state_namespace or namespace,
                     legacy=default_directory(namespace),
                     directory=self.config.state_directory,
+                    start=application_source(self.app),
                 )
                 self.recovery_issuer = CapsuleIssuer(
                     load_keys(directory, provision=self.config.recovery_key_directory is None)
