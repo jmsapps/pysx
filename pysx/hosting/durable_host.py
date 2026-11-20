@@ -386,7 +386,7 @@ class DurableApplication[T](Application):
                     self.fenced_total += 1
 
                     try:
-                        graph.fence()
+                        graph.fence("ownership-denied")
                     except Exception as error:
                         self.denial_failed(error)
 

@@ -111,6 +111,21 @@ def certificate(prefix: Path) -> None:
     )
 
 
+def _launch_diagnosis(command: list[str], prefix: Path, configuration: Path) -> str:
+    """Separate "nginx cannot resolve this path" from "the fixture never wrote it"."""
+    try:
+        listing = ", ".join(sorted(entry.name for entry in prefix.iterdir()))
+    except OSError as error:
+        listing = f"unreadable: {error}"
+
+    return (
+        f"command: {command}\n"
+        f"prefix: {prefix} (exists={prefix.is_dir()})\n"
+        f"configuration: {configuration} (exists={configuration.is_file()})\n"
+        f"prefix entries: {listing}"
+    )
+
+
 @contextmanager
 def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Generator[int]:
     """Serve HTTPS on a disposable port, forwarding to an already running application."""
@@ -119,8 +134,10 @@ def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Generator[
     if executable is None:
         raise RuntimeError("nginx is required for reverse-proxy qualification")
     selected = port or free_port()
+    prefix.mkdir(parents=True, exist_ok=True)
+    prefix = prefix.resolve()
 
-    for name in ("body", "proxy", "fastcgi", "uwsgi", "scgi"):
+    for name in ("body", "proxy", "fastcgi", "uwsgi", "scgi", "logs"):
         (prefix / name).mkdir(parents=True, exist_ok=True)
     certificate(prefix)
     configuration = prefix / "nginx.conf"
@@ -128,11 +145,16 @@ def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Generator[
         CONFIGURATION.format(prefix=prefix.as_posix(), port=selected, upstream=upstream),
         encoding="utf-8",
     )
-    process = subprocess.Popen(
-        [executable, "-p", prefix.as_posix(), "-c", configuration.as_posix(), "-g", "daemon off;"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    command = [
+        executable,
+        "-p",
+        prefix.as_posix(),
+        "-c",
+        configuration.as_posix(),
+        "-g",
+        "daemon off;",
+    ]
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     try:
         deadline = time.monotonic() + 30
@@ -140,7 +162,8 @@ def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Generator[
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(
-                    f"nginx exited: {(process.stderr.read() if process.stderr else b'').decode()}"
+                    f"nginx exited: {(process.stderr.read() if process.stderr else b'').decode()}\n"
+                    f"{_launch_diagnosis(command, prefix, configuration)}"
                 )
 
             with closing(socket.socket()) as probe:
@@ -156,7 +179,7 @@ def nginx(prefix: Path, upstream: int, *, port: int | None = None) -> Generator[
     finally:
         if process.poll() is None:
             subprocess.run(
-                [executable, "-p", prefix.as_posix(), "-c", configuration.as_posix(), "-s", "quit"],
+                [*command[:5], "-s", "quit"],
                 capture_output=True,
                 timeout=10,
                 check=False,

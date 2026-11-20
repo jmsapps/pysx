@@ -233,6 +233,12 @@ const registry = [
   ] },
 ];
 const CONTAINER_SUITES = new Set(["deployment_fixture", "durable_state_fixture"]);
+const RESUME_TRACED = new Set([
+  "reconnect",
+  "reconnect_timeout_fixture",
+  "durable_state_fixture",
+  "deployment_fixture",
+]);
 // Keyed on what the host can actually run rather than on its name: a Windows
 // container host and a runner with no Docker at all fail these suites for the
 // same reason, and a developer machine with Linux containers runs them.
@@ -428,7 +434,7 @@ try {
       name === "adoption" ?
       ["-m", "tests.prototypes.standalone_host", "--port", String(port)] :
       ["run_example.py", "run", name, "--port", String(port)],
-      ["reconnect", "reconnect_timeout_fixture"].includes(name) ? {PYSX_TRACE_RESUME: "1"} : {}) : null;
+      RESUME_TRACED.has(name) ? {PYSX_TRACE_RESUME: "1"} : {}) : null;
     if (server) {
       const deployment = name === "deployment_fixture" || name === "durable_state_fixture";
       if (deployment) server.cleanupTimeout = 45000;
