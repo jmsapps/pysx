@@ -60,7 +60,21 @@ def get(port: int, path: str = "/") -> bytes:
         return cast("bytes", response.read())
 
 
-def wait_for(check: Callable[[], bool], log: Path, timeout: float = 15) -> None:
+def supervisor_report(port: int) -> str:
+    try:
+        return get(port, "/__pysx_dev__/status").decode()
+    except (OSError, urllib.error.URLError) as error:
+        return f"status unavailable: {error!r}"
+
+
+def wait_for(
+    check: Callable[[], bool],
+    log: Path,
+    timeout: float = 15,
+    *,
+    port: int | None = None,
+    context: str = "",
+) -> None:
     deadline = time.monotonic() + timeout
 
     while time.monotonic() < deadline:
@@ -70,7 +84,17 @@ def wait_for(check: Callable[[], bool], log: Path, timeout: float = 15) -> None:
         except OSError, urllib.error.URLError:
             pass
         time.sleep(0.05)
-    pytest.fail(log.read_text())
+    pytest.fail(
+        "\n".join(
+            part
+            for part in (
+                context,
+                f"supervisor: {supervisor_report(port)}" if port is not None else "",
+                log.read_text(),
+            )
+            if part
+        )
+    )
 
 
 @contextmanager
@@ -175,7 +199,12 @@ def test_installed_serve_dependency_edits_and_failure_isolation(tmp_path: Path) 
             def adopted(before: int = before, expected: bytes = expected) -> bool:
                 return generation(port) > before and expected in get(port)
 
-            wait_for(adopted, log)
+            wait_for(
+                adopted,
+                log,
+                port=port,
+                context=f"pending edit: {filename} -> {expected!r} after generation {before}",
+            )
 
         before = generation(port)
         (tmp_path / "component.py").write_text(
