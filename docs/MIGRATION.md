@@ -65,7 +65,7 @@ status = connection.text(
 Use these values in a `pysx` t-string:
 
 ```text
-section(data-reveal="" behaviors={reveal}):
+section(behaviors={reveal}):
     "Content"
 button(disabled={connection.not_connected} onClick={DisconnectFor(seconds=5)}):
     "Disconnect for 5 seconds"
