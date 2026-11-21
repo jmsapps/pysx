@@ -100,6 +100,10 @@ try {
   await page.waitForFunction(() => document.getElementById("panel").scrollTop > 300);
   console.log("  ok  history navigation restores the nominated panel, not the window");
 
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.waitForFunction(() => document.getElementById("card-repeat").classList.contains("is-visible"));
+  console.log("  ok  changing reduced motion reveals existing cards immediately");
+
   assert.deepEqual(errors, []);
   await page.close();
 

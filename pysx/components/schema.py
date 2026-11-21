@@ -159,7 +159,7 @@ GLOBAL_ATTRS = frozenset(
     ]
 )
 PSEUDO_ATTRS = frozenset(["key", "css", "stylevars", "cssvars", "customattrs"])
-RUNTIME_ATTRS = frozenset(["ref"])
+RUNTIME_ATTRS = frozenset(["ref", "behaviors"])
 BINDING_ATTRS = frozenset(["bindValue", "bindChecked", "bindSelected"])
 EVENT_NAMES = frozenset(
     [

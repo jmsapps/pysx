@@ -38,3 +38,79 @@ adding persistence. The [example guide](../examples/README.md) identifies focuse
 apps for each feature. Use [development hosting](DEVELOPMENT.md) and the
 [language server](LANGUAGE_SERVER.md) while editing. Run deployment checks against
 installed artifacts, then follow the [production runbook](DEPLOYMENT.md).
+
+## Replacing browser scripts
+
+The browser-local APIs introduced in 0.7.1 cover viewport reveals and connection
+controls. Import `Reveal`, `DisconnectFor`, `browser`, `Dom` and `Router` from `pysx`.
+These declarations execute through the framework client without application scripts.
+
+```python
+reveal = Reveal(
+    visible_class="is-visible",
+    root_margin="0px 0px -10% 0px",
+    once=True,
+)
+connection = browser.connection()
+status = connection.text(
+    connected="Connected",
+    reconnecting="Disconnected. Reconnecting…",
+    fresh="Connection: fresh",
+    stopped="Connection: stopped",
+    disconnected="Connection: disconnected",
+    default="Connecting…",
+)
+```
+
+Use these values in a `pysx` t-string:
+
+```text
+section(data-reveal="" behaviors={reveal}):
+    "Content"
+button(disabled={connection.not_connected} onClick={DisconnectFor(seconds=5)}):
+    "Disconnect for 5 seconds"
+p(role="status" aria-live="polite"):
+    {status}
+```
+
+`behaviors` is a runtime directive on native and styled native elements. Rendering
+validates the descriptor and emits `data-pysx-behavior`; do not rename the directive
+to `data-behaviors`. Keep any `data-reveal` selectors, transition rules and stagger
+delays your CSS still uses. `Reveal` adds a class; it does not supply the animation.
+Newly patched elements are observed and removed elements release observations.
+Reduced motion reveals immediately, both on initial load and when the preference
+changes. A once-only reveal stays visible after leaving the viewport.
+
+Connection text and flags remain browser-local while disconnected. They are not
+server Signals. The five state names above are the supported mapping keys; unmapped
+states use `default`. Explicit mappings preserve labels that previously interpolated
+the raw state name. `DisconnectFor` accepts durations greater than zero and at most
+ten seconds. Reinserted controls receive their local bindings during reconciliation.
+
+For a nested lesson panel, create `panel = Dom().ref()`, pass it to
+`Router(routes, scroll_container=panel)`, and attach it with
+`main(ref={panel}): {router.view()}`. See [scroll and focus](ROUTING.md#scroll-and-focus)
+for the responsive overflow policy, fragments and post-patch timing. History positions
+are stored per entry, with a 128-entry document-local bound, rather than per article.
+Reload clears them. Repeated visits to one article can therefore restore different
+positions. Known history positions take precedence over fragment scrolling.
+
+The `browser_behaviors` browser suite covers insertion/removal, keyed reordering,
+offline controls, reconnect, initial and changed reduced motion, and panel history
+restoration in Chromium, Firefox and WebKit. The routing suite covers general
+fragment and history policy. These checks establish framework behavior; an application's
+CSS transitions, breakpoint layout, reset controls and route integration still need
+browser verification. They do not diagnose an application's HTTP rendering failure.
+
+### Theme persistence
+
+`Themes.register`, `select`, `current`, `read` and `clear` manage the live render's
+theme definitions and selection. There is currently no supported Python-facing
+theme API that writes both localStorage and a cookie, restores a missing cookie
+from localStorage, or synchronizes those stores with the initial HTTP theme.
+Explicit durable state and open-document recovery do not provide that browser
+storage contract. See [named themes](STYLING.md#named-themes).
+
+Keep an existing persistence script if those semantics are required. An application
+HTTP endpoint can set a cookie, but a reload-based toggle changes the interaction;
+session-only selection changes persistence. Neither is an automatic equivalent.
