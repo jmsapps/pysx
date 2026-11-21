@@ -3,6 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
+const { analysisRoot, stateNamespace, temporaryPath } = require("./projects.js");
+const setup = require("./setup.js");
 
 const selector = { language: "python", scheme: "file" };
 const canonical = (file) => fs.existsSync(file) ? fs.realpathSync.native(file) : path.resolve(file);
@@ -25,9 +27,12 @@ async function interpreter(document) {
   }
   const configured = vscode.workspace.getConfiguration("python", document.uri).get("defaultInterpreterPath");
   if (configured) candidates.push(configured.replaceAll("${workspaceFolder}", folder?.uri.fsPath ?? ""));
-  for (const item of vscode.workspace.workspaceFolders ?? []) {
-    candidates.push(path.join(item.uri.fsPath, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python"));
-  }
+  const interpreterIn = (directory) => path.join(directory, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  // The document's own project owns its environment; a sibling project's .venv must
+  // never be adopted just because it is listed as a workspace folder.
+  const owning = analysisRoot(vscode, document.uri, document.fileName);
+  if (owning) candidates.push(interpreterIn(owning));
+  for (const item of vscode.workspace.workspaceFolders ?? []) candidates.push(interpreterIn(item.uri.fsPath));
   return candidates.find((item) => item && fs.existsSync(item) && fs.statSync(item).isFile());
 }
 
@@ -54,6 +59,11 @@ function generatedOffsetAt(model, position) {
   if (end < 0) end = model.text.length;
   if (model.text[end - 1] === "\r") end--;
   return Math.min(start + position.character, end);
+}
+
+function generatedPositionAt(model, offset) {
+  const lines = model.text.slice(0, offset).split("\n");
+  return { line: lines.length - 1, character: lines.at(-1).length };
 }
 
 exports.activate = function (context) {
@@ -87,13 +97,11 @@ exports.activate = function (context) {
   }
 
   async function ignoreMirrorDiagnostics(document) {
-    if (!vscode.workspace.getWorkspaceFolder(document.uri)) return;
-    const pylance = vscode.extensions.getExtension("ms-python.vscode-pylance");
-    if (!pylance) return;
-    await pylance.activate();
-    const python = vscode.workspace.getConfiguration("python", document.uri);
-    const ignored = python.get("analysis.ignore", []), pattern = "**/_pysx_revision_*/**";
-    if (!ignored.includes(pattern)) await python.update("analysis.ignore", [...ignored, pattern], vscode.ConfigurationTarget.WorkspaceFolder);
+    // Routed through the shared ownership writer so the exclusion is recorded in the
+    // setup baseline and reversed by restore, rather than written silently.
+    const folder = vscode.workspace.getWorkspaceFolder(document.uri);
+    const root = canonical(analysisRoot(vscode, document.uri, document.fileName));
+    await setup.ownMirrorExclusion(context, { folder, root, pattern: "**/_pysx_revision_*/**" });
   }
 
   function valid(state) {
@@ -176,12 +184,18 @@ exports.activate = function (context) {
       const current = vscode.workspace.textDocuments.find((doc) => canonical(doc.fileName) === filename && managed(doc));
       if (!current || current.version !== buffer.version) return null;
     }
-    const folderRoot = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath ?? path.dirname(document.fileName);
-    const directory = path.join(folderRoot, revision);
+    const folderRoot = analysisRoot(vscode, document.uri, document.fileName);
+    const directory = path.join(
+      temporaryPath(folderRoot, stateNamespace(folderRoot), "editor-worker"), revision);
     fs.mkdirSync(directory, { recursive: true });
     directories.add(directory);
     fs.writeFileSync(path.join(directory, "__init__.py"), "");
-    const state = { root, directory, models, token, ready: false, typeDiagnostics: new Map() };
+    // Replacement coverage is observed, not assumed: the model records whether Ruff was
+    // actually qualified, and the types pass either produced results or it did not.
+    const state = { root, directory, models, token, python, ready: false, typeDiagnostics: new Map(),
+      semanticJob: Promise.resolve(), definitions: new Map(),
+      coverage: { ruff: models.every((item) => !`${item.configuration}`.includes("unqualified")),
+        types: false } };
     for (const model of models) {
       model.target = path.join(directory, model.relative);
       model.original = path.join(folderRoot, path.relative(root, model.filename));
@@ -192,6 +206,8 @@ exports.activate = function (context) {
     try { types = await worker(python, ["-m", "pysx.tooling.editor.types", directory, root], root, undefined, token); }
     catch (error) { await release(state); throw error; }
     if (!types || disposed || pending.get(root) !== token) { await release(state); return null; }
+    state.coverage.types = true;
+
     for (const item of types.generalDiagnostics) {
       const filename = canonical(item.file);
       const list = state.typeDiagnostics.get(filename) ?? [];
@@ -216,6 +232,7 @@ exports.activate = function (context) {
       return null;
     }
     state.ready = true;
+    queueMicrotask(() => { void offerSetup(); });
     output.appendLine(`Snapshot ready: ${JSON.stringify({ token, models: models.length, openSources: models.filter((model) => vscode.workspace.textDocuments.some((doc) => managed(doc) && canonical(doc.fileName) === model.filename)).length, canonicalOpenSources: models.filter((model) => vscode.workspace.textDocuments.some((doc) => managed(doc) && canonical(doc.fileName) === canonical(model.filename))).length, diagnostics: models.reduce((count, model) => count + model.diagnostics.length, 0) })}`);
     await release(existing);
     if (!valid(state)) return null;
@@ -226,10 +243,11 @@ exports.activate = function (context) {
     return state;
   }
 
-  async function refresh(document) {
+  async function refresh(document, force = false) {
     if (!managed(document)) return null;
-    const root = canonical(vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath ?? path.dirname(document.fileName));
+    const root = canonical(analysisRoot(vscode, document.uri, document.fileName));
     const existing = states.get(root);
+    if (force && existing) existing.ready = false;
     if (valid(existing)) {
       const model = existing.models.find((item) => item.filename === canonical(document.fileName));
       const entry = model && entries.get(canonical(model.target));
@@ -243,7 +261,7 @@ exports.activate = function (context) {
     }
     const key = digest(JSON.stringify(buffers));
     const previous = inflight.get(root);
-    if (previous?.key === key) return previous.promise;
+    if (!force && previous?.key === key) return previous.promise;
     const token = ++sequence;
     pending.set(root, token);
     if (previous?.child) stop(previous.child);
@@ -264,6 +282,21 @@ exports.activate = function (context) {
     const site = model.sites.find((item) => item.start <= offset && offset <= item.end);
     if (!site) return null;
     const entry = entries.get(canonical(model.target));
+    if (command === "vscode.executeDefinitionProvider") {
+      const generated = site.generated + offset - site.start;
+      const key = model.target + ":" + generated;
+      if (!state.definitions.has(key)) {
+        state.definitions.set(key, semantic(state, model, generated, "definition").catch((error) => {
+          state.definitions.delete(key);
+          throw error;
+        }));
+      }
+      const locations = await state.definitions.get(key);
+      const result = locations?.map((item) => new vscode.Location(vscode.Uri.file(item.file),
+        new vscode.Range(item.range.start.line, item.range.start.character,
+          item.range.end.line, item.range.end.character)));
+      return valid(state) ? { state, model, site, entry, result } : null;
+    }
     if (command === "vscode.executeReferenceProvider") await openAllMirrors(state);
     entry.document ??= await vscode.workspace.openTextDocument(model.target);
     if (!valid(state)) return null;
@@ -306,6 +339,16 @@ exports.activate = function (context) {
       const entry = entries.get(canonical(model.target));
       entry.document ??= await vscode.workspace.openTextDocument(model.target);
     }
+  }
+
+  function semantic(state, model, offset, operation, newName) {
+    const job = state.semanticJob.then(() => valid(state) ? worker(state.python,
+      ["-m", "pysx.tooling.editor.semantic", state.directory, state.root, operation],
+      state.root, JSON.stringify({ file: model.target,
+        position: generatedPositionAt(model, offset), newName }), state.token) : null);
+    // A failed request must not prevent a later operation on the same snapshot.
+    state.semanticJob = job.catch(() => {});
+    return job;
   }
   for (const [register, method, command] of [
     ["registerDefinitionProvider", "provideDefinition", "vscode.executeDefinitionProvider"],
@@ -353,13 +396,13 @@ exports.activate = function (context) {
     if (generatedOffset < 0) return false;
     newName ??= await vscode.window.showInputBox({ prompt: "Rename Python symbol and matching markup", validateInput: (value) => /^[A-Za-z_]\w*$/.test(value) ? null : "Enter a Python identifier" });
     if (!newName) return false;
-    const entry = entries.get(canonical(model.target));
-    await openAllMirrors(state);
-    if (!valid(state)) return false;
-    const backend = await vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", entry.document.uri, entry.document.positionAt(generatedOffset), newName);
+    // Pylance can inspect an open hidden mirror without tracking it for workspace
+    // rename. Analyse this immutable snapshot as its own project instead.
+    const backend = await semantic(state, model, generatedOffset, "rename", newName);
     if (!backend || !valid(state)) return false;
     const edit = new vscode.WorkspaceEdit(), seen = new Set(), ranges = new Map();
-    for (const [uri, changes] of backend.entries()) {
+    for (const { file, edits: changes } of backend) {
+      const uri = vscode.Uri.file(file);
       const target = entries.get(canonical(uri.fsPath));
       if (!target || target.state !== state) return false;
       const source = await sourceDocument(target.model);
@@ -399,72 +442,48 @@ exports.activate = function (context) {
     },
   }, { providedCodeActionKinds: [vscode.CodeActionKind.Source.append("organizeImports.pysx")] }));
 
-  context.subscriptions.push(vscode.commands.registerCommand("pysx.configureTooling", async () => {
-    const fail = (message) => {
-      output.appendLine(message);
-      output.show(true);
-      void vscode.window.showWarningMessage(message);
-      return false;
-    };
-    try {
-    const doc = vscode.window.activeTextEditor?.document;
-    if (!managed(doc)) return fail("pysx: Open a Python file in your workspace before configuring template-aware imports.");
-    if (!vscode.workspace.getWorkspaceFolder(doc.uri)) return fail("pysx: Open this Python file in a workspace folder before configuring template-aware imports.");
-    output.appendLine(`Configuring template-aware imports for ${doc.fileName}; waiting for workspace analysis.`);
-    output.show(true);
-    const state = await refresh(doc);
-    if (!state || !valid(state)) return fail("pysx: Workspace analysis was interrupted or changed. Wait for analysis to finish, then run Configure Template-Aware Imports again.");
-    const model = state.models.find((item) => item.filename === canonical(doc.fileName));
-    if (!model) return fail("pysx: The active file was not included in workspace analysis. Open a maintained Python source file and try again.");
-    if (!model.complete) {
-      for (const diagnostic of model.diagnostics) output.appendLine(diagnostic.message);
-      return fail("pysx: The active file could not be completely analyzed. Resolve its pysx diagnostics before configuring template-aware imports.");
-    }
-    const pythonPath = await interpreter(doc);
-    const configuration = await worker(pythonPath, ["-m", "pysx.tooling.editor.config", state.root], state.root, undefined, state.token);
-    if (!valid(state)) return fail("pysx: Workspace changed during setup. Run Configure Template-Aware Imports again.");
-    if (configuration) {
-      const configDoc = await vscode.workspace.openTextDocument(configuration.filename);
-      if (configDoc.isDirty || configDoc.getText() !== configuration.source) return fail("pysx: Save the Pyright configuration before configuring template-aware imports.");
-      const edit = new vscode.WorkspaceEdit();
-      edit.replace(configDoc.uri, new vscode.Range(configDoc.positionAt(0), configDoc.positionAt(configDoc.getText().length)), configuration.text);
-      if (!await vscode.workspace.applyEdit(edit) || !await configDoc.save()) return fail("pysx: Could not save the project Pyright configuration. Setup is incomplete.");
-      output.appendLine(`Updated effective Pyright settings in ${configuration.filename}.`);
-    }
-    await vscode.extensions.getExtension("ms-python.vscode-pylance")?.activate();
-    const target = vscode.ConfigurationTarget.WorkspaceFolder;
-    const python = vscode.workspace.getConfiguration("python", doc.uri);
-    const severity = python.get("analysis.diagnosticSeverityOverrides", {});
-    await python.update("analysis.ignore", [...new Set([...python.get("analysis.ignore", []), "**/_pysx_revision_*/**"])], target);
-    await python.update("analysis.diagnosticSeverityOverrides", { ...severity, reportUnusedImport: "none", reportUnusedVariable: "none", reportUnusedFunction: "none" }, target);
-    await python.update("analysis.disableTaggedHints", true, target);
-    await python.update("analysis.fixAll", python.get("analysis.fixAll", []).filter((kind) => kind !== "source.unusedImports"), target);
-    const editor = vscode.workspace.getConfiguration("editor", doc.uri);
-    const actions = editor.get("codeActionsOnSave", {});
-    await editor.update("codeActionsOnSave", {
-      ...actions,
-      "source.fixAll": "never", "source.fixAll.pylance": "never", "source.fixAll.ruff": "never",
-      "source.organizeImports": "never", "source.organizeImports.ruff": "never", "source.unusedImports": "never",
-      "source.organizeImports.pysx": "explicit",
-    }, target);
-    const ruffExtension = vscode.extensions.getExtension("charliermarsh.ruff");
-    if (ruffExtension) {
-      await ruffExtension.activate();
-      const ruff = vscode.workspace.getConfiguration("ruff", doc.uri);
-      await ruff.update("lint.ignore", [...new Set([...(ruff.get("lint.ignore") ?? []), "F401", "F811", "F821", "F823", "F841", "N802", "N806", "TC"])], target);
-    }
-    const message = "pysx: Template-aware imports configured for this workspace folder.";
-    output.appendLine(message);
-    void vscode.window.showInformationMessage(message);
-    return true;
-    } catch (error) {
-      return fail(`pysx: Could not configure template-aware imports: ${error.message ?? String(error)}`);
-    }
-  }));
+  // Setup policy is owned by the shared controller and the Python planner; this adapter
+  // only reports what the worker currently knows about the active document.
+  const setupAdapter = {
+    async resolve() {
+        const doc = vscode.window.activeTextEditor?.document;
+        if (!managed(doc)) {
+          return { error: "pysx: Open a Python file in your workspace before running this command." };
+        }
+        const folder = vscode.workspace.getWorkspaceFolder(doc.uri);
+        if (!folder) {
+          return { error: "pysx: Open this Python file in a workspace folder before running this command." };
+        }
+        const python = await interpreter(doc);
+        if (!python) return { error: "pysx: No Python interpreter is selected for this file." };
+        const state = await refresh(doc);
+        const root = canonical(analysisRoot(vscode, doc.uri, doc.fileName));
+        if (!state || !valid(state)) {
+          return { folder, python, readiness: { ready: false, root,
+            error: "workspace analysis was interrupted or changed" } };
+        }
+        const model = state.models.find((item) => item.filename === canonical(doc.fileName));
+        if (!model || !model.complete) {
+          for (const diagnostic of model?.diagnostics ?? []) output.appendLine(diagnostic.message);
+          return { folder, python, readiness: { ready: false, root,
+            error: "the active file could not be completely analyzed" } };
+        }
+        // Replacement coverage is what the worker actually produced for this snapshot,
+        // not an assumption that the tools are installed.
+        return {
+          document: doc, folder, python,
+          readiness: { ready: true, root, coverage: state.coverage },
+        };
+      },
+  };
+  const setupController = setup.register(context, { output, adapter: setupAdapter });
+  const offerSetup = () => setup.offer(context,
+    { output, adapter: setupAdapter, controller: setupController })
+    .catch((error) => output.appendLine(`pysx: setup offer failed: ${error.message ?? error}`));
 
   const run = (doc) => {
     if (!managed(doc)) return;
-    const root = canonical(vscode.workspace.getWorkspaceFolder(doc.uri)?.uri.fsPath ?? path.dirname(doc.fileName));
+    const root = canonical(analysisRoot(vscode, doc.uri, doc.fileName));
     clearTimeout(timers.get(root));
     for (const item of vscode.workspace.textDocuments) {
       if (managed(item) && canonical(item.fileName).startsWith(root + path.sep)) collection.delete(item.uri);
@@ -480,7 +499,7 @@ exports.activate = function (context) {
     if (generated(uri.fsPath)) return;
     const folder = vscode.workspace.getWorkspaceFolder(uri);
     if (!folder) return;
-    const root = canonical(folder.uri.fsPath), state = states.get(root);
+    const root = canonical(analysisRoot(vscode, uri, uri.fsPath)), state = states.get(root);
     const job = inflight.get(root);
     if (job) {
       pending.set(root, ++sequence);
@@ -492,7 +511,7 @@ exports.activate = function (context) {
     if (doc) run(doc);
   };
   context.subscriptions.push(
-    vscode.commands.registerCommand("pysx.refresh", () => refresh(vscode.window.activeTextEditor?.document)),
+    vscode.commands.registerCommand("pysx.refresh", () => refresh(vscode.window.activeTextEditor?.document, true)),
     vscode.workspace.onDidOpenTextDocument(run),
     vscode.workspace.onDidSaveTextDocument(run),
     vscode.workspace.onDidChangeTextDocument((event) => run(event.document)),

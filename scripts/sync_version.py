@@ -39,6 +39,13 @@ def updates(root: Path, version: str) -> dict[Path, str]:
             lambda match: f"{match[1]}{version}",
             source,
         )
+        # Released artifacts link to their own tag, so these must move with the version
+        # rather than leaving a published description pointing at an older release.
+        source = re.sub(
+            r"(github\.com/jmsapps/pysx/blob/v)\d+\.\d+\.\d+",
+            lambda match: f"{match[1]}{version}",
+            source,
+        )
 
         if source != original:
             result[path] = source

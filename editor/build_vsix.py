@@ -49,6 +49,7 @@ STAGED = ((ROOT / "LICENSE", HERE / "LICENSE"),)
 @contextmanager
 def staged() -> Generator[None]:
     written: list[Path] = []
+
     try:
         for source, destination in STAGED:
             # An interrupted build leaves its own copy behind; anything else

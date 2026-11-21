@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from pysx.tooling.analysis import projection_for_source, utf16_offsets
-from pysx.tooling.editor.model import workspace_model
+from pysx.tooling.editor.model import MAX_FILES, Model, workspace_model
 from pysx.tooling.editor.types import diagnostics
 
 
@@ -297,7 +297,10 @@ def test_editor_model_rejects_ambiguous_layout_and_revision_conflicts(tmp_path: 
         workspace_model(request)
 
 
-def test_editor_owned_types_check_snapshot_and_clean_configuration(tmp_path: Path) -> None:
+@pytest.mark.parametrize("managed", [False, True])
+def test_editor_owned_types_check_snapshot_and_clean_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, managed: bool
+) -> None:
     producer = tmp_path / "producer.py"
     producer.write_text(
         "raise RuntimeError('never import original applications')\n", encoding="utf-8"
@@ -318,8 +321,13 @@ def test_editor_owned_types_check_snapshot_and_clean_configuration(tmp_path: Pat
             "buffers": {str(producer): {"source": typed, "version": 2}},
         }
     )
-    directory = tmp_path / revision
-    directory.mkdir()
+    monkeypatch.setenv("PYSX_STATE_DIR", str(tmp_path / ".pysx"))
+    directory = (
+        tmp_path / ".pysx" / "app" / "temporary" / "editor-worker" / revision
+        if managed
+        else tmp_path / revision
+    )
+    directory.mkdir(parents=True)
     (directory / "__init__.py").write_text("", encoding="utf-8")
 
     for model in models:
@@ -329,5 +337,91 @@ def test_editor_owned_types_check_snapshot_and_clean_configuration(tmp_path: Pat
     result = diagnostics(directory, tmp_path)
     assert "reportArgumentType" in str(result["generalDiagnostics"])
     assert "title" in str(result["generalDiagnostics"])
-    assert not (tmp_path / f"{revision}.json").exists()
+    assert not (directory.parent / f"{revision}.json").exists()
     assert "raise RuntimeError" in producer.read_text(encoding="utf-8")
+
+
+def test_nested_project_model_matches_the_application_root(tmp_path: Path) -> None:
+    """A repository root and the application root project the same nested source."""
+    from test_compiler import nested_application
+
+    view = nested_application(tmp_path)
+    web = tmp_path / "apps" / "web"
+
+    def projected(root: Path) -> str:
+        models = workspace_model(
+            {
+                "root": str(root),
+                "revision": "_pysx_revision_nested",
+                "buffers": {},
+                "selected": [str(view)],
+                "lint": False,
+            }
+        )
+        assert len(models) == 1
+
+        return models[0]["text"]
+
+    assert "_native.Button" in projected(web)
+    assert projected(web) == projected(tmp_path)
+
+
+def test_nested_project_bounds_apply_per_project(tmp_path: Path) -> None:
+    """Unrelated outer sources never consume the nested application's analysis limits."""
+    from test_compiler import nested_application
+
+    view = nested_application(tmp_path)
+    web = tmp_path / "apps" / "web"
+    bulk = tmp_path / "unrelated"
+    bulk.mkdir()
+
+    for index in range(MAX_FILES + 8):
+        (bulk / f"module_{index}.py").write_text("value = 1\n")
+    models = workspace_model(
+        {
+            "root": str(web),
+            "revision": "_pysx_revision_bounded",
+            "buffers": {},
+            "selected": [str(view)],
+            "lint": False,
+        }
+    )
+    assert len(models) == 1
+
+    with pytest.raises(ValueError, match="between 1 and 512"):
+        workspace_model(
+            {
+                "root": str(tmp_path),
+                "revision": "_pysx_revision_bounded",
+                "buffers": {},
+                "selected": [str(view)],
+                "lint": False,
+            }
+        )
+
+
+def test_direct_constant_model_is_identical_under_both_roots(tmp_path: Path) -> None:
+    """The reported constant site must project the same way from either workspace root."""
+    from test_compiler import constant_application
+
+    view = constant_application(tmp_path)
+    web = tmp_path / "apps" / "web"
+
+    def projected(root: Path) -> Model:
+        models = workspace_model(
+            {
+                "root": str(root),
+                "revision": "_pysx_revision_constant",
+                "buffers": {},
+                "selected": [str(view)],
+                "lint": False,
+            }
+        )
+        assert len(models) == 1
+
+        return models[0]
+
+    outer, inner = projected(tmp_path), projected(web)
+    assert outer["text"] == inner["text"]
+    assert "PYSX_BASE_PATH" in outer["text"]
+    assert not [item for item in outer["diagnostics"] if "PYSX_BASE_PATH" in item["message"]]

@@ -12,6 +12,21 @@ const deferred = () => {
   return {promise, resolve};
 };
 
+test("managed state namespaces canonicalize Windows drive and short-path aliases", () => {
+  const module = {exports: {}};
+  const canonical = "D:\\work\\application";
+  const aliases = ["d:\\work\\application", "D:\\WORK\\APPLICATION", "D:\\work\\APPLIC~1"];
+  const fsMock = {existsSync: () => true, realpathSync: {native: file =>
+    aliases.includes(file) ? (file.startsWith("d:") ? canonical.replace("D:", "d:") : canonical) : file}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../projects.js"), "utf8"), {
+    module, process: {platform: "win32"}, require: name => name === "node:fs" ? fsMock :
+      name === "node:path" ? path.win32 : require(name),
+  });
+  const results = aliases.map(module.exports.stateNamespace);
+  assert.equal(new Set(results).size, 1);
+  assert.notEqual(results[0], module.exports.stateNamespace("D:\\work\\different"));
+});
+
 for (const detached of [false, true]) {
   for (const notification of ["configuration", "environment"]) {
     for (const unavailable of [false, true]) {

@@ -54,23 +54,41 @@ const SOURCE = [
 
 exports.run = async function () {
   const started = Date.now();
+  const mode = process.env.PYSX_EDITOR_ROUTING_MODE ?? "resident";
   const progress = (label) => console.log(
     `PYSX EDITOR ROUTING: ${label} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
-  progress("configure workspace interpreters");
+  progress(`configure workspace interpreters (${mode})`);
   const extension = vscode.extensions.getExtension("jmsapps.pysx");
   assert(extension, "fresh extension registered");
+
+  // The worker adapter owns no per-folder server lifecycle, so it qualifies only the
+  // nested-project cases; the resident adapter runs both sets in one session.
+  if (mode === "worker") {
+    await vscode.workspace.getConfiguration("pysx")
+      .update("useLanguageServer", false, vscode.ConfigurationTarget.Workspace);
+    await vscode.workspace.getConfiguration("pysx")
+      .update("pythonPath", process.env.PYSX_EDITOR_PYTHON, vscode.ConfigurationTarget.Workspace);
+    await withDeadline(() => extension.activate(), "extension activation");
+    assert(extension.isActive, "actual extension activation");
+    const names = await require("./nested_suite.cjs").run(mode, progress);
+    assert.equal(names.length, 8, `eight worker cases: ${names.join(", ")}`);
+    progress("complete");
+    console.log(`PYSX EDITOR CASES PASSED: 8 (${names.join(", ")})`);
+    return;
+  }
   const python = process.env.PYSX_EDITOR_PYTHON;
   const alternate = process.env.PYSX_EDITOR_ALTERNATE_PYTHON;
   const bare = process.env.PYSX_EDITOR_BARE_PYTHON;
   assert(python && alternate && bare, "three distinct environments supplied to the host");
 
   const roots = vscode.workspace.workspaceFolders;
-  assert.equal(roots.length, 3, "three workspace roots");
+  assert.equal(roots.length, 4, "three environment roots and the repository root");
   const folder = (name) => roots.find((item) => item.name === name);
   const consumer = folder("consumer");
   const secondary = folder("secondary");
   const nested = folder("nested");
-  assert(consumer && secondary && nested, "named roots");
+  const repository = folder("repo");
+  assert(consumer && secondary && nested && repository, "named roots");
 
   const select = (target, value) => vscode.workspace.getConfiguration("pysx", target.uri)
     .update("pythonPath", value, vscode.ConfigurationTarget.WorkspaceFolder);
@@ -80,6 +98,7 @@ exports.run = async function () {
   await select(consumer, python);
   await select(secondary, alternate);
   await select(nested, python);
+  await select(repository, python);
 
   progress("activate extension");
   const api = await withDeadline(() => extension.activate(), "extension activation");
@@ -128,7 +147,9 @@ exports.run = async function () {
 
   progress("verify document ownership");
   await until(async () => {
-    const counts = await Promise.all(roots.map(async (target) =>
+    // The repository root is opened by the nested-project cases below, so only the
+    // three environment folders hold a document at this point.
+    const counts = await Promise.all([consumer, secondary, nested].map(async (target) =>
       (await statusOf(target))?.workspaces[0].openDocuments));
     return counts.every((count) => count === 1) ? counts : null;
   }, "each server holds exactly its own document");
@@ -241,8 +262,11 @@ exports.run = async function () {
     "removing a folder leaves the others running");
 
   await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+  const nestedCases = await require("./nested_suite.cjs").run(mode, progress);
+  assert.equal(nestedCases.length, 9, `nine resident nested-project cases: ${nestedCases.join(", ")}`);
   progress("complete");
-  console.log("PYSX EDITOR CASES PASSED: 8 (per-folder environments, nested ownership, " +
+  console.log("PYSX EDITOR CASES PASSED: 17 (per-folder environments, nested ownership, " +
     "setting change, API selection, coalesced rapid changes, missing-extra recovery, " +
-    "restart re-resolution and removed-folder disposal)");
+    `restart re-resolution, removed-folder disposal, ${nestedCases.join(", ")})`);
 };

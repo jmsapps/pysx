@@ -7,6 +7,7 @@ from typing import TypedDict, Unpack
 
 from pysx.reactive.reactive import Signal
 from pysx.rendering.render import Fragment as RenderFragment
+from pysx.runtime.browser import BehaviorDescriptor, LocalAction, LocalFlag
 from pysx.runtime.dom import DomRef
 from pysx.runtime.events import EventHandler
 
@@ -17,21 +18,21 @@ from .native_support import element
 class GlobalAttrs(TypedDict, total=False):
     accesskey: str | Signal[str] | None
     autocapitalize: str | Signal[str] | None
-    autofocus: bool | Signal[bool] | None
+    autofocus: bool | Signal[bool] | LocalFlag | None
     class_name: str | Signal[str] | None
     contenteditable: str | Signal[str] | None
     dir: str | Signal[str] | None
     draggable: str | Signal[str] | None
     enterkeyhint: str | Signal[str] | None
-    hidden: bool | Signal[bool] | None
+    hidden: bool | Signal[bool] | LocalFlag | None
     id: str | Signal[str] | None
-    inert: bool | Signal[bool] | None
+    inert: bool | Signal[bool] | LocalFlag | None
     inputmode: str | Signal[str] | None
     is_: str | Signal[str] | None
     itemid: str | Signal[str] | None
     itemprop: str | Signal[str] | None
     itemref: str | Signal[str] | None
-    itemscope: bool | Signal[bool] | None
+    itemscope: bool | Signal[bool] | LocalFlag | None
     itemtype: str | Signal[str] | None
     lang: str | Signal[str] | None
     nonce: str | Signal[str] | None
@@ -44,103 +45,104 @@ class GlobalAttrs(TypedDict, total=False):
     tabindex: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     title: str | Signal[str] | None
     translate: str | Signal[str] | None
-    on_abort: Callable[[object], object] | EventHandler
-    on_animationend: Callable[[object], object] | EventHandler
-    on_animationiteration: Callable[[object], object] | EventHandler
-    on_animationstart: Callable[[object], object] | EventHandler
-    on_auxclick: Callable[[object], object] | EventHandler
-    on_beforeinput: Callable[[object], object] | EventHandler
-    on_blur: Callable[[object], object] | EventHandler
-    on_cancel: Callable[[object], object] | EventHandler
-    on_canplay: Callable[[object], object] | EventHandler
-    on_canplaythrough: Callable[[object], object] | EventHandler
-    on_change: Callable[[object], object] | EventHandler
-    on_click: Callable[[object], object] | EventHandler
-    on_close: Callable[[object], object] | EventHandler
-    on_compositionend: Callable[[object], object] | EventHandler
-    on_compositionstart: Callable[[object], object] | EventHandler
-    on_compositionupdate: Callable[[object], object] | EventHandler
-    on_contextmenu: Callable[[object], object] | EventHandler
-    on_copy: Callable[[object], object] | EventHandler
-    on_cuechange: Callable[[object], object] | EventHandler
-    on_cut: Callable[[object], object] | EventHandler
-    on_dblclick: Callable[[object], object] | EventHandler
-    on_drag: Callable[[object], object] | EventHandler
-    on_dragend: Callable[[object], object] | EventHandler
-    on_dragenter: Callable[[object], object] | EventHandler
-    on_dragleave: Callable[[object], object] | EventHandler
-    on_dragover: Callable[[object], object] | EventHandler
-    on_dragstart: Callable[[object], object] | EventHandler
-    on_drop: Callable[[object], object] | EventHandler
-    on_durationchange: Callable[[object], object] | EventHandler
-    on_emptied: Callable[[object], object] | EventHandler
-    on_ended: Callable[[object], object] | EventHandler
-    on_error: Callable[[object], object] | EventHandler
-    on_focus: Callable[[object], object] | EventHandler
-    on_focusin: Callable[[object], object] | EventHandler
-    on_focusout: Callable[[object], object] | EventHandler
-    on_formdata: Callable[[object], object] | EventHandler
-    on_fullscreenchange: Callable[[object], object] | EventHandler
-    on_gotpointercapture: Callable[[object], object] | EventHandler
-    on_input: Callable[[object], object] | EventHandler
-    on_invalid: Callable[[object], object] | EventHandler
-    on_keydown: Callable[[object], object] | EventHandler
-    on_keypress: Callable[[object], object] | EventHandler
-    on_keyup: Callable[[object], object] | EventHandler
-    on_load: Callable[[object], object] | EventHandler
-    on_loadeddata: Callable[[object], object] | EventHandler
-    on_loadedmetadata: Callable[[object], object] | EventHandler
-    on_loadstart: Callable[[object], object] | EventHandler
-    on_lostpointercapture: Callable[[object], object] | EventHandler
-    on_mousedown: Callable[[object], object] | EventHandler
-    on_mouseenter: Callable[[object], object] | EventHandler
-    on_mouseleave: Callable[[object], object] | EventHandler
-    on_mousemove: Callable[[object], object] | EventHandler
-    on_mouseout: Callable[[object], object] | EventHandler
-    on_mouseover: Callable[[object], object] | EventHandler
-    on_mouseup: Callable[[object], object] | EventHandler
-    on_mousewheel: Callable[[object], object] | EventHandler
-    on_paste: Callable[[object], object] | EventHandler
-    on_pause: Callable[[object], object] | EventHandler
-    on_play: Callable[[object], object] | EventHandler
-    on_playing: Callable[[object], object] | EventHandler
-    on_pointercancel: Callable[[object], object] | EventHandler
-    on_pointerdown: Callable[[object], object] | EventHandler
-    on_pointerenter: Callable[[object], object] | EventHandler
-    on_pointerleave: Callable[[object], object] | EventHandler
-    on_pointermove: Callable[[object], object] | EventHandler
-    on_pointerout: Callable[[object], object] | EventHandler
-    on_pointerover: Callable[[object], object] | EventHandler
-    on_pointerup: Callable[[object], object] | EventHandler
-    on_progress: Callable[[object], object] | EventHandler
-    on_ratechange: Callable[[object], object] | EventHandler
-    on_reset: Callable[[object], object] | EventHandler
-    on_resize: Callable[[object], object] | EventHandler
-    on_scroll: Callable[[object], object] | EventHandler
-    on_scrollend: Callable[[object], object] | EventHandler
-    on_securitypolicyviolation: Callable[[object], object] | EventHandler
-    on_seeked: Callable[[object], object] | EventHandler
-    on_seeking: Callable[[object], object] | EventHandler
-    on_select: Callable[[object], object] | EventHandler
-    on_selectionchange: Callable[[object], object] | EventHandler
-    on_selectstart: Callable[[object], object] | EventHandler
-    on_show: Callable[[object], object] | EventHandler
-    on_slotchange: Callable[[object], object] | EventHandler
-    on_stalled: Callable[[object], object] | EventHandler
-    on_submit: Callable[[object], object] | EventHandler
-    on_suspend: Callable[[object], object] | EventHandler
-    on_timeupdate: Callable[[object], object] | EventHandler
-    on_toggle: Callable[[object], object] | EventHandler
-    on_touchcancel: Callable[[object], object] | EventHandler
-    on_touchend: Callable[[object], object] | EventHandler
-    on_touchmove: Callable[[object], object] | EventHandler
-    on_touchstart: Callable[[object], object] | EventHandler
-    on_transitionend: Callable[[object], object] | EventHandler
-    on_volumechange: Callable[[object], object] | EventHandler
-    on_waiting: Callable[[object], object] | EventHandler
-    on_wheel: Callable[[object], object] | EventHandler
+    on_abort: Callable[[object], object] | EventHandler | LocalAction
+    on_animationend: Callable[[object], object] | EventHandler | LocalAction
+    on_animationiteration: Callable[[object], object] | EventHandler | LocalAction
+    on_animationstart: Callable[[object], object] | EventHandler | LocalAction
+    on_auxclick: Callable[[object], object] | EventHandler | LocalAction
+    on_beforeinput: Callable[[object], object] | EventHandler | LocalAction
+    on_blur: Callable[[object], object] | EventHandler | LocalAction
+    on_cancel: Callable[[object], object] | EventHandler | LocalAction
+    on_canplay: Callable[[object], object] | EventHandler | LocalAction
+    on_canplaythrough: Callable[[object], object] | EventHandler | LocalAction
+    on_change: Callable[[object], object] | EventHandler | LocalAction
+    on_click: Callable[[object], object] | EventHandler | LocalAction
+    on_close: Callable[[object], object] | EventHandler | LocalAction
+    on_compositionend: Callable[[object], object] | EventHandler | LocalAction
+    on_compositionstart: Callable[[object], object] | EventHandler | LocalAction
+    on_compositionupdate: Callable[[object], object] | EventHandler | LocalAction
+    on_contextmenu: Callable[[object], object] | EventHandler | LocalAction
+    on_copy: Callable[[object], object] | EventHandler | LocalAction
+    on_cuechange: Callable[[object], object] | EventHandler | LocalAction
+    on_cut: Callable[[object], object] | EventHandler | LocalAction
+    on_dblclick: Callable[[object], object] | EventHandler | LocalAction
+    on_drag: Callable[[object], object] | EventHandler | LocalAction
+    on_dragend: Callable[[object], object] | EventHandler | LocalAction
+    on_dragenter: Callable[[object], object] | EventHandler | LocalAction
+    on_dragleave: Callable[[object], object] | EventHandler | LocalAction
+    on_dragover: Callable[[object], object] | EventHandler | LocalAction
+    on_dragstart: Callable[[object], object] | EventHandler | LocalAction
+    on_drop: Callable[[object], object] | EventHandler | LocalAction
+    on_durationchange: Callable[[object], object] | EventHandler | LocalAction
+    on_emptied: Callable[[object], object] | EventHandler | LocalAction
+    on_ended: Callable[[object], object] | EventHandler | LocalAction
+    on_error: Callable[[object], object] | EventHandler | LocalAction
+    on_focus: Callable[[object], object] | EventHandler | LocalAction
+    on_focusin: Callable[[object], object] | EventHandler | LocalAction
+    on_focusout: Callable[[object], object] | EventHandler | LocalAction
+    on_formdata: Callable[[object], object] | EventHandler | LocalAction
+    on_fullscreenchange: Callable[[object], object] | EventHandler | LocalAction
+    on_gotpointercapture: Callable[[object], object] | EventHandler | LocalAction
+    on_input: Callable[[object], object] | EventHandler | LocalAction
+    on_invalid: Callable[[object], object] | EventHandler | LocalAction
+    on_keydown: Callable[[object], object] | EventHandler | LocalAction
+    on_keypress: Callable[[object], object] | EventHandler | LocalAction
+    on_keyup: Callable[[object], object] | EventHandler | LocalAction
+    on_load: Callable[[object], object] | EventHandler | LocalAction
+    on_loadeddata: Callable[[object], object] | EventHandler | LocalAction
+    on_loadedmetadata: Callable[[object], object] | EventHandler | LocalAction
+    on_loadstart: Callable[[object], object] | EventHandler | LocalAction
+    on_lostpointercapture: Callable[[object], object] | EventHandler | LocalAction
+    on_mousedown: Callable[[object], object] | EventHandler | LocalAction
+    on_mouseenter: Callable[[object], object] | EventHandler | LocalAction
+    on_mouseleave: Callable[[object], object] | EventHandler | LocalAction
+    on_mousemove: Callable[[object], object] | EventHandler | LocalAction
+    on_mouseout: Callable[[object], object] | EventHandler | LocalAction
+    on_mouseover: Callable[[object], object] | EventHandler | LocalAction
+    on_mouseup: Callable[[object], object] | EventHandler | LocalAction
+    on_mousewheel: Callable[[object], object] | EventHandler | LocalAction
+    on_paste: Callable[[object], object] | EventHandler | LocalAction
+    on_pause: Callable[[object], object] | EventHandler | LocalAction
+    on_play: Callable[[object], object] | EventHandler | LocalAction
+    on_playing: Callable[[object], object] | EventHandler | LocalAction
+    on_pointercancel: Callable[[object], object] | EventHandler | LocalAction
+    on_pointerdown: Callable[[object], object] | EventHandler | LocalAction
+    on_pointerenter: Callable[[object], object] | EventHandler | LocalAction
+    on_pointerleave: Callable[[object], object] | EventHandler | LocalAction
+    on_pointermove: Callable[[object], object] | EventHandler | LocalAction
+    on_pointerout: Callable[[object], object] | EventHandler | LocalAction
+    on_pointerover: Callable[[object], object] | EventHandler | LocalAction
+    on_pointerup: Callable[[object], object] | EventHandler | LocalAction
+    on_progress: Callable[[object], object] | EventHandler | LocalAction
+    on_ratechange: Callable[[object], object] | EventHandler | LocalAction
+    on_reset: Callable[[object], object] | EventHandler | LocalAction
+    on_resize: Callable[[object], object] | EventHandler | LocalAction
+    on_scroll: Callable[[object], object] | EventHandler | LocalAction
+    on_scrollend: Callable[[object], object] | EventHandler | LocalAction
+    on_securitypolicyviolation: Callable[[object], object] | EventHandler | LocalAction
+    on_seeked: Callable[[object], object] | EventHandler | LocalAction
+    on_seeking: Callable[[object], object] | EventHandler | LocalAction
+    on_select: Callable[[object], object] | EventHandler | LocalAction
+    on_selectionchange: Callable[[object], object] | EventHandler | LocalAction
+    on_selectstart: Callable[[object], object] | EventHandler | LocalAction
+    on_show: Callable[[object], object] | EventHandler | LocalAction
+    on_slotchange: Callable[[object], object] | EventHandler | LocalAction
+    on_stalled: Callable[[object], object] | EventHandler | LocalAction
+    on_submit: Callable[[object], object] | EventHandler | LocalAction
+    on_suspend: Callable[[object], object] | EventHandler | LocalAction
+    on_timeupdate: Callable[[object], object] | EventHandler | LocalAction
+    on_toggle: Callable[[object], object] | EventHandler | LocalAction
+    on_touchcancel: Callable[[object], object] | EventHandler | LocalAction
+    on_touchend: Callable[[object], object] | EventHandler | LocalAction
+    on_touchmove: Callable[[object], object] | EventHandler | LocalAction
+    on_touchstart: Callable[[object], object] | EventHandler | LocalAction
+    on_transitionend: Callable[[object], object] | EventHandler | LocalAction
+    on_volumechange: Callable[[object], object] | EventHandler | LocalAction
+    on_waiting: Callable[[object], object] | EventHandler | LocalAction
+    on_wheel: Callable[[object], object] | EventHandler | LocalAction
     custom_attrs: Mapping[str, object]
     ref: DomRef
+    behaviors: BehaviorDescriptor | tuple[BehaviorDescriptor, ...] | frozenset[BehaviorDescriptor]
     css: str | StringTemplate | Signal[str]
     style_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]
     css_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]
@@ -212,11 +214,11 @@ def Aside(*children: object, **attrs: Unpack[AsideAttrs]) -> RenderFragment:
 
 
 class AudioAttrs(GlobalAttrs, total=False):
-    autoplay: bool | Signal[bool] | None
-    controls: bool | Signal[bool] | None
+    autoplay: bool | Signal[bool] | LocalFlag | None
+    controls: bool | Signal[bool] | LocalFlag | None
     crossorigin: str | Signal[str] | None
-    loop: bool | Signal[bool] | None
-    muted: bool | Signal[bool] | None
+    loop: bool | Signal[bool] | LocalFlag | None
+    muted: bool | Signal[bool] | LocalFlag | None
     preload: str | Signal[str] | None
     src: str | Signal[str] | None
 
@@ -267,13 +269,13 @@ def Blockquote(*children: object, **attrs: Unpack[BlockquoteAttrs]) -> RenderFra
 
 
 class BodyAttrs(GlobalAttrs, total=False):
-    onafterprint: Callable[[object], object] | EventHandler
-    onbeforeprint: Callable[[object], object] | EventHandler
-    onbeforeunload: Callable[[object], object] | EventHandler
-    onhashchange: Callable[[object], object] | EventHandler
-    onload: Callable[[object], object] | EventHandler
-    onpopstate: Callable[[object], object] | EventHandler
-    onunload: Callable[[object], object] | EventHandler
+    onafterprint: Callable[[object], object] | EventHandler | LocalAction
+    onbeforeprint: Callable[[object], object] | EventHandler | LocalAction
+    onbeforeunload: Callable[[object], object] | EventHandler | LocalAction
+    onhashchange: Callable[[object], object] | EventHandler | LocalAction
+    onload: Callable[[object], object] | EventHandler | LocalAction
+    onpopstate: Callable[[object], object] | EventHandler | LocalAction
+    onunload: Callable[[object], object] | EventHandler | LocalAction
 
 
 def Body(*children: object, **attrs: Unpack[BodyAttrs]) -> RenderFragment:
@@ -289,12 +291,12 @@ def Br(*children: object, **attrs: Unpack[BrAttrs]) -> RenderFragment:
 
 
 class ButtonAttrs(GlobalAttrs, total=False):
-    disabled: bool | Signal[bool] | None
+    disabled: bool | Signal[bool] | LocalFlag | None
     form: str | Signal[str] | None
     formaction: str | Signal[str] | None
     formenctype: str | Signal[str] | None
     formmethod: str | Signal[str] | None
-    formnovalidate: bool | Signal[bool] | None
+    formnovalidate: bool | Signal[bool] | LocalFlag | None
     formtarget: str | Signal[str] | None
     name: str | Signal[str] | None
     popovertarget: str | Signal[str] | None
@@ -391,7 +393,7 @@ def Del(*children: object, **attrs: Unpack[DelAttrs]) -> RenderFragment:
 
 class DetailsAttrs(GlobalAttrs, total=False):
     name: str | Signal[str] | None
-    open: bool | Signal[bool] | None
+    open: bool | Signal[bool] | LocalFlag | None
 
 
 def Details(*children: object, **attrs: Unpack[DetailsAttrs]) -> RenderFragment:
@@ -407,7 +409,7 @@ def Dfn(*children: object, **attrs: Unpack[DfnAttrs]) -> RenderFragment:
 
 
 class DialogAttrs(GlobalAttrs, total=False):
-    open: bool | Signal[bool] | None
+    open: bool | Signal[bool] | LocalFlag | None
 
 
 def Dialog(*children: object, **attrs: Unpack[DialogAttrs]) -> RenderFragment:
@@ -458,7 +460,7 @@ def Embed(*children: object, **attrs: Unpack[EmbedAttrs]) -> RenderFragment:
 
 
 class FieldsetAttrs(GlobalAttrs, total=False):
-    disabled: bool | Signal[bool] | None
+    disabled: bool | Signal[bool] | LocalFlag | None
     form: str | Signal[str] | None
     name: str | Signal[str] | None
 
@@ -498,7 +500,7 @@ class FormAttrs(GlobalAttrs, total=False):
     enctype: str | Signal[str] | None
     method: str | Signal[str] | None
     name: str | Signal[str] | None
-    novalidate: bool | Signal[bool] | None
+    novalidate: bool | Signal[bool] | LocalFlag | None
     rel: str | Signal[str] | None
     target: str | Signal[str] | None
 
@@ -605,7 +607,7 @@ def I(*children: object, **attrs: Unpack[IAttrs]) -> RenderFragment:
 
 class IframeAttrs(GlobalAttrs, total=False):
     allow: str | Signal[str] | None
-    allowfullscreen: bool | Signal[bool] | None
+    allowfullscreen: bool | Signal[bool] | LocalFlag | None
     height: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     loading: str | Signal[str] | None
     name: str | Signal[str] | None
@@ -626,7 +628,7 @@ class ImgAttrs(GlobalAttrs, total=False):
     decoding: str | Signal[str] | None
     fetchpriority: str | Signal[str] | None
     height: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
-    ismap: bool | Signal[bool] | None
+    ismap: bool | Signal[bool] | LocalFlag | None
     loading: str | Signal[str] | None
     referrerpolicy: str | Signal[str] | None
     sizes: str | Signal[str] | None
@@ -645,14 +647,14 @@ class InputAttrs(GlobalAttrs, total=False):
     alt: str | Signal[str] | None
     autocomplete: str | Signal[str] | None
     capture: str | Signal[str] | None
-    checked: bool | Signal[bool] | None
+    checked: bool | Signal[bool] | LocalFlag | None
     dirname: str | Signal[str] | None
-    disabled: bool | Signal[bool] | None
+    disabled: bool | Signal[bool] | LocalFlag | None
     form: str | Signal[str] | None
     formaction: str | Signal[str] | None
     formenctype: str | Signal[str] | None
     formmethod: str | Signal[str] | None
-    formnovalidate: bool | Signal[bool] | None
+    formnovalidate: bool | Signal[bool] | LocalFlag | None
     formtarget: str | Signal[str] | None
     height: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     list: str | Signal[str] | None
@@ -660,14 +662,14 @@ class InputAttrs(GlobalAttrs, total=False):
     maxlength: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     min: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     minlength: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
-    multiple: bool | Signal[bool] | None
+    multiple: bool | Signal[bool] | LocalFlag | None
     name: str | Signal[str] | None
     pattern: str | Signal[str] | None
     placeholder: str | Signal[str] | None
     popovertarget: str | Signal[str] | None
     popovertargetaction: str | Signal[str] | None
-    readonly: bool | Signal[bool] | None
-    required: bool | Signal[bool] | None
+    readonly: bool | Signal[bool] | LocalFlag | None
+    required: bool | Signal[bool] | LocalFlag | None
     size: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     src: str | Signal[str] | None
     step: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
@@ -728,7 +730,7 @@ class LinkAttrs(GlobalAttrs, total=False):
     as_: str | Signal[str] | None
     color: str | Signal[str] | None
     crossorigin: str | Signal[str] | None
-    disabled: bool | Signal[bool] | None
+    disabled: bool | Signal[bool] | LocalFlag | None
     fetchpriority: str | Signal[str] | None
     href: str | Signal[str] | None
     hreflang: str | Signal[str] | None
@@ -835,7 +837,7 @@ def Object(*children: object, **attrs: Unpack[ObjectAttrs]) -> RenderFragment:
 
 
 class OlAttrs(GlobalAttrs, total=False):
-    reversed: bool | Signal[bool] | None
+    reversed: bool | Signal[bool] | LocalFlag | None
     start: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     type: str | Signal[str] | None
 
@@ -845,7 +847,7 @@ def Ol(*children: object, **attrs: Unpack[OlAttrs]) -> RenderFragment:
 
 
 class OptgroupAttrs(GlobalAttrs, total=False):
-    disabled: bool | Signal[bool] | None
+    disabled: bool | Signal[bool] | LocalFlag | None
     label: str | Signal[str] | None
 
 
@@ -854,9 +856,9 @@ def Optgroup(*children: object, **attrs: Unpack[OptgroupAttrs]) -> RenderFragmen
 
 
 class OptionAttrs(GlobalAttrs, total=False):
-    disabled: bool | Signal[bool] | None
+    disabled: bool | Signal[bool] | LocalFlag | None
     label: str | Signal[str] | None
-    selected: bool | Signal[bool] | None
+    selected: bool | Signal[bool] | LocalFlag | None
     value: str | Signal[str] | None
 
 
@@ -965,12 +967,12 @@ def Samp(*children: object, **attrs: Unpack[SampAttrs]) -> RenderFragment:
 
 
 class ScriptAttrs(GlobalAttrs, total=False):
-    async_: bool | Signal[bool] | None
+    async_: bool | Signal[bool] | LocalFlag | None
     crossorigin: str | Signal[str] | None
-    defer: bool | Signal[bool] | None
+    defer: bool | Signal[bool] | LocalFlag | None
     fetchpriority: str | Signal[str] | None
     integrity: str | Signal[str] | None
-    nomodule: bool | Signal[bool] | None
+    nomodule: bool | Signal[bool] | LocalFlag | None
     referrerpolicy: str | Signal[str] | None
     src: str | Signal[str] | None
     type: str | Signal[str] | None
@@ -990,11 +992,11 @@ def Section(*children: object, **attrs: Unpack[SectionAttrs]) -> RenderFragment:
 
 class SelectAttrs(GlobalAttrs, total=False):
     autocomplete: str | Signal[str] | None
-    disabled: bool | Signal[bool] | None
+    disabled: bool | Signal[bool] | LocalFlag | None
     form: str | Signal[str] | None
-    multiple: bool | Signal[bool] | None
+    multiple: bool | Signal[bool] | LocalFlag | None
     name: str | Signal[str] | None
-    required: bool | Signal[bool] | None
+    required: bool | Signal[bool] | LocalFlag | None
     size: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     value: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     bind_value: Signal[str]
@@ -1129,14 +1131,14 @@ class TextareaAttrs(GlobalAttrs, total=False):
     autocomplete: str | Signal[str] | None
     cols: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     dirname: str | Signal[str] | None
-    disabled: bool | Signal[bool] | None
+    disabled: bool | Signal[bool] | LocalFlag | None
     form: str | Signal[str] | None
     maxlength: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     minlength: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     name: str | Signal[str] | None
     placeholder: str | Signal[str] | None
-    readonly: bool | Signal[bool] | None
-    required: bool | Signal[bool] | None
+    readonly: bool | Signal[bool] | LocalFlag | None
+    required: bool | Signal[bool] | LocalFlag | None
     rows: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     value: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
     wrap: str | Signal[str] | None
@@ -1200,7 +1202,7 @@ def Tr(*children: object, **attrs: Unpack[TrAttrs]) -> RenderFragment:
 
 
 class TrackAttrs(GlobalAttrs, total=False):
-    default_: bool | Signal[bool] | None
+    default_: bool | Signal[bool] | LocalFlag | None
     kind: str | Signal[str] | None
     label: str | Signal[str] | None
     src: str | Signal[str] | None
@@ -1236,13 +1238,13 @@ def Var(*children: object, **attrs: Unpack[VarAttrs]) -> RenderFragment:
 
 
 class VideoAttrs(GlobalAttrs, total=False):
-    autoplay: bool | Signal[bool] | None
-    controls: bool | Signal[bool] | None
+    autoplay: bool | Signal[bool] | LocalFlag | None
+    controls: bool | Signal[bool] | LocalFlag | None
     crossorigin: str | Signal[str] | None
     height: int | float | str | Signal[int] | Signal[float] | Signal[str] | None
-    loop: bool | Signal[bool] | None
-    muted: bool | Signal[bool] | None
-    playsinline: bool | Signal[bool] | None
+    loop: bool | Signal[bool] | LocalFlag | None
+    muted: bool | Signal[bool] | LocalFlag | None
+    playsinline: bool | Signal[bool] | LocalFlag | None
     poster: str | Signal[str] | None
     preload: str | Signal[str] | None
     src: str | Signal[str] | None

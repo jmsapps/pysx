@@ -6,7 +6,6 @@ pysx --app playgrounds.capstone
 
 import asyncio
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -19,6 +18,7 @@ from pysx import (
     StateCodec,
     derived,
     each,
+    persistent_path,
     project,
     push,
     pysx,
@@ -29,7 +29,8 @@ from pysx import (
 if TYPE_CHECKING:
     from pysx.runtime.wire import JSONValue
 
-STORE = Path(__file__).parent / ".state" / "capstone" / "store.sqlite3"
+
+STORE = persistent_path("pysx-playground-capstone") / "store.sqlite3"
 
 
 @dataclass(frozen=True)
@@ -213,7 +214,6 @@ def view(state: Signal[State]) -> Fragment:
     """)
 
 
-STORE.parent.mkdir(parents=True, exist_ok=True)
 app = DurableApplication(
     view,
     initial=State,

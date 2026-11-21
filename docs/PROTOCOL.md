@@ -120,8 +120,12 @@ distinct `stopped` state, which offers no retry button because neither it nor
 `pysx:reconnect` can revive that page. Unavailable resume
 (4004) explicitly starts a fresh session and reports lost session state in development.
 
-Applications can temporarily interrupt the real transport by dispatching a
-`pysx:disconnect` CustomEvent on `window`, with optional `detail.durationMs`
+Applications interrupt the real transport by giving an ordinary handler the typed
+`DisconnectFor(seconds=...)` action, which the client serialises as
+`data-pysx-local-<event>` and runs without a server round trip — necessarily, since
+the action severs the transport a server command would travel over. The duration is
+validated in Python against `MAX_DISCONNECT_SECONDS`. The underlying
+`pysx:disconnect` CustomEvent on `window` remains, with optional `detail.durationMs`
 (default 5000, finite number from 1 through 10000). Invalid durations and requests
 while disconnected or stopped are ignored. The socket closes normally, retaining
 the server session under its usual retention policy. Automatic and manual retries
@@ -131,9 +135,34 @@ restart or extend session retention.
 
 The built-in status paragraph and retry button are created only after the server
 identifies a development session, including an ordinary connected status. Production
-documents contain neither element. Applications that
-render their own connection UI read the `data-pysx-connection` root attribute or the
-`pysx:connection` event below instead of querying those elements at load.
+documents contain neither element.
+
+Applications express connection UI in ordinary markup instead of writing JavaScript.
+`browser.connection().text(...)` renders a `pysx-local` element carrying
+`data-pysx-local`, and `connection.connected` / `connection.not_connected` /
+`connection.is_state(...)` render into `data-pysx-local-attrs` on the element whose
+attribute they own. Both carry a server-rendered initial value, so a document stays
+readable before the client attaches, and both keep updating while the transport is
+down — which is exactly when the server cannot be asked. The client owns these
+attributes; a server patch must not also write them. The `data-pysx-connection` root
+attribute and the `pysx:connection` event below remain available for cases these
+bindings do not cover.
+
+Elements also carry browser-local behaviour through `behaviors=`, serialised as a
+validated `data-pysx-behavior` payload. `Reveal` adds its class when the element
+first enters the viewport; the client owns the observer, its reconciliation across
+patches and keyed reordering, and its cleanup. Reduced motion is part of the
+behaviour rather than a separate preference API: a visitor who asks for reduced
+motion is revealed immediately and never observed, so no content flashes hidden.
+Observers remain active during transport loss. DOM reconciliation releases removed
+targets and unused observers; pagehide suspends registrations and a persisted pageshow
+rebuilds them while retaining once-only completion for surviving elements. Observer
+margins must contain finite CSS numbers with `px` or `%` units.
+`Router(scroll_container=ref)` applies the existing navigation scroll policy to a
+nominated panel, falling back to the window when that panel is absent or is not the
+active scrolling surface. No observation costs a server round trip, and there is no
+expression language, string DSL or raw-JavaScript escape hatch in any of these
+payloads.
 
 The client emits `pysx:disconnected`, `pysx:repair`, `pysx:rejected` (reason), and
 `pysx:connection` (state, attempt, retryMs, fresh, timers, listeners, pendingBytes).

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from pysx.compiler.compiler import component_binding_identity
 from pysx.compiler.imports import WorkspaceResolver
 from pysx.compiler.parser import line_starts
+from pysx.compiler.projects import import_roots
 from pysx.compiler.scope import ScopeIndex
 from pysx.compiler.source_map import Positions, SourceSpan
 
@@ -187,7 +188,7 @@ class RenameIndex:
         self.source = source
         self.filename = filename
         self.positions = Positions(source)
-        self.resolver = WorkspaceResolver(filename, roots=(root, root / "src"), buffers=buffers)
+        self.resolver = WorkspaceResolver(filename, roots=import_roots(root), buffers=buffers)
 
         try:
             self.tree = ast.parse(source, filename=filename)

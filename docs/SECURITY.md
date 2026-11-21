@@ -77,6 +77,11 @@ with its valid capsule cannot be globally revoked without authoritative state.
 See [hosting](HOSTING.md) for key management and [recovery](RECOVERY.md) for the
 latest-delivered-state and business-effect boundaries.
 
+A mounted application inherits its parent's allowed origins, trusted proxies and
+cookie policy when both are built from one configuration factory; see
+[hosting](HOSTING.md). Nothing about dispatching to a child relaxes origin validation
+or proxy trust, and each application keeps its own recovery identity.
+
 The supported termination topology is HTTPS/WSS at a reverse proxy, a loopback
 HTTP/WS backend and explicit `trusted_proxies` peer addresses. The proxy must strip
 all incoming Forwarded/X-Forwarded-* headers, then set X-Forwarded-Host to the

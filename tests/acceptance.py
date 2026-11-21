@@ -1,5 +1,4 @@
-"""Headless definition of done (PLAN.md §1).
-
+"""
 Starts the real server, drives it over two WebSocket connections, and asserts
 both the patch-economy and session-isolation properties.
 """

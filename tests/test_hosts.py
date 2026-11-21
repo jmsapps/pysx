@@ -6,7 +6,16 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pysx import Application, Fragment, HostConfig, StaticAsset, current_request, native, on_cleanup
+from pysx import (
+    Application,
+    Fragment,
+    HostConfig,
+    StaticAsset,
+    current_request,
+    native,
+    on_cleanup,
+    pysx,
+)
 from pysx.hosting.hosting import request_from_headers
 
 if TYPE_CHECKING:
@@ -283,3 +292,73 @@ def test_host_config_asgi_connected_session_cleanup(finish: str) -> None:
         assert application.runtime.pending == {}
 
     asyncio.run(exercise())
+
+
+def test_nginx_proxy_serves_the_parent_and_the_mounted_application() -> None:
+    """Real nginx, real TLS: the full path survives, so a mounted prefix still resolves."""
+    import tempfile
+    import urllib.request
+    from pathlib import Path
+
+    from nginx_proxy import application, disposable_tls_client, free_port, nginx
+
+    port = free_port()
+
+    with (
+        tempfile.TemporaryDirectory() as directory,
+        application(
+            "examples.nginx:example",
+            environment={"PYSX_ORIGIN": f"https://localhost:{port}"},
+        ) as upstream,
+        nginx(Path(directory) / "proxy with spaces", upstream, port=port) as proxied,
+    ):
+        context = disposable_tls_client()
+        pages: dict[str, tuple[int, str, str]] = {}
+
+        for path in ("/", "/reports"):
+            request = urllib.request.Request(f"https://localhost:{proxied}{path}")
+
+            with urllib.request.urlopen(request, context=context, timeout=60) as response:
+                pages[path] = (
+                    response.status,
+                    response.read().decode(),
+                    response.headers.get("Set-Cookie", ""),
+                )
+    assert pages["/"][0] == 200
+    assert pages["/reports"][0] == 200
+    assert "reverse proxy" in pages["/"][1].lower()
+    assert "path prefix" in pages["/reports"][1].lower()
+
+    for path in ("/", "/reports"):
+        assert "Secure" in pages[path][2], f"{path} must set a secure cookie behind TLS"
+
+
+def test_nginx_proxy_mounted_application_shares_host_configuration() -> None:
+    """One factory decides origins, proxy trust and cookies for parent and child."""
+    from examples.nginx import MOUNT, Deployment
+
+    deployment = Deployment()
+    parent, child = deployment.config, deployment.reports.config
+    assert child.base_path == MOUNT
+    assert child.secure_cookies is parent.secure_cookies is True
+    assert child.security.origins == parent.security.origins
+    assert child.security.trusted_proxies == parent.security.trusted_proxies
+    assert child.recovery_namespace != parent.recovery_namespace, (
+        "a mounted application keeps its own recovery identity"
+    )
+
+
+def test_nginx_proxy_mounted_application_owns_its_socket_path() -> None:
+    """A mounted application is upgraded and validated at its own prefix, not the root's."""
+    from examples.nginx import MOUNT, Deployment
+
+    deployment = Deployment()
+    assert deployment.accepts_websocket("/ws"), "the parent still serves its own socket"
+    assert deployment.accepts_websocket(f"{MOUNT}/ws"), "the mounted prefix is upgraded too"
+    assert not deployment.accepts_websocket("/elsewhere/ws")
+
+    # A plain application is unchanged: only its own socket path upgrades.
+    plain = Application(lambda: pysx(t"div: 'plain'"), config=HostConfig())
+    assert plain.accepts_websocket("/ws")
+    assert not plain.accepts_websocket(f"{MOUNT}/ws")
+    assert deployment.reports.path("ws") == f"{MOUNT}/ws"

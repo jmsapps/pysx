@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { pylanceHost } from "../../tests/pylance_host.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const SUITES = ["diagnostics", "packaging", "authoring", "client_verify", "editor_surface", "template_import_usage", "interpreter_routing", "save_latency", "validate_integrated"];
+const SUITES = ["diagnostics", "packaging", "authoring", "client_verify", "editor_surface", "template_import_usage", "interpreter_routing", "navigation_latency", "save_latency", "validate_integrated"];
 const args = process.argv.slice(2);
 if (!args.length && process.env.PYSX_EDITOR_PROBE !== "1") {
   for (const registered of SUITES) {
@@ -28,10 +28,20 @@ if (suite === "client_verify") {
     { cwd: root, stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
-if (suite === "interpreter_routing") {
-  const result = spawnSync(process.execPath, ["--test", "editor/test/workspaces.test.cjs"],
-    {cwd: root, stdio: "inherit"});
-  if (result.status !== 0) process.exit(result.status ?? 1);
+if (["interpreter_routing", "navigation_latency"].includes(suite) && !process.env.PYSX_EDITOR_ROUTING_MODE) {
+  if (suite === "interpreter_routing") {
+    const unit = spawnSync(process.execPath, ["--test", "editor/test/workspaces.test.cjs"],
+      {cwd: root, stdio: "inherit"});
+    if (unit.status !== 0) process.exit(unit.status ?? 1);
+  }
+  // The adapter is chosen at activation, so the worker/resident cross-product needs one
+  // host launch each rather than a setting change inside a single session.
+  for (const mode of ["resident", "worker"]) {
+    const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--suite", suite],
+      { cwd: root, stdio: "inherit", env: { ...process.env, PYSX_EDITOR_ROUTING_MODE: mode } });
+    if (result.status !== 0) process.exit(result.status ?? 1);
+  }
+  process.exit(0);
 }
 if (["client_verify", "editor_surface"].includes(suite) && !process.env.PYSX_EDITOR_ACTIVATION_ORDER) {
   for (const order of ["client-first", "pylance-first"]) {
@@ -112,13 +122,15 @@ try {
   let multiRoot = null;
   let alternate = null;
   let bare = null;
-  if (suite === "interpreter_routing") {
+  let application = null;
+  let repository = null;
+  if (["interpreter_routing", "navigation_latency"].includes(suite)) {
     const secondary = path.join(workspace, "secondary");
     const nested = path.join(consumer, "nested");
     mkdirSync(secondary);
     mkdirSync(nested);
     multiRoot = path.join(workspace, "pysx.code-workspace");
-    writeFileSync(multiRoot, JSON.stringify({ folders: [{ path: consumer }, { path: secondary }, { path: nested }], settings: {} }));
+    writeFileSync(multiRoot, JSON.stringify({ folders: [{ path: consumer }, { path: secondary }, { path: nested }, { path: path.join(workspace, "repo") }], settings: {} }));
     // A second executable identity for the same working environment, so a
     // folder's selection is observable as an actual different child command.
     alternate = path.join(workspace, "alternate-python");
@@ -154,6 +166,47 @@ try {
     } else {
       writeFileSync(alternate, `#!/bin/sh\n${delay}exec ${JSON.stringify(interpreter)} "$@"\n`, { mode: 0o755 });
     }
+    // A repository root around a nested application whose __init__.py chain breaks at
+    // `containers`, exactly as the reported application's does, plus a same-named
+    // package nearer the outer root and enough unrelated outer sources that a
+    // workspace-wide analysis would exceed its own limits.
+    repository = path.join(workspace, "repo");
+    application = path.join(repository, "apps", "web");
+    const write = (file, text) => {
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, text);
+    };
+    write(path.join(repository, "pyproject.toml"), '[project]\nname = "outer"\nversion = "0"\n');
+    write(path.join(repository, "app", "__init__.py"), "");
+    write(path.join(repository, "app", "components", "__init__.py"), "");
+    write(path.join(repository, "app", "components", "controls", "__init__.py"), "Button = 3\n");
+    for (let index = 0; index < 560; index++) {
+      write(path.join(repository, "unrelated", `module_${index}.py`), "value = 1\n");
+    }
+    write(path.join(application, "pyproject.toml"), '[project]\nname = "web"\nversion = "0"\n');
+    write(path.join(application, "app", "__init__.py"), "");
+    write(path.join(application, "app", "components", "__init__.py"), "");
+    write(path.join(application, "app", "settings", "__init__.py"), "");
+    write(path.join(application, "app", "settings", "constants.py"),
+      'PYSX_BASE_PATH = "/pysx/learn"\n');
+    write(path.join(application, "app", "components", "controls", "__init__.py"),
+      'from pysx import Fragment, pysx, styled\n\nButton = styled.button(t"color: red")\n\n\n' +
+      'def Caption() -> Fragment:\n    return pysx(t\'span: "caption"\')\n');
+    // No __init__.py here: this is the break that made the import root undiscoverable.
+    mkdirSync(path.join(application, "app", "containers"), { recursive: true });
+    write(path.join(application, "app", "containers", "tutorial", "__init__.py"), "");
+    write(path.join(application, "app", "containers", "tutorial", "view.py"),
+      'from app.components.controls import Button, Caption\n' +
+      'from app.settings.constants import PYSX_BASE_PATH\nfrom pysx import Fragment, pysx\n\n\n' +
+      'def view() -> Fragment:\n    return pysx(t\'Button(id="go"): "press"; ' +
+      'a(href={PYSX_BASE_PATH}): "Learn"; Caption; br\')\n');
+    // The application configures its own interpreter the way a real nested project does,
+    // so the selection exists before the folder is ever added to the workspace.
+    write(path.join(application, ".vscode", "settings.json"),
+      JSON.stringify({ "pysx.pythonPath": interpreter }, null, 2) + "\n");
+    const nestedEnvironment = spawnSync("uv", ["venv", "--python", interpreter, path.join(application, ".venv")],
+      { cwd: root, encoding: "utf8", timeout: 120000 });
+    if (nestedEnvironment.status !== 0) throw new Error(`nested environment creation failed: ${nestedEnvironment.stderr}`);
     bare = path.join(workspace, "bare");
     const created = spawnSync("uv", ["venv", "--python", interpreter, bare], { cwd: root, encoding: "utf8", timeout: 120000 });
     if (created.status !== 0) throw new Error(`bare environment creation failed: ${created.stderr}`);
@@ -170,7 +223,7 @@ try {
       cwd: root, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, PYSX_EDITOR_TRACE_FILE: traceFile,
         PYSX_EDITOR_INPUT: JSON.stringify({ executable, extension, workspace,
-        root: multiRoot ?? (fixture ? fixture.consumer : consumer), checkout: root, host, suite,
+        root: multiRoot ?? (fixture ? fixture.consumer : consumer), checkout: root, host, suite, application, repository, routingMode: process.env.PYSX_EDITOR_ROUTING_MODE ?? "resident",
         python: fixture?.python ?? interpreter, alternate, bare, pythonExtension, ruffExtension: ["authoring", "template_import_usage", "editor_surface"].includes(suite) ? ruffExtension : null }) },
     });
     writeFileSync(outputFile, "");
@@ -183,7 +236,8 @@ try {
       // host budget must allow healthy slow starts across all eight cases;
       // the suite separately bounds each stage and reports its progress.
       const timeout = process.env.PYSX_EDITOR_FORCE_TIMEOUT === "1" ? 500 :
-        suite === "interpreter_routing" || process.env.PYSX_EDITOR_PERFORMANCE === "1" ? 240000 : 120000;
+        ["interpreter_routing", "navigation_latency"].includes(suite) ||
+      process.env.PYSX_EDITOR_PERFORMANCE === "1" ? 240000 : 120000;
       const timer = setTimeout(() => reject(new Error(`editor deadline exceeded: ${output}`)),
         timeout);
       const capture = (data) => { appendFileSync(outputFile, data); output += data; };
@@ -194,12 +248,12 @@ try {
       // buffered when "exit" fires.
       child.once("close", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`editor host exited ${code}: ${output}`)); });
     });
-    const cases = suite === "save_latency" ? 6 : suite === "interpreter_routing" ? 8 : suite === "authoring" ? 11 : suite === "client_verify" ? 12 : suite === "editor_surface" ? 11 : suite === "template_import_usage" ? 7 : 3;
+    const cases = suite === "navigation_latency" ? 4 : suite === "save_latency" ? 6 : suite === "interpreter_routing" ? (process.env.PYSX_EDITOR_ROUTING_MODE === "worker" ? 8 : 17) : suite === "authoring" ? 11 : suite === "client_verify" ? 12 : suite === "editor_surface" ? 12 : suite === "template_import_usage" ? 8 : 3;
     if (lifecycleFailures.test(output)) throw new Error(`lifecycle failure in host output: ${output}`);
     const findings = inspect(path.join(workspace, "profile", "logs"));
     if (findings.length) throw new Error(`lifecycle failure in host logs:\n${findings.join("\n")}`);
     if (!output.includes(`PYSX EDITOR CASES PASSED: ${cases}`)) throw new Error(`missing host assertions: ${output}`);
-    console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR SAVE:") || line.startsWith("PYSX EDITOR PERFORMANCE") || line.startsWith("PYSX EDITOR ROUTING:")).join("\n"));
+    console.log(output.split("\n").filter((line) => line.startsWith("VSCode ") || line.startsWith("PYSX EDITOR CASES") || line.startsWith("PYSX EDITOR SAVE:") || line.startsWith("PYSX EDITOR PERFORMANCE") || line.startsWith("PYSX EDITOR ROUTING:") || line.startsWith("PYSX NAVIGATION")).join("\n"));
     successMessage = `EDITOR VERIFICATION PASSED: ${suite} (client ${manifest.version}, Pylance ${host.version}, ${cases} cases)`;
   }
 } catch (error) {

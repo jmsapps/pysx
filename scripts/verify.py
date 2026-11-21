@@ -72,6 +72,9 @@ GATES: tuple[Gate, ...] = (
     Gate("setup", "npm-editor", ("npm", "--prefix", "editor", "ci")),
     *playwright_setup(),
     Gate("setup", "vscode-host", ("npm", "--prefix", "editor", "run", "setup:host")),
+    Gate(
+        "setup", "native-proxy", ("uv", "run", "--project", ".", "python", "scripts/setup_proxy.py")
+    ),
     Gate("python", "lockfile", ("uv", "lock", "--check")),
     Gate(
         "python",

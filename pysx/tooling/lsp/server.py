@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import sys
+import time
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
@@ -22,6 +23,7 @@ from pygls.workspace.position_codec import ServerTextPosition, ServerTextRange
 from pygls.workspace.text_document import TextDocument
 
 from pysx.compiler.compiler import component_binding_identity
+from pysx.compiler.projects import project_root
 from pysx.compiler.source_map import SourceSpan, utf16_offsets
 from pysx.components.schema import NATIVE_TAGS, tag_info
 from pysx.tooling.editor.model import MAX_BYTES, MAX_FILES, Buffer
@@ -283,6 +285,8 @@ class Session:
             )
 
             return
+        # Measure raw backend work, including output rejected below. Moving this
+        # after version filtering would hide unrelated workspace publications.
         self.republished.add(item.relative)
 
         # Backend URI spelling may differ (notably drive case/escaping on Windows).
@@ -291,12 +295,14 @@ class Session:
 
         if os.environ.get("PYSX_LSP_TRACE_PUBLICATIONS") == "1":
             LOG.warning(
-                "Publication trace: generation=%s file=%s received=%s sent=%s changed=%s",
+                "Publication trace: generation=%s file=%s received=%s sent=%s "
+                "changed=%s monotonic_ns=%s",
                 self.generation,
                 item.relative,
                 params.version,
                 self.sent.get(uri),
                 self.changed,
+                time.monotonic_ns(),
             )
 
         if params.version is None or self.sent.get(uri) != params.version:
@@ -501,6 +507,25 @@ class Session:
                         types.FileEvent(target.as_uri(), types.FileChangeType.Deleted)
                     )
         config_changed = self.index.write_config()
+
+        if os.environ.get("PYSX_LSP_TRACE_PUBLICATIONS") == "1":
+            LOG.warning(
+                "Synchronization trace: generation=%s baseline=%s complete=%s "
+                "affected=%s disk_events=%s config_changed=%s monotonic_ns=%s",
+                generation,
+                None if baseline is None else baseline.stamp.generation,
+                complete,
+                [item.relative for item in snapshot.files if item.filename in affected],
+                [
+                    (
+                        path_for_uri(event.uri).relative_to(self.index.projected).as_posix(),
+                        event.type.name,
+                    )
+                    for event in disk_events
+                ],
+                config_changed,
+                time.monotonic_ns(),
+            )
         LOG.warning(
             "Type projection snapshot: generation=%s complete=%s root=%s files=%s buffers=%s",
             generation,
@@ -668,7 +693,10 @@ class ResidentServer(LanguageServer):
         if self.workspace.root_path is not None:
             folders.append(Path(self.workspace.root_path).resolve())
         roots = [root for root in folders if path.is_relative_to(root)]
-        root = max(roots, key=lambda root: len(root.parts)) if roots else path.parent
+        folder = max(roots, key=lambda root: len(root.parts)) if roots else path.parent
+        # Analysis is partitioned per project, so a repository root resolves a nested
+        # application exactly as opening that application directly does.
+        root = project_root(path, bound=folder) or folder
 
         if root not in self.sessions:
             if len(self.sessions) >= 8:

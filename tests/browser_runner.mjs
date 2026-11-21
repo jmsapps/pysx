@@ -222,11 +222,23 @@ const registry = [
     [0, "diagnostics_fixture", "browser_diagnostics.mjs", "DIAGNOSTICS ACTIONS BROWSER PASSED"],
     [1, "authoring_fixture", "browser_authoring.mjs", "AUTHORING BROWSER PASSED"],
   ] },
+  { suite: "nginx_proxy", cases: [
+    [0, "nginx_proxy_fixture", "browser_nginx_proxy.mjs", "NGINX PROXY BROWSER PASSED"],
+  ] },
+  { suite: "browser_behaviors", cases: [
+    [0, "behaviors_fixture", "browser_behaviors.mjs", "BROWSER BEHAVIORS PASSED"],
+  ] },
   { suite: "template_ergonomics", cases: [
     [0, "reactive_state", "browser_operators.mjs", "OPERATORS BROWSER PASSED"],
   ] },
 ];
 const CONTAINER_SUITES = new Set(["deployment_fixture", "durable_state_fixture"]);
+const RESUME_TRACED = new Set([
+  "reconnect",
+  "reconnect_timeout_fixture",
+  "durable_state_fixture",
+  "deployment_fixture",
+]);
 // Keyed on what the host can actually run rather than on its name: a Windows
 // container host and a runner with no Docker at all fail these suites for the
 // same reason, and a developer machine with Linux containers runs them.
@@ -337,6 +349,8 @@ try {
       ["tests/browser_tutorial_fixture.py", "--port", String(port), "--packaged"] :
       name === "tutorial_fixture" ?
       ["tests/browser_tutorial_fixture.py", "--port", String(port)] :
+      name === "nginx_proxy_fixture" ?
+      ["tests/browser_nginx_proxy_fixture.py", "--port", String(port)] :
       name === "development_fixture" ?
       ["tests/browser_development_fixture.py", "--port", String(port)] :
       name === "development_no_inspector_fixture" ?
@@ -365,6 +379,8 @@ try {
       ["-m", "pysx.hosting.server", "--app", "tests.browser_security_fixture:host", "--port", String(port), ...(name === "security_asgi" ? ["--asgi"] : [])] :
       name?.startsWith("host_") ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_host_fixture:host", "--port", String(port), ...(name === "host_asgi" ? ["--asgi"] : [])] :
+      name === "behaviors_fixture" ?
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_behaviors_fixture:app", "--port", String(port)] :
       name === "keyed_snapshot_fixture" ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_keyed_snapshot_fixture:app", "--port", String(port)] :
       name === "resume_fixture" ?
@@ -418,7 +434,7 @@ try {
       name === "adoption" ?
       ["-m", "tests.prototypes.standalone_host", "--port", String(port)] :
       ["run_example.py", "run", name, "--port", String(port)],
-      ["reconnect", "reconnect_timeout_fixture"].includes(name) ? {PYSX_TRACE_RESUME: "1"} : {}) : null;
+      RESUME_TRACED.has(name) ? {PYSX_TRACE_RESUME: "1"} : {}) : null;
     if (server) {
       const deployment = name === "deployment_fixture" || name === "durable_state_fixture";
       if (deployment) server.cleanupTimeout = 45000;

@@ -1,9 +1,12 @@
 """Resolve the developer tooling pysx drives, from the selected environment only.
 
-An editor and the CLI must agree on one Ruff, and that Ruff must be the one
-installed beside the selected interpreter. Silently falling back to whatever
-`ruff` happens to be on PATH is how a workspace ends up linted by a different
-version than the one its checks were qualified against.
+An editor and the CLI must agree on one Ruff, and that Ruff must be one this
+project resolved deliberately: either the copy installed beside the selected
+interpreter, or an explicitly supplied managed location. Silently falling back to
+whatever `ruff` happens to be on PATH is how a workspace ends up linted by a
+different version than the one its checks were qualified against, so PATH is never
+consulted. The editor supplies its extension-owned closure through
+`PYSX_MANAGED_TOOLING`; with that unset the behaviour is unchanged.
 
 Qualification is memoized per binary and invalidated by its size and modification
 time, because linting a workspace resolves the tool once per analyzed source and a
@@ -13,6 +16,7 @@ installing the pinned Ruff into an incomplete environment needs no restart.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -37,28 +41,46 @@ class Tool:
 _qualified: dict[Path, tuple[tuple[int, int], Tool]] = {}
 
 
-def _candidates(interpreter: Path) -> list[Path]:
-    """Only locations owned by the selected interpreter; never the running one."""
+def managed_root() -> Path | None:
+    """The editor's extension-owned tooling closure, when one was supplied."""
+    location = os.environ.get("PYSX_MANAGED_TOOLING")
 
-    if sys.platform == "win32":
-        roots = [interpreter.parent, interpreter.parent / "Scripts"]
-        names = ("ruff.exe", "ruff")
-    else:
-        roots = [interpreter.parent]
-        names = ("ruff",)
+    return Path(location) if location else None
+
+
+def _binary_roots(base: Path) -> list[Path]:
+    return [base, base / "Scripts"] if sys.platform == "win32" else [base / "bin", base]
+
+
+def _candidates(interpreter: Path, managed: Path | None) -> list[Path]:
+    """Explicit locations only: the managed closure first, then the selected environment."""
+    names = ("ruff.exe", "ruff") if sys.platform == "win32" else ("ruff",)
+    roots: list[Path] = []
+
+    if managed is not None:
+        roots.extend(_binary_roots(managed))
+    roots.extend(
+        [interpreter.parent, interpreter.parent / "Scripts"]
+        if sys.platform == "win32"
+        else [interpreter.parent]
+    )
 
     return [root / name for root in roots for name in names]
 
 
-def resolve_ruff(interpreter: Path | None = None) -> Tool:
-    """Find Ruff beside the selected interpreter and reject any other version."""
+def resolve_ruff(interpreter: Path | None = None, location: Path | None = None) -> Tool:
+    """Find Ruff in the supplied location or beside the interpreter; reject other versions."""
     selected = Path(interpreter or sys.executable)
-    found = next((path for path in _candidates(selected) if path.is_file()), None)
+    managed = location if location is not None else managed_root()
+    found = next((path for path in _candidates(selected, managed) if path.is_file()), None)
 
     if found is None:
+        where = f"{managed} or {selected.parent}" if managed is not None else str(selected.parent)
+
         raise ToolingError(
-            f"Ruff {RUFF_REQUIREMENT} is not installed in {selected.parent}. "
-            f"Install it with `pip install 'pysx-framework[dev]'` into that environment. "
+            f"Ruff {RUFF_REQUIREMENT} is not installed in {where}. "
+            f"Install it with `pip install 'pysx-framework[dev]'` into that environment, "
+            "or let the editor provision its own tooling. "
             "PYSX does not fall back to a Ruff found elsewhere on PATH."
         )
 

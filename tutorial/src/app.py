@@ -12,6 +12,7 @@ from uuid import uuid4
 from pysx import (
     Application,
     AuthenticatedIdentity,
+    Dom,
     Fragment,
     HostConfig,
     Link,
@@ -208,7 +209,8 @@ def course() -> Fragment:
             routes.append(Route(lesson.path + "/files/*", view))
             routes.append(Route(lesson.path + "/*", view))
     routes.append(Route("*", missing))
-    router = Router(routes)
+    lesson_panel = Dom().ref()
+    router = Router(routes, scroll_container=lesson_panel)
 
     def switch(_: object) -> None:
         themes.select("dark" if theme_name() == "light" else "light")
@@ -216,7 +218,6 @@ def course() -> Fragment:
     return pysx(
         t"""
         link(rel="stylesheet" href="/assets/course.css")
-        script(src="/assets/course.js" defer={True}):
         header(class="course-header")
             Link(router={router} href="/" class_name="brand"):
                 "pysx"
@@ -225,7 +226,7 @@ def course() -> Fragment:
         a(href="#lesson-main" class="skip-link"): "Skip to lesson"
         div(class="course-layout")
             Contents(router={router}):
-            main(id="lesson-main" tabindex={-1}): {router.view()}
+            main(id="lesson-main" tabindex={-1} ref={lesson_panel}): {router.view()}
     """,
         themes=themes,
     )
@@ -246,9 +247,6 @@ class CourseApplication(Application):
             ),
             "/assets/course.css": StaticAsset(
                 files("src").joinpath("assets/course.css").read_bytes(), "text/css"
-            ),
-            "/assets/course.js": StaticAsset(
-                files("src").joinpath("assets/course.js").read_bytes(), "text/javascript"
             ),
         }
         config = HostConfig(

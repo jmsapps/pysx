@@ -13,6 +13,7 @@ from typing import NotRequired, TypedDict, cast
 
 from pysx.compiler.compiler import analyze
 from pysx.compiler.imports import MAX_MODULE_BYTES
+from pysx.compiler.projects import import_roots, project_root
 from pysx.compiler.source_map import MappedText, Positions, SourceSpan
 from pysx.tooling.analysis import (
     Projection,
@@ -201,7 +202,7 @@ def workspace_model(request: Request) -> list[Model]:
 
     if not revision.startswith("_pysx_revision_") or not revision.isidentifier():
         raise ValueError("invalid projection revision")
-    roots = (root, root / "src") if (root / "src").is_dir() else (root,)
+    roots = import_roots(root)
     interpreter = Path(request["interpreter"]) if "interpreter" in request else None
     ruff = resolve_ruff(interpreter) if request.get("lint", True) else None
     overlays = {Path(name).resolve(): buffer for name, buffer in request["buffers"].items()}
@@ -221,9 +222,21 @@ def workspace_model(request: Request) -> list[Model]:
     if sum(len(source.encode()) for source in buffers.values()) > MAX_BYTES:
         raise ValueError("workspace Python source exceeds 8 MiB")
     relative: dict[Path, Path] = {}
+    # Each source is named from its own project, so a repository root reproduces the
+    # module identities that opening the nested application directly produces.
+    bases = set(roots)
 
     for path in files:
-        base = next(candidate for candidate in reversed(roots) if path.is_relative_to(candidate))
+        owner = project_root(path, bound=root)
+
+        if owner is not None:
+            bases.update(import_roots(owner))
+
+    for path in files:
+        base = max(
+            (candidate for candidate in bases if path.is_relative_to(candidate)),
+            key=lambda candidate: len(candidate.parts),
+        )
         name = path.relative_to(base)
 
         if name in relative.values():

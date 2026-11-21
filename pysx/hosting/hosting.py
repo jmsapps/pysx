@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from http import HTTPStatus
 from importlib.resources import files
-from pathlib import Path  # noqa: TC003 - public from_path annotations resolve at runtime
+from pathlib import Path  # noqa: TC003 - public host API annotations resolve at runtime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlsplit
@@ -94,6 +94,8 @@ class HostConfig:
     recovery: bool = True
     recovery_namespace: str | None = None
     recovery_key_directory: Path | None = None
+    state_directory: Path | None = None
+    state_namespace: str | None = None
 
     def __post_init__(self) -> None:
         if self.production and (
@@ -220,6 +222,16 @@ class Application:
 
     def path(self, path: str) -> str:
         return self.config.base_path + "/" + path.lstrip("/")
+
+    def accepts_websocket(self, path: str) -> bool:
+        """Which request paths upgrade to a websocket.
+
+        An application that dispatches to mounted applications widens this to their
+        prefixes; otherwise only this application's own socket path is upgraded, so
+        single-application hosts are unaffected.
+        """
+
+        return path == self.path("ws")
 
     def prepare(self, request: RequestContext, *, websocket: bool = False) -> RequestContext:
         context = replace(request, base_path=request.base_path or self.config.base_path)
@@ -381,12 +393,25 @@ class Application:
                 # Keep compiler/checker imports free of the host's crypto startup cost.
                 from pysx.components.composition import portable_identity_for
                 from pysx.runtime.capsule import CapsuleIssuer
+                from pysx.runtime.state_paths import application_source
 
                 from .browser_recovery import BrowserRecovery
-                from .recovery_keys import default_directory, load_keys
+                from .recovery_keys import (
+                    default_directory,
+                    load_keys,
+                    managed_key_directory,
+                )
 
                 namespace = self.config.recovery_namespace or portable_identity_for(self.app)
-                directory = self.config.recovery_key_directory or default_directory(namespace)
+                # `recovery_namespace` stays the cryptographic context; where the keys
+                # live is a separate decision, so a deployment can stabilise one without
+                # changing the other.
+                directory = self.config.recovery_key_directory or managed_key_directory(
+                    self.config.state_namespace or namespace,
+                    legacy=default_directory(namespace),
+                    directory=self.config.state_directory,
+                    start=application_source(self.app),
+                )
                 self.recovery_issuer = CapsuleIssuer(
                     load_keys(directory, provision=self.config.recovery_key_directory is None)
                 )
@@ -594,7 +619,10 @@ class Application:
 
             return
 
-        if urlsplit(connection.request.path).path != connection.request.base_path + "/ws":
+        # Validate against the application actually handling this connection. A
+        # dispatched mounted application serves its own prefix, and the incoming request
+        # still carries the root's base path, so comparing to that rejects the child.
+        if urlsplit(connection.request.path).path != self.path("ws"):
             await bounded.close(code=1008, reason="invalid socket path")
 
             if bounded.reserved:
@@ -763,7 +791,7 @@ class Application:
 
             method = _connection.method if isinstance(_connection, HTTPConnection) else "GET"
 
-            if method == "GET" and urlsplit(request.path).path == self.path("ws"):
+            if method == "GET" and self.accepts_websocket(urlsplit(request.path).path):
                 from urllib.parse import parse_qs
 
                 try:

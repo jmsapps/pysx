@@ -65,6 +65,12 @@ from .rendering.render import (
     when,
 )
 from .runtime.async_runtime import push
+from .runtime.browser import (
+    BrowserBehaviorError,
+    DisconnectFor,
+    Reveal,
+    browser,
+)
 from .runtime.dom import Dom, DomError, DomListener, DomNode, DomRef, Rect
 from .runtime.durable import DurableSession
 from .runtime.events import BrowserEvent, EventHandler, on_event
@@ -91,6 +97,7 @@ from .runtime.routing import (
     RouteState,
     match_route,
 )
+from .runtime.state_paths import persistent_path, temporary_path
 from .runtime.transport import TransportLimits
 from .styling.styled import StyledCallable, StyledTag, global_style, styled, stylesheet
 from .styling.styles import Theme, Themes, css
@@ -100,10 +107,12 @@ __all__ = [
     "Application",
     "AuthenticatedIdentity",
     "Binding",
+    "BrowserBehaviorError",
     "BrowserEvent",
     "Children",
     "Component",
     "Deferred",
+    "DisconnectFor",
     "Document",
     "Dom",
     "DomError",
@@ -134,6 +143,7 @@ __all__ = [
     "RequestEvent",
     "Resource",
     "ResourceState",
+    "Reveal",
     "Route",
     "RouteResponse",
     "RouteState",
@@ -160,6 +170,7 @@ __all__ = [
     "batch",
     "bounded_while",
     "br",
+    "browser",
     "button",
     "concat",
     "contains",
@@ -203,6 +214,7 @@ __all__ = [
     "own_task",
     "own_timer",
     "p",
+    "persistent_path",
     "project",
     "push",
     "pysx",
@@ -216,6 +228,7 @@ __all__ = [
     "structured",
     "styled",
     "stylesheet",
+    "temporary_path",
     "ul",
     "when",
 ]

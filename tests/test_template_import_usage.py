@@ -256,3 +256,25 @@ Empty = styled.div(t"")
     for value, expected in [(good, 0), (bad, 1)]:
         path.write_text(source + f'view = pysx(t"br; {tag}({prop}={{{value}}}); br")\n')
         assert type_project(tmp_path, backend) == expected
+
+
+def test_direct_constant_template_only_import_is_retained(tmp_path: Path) -> None:
+    """A constant used only inside a template is live; removing it would break the render."""
+    source = (
+        "from pysx import pysx\n"
+        "from pysx.components.native import A\n\n"
+        'BASE_PATH = "/pysx/learn"\n'
+        "view = pysx(t'A(href={BASE_PATH}): \"Learn\"')\n"
+    )
+    findings = lint_source(source, str(tmp_path / "view.py"))
+    assert not [item for item in findings if item.code in {"F401", "F821", "F841"}], findings
+    path = tmp_path / "view.py"
+    path.write_bytes(source.encode())
+    result = subprocess.run(
+        [sys.executable, "-m", "pysx.tooling.quality", "ruff", str(tmp_path), "--fix-imports"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert b"BASE_PATH" in path.read_bytes(), "the template-only constant survives a fix pass"

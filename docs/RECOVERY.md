@@ -1,5 +1,10 @@
 # Recovery
 
+
+Recovery keys live under the application's managed state root; see
+[hosting](HOSTING.md) for the layout, overrides and the migration of implicit
+legacy defaults. `recovery_namespace` remains the cryptographic context and is
+not a filesystem path.
 ## Open-document continuity
 
 Ordinary hosted components and signals recover compatible UI state automatically

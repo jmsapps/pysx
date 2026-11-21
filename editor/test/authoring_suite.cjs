@@ -95,6 +95,14 @@ def tree() -> Fragment:
   assert(!vscode.languages.getDiagnostics(doc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("producer.Panel")), "saved later-sibling import retained");
   await replace(doc, "'Hello'", "'Unsaved'");
   await eventually(async () => Boolean(await extension.exports.refresh(doc)), "immutable snapshot");
+  const snapshot = await extension.exports.refresh(doc);
+  const refreshed = await vscode.commands.executeCommand("pysx.refresh");
+  assert(refreshed && refreshed.token > snapshot.token, "explicit refresh replaces an unchanged snapshot");
+  assert.notEqual(refreshed.directory, snapshot.directory, "explicit refresh creates a cold projection");
+  const stateRoot = process.env.PYSX_STATE_DIR ?? path.join(root, ".pysx");
+  assert(path.relative(stateRoot, snapshot.directory).split(path.sep).includes("temporary"), "projections use managed temporary state");
+  assert(!path.relative(stateRoot, snapshot.directory).startsWith(".."), "projections stay inside the state root");
+  assert(!fs.existsSync(path.join(root, "pysx-analysis")), "no external mirror directory or symlink");
   await eventually(() => vscode.languages.getDiagnostics(doc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("UnusedWidget")), "genuine unused import");
   assert(!vscode.languages.getDiagnostics(doc.uri).some((item) => item.source === "pysx" && item.message.includes("F401") && item.message.includes("producer.Panel")));
   assert(vscode.extensions.getExtension("charliermarsh.ruff"), "actual Ruff extension must exercise its nullable configuration");
@@ -268,7 +276,16 @@ def tree() -> Fragment:
     .contributes.commands.map((item) => item.command);
   const registered = new Set(await vscode.commands.getCommands(true));
   for (const command of advertised) assert(registered.has(command), `${command} is registered`);
+  // Restore is implemented in both modes now, so it reverses this folder's owned
+  // settings for real instead of reporting itself as resident-only. Running it twice
+  // leaves nothing owned, which is how a genuine restoration differs from a no-op.
+  assert.equal(await vscode.commands.executeCommand("pysx.restoreTooling"), true,
+    "worker mode restores the settings setup owned");
   assert.equal(await vscode.commands.executeCommand("pysx.restoreTooling"), false,
-    "a resident-only command reports itself in worker mode instead of failing");
+    "a second restore finds nothing left owned");
+  // Setup and restore are shared now, so the only advertised command the worker does not
+  // implement is the resident server's own restart.
+  assert.equal(await vscode.commands.executeCommand("pysx.restartServer"), false,
+    "a genuinely resident-only command reports itself instead of failing");
   console.log("PYSX EDITOR CASES PASSED: 11 (live buffers, imports, hover, completion, definition, props, stale fixes, cleanup, type recovery, coherent rename, advertised commands)");
 };

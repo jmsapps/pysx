@@ -209,6 +209,7 @@ class DomRef:
         self.controller = controller
         self.imperative = imperative
         self.token = ""
+        self.scroll_container = False
 
     def handle(self) -> DomNode:
         """Capture this mount. Retained handles never follow replacement elements."""

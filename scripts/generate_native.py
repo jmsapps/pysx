@@ -31,10 +31,10 @@ def spelling(attr: str) -> str:
 
 def annotation(attr: str, tag: str = "") -> str:
     if attr.startswith("on"):
-        return "Callable[[object], object] | EventHandler"
+        return "Callable[[object], object] | EventHandler | LocalAction"
 
     if attr in BOOLEAN_ATTRS:
-        return "bool | Signal[bool] | None"
+        return "bool | Signal[bool] | LocalFlag | None"
 
     if attr in NUMBER_ATTRS and not (
         attr == "value" and tag in {"input", "button", "option", "data", "param"}
@@ -55,6 +55,7 @@ def generate() -> str:
         "",
         "from pysx.reactive.reactive import Signal",
         "from pysx.rendering.render import Fragment as RenderFragment",
+        "from pysx.runtime.browser import BehaviorDescriptor, LocalAction, LocalFlag",
         "from pysx.runtime.dom import DomRef",
         "from pysx.runtime.events import EventHandler",
         "",
@@ -69,9 +70,13 @@ def generate() -> str:
         lines.append(f"    {spelling(attr)}: {annotation(attr)}")
 
     for event in sorted(EVENT_NAMES):
-        lines.append(f"    on_{event}: Callable[[object], object] | EventHandler")
+        lines.append(f"    on_{event}: Callable[[object], object] | EventHandler | LocalAction")
     lines.append("    custom_attrs: Mapping[str, object]")
     lines.append("    ref: DomRef")
+    lines.append(
+        "    behaviors: BehaviorDescriptor | tuple[BehaviorDescriptor, ...]"
+        " | frozenset[BehaviorDescriptor]"
+    )
     lines.append("    css: str | StringTemplate | Signal[str]")
     lines.append("    style_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]")
     lines.append("    css_vars: Mapping[str, str | Signal[str]] | Signal[dict[str, str]]")

@@ -107,3 +107,58 @@ test("markup refresh retains decorations until a current response replaces them"
   controller.dispose();
   assert.equal(timers.size, 0);
 });
+
+test("component colouring is green, theme-aware and never emboldened", () => {
+  const options = [];
+  const vscode = {
+    ThemeColor: class { constructor(id) { this.id = id; } },
+    window: {
+      createTextEditorDecorationType: (settings) => {
+        options.push(settings);
+        return { dispose() {} };
+      },
+      visibleTextEditors: [],
+      onDidChangeVisibleTextEditors: () => ({ dispose() {} }),
+    },
+    workspace: {
+      textDocuments: [],
+      onDidChangeTextDocument: () => ({ dispose() {} }),
+      onDidOpenTextDocument: () => ({ dispose() {} }),
+      onDidCloseTextDocument: () => ({ dispose() {} }),
+    },
+  };
+  const exports = {};
+  vm.runInNewContext(readFileSync(path.join(__dirname, "../highlighting.js"), "utf8"), {
+    exports,
+    require: (name) => { assert.equal(name, "vscode"); return vscode; },
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  });
+  exports.activate({ onNotification: () => ({ dispose() {} }), sendRequest: async () => ({}) },
+    { warn: () => {} });
+
+  // Bold is what made component names stand out from every other markup token; the
+  // decoration surface is the one that still applied it to lowercase bindings.
+  for (const settings of options) {
+    assert.equal(settings.fontWeight, undefined,
+      `no decoration forces a weight: ${settings.color.id}`);
+    assert.equal(settings.fontStyle, undefined, `no decoration forces a style: ${settings.color.id}`);
+  }
+  assert(options.some((settings) => settings.color.id === "pysx.markup.class"),
+    "component decorations are registered");
+
+  const manifest = JSON.parse(readFileSync(path.join(__dirname, "../package.json"), "utf8"));
+  const colour = manifest.contributes.colors.find((item) => item.id === "pysx.markup.class");
+  const rule = manifest.contributes.configurationDefaults["editor.tokenColorCustomizations"]
+    .textMateRules.find((item) => item.scope === "support.class.component.pysx");
+  assert.equal(rule.settings.fontStyle, undefined, "the TextMate rule forces no weight");
+  assert.equal(colour.defaults.dark, rule.settings.foreground,
+    "both surfaces agree on the default dark green");
+  const distinct = new Set(Object.values(colour.defaults));
+  assert(distinct.size > 1, "the component colour is theme-aware rather than one hard-coded value");
+  for (const value of distinct) {
+    assert.match(value, /^#[0-9A-Fa-f]{6}$/, `an explicit colour: ${value}`);
+    const [r, g, b] = [1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16));
+    assert(g > r && g > b, `${value} is green rather than teal or blue`);
+  }
+});

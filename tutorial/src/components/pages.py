@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from pysx import Fragment, Link, derived, each, pysx, signal
+from pysx import DisconnectFor, Fragment, Link, browser, derived, each, pysx, signal
 from pysx.reactive.reactive import untracked
 from src.catalog import LESSONS, neighbors
 from src.components import Actions
@@ -83,6 +83,12 @@ def Steps(*, text: str) -> Fragment:
 def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> Fragment:
     revision = signal([0])
     generation = derived(lambda: revision()[0])
+    connection = browser.connection()
+    status = connection.text(
+        connected="Connected",
+        reconnecting="Disconnected. Reconnecting…",
+        default="Connecting…",
+    )
 
     def reset(_: object) -> None:
         revision.set([revision()[0] + 1])
@@ -136,10 +142,12 @@ def Article(*, lesson: Lesson, router: Router, demo: Callable[[], Fragment]) -> 
                     {each(revision, build, key=lambda value: value)}
                     if {lesson.slug == "reconnection"}:
                         Actions:
-                            Button(id="recovery-disconnect" type="button" disabled={True}):
+                            Button(id="recovery-disconnect" type="button"
+                                   disabled={connection.not_connected}
+                                   onClick={DisconnectFor(seconds=5)}):
                                 "Disconnect for 5 seconds"
                             p(id="recovery-connection" role="status" aria-live="polite"):
-                                "Connecting…"
+                                {status}
                     Actions(class="demo-reset"):
                         Button(id="reset-demo" onClick={reset}): "Reset demo"
             h2: "Take this with you"

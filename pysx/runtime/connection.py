@@ -150,7 +150,14 @@ async def serve_connection(runtime: HTTPRuntime, connection: Connection) -> None
         await bounded.close(4010, error.worker)
     except RecoveryBusy:
         await bounded.close(1013, "recovery capacity")
-    except RecoveryUnavailable:
+    except RecoveryUnavailable as error:
+        if os.environ.get("PYSX_TRACE_RESUME") == "1":
+            logging.getLogger(__name__).warning(
+                "Resume refusal trace: %s %r cause=%s",
+                type(error).__name__,
+                error,
+                type(error.__cause__).__name__ if error.__cause__ is not None else "none",
+            )
         await bounded.close(1013, "durable state unavailable")
     finally:
         if bounded.reserved:

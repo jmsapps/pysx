@@ -286,23 +286,268 @@ def test_keys_host_startup_and_no_import_provisioning(tmp_path: Path) -> None:
         asyncio.run(missing.start())
 
 
-def test_keys_automatic_host_ownership(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    directory = tmp_path / "automatic"
+def test_application_state_keys_land_under_the_configured_state_root(tmp_path: Path) -> None:
+    """Provisioned keys live under the application's own state root, not the project."""
+    from pysx.runtime.state_paths import PERSISTENT
 
-    def location(_namespace: str) -> Path:
-        return directory
-
-    monkeypatch.setattr(recovery_keys, "default_directory", location)
-    app = Application(lambda: native.P("hello"))
-    assert not directory.exists()
+    root = tmp_path / "state"
+    app = Application(
+        lambda: native.P("hello"),
+        config=HostConfig(state_directory=root, state_namespace="demo"),
+    )
 
     async def exercise() -> None:
         await app.start()
         assert app.recovery_issuer is not None
+        directory = root / "demo" / PERSISTENT / "recovery"
+        assert (directory / "recovery.keys").is_file()
         assert app.recovery_issuer.ring == load_keys(directory)
         await app.close()
 
     asyncio.run(exercise())
+    assert not (root / ".gitignore").exists(), "an explicit root is not a `.pysx` directory"
+
+
+def test_application_state_migrates_implicit_legacy_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The implicit platform default is carried forward without changing key identity."""
+    from pysx.runtime.state_paths import PERSISTENT
+
+    legacy = tmp_path / "legacy"
+    legacy.mkdir(mode=0o700)
+
+    def legacy_location(_namespace: str) -> Path:
+        return legacy
+
+    monkeypatch.setattr(recovery_keys, "default_directory", legacy_location)
+    original = load_keys(legacy, provision=True)
+    root = tmp_path / "state"
+    app = Application(
+        lambda: native.P("hello"),
+        config=HostConfig(state_directory=root, state_namespace="demo"),
+    )
+
+    async def exercise() -> None:
+        await app.start()
+        assert app.recovery_issuer is not None
+        # Same keys, new home, and the legacy copy is retained rather than moved.
+        assert app.recovery_issuer.ring == original
+        assert (root / "demo" / PERSISTENT / "recovery" / "recovery.keys").is_file()
+        assert (legacy / "recovery.keys").is_file()
+        await app.close()
+
+    asyncio.run(exercise())
+
+
+def test_application_state_conflicting_migration_is_refused(tmp_path: Path) -> None:
+    """Differing data at the destination is reported, never overwritten or merged."""
+    from pysx.runtime.state_paths import StateConflictError, migrate
+
+    legacy, destination = tmp_path / "legacy", tmp_path / "destination"
+    legacy.mkdir(mode=0o700)
+    destination.mkdir(mode=0o700)
+    original = load_keys(legacy, provision=True)
+    different = load_keys(destination, provision=True)
+
+    with pytest.raises(StateConflictError, match="already holds different data"):
+        migrate(legacy, destination, names=("recovery.keys",))
+    assert load_keys(legacy) == original
+    assert load_keys(destination) == different
+
+    # An identical destination is a no-op rather than a failure.
+    (destination / "recovery.keys").unlink()
+    migrate(legacy, destination, names=("recovery.keys",))
+    assert migrate(legacy, destination, names=("recovery.keys",)) == ()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink storage")
+def test_application_state_migration_ignores_planted_staging_symlink(tmp_path: Path) -> None:
+    from pysx.runtime.state_paths import migrate
+
+    legacy, destination = tmp_path / "legacy", tmp_path / "destination"
+    legacy.mkdir(mode=0o700)
+    destination.mkdir(mode=0o700)
+    original = load_keys(legacy, provision=True)
+    unrelated = tmp_path / "unrelated"
+    unrelated.write_bytes(b"untouched")
+    (destination / ".recovery.keys.incoming").symlink_to(unrelated)
+    migrate(legacy, destination, names=("recovery.keys",))
+    assert unrelated.read_bytes() == b"untouched"
+    assert load_keys(destination) == original
+    assert load_keys(legacy) == original
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink storage")
+def test_application_state_migration_rejects_parent_symlink_before_writes(tmp_path: Path) -> None:
+    legacy, outside = tmp_path / "legacy", tmp_path / "outside"
+    legacy.mkdir(mode=0o700)
+    outside.mkdir(mode=0o700)
+    load_keys(legacy, provision=True)
+    alias = tmp_path / "alias"
+    alias.symlink_to(outside, target_is_directory=True)
+    with pytest.raises((OSError, ValueError)):
+        recovery_keys.managed_key_directory("app", legacy=legacy, directory=alias)
+    assert not list(outside.iterdir())
+
+
+def test_application_state_concurrent_migration_publishes_one_ring(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pysx.runtime.state_paths import migrate
+
+    legacy, destination = tmp_path / "legacy", tmp_path / "destination"
+    legacy.mkdir(mode=0o700)
+    destination.mkdir(mode=0o700)
+    original = load_keys(legacy, provision=True)
+    barrier = Barrier(2)
+    link = os.link
+
+    def publish(*args: object, **kwargs: object) -> None:
+        barrier.wait(timeout=10)
+        link(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "link", publish)
+
+    if sys.platform != "win32":
+        monkeypatch.setattr(os, "supports_dir_fd", {*os.supports_dir_fd, publish})
+
+    def migrate_one(_index: int) -> tuple[str, ...]:
+        return migrate(legacy, destination, names=("recovery.keys",))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(migrate_one, range(2)))
+    assert len(results) == 2
+    assert load_keys(destination) == original
+    assert load_keys(legacy) == original
+
+
+def test_application_state_windows_migration_preserves_ring_and_rejects_reparse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pysx.runtime.state_paths import migrate
+
+    legacy, destination = tmp_path / "legacy", tmp_path / "destination"
+    legacy.mkdir()
+    original = KeyRing(RootKey(b"migrate0", b"k" * 32))
+    (legacy / "recovery.keys").write_bytes(b"sealed:" + encode_ring(original))
+
+    def seal(raw: bytes, *, protect: bool) -> bytes:
+        if protect:
+            return b"sealed:" + raw
+        assert raw.startswith(b"sealed:")
+
+        return raw[7:]
+
+    blocked = tmp_path / "blocked"
+
+    def is_reparse(path: Path) -> bool:
+        return path == blocked
+
+    monkeypatch.setattr(recovery_keys, "windows_key_storage", lambda: True)
+    monkeypatch.setattr(recovery_keys, "_dpapi", seal)
+    monkeypatch.setattr(recovery_keys, "_windows_reparse", is_reparse)
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert migrate(legacy, destination, names=("recovery.keys",)) == ("recovery.keys",)
+    assert load_keys(destination) == original
+    assert load_keys(legacy) == original
+    assert migrate(legacy, destination, names=("recovery.keys",)) == ()
+    with pytest.raises(ValueError, match="reparse point"):
+        recovery_keys.managed_key_directory("app", legacy=legacy, directory=blocked)
+    assert not blocked.exists()
+
+
+@pytest.mark.parametrize("wrapper", ["function", "partial", "method", "instance"])
+@pytest.mark.parametrize("launch", ["outer", "inner"])
+def test_application_state_uses_callable_owner_and_preserves_previous_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wrapper: str, launch: str
+) -> None:
+    from pysx.runtime.state_paths import PERSISTENT, component
+
+    outer, inner = tmp_path / "repo", tmp_path / "repo" / "application"
+    inner.mkdir(parents=True)
+
+    for project in (outer, inner):
+        (project / "pyproject.toml").write_text('[project]\nname="owner-test"\nversion="0"\n')
+    source = inner / "app.py"
+    source.write_text(
+        "from pysx import native\n"
+        "def app(): return native.P('hello')\n"
+        "class Factory:\n"
+        "    def build(self): return app()\n"
+        "    def __call__(self): return app()\n"
+    )
+    spec = importlib.util.spec_from_file_location("state_owner_fixture", source)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    target = {
+        "function": module.app,
+        "partial": partial(module.app),
+        "method": module.Factory().build,
+        "instance": module.Factory(),
+    }[wrapper]
+    namespace = "review-owner"
+    previous = outer / ".pysx" / component(namespace) / PERSISTENT / "recovery"
+    original = load_keys(previous, provision=True)
+    monkeypatch.delenv("PYSX_STATE_DIR", raising=False)
+
+    def absent_legacy(_namespace: str) -> Path:
+        return tmp_path / "absent"
+
+    monkeypatch.setattr(recovery_keys, "default_directory", absent_legacy)
+    monkeypatch.chdir(outer if launch == "outer" else inner)
+
+    async def exercise() -> None:
+        for working in (Path.cwd(), inner):
+            monkeypatch.chdir(working)
+            app = Application(
+                cast("Callable[[], Fragment]", target), config=HostConfig(state_namespace=namespace)
+            )
+            await app.start()
+            assert app.recovery_issuer is not None
+            assert app.recovery_issuer.ring == original
+            await app.close()
+
+    asyncio.run(exercise())
+    current = inner / ".pysx" / component(namespace) / PERSISTENT / "recovery"
+    assert load_keys(current) == original
+    assert load_keys(previous) == original
+
+
+def test_application_state_installed_module_without_project_uses_launch_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launch, installed = tmp_path / "launch", tmp_path / "site-packages" / "app"
+    launch.mkdir()
+    installed.mkdir(parents=True)
+    (launch / "pyproject.toml").write_text('[project]\nname="launch"\nversion="0"\n')
+    source = installed / "view.py"
+    source.write_text("from pysx import native\ndef app(): return native.P('hello')\n")
+    spec = importlib.util.spec_from_file_location("installed_owner_fixture", source)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    monkeypatch.chdir(launch)
+    monkeypatch.delenv("PYSX_STATE_DIR", raising=False)
+
+    def absent_legacy(_namespace: str) -> Path:
+        return tmp_path / "absent"
+
+    monkeypatch.setattr(recovery_keys, "default_directory", absent_legacy)
+
+    async def exercise() -> None:
+        app = Application(module.app, config=HostConfig(state_namespace="installed"))
+        await app.start()
+        await app.close()
+
+    asyncio.run(exercise())
+    assert not (installed / ".pysx").exists()
+    assert (launch / ".pysx" / "installed" / "persistent" / "recovery" / "recovery.keys").is_file()
 
 
 def test_keys_default_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

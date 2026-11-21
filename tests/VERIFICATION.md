@@ -1,7 +1,8 @@
 # Browser, grammar and editor verification
 
 Run from the repository root with Node 24, npm, uv and the locked Python 3.14.10
-environment. All dependencies are repository-local and exact versions are locked.
+environment. Python and Node dependencies are repository-local with exact versions
+locked; native prerequisites are described below.
 
 ```sh
 uv sync --locked --python 3.14.10
@@ -16,6 +17,13 @@ VSCode needs a display (use `xvfb-run -a` in headless Linux), GTK/NSS/audio libr
 and the standard Electron runtime dependencies. macOS needs a native desktop session.
 The quality matrix also runs on Windows. Setup is platform-specific; retain actual run
 provenance and do not infer platform passes from configuration.
+
+Reverse-proxy suites require native nginx and OpenSSL. The manifest's `native-proxy`
+setup gate provisions missing nginx in CI, using the runner's package manager on Linux
+and macOS and a pinned, SHA-256-checked official archive on Windows. Locally, install
+these prerequisites first, then qualify them with
+`uv run --project . python scripts/setup_proxy.py`. `PYSX_NGINX` and `PYSX_OPENSSL`
+select explicit executables; Windows also discovers OpenSSL bundled with Git.
 
 The grammar harness resolves Pylance through the installed VSCode extension registry.
 For managed CI, provision the exact official host in the ignored repository cache:

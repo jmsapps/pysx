@@ -37,9 +37,11 @@ const CONSUMER = [
   "from pysx import Fragment, pysx",
   "from library import Card, Spare",
   "",
+  'BASE_PATH = "/pysx/learn"',
+  "",
   "",
   "def view() -> Fragment:",
-  "    return pysx(t'Card(title=\"hello\")')",
+  "    return pysx(t'Card(title={BASE_PATH})')",
   "",
 ].join("\n");
 
@@ -147,7 +149,18 @@ async function run() {
   assert(!everyUri.some((item) => item.includes("_pysx_revision_")),
     "a private projection mirror leaked into the problems view");
 
-  let cases = 4;
+  // 5. A constant interpolated directly is live template usage and keeps its own type,
+  // so neither the unused-name pass nor the type pass may report it.
+  // The constant is template-only usage: the unused-name pass must treat it as live.
+  // Its inferred type is asserted by the deterministic compiler cases, which can read
+  // the checker's own output rather than a rendered hover.
+  const reported = vscode.languages.getDiagnostics(consumer.uri)
+    .filter((item) => item.message.includes("BASE_PATH"));
+  assert.equal(reported.length, 0,
+    `the directly interpolated constant is reported: ${JSON.stringify(
+      reported.map((item) => item.message))}`);
+
+  let cases = 5;
   if (suite === "editor_surface") {
     // 5-7. The advertised surface answers through the real client.
     console.log("EDITOR SURFACE STEP: symbols");
@@ -235,9 +248,9 @@ async function run() {
       "a setting that was absent before setup is removed again");
     assert.equal(owned("python.analysis.disableTaggedHints").workspaceFolderValue, false,
       "a value the user changed after setup is kept rather than overwritten");
-    cases = 11;
+    cases = 12;
   } else {
-    cases = 7;
+    cases = 8;
     // 5. CLI and editor agree about which import is dead.
     const { execFileSync } = require("node:child_process");
     const reported = JSON.parse(execFileSync(python,
@@ -256,7 +269,8 @@ async function run() {
 
   await vscode.commands.executeCommand("workbench.action.closeAllEditors");
   console.log(`PYSX EDITOR CASES PASSED: ${cases} (template-only import live, genuine dead ` +
-    `import reported, ordinary file covered, last-use removal, no mirror leak` +
+    `import reported, ordinary file covered, last-use removal, no mirror leak, ` +
+    `direct constant retained` +
     (suite === "editor_surface"
       ? ", resident surface, setup, repeated setup, replacement action, restoration)"
       : ", CLI agreement, every advertised command registered, setup)"));

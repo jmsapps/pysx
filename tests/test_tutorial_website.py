@@ -377,12 +377,17 @@ def test_tutorial_website_every_page_http_ssr_and_cleanup(path: str, tmp_path: P
             else:
                 assert "Next:" in body
             assert 'href="/assets/course.css"' in body
-            assert 'src="/assets/course.js"' in body
+            scripts = [line for line in body.split("<script")[1:] if "/client.js" not in line[:60]]
+            assert not scripts, "the course carries no application JavaScript"
 
             if path == "/learn/reconnection":
                 assert 'id="recovery-disconnect"' in body
                 assert "Disconnect for 5 seconds" in body
                 assert 'id="recovery-connection"' in body
+                assert "data-pysx-local-click=" in body
+                assert "data-pysx-local-attrs=" in body
+                assert "<pysx-local" in body
+                assert ">Connecting…</pysx-local>" in body
             else:
                 assert 'id="recovery-disconnect"' not in body
 

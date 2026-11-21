@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -17,6 +19,8 @@ from .persistence import (
     migrate_state,
 )
 from .session import Session
+
+LOG = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -99,7 +103,15 @@ class DurableSession[T](Session):
         self._constructing = False
         self.checkpoint()
 
-    def fence(self) -> None:
+    def fence(self, reason: str, cause: BaseException | None = None) -> None:
+        LOG.warning(
+            "Durable session fenced: reason=%s cause=%s%s",
+            reason,
+            type(cause).__name__ if cause is not None else "none",
+            f" detail={cause!r}"
+            if cause is not None and os.environ.get("PYSX_TRACE_RESUME") == "1"
+            else "",
+        )
         self.recovery_failed = True
         self.changed.set()
         self.dispose()
@@ -110,7 +122,7 @@ class DurableSession[T](Session):
         except StoreUnavailable:
             raise
         except Exception as error:
-            self.fence()
+            self.fence("ownership-check", error)
 
             raise RecoveryUnavailable("session ownership unavailable") from error
 
@@ -147,7 +159,7 @@ class DurableSession[T](Session):
             raise
         except Exception as error:
             try:
-                self.fence()
+                self.fence("checkpoint", error)
             except Exception as cleanup_error:
                 error.add_note(f"session cleanup also failed: {cleanup_error}")
 

@@ -29,6 +29,7 @@ from pysx.compiler.parser import (
     Skeleton,
     parse,
 )
+from pysx.compiler.projects import import_roots
 from pysx.compiler.scope import Scope, ScopeIndex
 from pysx.compiler.source_map import LiteralMapper, MappedText, Positions, SourceSpan, utf16_offsets
 from pysx.components.schema import NATIVE_TAGS, python_attr, tag_info
@@ -249,7 +250,7 @@ def classify(
             repaired = alternative
             tree = ast.parse(repaired)
         mapper = LiteralMapper(repaired)
-        resolver = WorkspaceResolver(filename, roots=(root, root / "src"), buffers=buffers)
+        resolver = WorkspaceResolver(filename, roots=import_roots(root), buffers=buffers)
         scopes = ScopeIndex(tree, package=resolver.package)
         candidates: list[tuple[int, Context]] = []
 
@@ -704,7 +705,7 @@ def template_calls(
             repaired = alternative
             tree = ast.parse(repaired)
         mapper = LiteralMapper(repaired)
-        resolver = WorkspaceResolver(filename, roots=(root, root / "src"), buffers=buffers)
+        resolver = WorkspaceResolver(filename, roots=import_roots(root), buffers=buffers)
         scopes = ScopeIndex(tree, package=resolver.package)
     except SyntaxError, ValueError, tokenize.TokenError, RecursionError:
         return []

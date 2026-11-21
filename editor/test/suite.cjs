@@ -20,6 +20,21 @@ exports.run = async function () {
   if (process.env.PYSX_EDITOR_SUITE === "authoring") return require("./authoring_suite.cjs").run();
   if (process.env.PYSX_EDITOR_SUITE === "client_verify") return require("./client_suite.cjs").run();
   if (process.env.PYSX_EDITOR_SUITE === "interpreter_routing") return require("./routing_suite.cjs").run();
+  if (process.env.PYSX_EDITOR_SUITE === "navigation_latency") {
+    const mode = process.env.PYSX_EDITOR_ROUTING_MODE ?? "resident";
+    const extension = vscode.extensions.getExtension("jmsapps.pysx");
+    await vscode.workspace.getConfiguration("pysx")
+      .update("useLanguageServer", mode !== "worker", vscode.ConfigurationTarget.Workspace);
+    await vscode.workspace.getConfiguration("pysx")
+      .update("pythonPath", process.env.PYSX_EDITOR_PYTHON, vscode.ConfigurationTarget.Workspace);
+    await extension.activate();
+    const started = Date.now();
+    const progress = (label) => console.log(
+      `PYSX NAVIGATION: ${label} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
+    const labels = await require("./navigation_latency_suite.cjs").run(mode, progress);
+    console.log(`PYSX EDITOR CASES PASSED: ${labels.length} (${labels.join(", ")})`);
+    return;
+  }
   if (["editor_surface", "template_import_usage"].includes(process.env.PYSX_EDITOR_SUITE)) {
     return require("./surface_suite.cjs").run();
   }

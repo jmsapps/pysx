@@ -191,3 +191,75 @@ def test_deployment_security_redacts_logs_observer_errors_and_metrics(
 
     caplog.set_level(logging.INFO)
     asyncio.run(exercise())
+
+
+def test_nginx_proxy_accepts_forwarded_identity_from_a_trusted_proxy() -> None:
+    """Behind a configured proxy, the public origin is what the application validates."""
+    import tempfile
+    from pathlib import Path
+
+    from nginx_proxy import application, disposable_tls_client, free_port, nginx
+
+    port = free_port()
+    public = f"https://localhost:{port}"
+
+    async def exercise(proxied: int) -> tuple[bool, bool]:
+        context = disposable_tls_client()
+
+        async def attempt(origin: str) -> bool:
+            try:
+                async with connect(
+                    f"wss://localhost:{proxied}/ws",
+                    origin=Origin(origin),
+                    ssl=context,
+                    open_timeout=30,
+                ):
+                    return True
+            except Exception:
+                return False
+
+        return await attempt(public), await attempt("https://attacker.example")
+
+    with (
+        tempfile.TemporaryDirectory() as directory,
+        application("examples.nginx:example", environment={"PYSX_ORIGIN": public}) as upstream,
+        nginx(Path(directory), upstream, port=port) as proxied,
+    ):
+        accepted, forged = asyncio.run(exercise(proxied))
+    assert accepted, "the configured public origin is accepted through the proxy"
+    assert not forged, "another origin is still rejected behind the same proxy"
+
+
+def test_nginx_proxy_rejects_forwarded_headers_from_an_untrusted_peer() -> None:
+    """Explicit proxy trust is preserved, and trust is the only thing that differs here.
+
+    Forwarding a host that does not match the configured origin is refused either way,
+    so such a fixture would pass without proving anything about trust. This one forwards
+    the configured public host and varies only whether the peer is a trusted proxy.
+    """
+    import urllib.error
+    import urllib.request
+
+    from nginx_proxy import application
+
+    def attempt(trusted: str) -> int:
+        with application(
+            "examples.nginx:example",
+            environment={
+                "PYSX_ORIGIN": "https://public.example",
+                "PYSX_TRUSTED_PROXIES": trusted,
+            },
+        ) as upstream:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{upstream}/",
+                headers={"X-Forwarded-Host": "public.example", "X-Forwarded-Proto": "https"},
+            )
+
+            try:
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    return int(response.status)
+            except urllib.error.HTTPError as error:
+                return int(error.code)
+
+    assert attempt("") >= 400, "forwarded identity from an untrusted peer is refused"
+    assert attempt("127.0.0.1/32") == 200, "the same headers are honoured from a trusted proxy"

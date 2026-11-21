@@ -50,10 +50,31 @@ let pendingScroll = null;
 let scrollTimer = null;
 const temporaryFocus = new WeakSet();
 
+function scrollSurface() {
+  const nominated = root.querySelector("[data-pysx-scroll-container]");
+  if (nominated === null || !nominated.isConnected) return null;
+  const style = getComputedStyle(nominated);
+  const scrollable = /auto|scroll|overlay/.test(`${style.overflowY} ${style.overflowX}`);
+  if (!scrollable) return null;
+  return nominated;
+}
+
+function surfacePosition(surface) {
+  return surface === null
+    ? {x: scrollX, y: scrollY} : {x: surface.scrollLeft, y: surface.scrollTop};
+}
+
+function scrollSurfaceTo(x, y) {
+  const surface = scrollSurface();
+  if (surface === null) window.scrollTo({left: x, top: y, behavior: "instant"});
+  else surface.scrollTo({left: x, top: y, behavior: "instant"});
+}
+
 function rememberPosition() {
   if (!routing || !historyEntry) return;
   const focus = root.contains(document.activeElement) ? document.activeElement.id : "";
-  historyPositions.set(historyEntry, {x: scrollX, y: scrollY, focus, url: observedLocation});
+  const position = surfacePosition(scrollSurface());
+  historyPositions.set(historyEntry, {...position, focus, url: observedLocation});
   while (historyPositions.size > 128) historyPositions.delete(historyPositions.keys().next().value);
 }
 
@@ -100,7 +121,7 @@ function attemptRouteScroll() {
     return;
   }
   if (plan.restore) {
-    window.scrollTo({left: plan.restore.x, top: plan.restore.y, behavior: "instant"});
+    scrollSurfaceTo(plan.restore.x, plan.restore.y);
     const focus = plan.restore.focus && root.querySelector(`#${CSS.escape(plan.restore.focus)}`);
     focusRoute(focus || root.querySelector("main") || root);
     cancelRouteScroll();
@@ -117,7 +138,7 @@ function attemptRouteScroll() {
     return;
   }
   if (!plan.fallback && (!id || plan.crossRoute)) {
-    window.scrollTo({left: 0, top: 0, behavior: "instant"});
+    scrollSurfaceTo(0, 0);
     focusRoute(root.querySelector("main") ?? root);
     plan.fallback = true;
   }
@@ -208,6 +229,7 @@ const domNodes = new Map();
 const domListeners = new Map();
 
 function syncDom() {
+  attachBehaviors();
   for (const [type, listeners] of registeredEvents) {
     if (!root.querySelector(`[data-pysx-policy-${CSS.escape(type)}]`)) {
       window.removeEventListener(type, listeners.capture, true);
@@ -723,6 +745,7 @@ function connectionElements() {
 
 function connectionState(state, retryMs = 0) {
   root.dataset.pysxConnection = state;
+  applyConnectionBindings(state);
   const hidden = !developing;
   const text = state === "connected" ? (restoredSession ? (partialReset ?
     "Connected. Session state was restored; some fields restarted with their defaults and uncommitted edits were discarded." :
@@ -851,6 +874,133 @@ function reconnect(manual = true) {
 
 attachSocket();
 window.addEventListener("pysx:reconnect", () => reconnect());
+const revealed = new Map();
+const completedReveals = new WeakMap();
+const revealObservers = new Map();
+const localEvents = new Set();
+const motionQuery = typeof matchMedia === "function"
+  ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+let connectionValue = "disconnected";
+
+function localConfig(source) {
+  try { return JSON.parse(source); } catch { return null; }
+}
+
+function revealNow(el, config) {
+  el.classList.add(config.visibleClass);
+  if (config.once) {
+    completedReveals.set(el, el.dataset.pysxBehavior);
+    releaseReveal(el);
+  }
+}
+
+function releaseReveal(el) {
+  const entry = revealed.get(el);
+  if (!entry) return;
+  entry.group.observer.unobserve(el);
+  entry.group.targets.delete(el);
+  revealed.delete(el);
+  if (!entry.group.targets.size) {
+    entry.group.observer.disconnect();
+    revealObservers.delete(entry.group.key);
+  }
+}
+
+function revealEntries(entries) {
+  for (const entry of entries) {
+    const tracked = revealed.get(entry.target);
+    if (!tracked) continue;
+    if (entry.isIntersecting) revealNow(entry.target, tracked.config);
+    else if (!tracked.config.once) entry.target.classList.remove(tracked.config.visibleClass);
+  }
+}
+
+function revealObserver(config) {
+  const key = `${config.rootMargin}|${config.threshold}`;
+  let group = revealObservers.get(key);
+  if (group === undefined) {
+    group = {key, targets: new Set(), observer: new IntersectionObserver(revealEntries,
+      {rootMargin: config.rootMargin, threshold: config.threshold})};
+    revealObservers.set(key, group);
+  }
+  return group;
+}
+
+function attachReveal(el, config) {
+  if (completedReveals.get(el) === el.dataset.pysxBehavior) {
+    el.classList.add(config.visibleClass);
+    return;
+  }
+  if (motionQuery?.matches) { releaseReveal(el); revealNow(el, config); return; }
+  const tracked = revealed.get(el);
+  if (tracked && tracked.key === el.dataset.pysxBehavior) return;
+  if (tracked) releaseReveal(el);
+  if (typeof IntersectionObserver !== "function") { revealNow(el, config); return; }
+  const group = revealObserver(config);
+  group.targets.add(el);
+  revealed.set(el, {config, group, key: el.dataset.pysxBehavior});
+  group.observer.observe(el);
+}
+
+function attachBehaviors() {
+  for (const [el, entry] of revealed) {
+    if (!root.contains(el) || entry.key !== el.dataset.pysxBehavior) releaseReveal(el);
+  }
+  for (const el of root.querySelectorAll("[data-pysx-behavior]")) {
+    const declared = localConfig(el.dataset.pysxBehavior);
+    if (!Array.isArray(declared)) continue;
+    for (const config of declared) if (config.kind === "reveal") attachReveal(el, config);
+  }
+  for (const el of root.querySelectorAll("[data-pysx-local-event]")) {
+    registerLocalEvent(el.dataset.pysxLocalEvent);
+  }
+  applyConnectionBindings(connectionValue);
+}
+
+function detachBehaviors() {
+  for (const group of revealObservers.values()) group.observer.disconnect();
+  revealObservers.clear();
+  revealed.clear();
+}
+
+motionQuery?.addEventListener?.("change", () => attachBehaviors());
+
+function runLocalAction(source) {
+  const action = localConfig(source);
+  if (action?.kind !== "disconnect") return;
+  window.dispatchEvent(new CustomEvent("pysx:disconnect",
+    {detail: {durationMs: action.seconds * 1000}}));
+}
+
+function registerLocalEvent(type) {
+  if (localEvents.has(type) || !/^[a-z]{1,32}$/.test(type)) return;
+  localEvents.add(type);
+  const attribute = `data-pysx-local-${type}`;
+  window.addEventListener(type, event => {
+    const target = event.target instanceof Element ? event.target.closest(`[${attribute}]`) : null;
+    if (target === null || !root.contains(target)) return;
+    runLocalAction(target.getAttribute(attribute));
+  });
+}
+
+function applyConnectionBindings(state) {
+  connectionValue = state;
+  for (const el of root.querySelectorAll("pysx-local[data-pysx-local]")) {
+    const config = localConfig(el.dataset.pysxLocal);
+    if (config?.kind !== "connection-text") continue;
+    const match = config.states.find(pair => pair[0] === state);
+    el.textContent = match ? match[1] : config.default;
+  }
+  for (const el of root.querySelectorAll("[data-pysx-local-attrs]")) {
+    const declared = localConfig(el.dataset.pysxLocalAttrs);
+    if (declared === null) continue;
+    for (const [name, config] of Object.entries(declared)) {
+      if (config.kind !== "connection-flag") continue;
+      el.toggleAttribute(name, config.states.includes(state) !== config.negate);
+    }
+  }
+}
+
 window.addEventListener("pysx:disconnect", event => {
   const duration = event.detail?.durationMs ?? 5000;
   if (!Number.isFinite(duration) || duration < 1 || duration > 10000 || !connected || stopped) return;
@@ -882,10 +1032,11 @@ window.addEventListener("pagehide", () => {
   stopped = true;
   clearTransportTimer();
   cancelRouteScroll();
+  detachBehaviors();
   socket.close();
 });
 window.addEventListener("pageshow", event => {
-  if (event.persisted) { stopped = false; reconnect(false); }
+  if (event.persisted) { attachBehaviors(); stopped = false; reconnect(false); }
 });
 
 function apply(op) {

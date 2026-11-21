@@ -126,6 +126,101 @@ incoming forwarded headers before setting its own. Paths/base paths must be
 preserved explicitly; forwarded path prefixes are unsupported. ASGI servers should
 disable their independent proxy-header rewriting so this policy sees the real peer.
 
+### Managed application state
+
+Everything PYSX creates for an application — recovery keys, framework-managed stores,
+editor projections and temporary working files — resolves through one contract. The
+default root is the owning project's `.pysx/` directory, discovered the same way analysis
+discovers a project, so the location follows the application rather than whichever
+working directory happened to launch it. The directory writes a `.gitignore` containing
+`*` when it is created, ignoring itself without touching yours.
+
+Precedence is explicit per-resource path, then an explicit application state root, then
+the project default:
+
+| Setting | Chooses |
+| --- | --- |
+| `HostConfig.recovery_key_directory` | exactly where recovery keys live |
+| `HostConfig.state_directory`, `--state-dir`, `PYSX_STATE_DIR` | the application state root |
+| *(unset)* | `<project>/.pysx/` |
+
+For hosted recovery state, the project is discovered from the application's defining
+source, including wrapped functions, bound methods and callable instances. Launching
+the same application from an enclosing repository or its application directory uses
+the same default. Callables without a discoverable source project, including installed
+modules without a project marker, fall back to the launch project.
+
+`HostConfig.state_namespace` names the application within that root; it defaults to the
+same portable callable identity used elsewhere, sanitised and digested so it is always a
+single contained directory. It is deliberately separate from `recovery_namespace`, which
+remains the cryptographic context: a deployment can stabilise where state lives without
+changing key identity.
+
+Within a namespace, `persistent/` holds durable state and `temporary/<owner>/` holds
+disposable output. Cleanup removes only its own disposable files and can never reach
+`persistent/`. Both are available to applications as `persistent_path()` and
+`temporary_path()`.
+
+For a deployment whose checkout is replaced on release, point the root at a persistent
+volume so keys and stores survive:
+
+```sh
+pysx --app myapp:app --state-dir /var/lib/myapp
+```
+
+Back up `persistent/`; `temporary/` is safe to delete at any time. The `.gitignore` is
+housekeeping, not access control — recovery keys keep their own restrictive permissions.
+
+Three things stay outside this model: the editor extension's own tooling, which is
+shared across applications; any path an application selects explicitly; and external
+tools' caches, such as Python's `__pycache__` and Ruff's.
+
+Disposable editor projections live under
+`<state-root>/<project-namespace>/temporary/editor-worker/`. The editor removes each
+snapshot when it is superseded or its session ends. Analysis uses the managed snapshot
+as its own project for definitions and coordinated rename, preserving navigation without changing the
+application's analysis exclusions or creating files beside its sources.
+
+Implicit legacy defaults migrate on first start. Recovery keys are copied, never moved,
+so an interrupted migration leaves the original usable; an identical destination is a
+no-op, and a destination holding different data fails with an actionable error rather
+than being overwritten or merged. Migration validates the platform's private key storage
+before reading or publishing keys, and concurrent starts retain the same winning ring.
+The previous launch-project and enclosing-project defaults for the same application
+namespace are also checked when correcting the implicit root. An unrelated previous
+launch directory cannot be discovered automatically; select that state root explicitly
+to recover it. A runnable example is in `examples/state.py`.
+
+### Mounted applications behind a proxy
+
+An application that dispatches to another under a path prefix gives the child the same
+host configuration, so allowed origins, trusted proxies and cookie policy are decided
+once. Build both from one factory rather than restating them:
+
+```python
+config = HostConfig(secure_cookies=True, security=SecurityPolicy(
+    origins=("https://app.example",), trusted_proxies=("10.0.0.0/8",)))
+parent = Application(view, config=config)
+child = Application(reports, config=replace(config, base_path="/reports"))
+```
+
+A dispatching application routes three things to the child: HTTP by request path,
+websockets by the session's `location` query value, and shutdown. It also widens
+`Application.accepts_websocket()` to the child's prefix, because the host upgrades only
+the paths the root application claims:
+
+```python
+def accepts_websocket(self, path: str) -> bool:
+    return path == self.child.path("ws") or super().accepts_websocket(path)
+```
+
+Before delegating a connection, release the parent's handshake admission and move the
+runtime reservation to the child; a delegated connection that is still admitted against
+the parent is closed as unadmitted. The socket path is validated against the application
+that handles the connection, so a child serves `"<prefix>/ws"` while the root serves
+`/ws`. Proxy `proxy_pass` without a replacement URI so the full path, including the
+prefix, reaches the application. A runnable example is in `examples/nginx.py`.
+
 The browser identity cookie is HttpOnly, SameSite=Lax and optionally Secure; it is
 an ownership binder, not authentication. Application auth cookies should also be
 HttpOnly/Secure with an appropriate SameSite policy. Adoption handles remain in
