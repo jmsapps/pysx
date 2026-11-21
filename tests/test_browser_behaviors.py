@@ -132,19 +132,28 @@ def markup(component: object) -> str:
     return render(cast("Callable[[], Fragment]", component)).body
 
 
-def test_browser_behaviors_reach_the_client_as_a_validated_element_payload() -> None:
-    from pysx import pysx
+@pytest.mark.parametrize("use_styled", [False, True])
+def test_browser_behaviors_reach_the_client_as_a_validated_element_payload(
+    use_styled: bool,
+) -> None:
+    from pysx import pysx, section, styled
+
+    card_tag = styled.section(t"color: red") if use_styled else section
 
     def app() -> object:
-        return pysx(t"""
-            div(behaviors={Reveal(visible_class="shown", root_margin="0px 0px -10% 0px")}):
+        return pysx(
+            t"""
+            Card(behaviors={Reveal(visible_class="shown", root_margin="0px 0px -10% 0px")}):
                 "card"
-        """)
+        """,
+            namespace={"Card": card_tag},
+        )
 
     body = markup(app)
     assert "data-pysx-behavior=" in body
     assert "&quot;visibleClass&quot;:&quot;shown&quot;" in body
     assert "<script" not in body
+    assert " behaviors=" not in body
 
 
 def test_browser_behaviors_local_action_keeps_the_ordinary_handler_position() -> None:

@@ -113,6 +113,7 @@ def certificate(prefix: Path) -> None:
 
 def _launch_diagnosis(command: list[str], prefix: Path, configuration: Path) -> str:
     """Separate "nginx cannot resolve this path" from "the fixture never wrote it"."""
+
     try:
         listing = ", ".join(sorted(entry.name for entry in prefix.iterdir()))
     except OSError as error:

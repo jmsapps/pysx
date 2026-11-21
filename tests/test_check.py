@@ -9,6 +9,20 @@ from pysx.tooling.check import Diagnostic, apply_fix, diagnostics, diagnostics_f
 HEADER = "from pysx import div, pysx, signal, styled\n\n"
 
 
+@pytest.mark.parametrize("tag", ["section", "Card"])
+def test_diagnostics_accept_behaviors_on_native_and_styled_elements(tag: str) -> None:
+    source = (
+        "from pysx import Reveal, pysx, styled\n"
+        'Card = styled.section(t"color: red")\n'
+        f'view = pysx(t"{tag}(behaviors={{Reveal()}})")\n'
+    )
+    assert diagnostics_for_source(source) == []
+    invalid = source.replace("behaviors=", "unsupported=")
+    findings = diagnostics_for_source(invalid)
+    assert [finding["code"] for finding in findings] == ["native-attribute"]
+    assert "unsupported" in findings[0]["message"]
+
+
 @pytest.mark.parametrize(
     ("markup", "code", "selected"),
     [

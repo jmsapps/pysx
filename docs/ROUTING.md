@@ -116,6 +116,13 @@ provide transport resume.
 
 ## Scroll and focus
 
+`Router(routes, scroll_container=panel_ref)` nominates an owned element created
+with `panel_ref = Dom().ref()` and attached with `main(ref={panel_ref})`.
+The client uses that element when its computed overflow is `auto`, `scroll` or
+`overlay`; otherwise it scrolls the window. There is no built-in viewport breakpoint:
+responsive CSS must switch the panel's overflow for document scrolling on mobile.
+The tutorial app demonstrates this pattern.
+
 Navigation applies scroll/focus after the route's DOM patch commits. Fragment IDs
 decode UTF-8 safely and match IDs or named anchors inside the app root. Nonfocusable
 targets receive temporary `tabindex="-1"`, removed on blur, and focus without a second
