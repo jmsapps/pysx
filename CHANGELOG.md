@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.1 Release
+
+- Improve VS Code setup with managed developer tooling, reversible template-aware
+  import settings, and command-line extension installation and removal.
+- Correct nested-project analysis, interpreter selection, syntax highlighting and
+  navigation. Make explicit editor refresh rebuild unchanged projections.
+- Consolidate managed application state under a configurable, namespaced `.pysx/`
+  directory, separating persistent data from temporary files and safely migrating
+  existing recovery keys. Keep playground stores outside installed packages.
+- Add a runnable nginx deployment example and improve mounted-application proxy
+  configuration and cross-platform tooling support.
+- Add Python browser behaviors for connection UI, nested-panel scrolling and
+  viewport reveals, replacing custom JavaScript helpers in the tutorial.
+- Improve reconnect, language-server and editor save diagnostics. Add public
+  documentation, changelog and issue links to package metadata.
+
 ## 0.7.0 Release
 
 Correct the PyPI publication retry check to use `pysx-framework`. Expand the

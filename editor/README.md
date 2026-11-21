@@ -14,13 +14,13 @@ Use Python 3.14 or newer. Install the framework and editor tooling in your proje
 Python environment:
 
 ```sh
-python -m pip install 'pysx-framework[lsp,dev]==0.7.0'
+python -m pip install 'pysx-framework[lsp,dev]==0.7.1'
 ```
 
 Or, in a uv project:
 
 ```sh
-uv add 'pysx-framework[lsp,dev]==0.7.0'
+uv add 'pysx-framework[lsp,dev]==0.7.1'
 ```
 
 The `lsp` extra supplies the language server; `dev` supplies the pinned Ruff formatter.

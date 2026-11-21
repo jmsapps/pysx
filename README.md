@@ -17,11 +17,11 @@ Use Python 3.14 or newer and install
 [pysx-framework from PyPI](https://pypi.org/project/pysx-framework/):
 
 ```sh
-python -m pip install 'pysx-framework==0.7.0'
+python -m pip install 'pysx-framework==0.7.1'
 ```
 
-Or add it to a uv project with `uv add 'pysx-framework==0.7.0'`.
-The Python import remains `pysx`. Follow the [quickstart](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/QUICKSTART.md)
+Or add it to a uv project with `uv add 'pysx-framework==0.7.1'`.
+The Python import remains `pysx`. Follow the [quickstart](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/QUICKSTART.md)
 to run your first application.
 
 ## How it works
@@ -48,10 +48,10 @@ updates.
 - **Readable interfaces:** t-string templates and composable, typed native elements.
 - **Live forms:** two-way bindings, native validation, reset and submit handling, and caret-preserving server corrections.
 - **Async applications:** owned resources, timers and server push update pages without another browser event.
-- **Document continuity:** open pages restore compatible UI state after server loss. See [recovery](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/RECOVERY.md).
-- **Hosting:** shared standalone and optional ASGI serving, request context, static assets and lifecycle hooks. See [hosting](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/HOSTING.md).
+- **Document continuity:** open pages restore compatible UI state after server loss. See [recovery](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/RECOVERY.md).
+- **Hosting:** shared standalone and optional ASGI serving, request context, static assets and lifecycle hooks. See [hosting](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/HOSTING.md).
 - **Scoped styling:** typed styled bases, inherited rules, live CSS variables and isolated
-  themes. See the [styling guide](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/STYLING.md).
+  themes. See the [styling guide](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/STYLING.md).
 - **Editor support:** VSCode syntax highlighting and advisory template diagnostics.
 
 ## Playgrounds
@@ -74,19 +74,19 @@ clears its state, so it is also the reset.
 ## Supported platforms
 
 Python 3.14 or newer. The quality matrix has passed on Linux, macOS and Windows.
-See [compatibility and support](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/COMPATIBILITY.md) for tested versions,
+See [compatibility and support](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/COMPATIBILITY.md) for tested versions,
 deployment requirements and maintenance windows.
 
-PYSX is available under the [MIT license](https://github.com/jmsapps/pysx/blob/v0.7.0/LICENSE).
+PYSX is available under the [MIT license](https://github.com/jmsapps/pysx/blob/v0.7.1/LICENSE).
 
 ## Explore
 
-Start with the [quickstart](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/QUICKSTART.md), work through the
-[interactive tutorial](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/TUTORIAL.md), or browse the [API index](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/API.md).
+Start with the [quickstart](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/QUICKSTART.md), work through the
+[interactive tutorial](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/TUTORIAL.md), or browse the [API index](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/API.md).
 
-- [Examples](https://github.com/jmsapps/pysx/blob/v0.7.0/examples/README.md) — run the demos and explore reactive state and live forms.
-- [Tests](https://github.com/jmsapps/pysx/blob/v0.7.0/tests/README.md) — run the test suite and quality checks.
-- [Editor support](https://github.com/jmsapps/pysx/blob/v0.7.0/editor/README.md) — install the VSCode extension.
+- [Examples](https://github.com/jmsapps/pysx/blob/v0.7.1/examples/README.md) — run the demos and explore reactive state and live forms.
+- [Tests](https://github.com/jmsapps/pysx/blob/v0.7.1/tests/README.md) — run the test suite and quality checks.
+- [Editor support](https://github.com/jmsapps/pysx/blob/v0.7.1/editor/README.md) — install the VSCode extension.
 
-For the technical details, see the [template grammar](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/GRAMMAR.md),
-[native elements and bindings](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/ELEMENTS.md), and [wire protocol](https://github.com/jmsapps/pysx/blob/v0.7.0/docs/PROTOCOL.md).
+For the technical details, see the [template grammar](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/GRAMMAR.md),
+[native elements and bindings](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/ELEMENTS.md), and [wire protocol](https://github.com/jmsapps/pysx/blob/v0.7.1/docs/PROTOCOL.md).

@@ -4,7 +4,7 @@
   "description": "Editor support for PYSX, the server-side reactive UI framework for Python: t-string markup highlighting, diagnostics and language tools",
   "publisher": "jmsapps",
   "icon": "icon.png",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "license": "MIT",
   "author": "JMS Apps <jmsapps@outlook.com>",
   "repository": {
