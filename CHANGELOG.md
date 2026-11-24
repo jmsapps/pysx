@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.2 Release
+
+- Add browser-local storage an application reaches from Python: a `Store` scoped to
+  the declaring application, with JSON values, change watchers and typed
+  `StorageError`, `StorageUnavailableError` and `StorageDecodeError` failures.
+  Operations travel over the owned command channel as a closed set the protocol
+  validates, with no expression language and no raw-JavaScript escape hatch.
+- Add cookie handling on both sides of the request: `Cookies` for the values a
+  script may see, and `set_cookie`/`delete_cookie` for response cookies on the
+  initial render, with path, max-age, secure, SameSite and HttpOnly control.
+- Document the storage and cookie commands in the protocol reference, add a
+  browser-storage example, and extend the migration guide with the
+  client-state patterns they replace.
+
 ## 0.7.1 Release
 
 - Improve VS Code setup with managed developer tooling, reversible template-aware
