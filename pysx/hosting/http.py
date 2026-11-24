@@ -169,6 +169,7 @@ class HTTPRuntime:
                 session.routes.commands.clear()
                 session.rendered.failures.clear()
                 session.rendered.dom.disconnect()
+                session.rendered.storage.disconnect()
                 handle.deadline = asyncio.get_running_loop().time() + self.limits.resume_ttl
                 handle.expiry = asyncio.get_running_loop().call_later(
                     self.limits.resume_ttl, self.reap
@@ -367,6 +368,8 @@ class HTTPRuntime:
         finally:
             self.unreserve()
 
+        from .request import response_cookie_headers
+
         try:
             document = request.document
             path = urlsplit(request.path).path
@@ -390,7 +393,11 @@ class HTTPRuntime:
                     raise ValueError("invalid redirect")
                 self.release(session)
 
-                return HTTPResult(document.status or 303, (*headers, ("location", redirect)), b"")
+                return HTTPResult(
+                    document.status or 303,
+                    (*headers, *response_cookie_headers(request), ("location", redirect)),
+                    b"",
+                )
             tree = snapshot(session.rendered.body, unwrap_row=False)
             apply(tree, session.pending)
             _controls(tree)
@@ -458,7 +465,7 @@ class HTTPRuntime:
                 authentication_session=request.authentication_session,
             )
 
-            return HTTPResult(status, headers, content, token)
+            return HTTPResult(status, (*headers, *response_cookie_headers(request)), content, token)
         except BaseException:
             self.release(session)
 

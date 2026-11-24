@@ -66,6 +66,7 @@ from pysx.runtime.browser import DisconnectFor, LocalFlag, LocalText, behavior_p
 from pysx.runtime.dom import DomController, DomError, DomRef, dom_context
 from pysx.runtime.events import EventHandler
 from pysx.runtime.forms import Binding, make_binding
+from pysx.runtime.storage import StorageController, storage_context
 from pysx.styling.styled import StyledCallable, StyledTag, VariantClass, flatten, global_rules
 from pysx.styling.styles import (
     CssClass,
@@ -558,6 +559,7 @@ class BoundaryWatcher(Watcher):
         start = len(self.out.watchers)
         self.prefix = f"{self.slot}:boundary:{self.boundary.state.generation}:"
         dom_token = dom_context.set(self.out.dom)
+        storage_token = storage_context.set(self.out.storage)
         owner_token = style_owner.set(self.prefix)
 
         try:
@@ -576,6 +578,7 @@ class BoundaryWatcher(Watcher):
             del self.out.watchers[start:]
             style_owner.reset(owner_token)
             dom_context.reset(dom_token)
+            storage_context.reset(storage_token)
             failure_context.reset(token)
 
     def refresh(self) -> list[Op]:
@@ -754,6 +757,7 @@ class _Row:
                     return
         out.depth += 1
         dom_token = dom_context.set(out.dom)
+        storage_token = storage_context.set(out.storage)
         style_token = style_context.set(out.styles)
         out.building.append(self)
 
@@ -822,6 +826,7 @@ class _Row:
             out.building.remove(self)
             out.depth -= 1
             dom_context.reset(dom_token)
+            storage_context.reset(storage_token)
             style_context.reset(style_token)
             out.flush()
 
@@ -942,6 +947,7 @@ class Rendered:
     scopes: Scopes = field(default_factory=Scopes)
     styles: StyleRegistry = field(default_factory=StyleRegistry)
     dom: DomController = field(default_factory=DomController)
+    storage: StorageController = field(default_factory=StorageController)
     body: str = ""
     css: str = ""
     generation: int = 0
@@ -1097,7 +1103,7 @@ class Rendered:
         self.retired.clear()
         self.pending.clear()
 
-        for close in (self.styles.close, self.dom.close, self.scopes.close):
+        for close in (self.styles.close, self.dom.close, self.storage.close, self.scopes.close):
             try:
                 close()
             except Exception as error:
@@ -1732,6 +1738,7 @@ class _Emitter:
         ancestors: tuple[str, ...] | None = None,
     ) -> str:
         token = dom_context.set(self.out.dom)
+        storage_token = storage_context.set(self.out.storage)
         prefix = prefix_override or OwnerPath(slot).row(key).value
         scope = scope_override or OwnerPath(scope_slot).row(key).value
         owner_token = style_owner.set(prefix)
@@ -1743,6 +1750,7 @@ class _Emitter:
                 fragment = spec.item(item)
         finally:
             dom_context.reset(token)
+            storage_context.reset(storage_token)
             style_owner.reset(owner_token)
         skeleton = _template_skeleton(fragment.template)
 
@@ -2256,6 +2264,7 @@ def render(
     out = Rendered(development=development)
     out.styles.shared = global_rules()
     token = dom_context.set(out.dom)
+    storage_token = storage_context.set(out.storage)
     style_token = style_context.set(out.styles)
 
     try:
@@ -2289,6 +2298,7 @@ def render(
         raise
     finally:
         dom_context.reset(token)
+        storage_context.reset(storage_token)
         style_context.reset(style_token)
     out.css = out.styles.snapshot()
 

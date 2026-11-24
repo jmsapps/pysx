@@ -69,7 +69,7 @@ must change.
 ## Installation
 
 After publication, install the Python package in a Python 3.14+ environment with
-`uv pip install 'pysx-framework[lsp]==0.7.1'`, then install `jmsapps.pysx` from Marketplace.
+`uv pip install 'pysx-framework[lsp]==0.7.2'`, then install `jmsapps.pysx` from Marketplace.
 Select that Python environment in VS Code. For local installation, run
 `scripts/install-extension.sh`; it builds the production VSIX and removes the former
 `pysx-local.pysx-lang` extension. `scripts/uninstall-extension.sh` removes both ids.

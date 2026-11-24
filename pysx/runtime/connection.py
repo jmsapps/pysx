@@ -558,6 +558,7 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
         await send(dict(message))
 
     session.rendered.dom.sender = send_command
+    session.rendered.storage.sender = send_command
 
     async def handle_message(message: dict[str, object]) -> bool:
         try:
@@ -815,6 +816,27 @@ async def _serve_connection(runtime: HTTPRuntime, connection: BoundedConnection)
 
                 if not modern or message["epoch"] == session.transport.epoch:
                     session.rendered.dom.reply({**message, "version": 1})
+            elif message.get("t") == "store_reply":
+                try:
+                    authorize("store_reply", str(message.get("id", "")))
+                except AccessDenied:
+                    await connection.close(1008, "access denied")
+
+                    return
+
+                if not modern or message["epoch"] == session.transport.epoch:
+                    session.rendered.storage.reply({**message, "version": 1})
+            elif message.get("t") == "store_event":
+                try:
+                    authorize("store_event", str(message.get("key", "")))
+                except AccessDenied:
+                    await connection.close(1008, "access denied")
+
+                    return
+
+                if not modern or message["epoch"] == session.transport.epoch:
+                    async with session.runtime.lock:
+                        session.rendered.storage.notify(message)
             elif message.get("t") == "repair" and modern:
                 try:
                     authorize("repair")

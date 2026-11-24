@@ -1380,3 +1380,41 @@ def test_browser_behaviors_reveal_example_declares_everything_in_python() -> Non
         runtime.close()
 
     asyncio.run(exercise())
+
+
+def test_browser_storage_example_lets_the_cookie_decide_the_first_paint() -> None:
+    """Composition claim: the cookie is read before rendering, so there is no theme flash."""
+    from types import MappingProxyType
+
+    from examples.browser_storage import app as storage_app
+
+    async def exercise() -> None:
+        runtime = HTTPRuntime(storage_app)
+        # The shared example stylesheet also defines these variables, so assert on the
+        # theme's own emission spelling rather than the colour alone.
+        light, dark = b"--canvas:#f6f7fb;", b"--canvas:#111827;"
+
+        default = runtime.render(RequestContext(), "no-cookie")
+        assert light in default.body, "an absent cookie paints the light default"
+        assert dark not in default.body
+
+        carried = RequestContext(headers=MappingProxyType({"cookie": "theme=dark"}))
+        themed = runtime.render(carried, "dark-cookie")
+        assert dark in themed.body, "the cookie decides the palette before any paint"
+        assert light not in themed.body
+        assert b"Rendered as dark" in themed.body
+
+        invalid = RequestContext(headers=MappingProxyType({"cookie": "theme=neon"}))
+        assert light in runtime.render(invalid, "bad-cookie").body, (
+            "an unknown value falls back to the default rather than failing"
+        )
+
+        scripts = [
+            line
+            for line in themed.body.decode().split("<script")[1:]
+            if "/client.js" not in line[:60]
+        ]
+        assert not scripts, "the composed example carries no application JavaScript"
+        runtime.close()
+
+    asyncio.run(exercise())

@@ -38,3 +38,101 @@ adding persistence. The [example guide](../examples/README.md) identifies focuse
 apps for each feature. Use [development hosting](DEVELOPMENT.md) and the
 [language server](LANGUAGE_SERVER.md) while editing. Run deployment checks against
 installed artifacts, then follow the [production runbook](DEPLOYMENT.md).
+
+## Replacing browser scripts
+
+The browser-local APIs introduced in 0.7.1 cover viewport reveals and connection
+controls. Import `Reveal`, `DisconnectFor`, `browser`, `Dom` and `Router` from `pysx`.
+These declarations execute through the framework client without application scripts.
+
+```python
+reveal = Reveal(
+    visible_class="is-visible",
+    root_margin="0px 0px -10% 0px",
+    once=True,
+)
+connection = browser.connection()
+status = connection.text(
+    connected="Connected",
+    reconnecting="Disconnected. Reconnecting…",
+    fresh="Connection: fresh",
+    stopped="Connection: stopped",
+    disconnected="Connection: disconnected",
+    default="Connecting…",
+)
+```
+
+Use these values in a `pysx` t-string:
+
+```text
+section(behaviors={reveal}):
+    "Content"
+button(disabled={connection.not_connected} onClick={DisconnectFor(seconds=5)}):
+    "Disconnect for 5 seconds"
+p(role="status" aria-live="polite"):
+    {status}
+```
+
+`behaviors` is a runtime directive on native and styled native elements. Rendering
+validates the descriptor and emits `data-pysx-behavior`; do not rename the directive
+to `data-behaviors`. Keep any `data-reveal` selectors, transition rules and stagger
+delays your CSS still uses. `Reveal` adds a class; it does not supply the animation.
+Newly patched elements are observed and removed elements release observations.
+Reduced motion reveals immediately, both on initial load and when the preference
+changes. A once-only reveal stays visible after leaving the viewport.
+
+Connection text and flags remain browser-local while disconnected. They are not
+server Signals. The five state names above are the supported mapping keys; unmapped
+states use `default`. Explicit mappings preserve labels that previously interpolated
+the raw state name. `DisconnectFor` accepts durations greater than zero and at most
+ten seconds. Reinserted controls receive their local bindings during reconciliation.
+
+For a nested lesson panel, create `panel = Dom().ref()`, pass it to
+`Router(routes, scroll_container=panel)`, and attach it with
+`main(ref={panel}): {router.view()}`. See [scroll and focus](ROUTING.md#scroll-and-focus)
+for the responsive overflow policy, fragments and post-patch timing. History positions
+are stored per entry, with a 128-entry document-local bound, rather than per article.
+Reload clears them. Repeated visits to one article can therefore restore different
+positions. Known history positions take precedence over fragment scrolling.
+
+The `browser_behaviors` browser suite covers insertion/removal, keyed reordering, offline
+controls both before and after a route change, reconnect, initial and changed reduced
+motion, panel history restoration, and the document-scroll fallback when responsive CSS
+drops the panel's overflow. The `fragment_scrolling` suite covers decoded late targets,
+repeated/native/named anchors, back/forward restoring scroll and focus, missing targets
+with a cross-route fallback, and cancellation of stale fragment scrolling. The
+`browser_storage` suite covers preference storage and both cookie phases. All run in
+Chromium, Firefox and WebKit.
+
+These checks establish framework behavior. An application's own CSS transitions,
+breakpoint layout, reset controls and route integration still need browser verification
+against that application, and none of this diagnoses an application's HTTP rendering
+failure.
+
+### Theme persistence
+
+`Themes.register`, `select`, `current`, `read` and `clear` manage the live render's theme
+definitions and selection. Persisting a choice across visits composes two general
+capabilities rather than a theme-specific feature: a cookie, which the server can read
+before it renders, and browser storage, which survives independently of it.
+
+Precedence is cookie, then stored value, then your default. Only the cookie is visible to
+the initial HTTP render, so it decides the first paint and there is no flash of the wrong
+theme. The stored copy is read once the browser attaches; when it disagrees with the
+cookie — because the cookie expired or was cleared — it wins and the cookie is renewed.
+An invalid value from either source falls back to the default rather than failing.
+
+```python
+themes = Themes()
+initial = current_request().cookies.get("theme", "light")
+themes.select(initial if initial in THEMES else "light")
+```
+
+Writing a choice sets both: the cookie so the next render paints correctly, and storage so
+the choice outlives the cookie. A browser that refuses storage keeps whatever the cookie
+chose, and the selection still applies to the live connection, because `Themes` is server
+state rather than a browser read.
+
+See [the protocol](PROTOCOL.md) for both cookie phases, the storage frame and their
+limits, and the browser storage example for a complete working version alongside an
+unrelated preference.

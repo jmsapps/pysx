@@ -114,7 +114,7 @@ class Client:
         self.queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.history: list[dict[str, Any]] = []
         self.ident = 0
-        self.errors: deque[str] = deque(maxlen=200)
+        self.errors: deque[str] = deque(maxlen=4000)
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._read_errors, daemon=True).start()
         result = self.request(
@@ -253,6 +253,30 @@ class Client:
                 return status
             time.sleep(0.02)
         pytest.fail("Language server did not reach the expected state")
+
+    def quiesced(self, predicate: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+        """Wait for the predicate and for backend publications to stop arriving.
+
+        A count of republished files cannot tell one whole-workspace sweep from the
+        first of two: the backend emits its partial-snapshot output separately on
+        some platforms and coalesces it into the full sweep on others. Releasing on
+        the count alone lets the next edit install a new generation while a sweep is
+        still in flight, which then attributes those files to that generation.
+        """
+        deadline = time.monotonic() + 30
+        published: list[str] | None = None
+        settled_at = time.monotonic()
+
+        while time.monotonic() < deadline:
+            status = self.status()
+            current = cast("list[str]", status["workspaces"][0]["republished"])
+
+            if current != published:
+                published, settled_at = current, time.monotonic()
+            elif predicate(status) and time.monotonic() - settled_at >= 0.25:
+                return status
+            time.sleep(0.02)
+        pytest.fail(f"Backend publications never quiesced: {published}")
 
     def hover(self, path: Path, line: int, character: int) -> dict[str, Any] | None:
         return cast(
@@ -500,6 +524,28 @@ def test_resident_protocol_incremental_config_and_interpreter(
     assert restarted["workspaces"][0]["epoch"] > baseline["epoch"]
 
 
+def _persist_affected_set_evidence(
+    size: int, state: Mapping[str, Any], backend: list[str]
+) -> Path | None:
+    """Write the generation traces out on every outcome, not only on failure.
+
+    The traces live in the server's stderr buffer and reach a report only through
+    the failure dump below, so a passing run discards exactly the evidence needed
+    to tell a benign publication sweep from an extra one.
+    """
+    destination = Path(os.environ.get("PYSX_DEPLOYMENT_LOGS", "") or ROOT / ".pysx-logs")
+    payload = json.dumps({"size": size, "state": state, "backend": backend}, indent=2)
+
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+        target = destination / f"lsp-affected-set-{size}.json"
+        target.write_text(payload, encoding="utf-8")
+    except OSError:
+        return None
+
+    return target
+
+
 @pytest.mark.parametrize("size", [4, 16])
 def test_resident_protocol_incremental_bounded_affected_set(
     tmp_path: Path,
@@ -517,7 +563,7 @@ def test_resident_protocol_incremental_bounded_affected_set(
     path.write_text(source)
     client.open(path, source)
     client.diagnostic(path, 1, "reportArgumentType")
-    client.settled(lambda status: len(status["workspaces"][0]["republished"]) >= size + 2)
+    client.quiesced(lambda status: len(status["workspaces"][0]["republished"]) >= size + 2)
     client.open(producer, producer_source)
     client.change(producer, producer_source.replace("title: str", "title: int"), 2)
     client.diagnostic(path, 1, None)
@@ -527,10 +573,12 @@ def test_resident_protocol_incremental_bounded_affected_set(
     # assertion below, so the bound itself is unchanged.
     affected = {"parts.py", "view.py"}
     state = client.settled(lambda status: affected <= set(status["workspaces"][0]["republished"]))
+    backend = list(client.errors)
+    _persist_affected_set_evidence(size, state, backend)
     assert set(state["workspaces"][0]["changed"]) == affected
 
     if set(state["workspaces"][0]["republished"]) != affected:
-        pytest.fail(json.dumps({"state": state, "backend": list(client.errors)}, indent=2))
+        pytest.fail(json.dumps({"state": state, "backend": backend}, indent=2))
     assert state["workspaces"][0]["starts"] == 1
 
 

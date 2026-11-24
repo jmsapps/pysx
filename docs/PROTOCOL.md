@@ -498,6 +498,66 @@ had already been rendered, so the first frames always agree with the session's s
 {"t":"patch","ops":[ ... ]}
 ```
 
+## Browser-local storage
+
+`Store()` is created inside an app render and reads the browser's `localStorage`. The
+initial HTTP render has no attached browser, so every operation is asynchronous and
+fails without a transport. Restoration therefore runs from `on_mount` through
+`own_task` rather than during setup.
+
+Commands use `{"t":"store","version":3,"id":...,"op":...,"args":...}` and are answered
+with `{"t":"store_reply","version":3,"id":...,"value":...}`, or an `error` carrying
+`unavailable` when the browser refused storage rather than when a key was absent.
+Operations are `get`, `set` and `remove`. Requests use opaque per-session ids, a
+two-second deadline and at most 64 outstanding commands. Keys are bounded at 128
+characters, values at 8192, and both sides validate them. A reply that is neither a
+string nor null is rejected. Disconnect cancels outstanding reads; teardown closes the
+channel.
+
+Stored keys are `pysx:<namespace>:<key>`. `localStorage` is a single per-origin
+namespace, so the prefix keeps two applications on one page from reading and
+overwriting each other's values, matching the owner scoping the command channel
+applies to nodes. The client refuses any key outside that prefix, so a command cannot
+reach another origin's data. There is no whole-origin clear, no `sessionStorage` and no
+IndexedDB.
+
+Values are strings. `set_json`/`get_json` serialize over the same operations; a stored
+value the decoder rejects raises rather than returning `None`, and stays reachable
+through the raw read. `set_json` refuses a top-level `None` so that a missing key keeps
+exactly one meaning.
+
+A write in another tab of the same browser reaches a registered watcher as
+`{"t":"store_event","key":...,"value":...}`, where a null value reports removal. The
+client forwards only keys carrying the `pysx:` prefix. Watchers are owner-scoped and
+released on teardown, at most 128 per session. Notifications are live only while the
+transport is attached: writes made while it is down are dropped rather than queued or
+replayed, so an application that needs exact agreement re-reads on mount.
+
+## Cookies
+
+Cookies have two phases and they are deliberately not unified. A script cannot change a
+response that was already sent, and the server cannot read a value the browser has not
+sent yet.
+
+`current_request().cookies` is a parsed read-only snapshot of what this request carried,
+including HttpOnly cookies. `set_cookie(name, value, ...)` and `delete_cookie(name, ...)`
+run during a render and reach that response's headers; both the document response and a
+redirecting response carry them. `Secure` defaults from the request scheme rather than a
+global flag, and an explicit argument overrides it. Supported attributes are `path`,
+`max_age`, `secure`, `samesite` and `http_only`. Setting one name twice for one path keeps
+the last write. Removal identity is name plus path, matching the browser.
+
+`Cookies()` reaches the browser phase over the `store` frame with `cookie_get`,
+`cookie_set` and `cookie_remove`, under the same deadline, bounds and cancellation. A
+cookie written here reaches the server on the next request, which is what `localStorage`
+cannot do. An HttpOnly cookie is invisible to scripts, so it reads as missing rather than
+failing. `pysx_browser` is reserved and refused on both sides; names, values, paths and
+attributes are validated before a header is formatted, so a value cannot inject one.
+
+Cookie names are not prefixed, unlike storage keys: cookies already scope by path and
+domain, an application must be able to name one the server reads, and the identity cookie
+is protected by the reserved-name guard instead.
+
 ## Ops
 
 | op | shape | client action |

@@ -228,6 +228,9 @@ const registry = [
   { suite: "browser_behaviors", cases: [
     [0, "behaviors_fixture", "browser_behaviors.mjs", "BROWSER BEHAVIORS PASSED"],
   ] },
+  { suite: "browser_storage", cases: [
+    [0, "storage_fixture", "browser_storage.mjs", "BROWSER STORAGE PASSED"],
+  ] },
   { suite: "template_ergonomics", cases: [
     [0, "reactive_state", "browser_operators.mjs", "OPERATORS BROWSER PASSED"],
   ] },
@@ -381,6 +384,8 @@ try {
       ["-m", "pysx.hosting.server", "--app", "tests.browser_host_fixture:host", "--port", String(port), ...(name === "host_asgi" ? ["--asgi"] : [])] :
       name === "behaviors_fixture" ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_behaviors_fixture:app", "--port", String(port)] :
+      name === "storage_fixture" ?
+      ["-m", "pysx.hosting.server", "--app", "tests.browser_storage_fixture:app", "--port", String(port)] :
       name === "keyed_snapshot_fixture" ?
       ["-m", "pysx.hosting.server", "--app", "tests.browser_keyed_snapshot_fixture:app", "--port", String(port)] :
       name === "resume_fixture" ?

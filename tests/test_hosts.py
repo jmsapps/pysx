@@ -17,9 +17,13 @@ from pysx import (
     pysx,
 )
 from pysx.hosting.hosting import request_from_headers
+from pysx.hosting.request import Cookie, CookieError, SameSite
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pysx.hosting.asgi import ASGI, Event
+    from pysx.hosting.http import HTTPResult
     from pysx.hosting.request import RequestContext
 
 
@@ -362,3 +366,158 @@ def test_nginx_proxy_mounted_application_owns_its_socket_path() -> None:
     assert plain.accepts_websocket("/ws")
     assert not plain.accepts_websocket(f"{MOUNT}/ws")
     assert deployment.reports.path("ws") == f"{MOUNT}/ws"
+
+
+def test_request_cookies_parse_into_a_read_only_snapshot() -> None:
+    """An application reads the cookies a request carried, including HttpOnly ones."""
+    context = request_from_headers("/", [("cookie", "theme=dark"), ("cookie", "density=compact")])
+    assert context.cookies["theme"] == "dark"
+    assert context.cookies["density"] == "compact"
+    assert "absent" not in context.cookies
+
+    with pytest.raises(TypeError):
+        cast("dict[str, str]", context.cookies)["theme"] = "light"
+
+
+def cookie_values(result: HTTPResult) -> list[str]:
+    return [value for name, value in result.headers if name == "set-cookie"]
+
+
+def test_response_cookies_reach_the_document_response_on_both_paths() -> None:
+    """A cookie set during a render is carried by the response that render produced."""
+    from pysx import set_cookie
+    from pysx.hosting.http import HTTPRuntime
+    from pysx.hosting.request import RequestContext
+
+    def app() -> Fragment:
+        set_cookie("theme", "dark", max_age=600)
+
+        return native.Div("page")
+
+    async def exercise() -> None:
+        runtime = HTTPRuntime(app)
+        result = runtime.render(RequestContext(), "cookie-browser")
+        emitted = cookie_values(result)
+        assert emitted == ["theme=dark; Path=/; SameSite=Lax; Max-Age=600"]
+        assert "Secure" not in emitted[0], "plain http must not claim Secure"
+        runtime.close()
+
+    asyncio.run(exercise())
+
+
+def test_response_cookies_derive_secure_from_the_request_scheme() -> None:
+    """Secure is not a global flag: it follows the scheme this request arrived on."""
+    from pysx import set_cookie
+    from pysx.hosting.http import HTTPRuntime
+    from pysx.hosting.request import RequestContext
+
+    def app() -> Fragment:
+        set_cookie("theme", "dark")
+
+        return native.Div("page")
+
+    async def exercise() -> None:
+        runtime = HTTPRuntime(app)
+        result = runtime.render(RequestContext(scheme="https"), "cookie-browser")
+        assert cookie_values(result) == ["theme=dark; Path=/; SameSite=Lax; Secure"]
+        runtime.close()
+
+    asyncio.run(exercise())
+
+
+def test_response_cookies_survive_a_redirect_response() -> None:
+    """A redirecting render still carries the cookies it set."""
+    from pysx import set_cookie
+    from pysx.hosting.http import HTTPRuntime
+    from pysx.hosting.request import Document, RequestContext
+
+    def app() -> Fragment:
+        set_cookie("theme", "dark")
+
+        return native.Div("page")
+
+    async def exercise() -> None:
+        runtime = HTTPRuntime(app)
+        document = Document(redirect="/elsewhere")
+        result = runtime.render(RequestContext(document=document), "cookie-browser")
+        assert result.status == 303
+        assert cookie_values(result) == ["theme=dark; Path=/; SameSite=Lax"]
+        runtime.close()
+
+    asyncio.run(exercise())
+
+
+def test_delete_cookie_expires_one_path_without_touching_another() -> None:
+    """Removal identity is name plus path, matching what the browser enforces."""
+    from pysx import delete_cookie, set_cookie
+    from pysx.hosting.http import HTTPRuntime
+    from pysx.hosting.request import RequestContext
+
+    def app() -> Fragment:
+        set_cookie("theme", "dark", path="/reports")
+        delete_cookie("theme")
+
+        return native.Div("page")
+
+    async def exercise() -> None:
+        runtime = HTTPRuntime(app)
+        emitted = cookie_values(runtime.render(RequestContext(), "cookie-browser"))
+        assert emitted == [
+            "theme=dark; Path=/reports; SameSite=Lax",
+            "theme=; Path=/; SameSite=Lax; Max-Age=0",
+        ]
+        runtime.close()
+
+    asyncio.run(exercise())
+
+
+def test_setting_one_cookie_twice_keeps_the_last_write_for_that_path() -> None:
+    from pysx import set_cookie
+    from pysx.hosting.http import HTTPRuntime
+    from pysx.hosting.request import RequestContext
+
+    def app() -> Fragment:
+        set_cookie("theme", "dark")
+        set_cookie("theme", "light")
+
+        return native.Div("page")
+
+    async def exercise() -> None:
+        runtime = HTTPRuntime(app)
+        assert cookie_values(runtime.render(RequestContext(), "cookie-browser")) == [
+            "theme=light; Path=/; SameSite=Lax"
+        ]
+        runtime.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(lambda: Cookie("pysx_browser", "stolen"), id="reserved_name"),
+        pytest.param(lambda: Cookie("theme", "a\r\nSet-Cookie: injected=1"), id="header_injection"),
+        pytest.param(lambda: Cookie("bad name", "dark"), id="invalid_name"),
+        pytest.param(lambda: Cookie("theme", "dark", path="relative"), id="relative_path"),
+        pytest.param(
+            # A literal type already refuses this spelling; the runtime guard must too.
+            lambda: Cookie("theme", "dark", samesite=cast("SameSite", "Nope")),
+            id="invalid_samesite",
+        ),
+        pytest.param(
+            lambda: Cookie("theme", "dark", samesite="None", secure=False), id="insecure_none"
+        ),
+        pytest.param(lambda: Cookie("theme", "dark", max_age=-5), id="negative_max_age"),
+    ],
+)
+def test_response_cookies_refuse_unsafe_input(build: Callable[[], object]) -> None:
+    """Header injection, reserved names and contradictory attributes fail at the call."""
+
+    with pytest.raises(CookieError):
+        build()
+
+
+def test_http_only_response_cookie_is_marked_for_the_browser_boundary() -> None:
+    """An HttpOnly cookie is expressible, and is the one a script cannot read back."""
+    rendered = Cookie("session", "abc", http_only=True).header(secure_default=True)
+    assert rendered == "session=abc; Path=/; SameSite=Lax; HttpOnly; Secure"

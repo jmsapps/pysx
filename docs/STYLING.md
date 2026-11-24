@@ -82,6 +82,12 @@ and `themes.clear()` resets it. `register_vars(...)` can reserve additional vari
 Missing values in a selected theme and cleared themes emit `unset` for registered names.
 The stylesheet snapshot reflects the active theme at render and after every update.
 
+Theme selection is server state for one connection, so it does not survive a visit by
+itself. Persisting it composes a cookie, which the initial HTTP render can read, with
+browser storage, which outlives the cookie; the cookie is what prevents a flash of the
+wrong theme. [Replacing browser scripts](MIGRATION.md#theme-persistence) owns that
+pattern and the precedence it implies.
+
 ## Editor feedback
 
 Direct literal arguments to `styled()`, `css()` and `global_style()` receive CSS
