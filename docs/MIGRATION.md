@@ -95,22 +95,44 @@ are stored per entry, with a 128-entry document-local bound, rather than per art
 Reload clears them. Repeated visits to one article can therefore restore different
 positions. Known history positions take precedence over fragment scrolling.
 
-The `browser_behaviors` browser suite covers insertion/removal, keyed reordering,
-offline controls, reconnect, initial and changed reduced motion, and panel history
-restoration in Chromium, Firefox and WebKit. The routing suite covers general
-fragment and history policy. These checks establish framework behavior; an application's
-CSS transitions, breakpoint layout, reset controls and route integration still need
-browser verification. They do not diagnose an application's HTTP rendering failure.
+The `browser_behaviors` browser suite covers insertion/removal, keyed reordering, offline
+controls both before and after a route change, reconnect, initial and changed reduced
+motion, panel history restoration, and the document-scroll fallback when responsive CSS
+drops the panel's overflow. The `fragment_scrolling` suite covers decoded late targets,
+repeated/native/named anchors, back/forward restoring scroll and focus, missing targets
+with a cross-route fallback, and cancellation of stale fragment scrolling. The
+`browser_storage` suite covers preference storage and both cookie phases. All run in
+Chromium, Firefox and WebKit.
+
+These checks establish framework behavior. An application's own CSS transitions,
+breakpoint layout, reset controls and route integration still need browser verification
+against that application, and none of this diagnoses an application's HTTP rendering
+failure.
 
 ### Theme persistence
 
-`Themes.register`, `select`, `current`, `read` and `clear` manage the live render's
-theme definitions and selection. There is currently no supported Python-facing
-theme API that writes both localStorage and a cookie, restores a missing cookie
-from localStorage, or synchronizes those stores with the initial HTTP theme.
-Explicit durable state and open-document recovery do not provide that browser
-storage contract. See [named themes](STYLING.md#named-themes).
+`Themes.register`, `select`, `current`, `read` and `clear` manage the live render's theme
+definitions and selection. Persisting a choice across visits composes two general
+capabilities rather than a theme-specific feature: a cookie, which the server can read
+before it renders, and browser storage, which survives independently of it.
 
-Keep an existing persistence script if those semantics are required. An application
-HTTP endpoint can set a cookie, but a reload-based toggle changes the interaction;
-session-only selection changes persistence. Neither is an automatic equivalent.
+Precedence is cookie, then stored value, then your default. Only the cookie is visible to
+the initial HTTP render, so it decides the first paint and there is no flash of the wrong
+theme. The stored copy is read once the browser attaches; when it disagrees with the
+cookie — because the cookie expired or was cleared — it wins and the cookie is renewed.
+An invalid value from either source falls back to the default rather than failing.
+
+```python
+themes = Themes()
+initial = current_request().cookies.get("theme", "light")
+themes.select(initial if initial in THEMES else "light")
+```
+
+Writing a choice sets both: the cookie so the next render paints correctly, and storage so
+the choice outlives the cookie. A browser that refuses storage keeps whatever the cookie
+chose, and the selection still applies to the live connection, because `Themes` is server
+state rather than a browser read.
+
+See [the protocol](PROTOCOL.md) for both cookie phases, the storage frame and their
+limits, and the browser storage example for a complete working version alongside an
+unrelated preference.

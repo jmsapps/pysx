@@ -100,6 +100,32 @@ try {
   await page.waitForFunction(() => document.getElementById("panel").scrollTop > 300);
   console.log("  ok  history navigation restores the nominated panel, not the window");
 
+  await page.locator("#go-next").click();
+  await page.waitForFunction(() => document.getElementById("route").textContent === "next");
+  await page.locator("#drop").click();
+  await page.waitForFunction(() => document.getElementById("status").textContent === "Reconnecting");
+  assert.equal(await page.locator("#drop").isDisabled(), true,
+    "the offline control stays bound after a navigation");
+  await settled(page);
+  assert.equal(await page.locator("#drop").isDisabled(), false);
+  console.log("  ok  connection bindings still govern controls after a route change");
+
+  await page.goBack();
+  await page.waitForFunction(() => document.getElementById("route").textContent === "home");
+  // The page's CSP refuses an injected stylesheet, so emulate the responsive breakpoint
+  // through the CSSOM, which is what a media query would have produced anyway.
+  await page.locator("#panel").evaluate(el => {
+    el.style.overflowY = "visible";
+    el.style.height = "auto";
+  });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.locator("#go-next").click();
+  await page.waitForFunction(() => document.getElementById("route").textContent === "next");
+  await page.waitForFunction(() => window.scrollY > 0 || document.documentElement.scrollTop > 0);
+  assert.equal(await page.locator("#panel").evaluate(el => el.scrollTop), 0,
+    "a panel CSS has made non-scrollable must not be scrolled");
+  console.log("  ok  responsive CSS that drops panel overflow returns scrolling to the document");
+
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.waitForFunction(() => document.getElementById("card-repeat").classList.contains("is-visible"));
   console.log("  ok  changing reduced motion reveals existing cards immediately");

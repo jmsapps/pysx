@@ -275,10 +275,12 @@ Press Ctrl+C to stop the server. See [styling](../docs/STYLING.md) for the publi
 uv run --project . pysx-example run browser_storage
 ```
 
-Open http://127.0.0.1:8750. The first render shows the server's default, then the saved
-preference arrives once the browser attaches. Switch density writes a string, Save recent
-searches writes a structured value, and Clear this browser removes both. Reload to see
-them restored. Open a second tab and switch density there: the first tab reports the
+Open http://127.0.0.1:8750. Switch theme writes both a cookie and a browser copy: reload
+and the page is already in that theme on the very first paint, because the server read the
+cookie before rendering. Switch density writes a string, Save recent searches writes a
+structured value, and Clear this browser removes all of them. Reload to see them restored;
+density and recent searches arrive once the browser attaches, which is why the theme uses
+a cookie instead. Open a second tab and switch density there: the first tab reports the
 change without a reload. Tell the server too writes a cookie instead: reload and the page
 reports that the server read it before rendering, which is what browser storage cannot do.
 The application reads and writes all of this from ordinary Python and ships no script of
