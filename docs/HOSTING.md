@@ -103,9 +103,9 @@ headers fail closed before graph allocation. Origin is a browser CSRF boundary,
 not an identity provider. Nonbrowser clients must supply the same allowed Origin
 and application authentication. The authorizer must return exactly `True`; an
 exception produces a safe denial. HTTP, websocket, adoption, resume, event,
-resource, command, dom_reply, repair and reset are operation names. Targets are paths,
-handler IDs, resource keys or outgoing message types; every resume check carries the
-route. Refusing resume declines browser checkpoints and reconstruction while ordinary
+resource, command, dom_reply, store_reply, store_event, repair and reset are operation
+names. Targets are paths, handler IDs, resource keys, storage keys or outgoing message
+types; every resume check carries the route. Refusing resume declines browser checkpoints and reconstruction while ordinary
 attachment continues. Use `require_access(action,
 target)` inside a session for additional business service checks. Resource access
 is checked before loading and before publishing a successful value. The principal

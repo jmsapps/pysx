@@ -1,0 +1,18 @@
+from typing import assert_type
+
+from pysx import Fragment, Store, native
+
+
+def app() -> Fragment:
+    store = Store("preferences")
+    store.watch("density", lambda value: print(value))
+
+    return native.Div("preferences")
+
+
+async def read(store: Store) -> None:
+    assert_type(await store.get("density"), str | None)
+    await store.set("density", "compact")
+    await store.set_json("recent", ["signals", "templates"])
+    await store.set_json("layout", {"sidebar": "collapsed"})
+    await store.remove("density")

@@ -79,6 +79,8 @@ def parse_message(
         "mounted": {"ids"},
         "location": {"url", "rev"},
         "dom_reply": {"version", "id", "value", "error", "revoked"},
+        "store_reply": {"version", "id", "value", "error", "unavailable"},
+        "store_event": {"key", "value"},
         "repair": set(),
     }
 

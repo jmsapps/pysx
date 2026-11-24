@@ -32,7 +32,16 @@ from .components.lifecycle import (
 )
 from .hosting.durable_host import DurableApplication
 from .hosting.hosting import Application, HostConfig, StaticAsset
-from .hosting.request import AuthenticatedIdentity, Document, RequestContext, current_request
+from .hosting.request import (
+    AuthenticatedIdentity,
+    Cookie,
+    CookieError,
+    Document,
+    RequestContext,
+    current_request,
+    delete_cookie,
+    set_cookie,
+)
 from .hosting.security import AccessDenied, SecurityPolicy, require_access
 from .hosting.telemetry import RequestEvent
 from .reactive.operators import (
@@ -98,6 +107,13 @@ from .runtime.routing import (
     match_route,
 )
 from .runtime.state_paths import persistent_path, temporary_path
+from .runtime.storage import (
+    Cookies,
+    StorageDecodeError,
+    StorageError,
+    StorageUnavailableError,
+    Store,
+)
 from .runtime.transport import TransportLimits
 from .styling.styled import StyledCallable, StyledTag, global_style, styled, stylesheet
 from .styling.styles import Theme, Themes, css
@@ -111,6 +127,9 @@ __all__ = [
     "BrowserEvent",
     "Children",
     "Component",
+    "Cookie",
+    "CookieError",
+    "Cookies",
     "Deferred",
     "DisconnectFor",
     "Document",
@@ -157,6 +176,10 @@ __all__ = [
     "StateSnapshot",
     "StateStore",
     "StaticAsset",
+    "StorageDecodeError",
+    "StorageError",
+    "StorageUnavailableError",
+    "Store",
     "StoreUnavailable",
     "Structured",
     "StyledCallable",
@@ -178,6 +201,7 @@ __all__ = [
     "current_request",
     "defer",
     "defer2",
+    "delete_cookie",
     "derived",
     "dict_key",
     "div",
@@ -222,6 +246,7 @@ __all__ = [
     "require_access",
     "resource",
     "section",
+    "set_cookie",
     "signal",
     "span",
     "strong",

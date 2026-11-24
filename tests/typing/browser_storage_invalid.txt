@@ -1,0 +1,6 @@
+from pysx import Store
+
+
+async def read(store: Store) -> None:
+    await store.set("density", 3)
+    await store.set_json("recent", object())

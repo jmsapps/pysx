@@ -375,6 +375,91 @@ function domCommand(message) {
   }
 }
 
+const STORAGE_ROOT = "pysx:";
+const STORAGE_VALUE_LIMIT = 8192;
+
+function localStore() {
+  try {
+    const store = window.localStorage;
+    if (store === null || typeof store === "undefined") return null;
+    return store;
+  } catch { return null; }
+}
+
+const RESERVED_COOKIES = ["pysx_browser"];
+
+function readCookie(name) {
+  for (const entry of document.cookie ? document.cookie.split(";") : []) {
+    const pair = entry.trim();
+    const split = pair.indexOf("=");
+    if (split > 0 && pair.slice(0, split) === name) return decodeURIComponent(pair.slice(split + 1));
+  }
+  return null;
+}
+
+function writeCookie(args, removing) {
+  const parts = [`${args.key}=${removing ? "" : encodeURIComponent(args.value)}`,
+    `Path=${args.path}`, `SameSite=${removing ? "Lax" : args.samesite}`];
+  if (removing) parts.push("Max-Age=0");
+  else if (args.max_age !== null && args.max_age !== undefined) parts.push(`Max-Age=${args.max_age}`);
+  if (location.protocol === "https:") parts.push("Secure");
+  document.cookie = parts.join("; ");
+}
+
+function cookieCommand(message) {
+  const args = message.args, name = args.key;
+  if (RESERVED_COOKIES.includes(name)) throw new Error("cookie name is reserved");
+  if (message.op === "cookie_get") return readCookie(name);
+  writeCookie(args, message.op === "cookie_remove");
+  return null;
+}
+
+function storeCommand(message) {
+  try {
+    if (message.version !== protocolVersion) throw new Error("unsupported storage version");
+    const args = message.args, key = args.key;
+    if (message.op.startsWith("cookie_")) {
+      send({t: "store_reply", version: 1, id: message.id, value: cookieCommand(message)});
+      return;
+    }
+    if (typeof key !== "string" || !key.startsWith(STORAGE_ROOT)) throw new Error("invalid storage key");
+    const store = localStore();
+    if (store === null) {
+      send({t: "store_reply", version: 1, id: message.id, unavailable: true,
+        error: "browser storage is unavailable"});
+      return;
+    }
+    let value = null;
+    switch (message.op) {
+      case "get": value = store.getItem(key); break;
+      case "set": {
+        if (typeof args.value !== "string" || args.value.length > STORAGE_VALUE_LIMIT) {
+          throw new Error("invalid storage value");
+        }
+        store.setItem(key, args.value);
+        break;
+      }
+      case "remove": store.removeItem(key); break;
+      default: throw new Error("unsupported storage operation");
+    }
+    send({t: "store_reply", version: 1, id: message.id, value});
+  } catch (error) {
+    const quota = error instanceof DOMException;
+    send({t: "store_reply", version: 1, id: message.id, ...(quota ? {unavailable: true} : {}),
+      error: String(error.message).slice(0, 256)});
+  }
+}
+
+function storageChanged(event) {
+  if (event.storageArea !== localStore()) return;
+  if (typeof event.key !== "string" || !event.key.startsWith(STORAGE_ROOT)) return;
+  const value = event.newValue;
+  if (value !== null && (typeof value !== "string" || value.length > STORAGE_VALUE_LIMIT)) return;
+  send({t: "store_event", key: event.key, value});
+}
+
+window.addEventListener("storage", storageChanged);
+
 function snapshot(event, handler) {
   const target = event.target;
   return {
@@ -583,6 +668,10 @@ function validMessage(message) {
   if (message.t === "routing") return typeof message.on === "boolean";
   if (message.t === "dom") return ["id", "target", "root", "op"].every(key => typeof message[key] === "string") &&
     message.args && typeof message.args === "object" && !Array.isArray(message.args);
+  if (message.t === "store") return ["id", "op"].every(key => typeof message[key] === "string") &&
+    ["get", "set", "remove", "cookie_get", "cookie_set", "cookie_remove"].includes(message.op) &&
+    message.args && typeof message.args === "object" && !Array.isArray(message.args) &&
+    typeof message.args.key === "string";
   return false;
 }
 
@@ -602,7 +691,7 @@ function acceptMessage(event) {
   if (!message || typeof message !== "object" || Array.isArray(message) || message.version !== protocolVersion ||
       typeof message.epoch !== "string" || !Number.isSafeInteger(message.state_rev) ||
       !Number.isSafeInteger(message.base_rev) || message.state_rev !== message.base_rev + 1 ||
-      !["init", "adopted", "result", "patch", "dom", "mount", "navigation", "routing", "ack", "repair", "checkpoint"].includes(message.t) ||
+      !["init", "adopted", "result", "patch", "dom", "store", "mount", "navigation", "routing", "ack", "repair", "checkpoint"].includes(message.t) ||
       message.base_rev < 0 || !validMessage(message)) {
     protocolFailure("invalid envelope"); return;
   }
@@ -684,6 +773,8 @@ function acceptMessage(event) {
     if (pendingScroll) attemptRouteScroll();
   } else if (message.t === "dom") {
     domCommand(message);
+  } else if (message.t === "store") {
+    storeCommand(message);
   } else if (message.t === "mount") {
     send({t: "mounted", ids: message.ids});
   } else if (message.t === "navigation") {

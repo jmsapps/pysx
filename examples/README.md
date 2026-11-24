@@ -269,6 +269,22 @@ Reset variables removes both overrides to reveal inherited fallbacks. Open a sec
 to verify it stays independent. Controls support keyboard activation and narrow screens.
 Press Ctrl+C to stop the server. See [styling](../docs/STYLING.md) for the public API.
 
+## Browser-held preferences
+
+```sh
+uv run --project . pysx-example run browser_storage
+```
+
+Open http://127.0.0.1:8750. The first render shows the server's default, then the saved
+preference arrives once the browser attaches. Switch density writes a string, Save recent
+searches writes a structured value, and Clear this browser removes both. Reload to see
+them restored. Open a second tab and switch density there: the first tab reports the
+change without a reload. Tell the server too writes a cookie instead: reload and the page
+reports that the server read it before rendering, which is what browser storage cannot do.
+The application reads and writes all of this from ordinary Python and ships no script of
+its own. See [the protocol](../docs/PROTOCOL.md) for the storage frame, the two cookie
+phases, their limits and the cross-tab contract.
+
 ## Callable components and lifetimes
 
 ```sh
