@@ -254,6 +254,30 @@ class Client:
             time.sleep(0.02)
         pytest.fail("Language server did not reach the expected state")
 
+    def quiesced(self, predicate: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+        """Wait for the predicate and for backend publications to stop arriving.
+
+        A count of republished files cannot tell one whole-workspace sweep from the
+        first of two: the backend emits its partial-snapshot output separately on
+        some platforms and coalesces it into the full sweep on others. Releasing on
+        the count alone lets the next edit install a new generation while a sweep is
+        still in flight, which then attributes those files to that generation.
+        """
+        deadline = time.monotonic() + 30
+        published: list[str] | None = None
+        settled_at = time.monotonic()
+
+        while time.monotonic() < deadline:
+            status = self.status()
+            current = cast("list[str]", status["workspaces"][0]["republished"])
+
+            if current != published:
+                published, settled_at = current, time.monotonic()
+            elif predicate(status) and time.monotonic() - settled_at >= 0.25:
+                return status
+            time.sleep(0.02)
+        pytest.fail(f"Backend publications never quiesced: {published}")
+
     def hover(self, path: Path, line: int, character: int) -> dict[str, Any] | None:
         return cast(
             "dict[str, Any] | None",
@@ -539,7 +563,7 @@ def test_resident_protocol_incremental_bounded_affected_set(
     path.write_text(source)
     client.open(path, source)
     client.diagnostic(path, 1, "reportArgumentType")
-    client.settled(lambda status: len(status["workspaces"][0]["republished"]) >= size + 2)
+    client.quiesced(lambda status: len(status["workspaces"][0]["republished"]) >= size + 2)
     client.open(producer, producer_source)
     client.change(producer, producer_source.replace("title: str", "title: int"), 2)
     client.diagnostic(path, 1, None)
