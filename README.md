@@ -24,6 +24,19 @@ Or add it to a uv project with `uv add 'pysx-framework==0.7.2'`.
 The Python import remains `pysx`. Follow the [quickstart](https://github.com/jmsapps/pysx/blob/v0.7.2/docs/QUICKSTART.md)
 to run your first application.
 
+### VS Code setup
+
+1. Install the [PYSX extension](https://marketplace.visualstudio.com/items?itemName=jmsapps.pysx).
+2. Open your project and use **Python: Select Interpreter** to select its Python 3.14+
+   environment with PYSX installed.
+3. In a trusted workspace, accept the extension's template-aware imports setup offer,
+   or run **PYSX: Configure Template-Aware Imports** once analysis is ready. This keeps
+   imports used inside templates from being flagged as unused or removed by organize-imports.
+
+The extension automatically installs and manages the tools it needs, including Ruff.
+See the [editor guide](https://github.com/jmsapps/pysx/blob/v0.7.2/editor/README.md)
+for settings, optional tooling and how to undo the setup.
+
 ## How it works
 
 The initial HTTP response contains the rendered page. The browser attaches to that

@@ -10,27 +10,27 @@ This extension provides editor support for the
 
 ## Install
 
-Use Python 3.14 or newer. Install the framework and editor tooling in your project's
+Use Python 3.14 or newer. Install the framework in your project's
 Python environment:
 
 ```sh
-python -m pip install 'pysx-framework[lsp,dev]==0.7.2'
+python -m pip install 'pysx-framework==0.7.2'
 ```
 
 Or, in a uv project:
 
 ```sh
-uv add 'pysx-framework[lsp,dev]==0.7.2'
+uv add 'pysx-framework==0.7.2'
 ```
 
-The `lsp` extra supplies the language server; `dev` supplies the pinned Ruff formatter.
+The extension automatically installs and manages its editor tools.
 See the [quickstart](https://github.com/jmsapps/pysx/blob/master/docs/QUICKSTART.md)
 to run your first application.
 
 ## VS Code support
 
 Install **PYSX** (`jmsapps.pysx`) from the VS Code Marketplace. Select a
-Python 3.14 or later environment with PYSX and Ruff installed; the Python
+Python 3.14 or later environment with PYSX installed; the Python
 extension's selected interpreter is used unless `pysx.pythonPath` is set.
 
 You can also install and remove it from the command line, outside any checkout:
@@ -64,6 +64,10 @@ you changed afterwards alone.
 To override the provisioned tools, set `pysx.pythonPath` to an environment that already
 has compatible versions installed. Pyright additionally needs Node.js; if it is missing,
 template diagnostics and highlighting continue to work without it.
+
+For command-line tooling outside VS Code, install `pysx-framework[lsp]==0.7.2`
+for the language server, Pyright and Ruff, or `pysx-framework[dev]==0.7.2` for
+Ruff alone.
 
 ### Where the extension writes
 

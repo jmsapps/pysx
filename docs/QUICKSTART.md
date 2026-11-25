@@ -44,11 +44,16 @@ uv add 'pysx-framework==0.7.2'
 
 Prefix the run command with `uv run --project .` when working inside that project.
 
-For ASGI and editor tooling, install with the extras `pysx-framework[asgi,lsp]==0.7.2`.
+For VS Code, follow the [editor setup](../README.md#vs-code-setup). The PYSX extension
+automatically installs and manages its editor tools. Accept its
+template-aware imports setup offer to preserve imports used inside templates.
+
+For ASGI hosting, install `pysx-framework[asgi]==0.7.2`. For a language server outside
+the managed VS Code setup, install `pysx-framework[lsp]==0.7.2`.
 
 For Python formatting alone, install `pysx-framework[dev]==0.7.2` in the same environment
 and run `python -m ruff format my_app.py`. This uses the pinned Ruff shipped by
-the extra; editor formatting uses the selected interpreter's tools too.
+the extra; VS Code formatting uses the extension's managed tools by default.
 
 ### Installing a candidate build
 
